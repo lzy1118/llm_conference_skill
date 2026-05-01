@@ -586,14 +586,24 @@ def expand_author_rows(
 
             matched_affiliations = []
             for author in authors:
-                key = author.lower()
+                key = author.lower().strip()
                 if key in aff_map:
                     matched_affiliations.append(aff_map[key])
                 else:
                     # Try fuzzy match
                     matched = False
                     for aa_name, aa_aff in aff_map.items():
+                        # Check if one contains the other
                         if aa_name in key or key in aa_name:
+                            matched_affiliations.append(aa_aff)
+                            matched = True
+                            break
+                        # Check if last names match and first names start same
+                        key_parts = key.split()
+                        aa_parts = aa_name.split()
+                        if (len(key_parts) >= 2 and len(aa_parts) >= 2 and
+                            key_parts[-1] == aa_parts[-1] and
+                            key_parts[0][0] == aa_parts[0][0]):
                             matched_affiliations.append(aa_aff)
                             matched = True
                             break
