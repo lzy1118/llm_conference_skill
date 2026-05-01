@@ -600,9 +600,9 @@ def expand_author_rows(
                     if not matched:
                         matched_affiliations.append([])
 
-            # Accept if majority of authors have affiliations
+            # Accept if at least one author has affiliation
             authors_with_affs = sum(1 for affs in matched_affiliations if len(affs) > 0)
-            if authors_with_affs > 0 and authors_with_affs >= len(authors) * 0.5:
+            if authors_with_affs > 0:
                 for order, (author, affs) in enumerate(zip(authors, matched_affiliations)):
                     if not affs:
                         continue  # Skip authors without affiliations
