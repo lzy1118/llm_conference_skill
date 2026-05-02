@@ -335,6 +335,23 @@ def classify_affiliation(
     affiliation: str,
     overrides: dict[str, AffiliationClassification] | None = None,
 ) -> AffiliationClassification:
+    # Handle multiple affiliations separated by ";"
+    parts = [p.strip() for p in affiliation.split(";") if p.strip()]
+    if len(parts) > 1:
+        # Check each part separately, return US if any part is US
+        for part in parts:
+            result = classify_single_affiliation(part, overrides)
+            if result.is_us:
+                return result
+        # If none is US, return the result of the last part
+        return classify_single_affiliation(parts[-1], overrides)
+    return classify_single_affiliation(affiliation, overrides)
+
+
+def classify_single_affiliation(
+    affiliation: str,
+    overrides: dict[str, AffiliationClassification] | None = None,
+) -> AffiliationClassification:
     normalized = normalize_space(affiliation)
     lower = normalized.casefold()
     if overrides and lower in overrides:
