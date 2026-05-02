@@ -6,7 +6,7 @@
 
 | 子项目 | 会议 | 结果 |
 |--------|------|------|
-| `Top3-data/` | Asiacrypt 2025, Crypto 2025, Eurocrypt 2026 | 182 行 |
+| `Top3-data/` | Asiacrypt 2025, Crypto 2025, Eurocrypt 2026 | 377 行 |
 | `Security-data/` | USENIX Security 2025, NDSS 2025, IEEE S&P 2025, CCS 2025 | 1601 行 |
 
 详细说明见各子项目 README。
