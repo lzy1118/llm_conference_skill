@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+# Legacy compatibility script.
+#
+# This file preserves the historical Top3-data US-named entrypoint so old
+# commands keep working. The current preferred entrypoints are:
+# - `Top3-data/scripts/top3_pipeline.py` for a neutral local wrapper
+# - `conference-paper-extraction/scripts/run_unified_pipeline.py` for the
+#   canonical unified pipeline
+#
+# Keep this file stable unless compatibility behavior must change.
+
 import argparse
 import csv
 import hashlib

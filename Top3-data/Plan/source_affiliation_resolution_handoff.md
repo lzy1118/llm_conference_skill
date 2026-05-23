@@ -4,6 +4,9 @@
 
 目标是接手“作者单位自动复核独立工作流”，处理 `data/interim/affiliation_resolution_queue.csv` 中作者数和机构数不一致的论文，通过 Springer、DBLP、IACR ePrint、PDF 首页或正式出版页面确认 `author -> affiliation` 映射，尽量减少人工核查。
 
+> 说明：这份文档描述的是旧 `Top3-data/` 阶段围绕美国机构兼容 enriched 输出的独立复核链路。
+> 当前仓库正式主契约已经是“作者-机构-国家”长表；文中 `*_美国机构.*`、`resolved_us_rows` 与 `merge_candidates_us_rows.csv` 应理解为旧兼容子流程，而不是当前默认主输出。
+
 这个流程独立于原始采集流程。不要修改 `Plan/source-affiliation-resolution_77bbfeaa.plan.md`，也不要直接覆盖 `data/output/2025-2026三大密码会_美国机构.csv`。
 
 ## 当前完成状态
@@ -17,7 +20,7 @@
    辅助脚本，用于从 PDF 或 HTML 文件抽取前置信息文本。
 
 3. `scripts/merge_resolved_us_rows.py`
-   辅助脚本，用于把复核得到的美国机构作者行合并到 enriched 输出。
+   历史 compatibility-only 辅助脚本，用于把复核得到的历史美国机构兼容作者行合并到 enriched 输出。
 
 4. `tests/test_affiliation_resolution.py`
    独立复核流程测试。
@@ -30,7 +33,7 @@
 
 3. `pypdf` 和 `pdfplumber` 对部分 ePrint PDF 抽不到文本的问题已定位。脚本现在优先使用系统 `pdftotext` 抽取前两页文本。
 
-4. 已证明真实来源链路可以跑通。样本 `EUROCRYPT_2026_13` 能从 ePrint 下载 PDF，抽取文本，并基于“来源确认标题和作者，IACR JSON 只有一个机构”规则生成 2 条可接受美国机构作者行。
+4. 已证明真实来源链路可以跑通。样本 `EUROCRYPT_2026_13` 能从 ePrint 下载 PDF，抽取文本，并基于“来源确认标题和作者，IACR JSON 只有一个机构”规则生成 2 条可接受的历史兼容作者行。
 
 样本结果位置：
 
@@ -91,7 +94,7 @@
    处理文本中形如 `Author: Institution` 的显式映射。
 
 3. `accept_resolved_mapping(...)`
-   严格接受门槛。需要 `title_match = true`、`authors_match = true`、`confidence >= 0.9`，且机构判定为美国机构。
+   严格接受门槛。需要 `title_match = true`、`authors_match = true`、`confidence >= 0.9`。这份旧文档中的自动接受示例额外要求机构判定为美国机构，是因为它服务于历史兼容切片。
 
 4. `source_to_pdf_url(...)`
    把 `https://eprint.iacr.org/YYYY/NNNN` 转成 PDF 链接。
@@ -103,7 +106,7 @@
 
 第一步，先不要跑 311 条全量。先跑一个可控子集，确认非零结果稳定。
 
-建议新建一个包含 20 到 30 条的 queue，优先选择 `affiliations_count = 1` 且 affiliation 明显是美国机构的行。这样最容易验证自动接受链路。
+建议新建一个包含 20 到 30 条的 queue。若继续验证旧兼容切片，可优先选择 `affiliations_count = 1` 且 affiliation 明显是美国机构的行；若迁回当前主链路，则应优先选择单机构且国家归属清晰的行。
 
 可用命令：
 
@@ -201,6 +204,8 @@ python3 scripts/merge_resolved_us_rows.py \
   --output-csv data/output/2025-2026三大密码会_美国机构_enriched.csv \
   --output-xlsx data/output/2025-2026三大密码会_美国机构_enriched.xlsx
 ```
+
+上面的命令仅适用于历史美国机构兼容 enriched 流程。当前正式主链路若要回写复核结果，应优先面向泛化主输出而不是继续扩展 `*_美国机构.*` 文件族。
 
 ## 需要特别注意的坑
 

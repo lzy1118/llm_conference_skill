@@ -1,8 +1,8 @@
-# 美国机构数据采集工作流
+# 顶会作者机构国家数据采集工作流
 
 ## 概述
 
-从学术会议论文中采集美国机构作者发表情况，输出与历史格式对齐的英文长表。
+从学术会议论文中采集作者、机构与国家归属信息，输出可复用的“作者-机构-国家”长表，并在需要时兼容导出历史美国机构切片。
 
 ## 适用场景
 
@@ -13,7 +13,7 @@
 ## 工作流总览
 
 ```
-1. 数据源调研 → 2. 论文数据抓取 → 3. Affiliation 抓取 → 4. 美国机构分类 → 5. 输出生成 → 6. 复核完善
+1. 数据源调研 → 2. 论文数据抓取 → 3. Affiliation 抓取 → 4. 国家与机构归属分类 → 5. 输出生成 → 6. 复核完善
 ```
 
 ## 详细步骤
@@ -121,32 +121,25 @@ cache_file.write_text(json.dumps(affiliations, ensure_ascii=False, indent=2))
 
 **限流：** 每次请求间隔 0.3-1.5 秒
 
-### 第四步：美国机构分类
+### 第四步：国家与机构归属分类
 
 **分类规则（三级）：**
 
 ```python
 # 第一级：精确匹配
-US_EXACT_ALIASES = {'mit', 'nist', 'sri', 'uc san diego', 'uc berkeley', ...}
+EXACT_ALIASES = {'mit', 'nist', 'sri', 'uc san diego', 'uc berkeley', ...}
 
-# 第二级：关键词匹配
-US_KEYWORD_PATTERNS = [
-    r'\bmassachusetts institute of technology\b',
-    r'\bcarnegie mellon university\b',
-    r'\bstanford university\b',
-    r'\bgoogle\b', r'\bmicrosoft\b', r'\bmeta\b', ...
-]
-
-# 第三级：非美国排除
-NON_US_KEYWORD_PATTERNS = [
-    r'\beth zurich\b', r'\buniversity of cambridge\b',
-    r'\btsinghua\b', r'\buniversity of tokyo\b', ...
+# 第二级：高置信规则匹配
+COUNTRY_PATTERN_RULES = [
+    ('United States', [r'\bmassachusetts institute of technology\b', r'\bcarnegie mellon university\b', ...]),
+    ('China', [r'\btsinghua\b', r'\bpeking\b', ...]),
+    ('Germany', [r'\bcispa\b', r'\brwth aachen university\b', ...]),
 ]
 
 # Override 文件（人工覆盖）
 # data/reference/institution_country_overrides.csv
-# inst,is_us_institution,reason
-# Example Lab,true,manual_review
+# inst,country,is_us_institution,reason
+# Example Lab,United States,true,manual_review
 ```
 
 **分类函数：**
@@ -155,25 +148,30 @@ def classify_affiliation(affiliation, overrides=None):
     lower = affiliation.casefold()
     if overrides and lower in overrides:
         return overrides[lower]
-    if lower in US_EXACT_ALIASES:
-        return AffiliationClassification(True, 'rule', 1.0, 'exact_us_alias')
-    for pattern in NON_US_KEYWORD_PATTERNS:
-        if re.search(pattern, lower):
-            return AffiliationClassification(False, 'rule', 1.0, 'non_us_keyword')
-    for pattern in US_KEYWORD_PATTERNS:
-        if re.search(pattern, lower):
-            return AffiliationClassification(True, 'rule', 0.95, 'us_keyword')
-    return AffiliationClassification(False, 'unresolved', 0.0, 'needs_review')
+    if lower in EXACT_ALIASES:
+        return {'country': 'United States', 'is_us_institution': True, 'source': 'rule', 'confidence': 1.0}
+    country = detect_country(lower)
+    if country:
+        return {
+            'country': country,
+            'is_us_institution': country == 'United States',
+            'source': 'rule',
+            'confidence': 0.95,
+        }
+    return {'country': 'Unknown', 'is_us_institution': False, 'source': 'unresolved', 'confidence': 0.0}
 ```
+
+其中 `country` 是正式主字段，`is_us_institution` 只是兼容旧链路的附加标记，不应作为主分析字段。
 
 ### 第五步：输出生成
 
-**主表字段（与历史格式一致）：**
+**主表字段（正式主契约）：**
 - `name`: 作者姓名
 - `year`: 年份
 - `article_tag`: `{会议简称}-{论文标题}`
 - `author_order`: 作者顺序（0-indexed）
 - `inst`: 机构名称
+- `country`: 国家归属
 
 **输出格式：**
 ```python
@@ -182,11 +180,13 @@ from openpyxl import Workbook
 wb = Workbook()
 ws = wb.active
 ws.title = '英文版'
-ws.append(['name', 'year', 'article_tag', 'author_order', 'inst'])
+ws.append(['name', 'year', 'article_tag', 'author_order', 'inst', 'country'])
 
 # CSV
-fields = ['name', 'year', 'article_tag', 'author_order', 'inst']
+fields = ['name', 'year', 'article_tag', 'author_order', 'inst', 'country']
 ```
+
+如需兼容历史美国机构工作流，可另外导出 `*_us_institutions.*` 子集，但不应把它视为正式主输出。
 
 **审计表（额外字段）：**
 - `conference`: 会议名称
@@ -228,7 +228,7 @@ if (len(key_parts) >= 2 and len(aa_parts) >= 2 and
 {project}-data/
   Plan/              规划文档
   scripts/           处理脚本
-    {project}_us_pipeline.py   主 pipeline
+    unified pipeline / backend  主 pipeline
   data/
     raw/             原始数据快照
     interim/         中间结果

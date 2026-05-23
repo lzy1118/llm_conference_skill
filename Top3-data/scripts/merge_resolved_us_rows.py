@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+# Legacy compatibility script.
+#
+# This file preserves the historical US-named merge entrypoint for enriched
+# compatibility outputs. Prefer `merge_resolved_rows.py` as the neutral wrapper
+# when documenting or invoking this flow going forward.
+
 import argparse
 import csv
 from pathlib import Path

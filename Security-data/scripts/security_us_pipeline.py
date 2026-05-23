@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+# Legacy compatibility script.
+#
+# This file preserves the historical Security-data US-named entrypoint so old
+# commands keep working. The current preferred entrypoints are:
+# - `Security-data/scripts/security_pipeline.py` for a neutral local wrapper
+# - `conference-paper-extraction/scripts/run_unified_pipeline.py` for the
+#   canonical unified pipeline
+#
+# Keep this file stable unless compatibility behavior must change.
+
 import argparse
 import csv
 import json
@@ -38,6 +48,7 @@ class ConferenceConfig:
 
 
 CONFERENCES = {
+    "usenix_security_2022": ConferenceConfig("usenix_security_2022", "USENIX_SECURITY", 2022, "uss", "USENIX_SECURITY"),
     "usenix_security_2025": ConferenceConfig("usenix_security_2025", "USENIX_SECURITY", 2025, "uss", "USENIX_SECURITY"),
     "ndss_2025": ConferenceConfig("ndss_2025", "NDSS", 2025, "ndss", "NDSS"),
     "ieee_sp_2025": ConferenceConfig("ieee_sp_2025", "IEEE_S&P", 2025, "sp", "IEEE_S&P"),
