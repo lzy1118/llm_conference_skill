@@ -54,7 +54,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ## 输出
 
-在专门的分析目录下生成三张可复用表，例如 `data/analysis/normalized/`：
+在统一生成数据目录下生成三张可复用表，例如 `generated-data/normalized/`：
 
 1. `paper_facts.csv`
 2. `author_affiliation_facts.csv`
@@ -145,6 +145,11 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 3. 除非数据源本身不完整，否则 `name` 和 `inst` 不应缺失
 4. 重复记录是可解释的，并被有意保留或确定性去重
 5. `conference` 与 `year` 与源文件一致
+
+如果上游采用了论文级参与国 reference-first 口径，需要额外检查：
+
+6. 同一 `paper_key + author_order + inst` 出现多行、但 `country` 不同的情况是否来自合法的多参与国展开
+7. 不要因为看起来像“重复机构行”就把 reference-first 展开的多国参与记录错误去重
 
 ## 交接契约
 

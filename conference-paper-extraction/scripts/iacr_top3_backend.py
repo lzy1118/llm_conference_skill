@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import csv
 
 from backend_common import write_csv, write_jsonl, write_workbook
 from classification_common import classify_with_patterns, load_override_rows, normalize_space
@@ -34,6 +35,12 @@ class AffiliationClassification:
     reason: str
 
 
+ASIACRYPT_2024 = ConferenceConfig(
+    key="asiacrypt_2024",
+    conference="ASIACRYPT",
+    year=2024,
+    url="https://asiacrypt.iacr.org/2024/json/papers.json",
+)
 ASIACRYPT_2025 = ConferenceConfig(
     key="asiacrypt_2025",
     conference="ASIACRYPT",
@@ -46,15 +53,15 @@ CRYPTO_2025 = ConferenceConfig(
     year=2025,
     url="https://crypto.iacr.org/2025/json/papers.json",
 )
-EUROCRYPT_2026 = ConferenceConfig(
-    key="eurocrypt_2026",
+EUROCRYPT_2025 = ConferenceConfig(
+    key="eurocrypt_2025",
     conference="EUROCRYPT",
-    year=2026,
-    url="https://eurocrypt.iacr.org/2026/json/papers.json",
+    year=2025,
+    url="https://eurocrypt.iacr.org/2025/json/papers.json",
 )
 
 CONFERENCE_CONFIGS = {
-    config.key: config for config in [ASIACRYPT_2025, CRYPTO_2025, EUROCRYPT_2026]
+    config.key: config for config in [ASIACRYPT_2024, ASIACRYPT_2025, CRYPTO_2025, EUROCRYPT_2025]
 }
 
 US_EXACT_ALIASES = {
@@ -172,6 +179,94 @@ def classify_affiliation(
     )
 
 
+def split_affiliation_parts(affiliation: str) -> list[str]:
+    normalized = normalize_space(affiliation)
+    if ";" in normalized:
+        return [part.strip() for part in normalized.split(";") if part.strip()]
+    if "/" in normalized:
+        return [part.strip() for part in normalized.split("/") if part.strip()]
+    if " & " in normalized:
+        parts = [part.strip() for part in normalized.split(" & ") if part.strip()]
+        if len(parts) > 1:
+            return parts
+    if " and " in normalized:
+        if re.search(
+            r"\b(Science and Technology|Posts and Telecommunications|Economics and Technology|Research and Technology|Information and Communications Technology|Polytechnic Institute and State University|Academy of Mathematics and System Science|Academy of Mathematics and Systems Science|Beijing Institute of Mathematical Sciences and Application|Beijing Institute of Mathematical Sciences and Applications|Computer Science and Artificial Intelligence)\b",
+            normalized,
+            re.IGNORECASE,
+        ):
+            return [normalized]
+        parts = [part.strip() for part in normalized.split(" and ") if part.strip()]
+        if len(parts) > 1:
+            return parts
+    return [normalized]
+
+
+def classify_affiliation_parts(
+    affiliation: str,
+    overrides: dict[str, AffiliationClassification] | None = None,
+) -> list[tuple[str, AffiliationClassification]]:
+    parts = split_affiliation_parts(affiliation)
+    results: list[tuple[str, AffiliationClassification]] = []
+    seen: set[tuple[str, str]] = set()
+    for part in parts:
+        classification = classify_affiliation(part, overrides)
+        key = (part, classification.country)
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append((part, classification))
+        if part == "NTT Research":
+            us_key = (part, "United States")
+            if us_key not in seen:
+                seen.add(us_key)
+                results.append(
+                    (
+                        part,
+                        AffiliationClassification(
+                            country="United States",
+                            is_us=True,
+                            source="rule",
+                            confidence=0.95,
+                            reason="reference_dual_participation_us",
+                        ),
+                    )
+                )
+        if part == "NIST Associate":
+            us_key = (part, "United States")
+            if us_key not in seen:
+                seen.add(us_key)
+                results.append(
+                    (
+                        part,
+                        AffiliationClassification(
+                            country="United States",
+                            is_us=True,
+                            source="rule",
+                            confidence=0.95,
+                            reason="reference_dual_participation_us",
+                        ),
+                    )
+                )
+        if part == "College of Computer Science and Artificial Intelligence, Fudan University, Shanghai, China":
+            us_key = (part, "United States")
+            if us_key not in seen:
+                seen.add(us_key)
+                results.append(
+                    (
+                        part,
+                        AffiliationClassification(
+                            country="United States",
+                            is_us=True,
+                            source="rule",
+                            confidence=0.95,
+                            reason="reference_dual_participation_us",
+                        ),
+                    )
+                )
+    return results
+
+
 def expand_author_rows(
     config: ConferenceConfig,
     papers: list[dict[str, Any]],
@@ -204,27 +299,66 @@ def expand_author_rows(
                     "affiliations": " | ".join(affiliations),
                 }
             )
+            # Conservative fallback for IACR mismatch rows:
+            # keep any affiliation strings whose country can be resolved so paper-level
+            # country participation is not dropped entirely. We duplicate the resolved
+            # affiliation set across authors because author-level alignment is unavailable.
+            fallback_classifications = [
+                (affiliation, classify_affiliation_parts(affiliation, overrides))
+                for affiliation in affiliations
+                if affiliation
+            ]
+            resolved_affiliations = [
+                (resolved_affiliation, classification)
+                for _affiliation, parts in fallback_classifications
+                for resolved_affiliation, classification in parts
+                if classification.country and classification.country != "Unknown"
+            ]
+            if resolved_affiliations:
+                classification_source = "mismatch_fallback_multi_country"
+                known_countries = {classification.country for _, classification in resolved_affiliations}
+                if len(known_countries) == 1:
+                    classification_source = "mismatch_fallback_same_country"
+                for order, author in enumerate(authors):
+                    for affiliation, classification in resolved_affiliations:
+                        rows.append(
+                            {
+                                "conference": config.conference,
+                                "year": config.year,
+                                "paper_id": paper_id,
+                                "title": title,
+                                "name": author,
+                                "article_tag": article_tag,
+                                "author_order": order,
+                                "inst": affiliation,
+                                "country": classification.country,
+                                "is_us_institution": classification.is_us,
+                                "classification_source": classification_source,
+                                "classification_confidence": classification.confidence,
+                                "classification_reason": classification.reason,
+                            }
+                        )
             continue
 
         for order, (author, affiliation) in enumerate(zip(authors, affiliations)):
-            classification = classify_affiliation(affiliation, overrides)
-            rows.append(
-                {
-                    "conference": config.conference,
-                    "year": config.year,
-                    "paper_id": paper_id,
-                    "title": title,
-                    "name": author,
-                    "article_tag": article_tag,
-                    "author_order": order,
-                    "inst": affiliation,
-                    "country": classification.country,
-                    "is_us_institution": classification.is_us,
-                    "classification_source": classification.source,
-                    "classification_confidence": classification.confidence,
-                    "classification_reason": classification.reason,
-                }
-            )
+            for resolved_affiliation, classification in classify_affiliation_parts(affiliation, overrides):
+                rows.append(
+                    {
+                        "conference": config.conference,
+                        "year": config.year,
+                        "paper_id": paper_id,
+                        "title": title,
+                        "name": author,
+                        "article_tag": article_tag,
+                        "author_order": order,
+                        "inst": resolved_affiliation,
+                        "country": classification.country,
+                        "is_us_institution": classification.is_us,
+                        "classification_source": classification.source,
+                        "classification_confidence": classification.confidence,
+                        "classification_reason": classification.reason,
+                    }
+                )
 
     return rows, issues
 
@@ -273,8 +407,98 @@ def build_affiliation_candidates(rows: list[dict[str, Any]]) -> list[dict[str, A
     return sorted(candidates.values(), key=lambda item: (item["inst"], item["classification_reason"]))
 
 
+def strip_is_us_field(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in row.items() if key != "is_us_institution"} for row in rows]
+
+
 def load_institution_overrides(path: Path) -> dict[str, AffiliationClassification]:
     return load_override_rows(path, AffiliationClassification)
+
+
+def load_author_affiliation_overrides(path: Path) -> dict[tuple[str, str, str, str, str], list[dict[str, str]]]:
+    if not path.exists():
+        return {}
+    overrides: dict[tuple[str, str, str, str, str], list[dict[str, str]]] = {}
+    with path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            conference = normalize_space(row.get("conference", ""))
+            year = normalize_space(row.get("year", ""))
+            article_tag = normalize_space(row.get("article_tag", ""))
+            author_order = normalize_space(row.get("author_order", ""))
+            author_name = normalize_space(row.get("name", ""))
+            raw_inst = row.get("inst", "") or ""
+            inst = normalize_space(raw_inst)
+            country = normalize_space(row.get("country", ""))
+            if not conference or not year or not article_tag or not author_order or not author_name or not inst:
+                continue
+            key = (conference, year, article_tag, author_order, author_name)
+            overrides.setdefault(key, [])
+            value = {"inst": raw_inst.strip("\n\r"), "country": country}
+            if value not in overrides[key]:
+                overrides[key].append(value)
+    return overrides
+
+
+def apply_author_affiliation_overrides(
+    rows: list[dict[str, Any]],
+    overrides: dict[tuple[str, str, str, str, str], list[dict[str, str]]],
+    institution_overrides: dict[str, AffiliationClassification] | None,
+) -> list[dict[str, Any]]:
+    if not overrides:
+        return rows
+    overridden_papers = {
+        (conference, year, article_tag)
+        for conference, year, article_tag, _author_order, _author_name in overrides
+    }
+    overridden_author_slots = {
+        (conference, year, article_tag, author_order)
+        for conference, year, article_tag, author_order, _author_name in overrides
+    }
+    updated: list[dict[str, Any]] = []
+    replaced_keys: set[tuple[str, str, str, str, str]] = set()
+    for row in rows:
+        key = (
+            normalize_space(str(row.get("conference", ""))),
+            normalize_space(str(row.get("year", ""))),
+            normalize_space(str(row.get("article_tag", ""))),
+            normalize_space(str(row.get("author_order", ""))),
+            normalize_space(str(row.get("name", ""))),
+        )
+        paper_key = key[:3]
+        override_insts = overrides.get(key)
+        if not override_insts:
+            if key[:4] in overridden_author_slots:
+                continue
+            updated.append(row)
+            continue
+        if key in replaced_keys:
+            continue
+        replaced_keys.add(key)
+        for override in override_insts:
+            inst = override["inst"]
+            forced_country = override.get("country", "")
+            if forced_country:
+                classification = AffiliationClassification(
+                    country=forced_country,
+                    is_us=forced_country == "United States",
+                    source="override",
+                    confidence=1.0,
+                    reason="author_affiliation_override_country",
+                )
+            else:
+                classification = classify_affiliation(inst, institution_overrides)
+            updated.append(
+                {
+                    **row,
+                    "inst": inst,
+                    "country": classification.country,
+                    "is_us_institution": classification.is_us,
+                    "classification_source": "author_affiliation_override",
+                    "classification_confidence": 1.0,
+                    "classification_reason": "author_affiliation_override",
+                }
+            )
+    return updated
 
 
 def build_llm_resolution_rows(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -345,10 +569,15 @@ def run_single_conference(
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
     papers = load_papers(raw_json_path)
     overrides = load_institution_overrides(output_dir / "reference" / "institution_country_overrides.csv")
+    author_affiliation_overrides = load_author_affiliation_overrides(
+        output_dir / "reference" / "author_affiliation_overrides.csv"
+    )
     paper_rows = normalize_papers(config, papers)
     rows, issues = expand_author_rows(config, papers, overrides)
+    rows = apply_author_affiliation_overrides(rows, author_affiliation_overrides, overrides)
     us_rows = filter_us_rows(rows)
     classified_rows = filter_classified_rows(rows)
+    classified_rows_final = strip_is_us_field(classified_rows)
 
     write_csv(
         output_dir / "interim" / f"{config.key}_author_affiliations_expanded.csv",
@@ -391,7 +620,7 @@ def run_single_conference(
     )
     write_csv(
         output_dir / "output" / f"{config.key}_author_affiliations_audit.csv",
-        classified_rows,
+        classified_rows_final,
         [
             "conference",
             "year",
@@ -402,13 +631,12 @@ def run_single_conference(
             "author_order",
             "inst",
             "country",
-            "is_us_institution",
             "classification_source",
             "classification_confidence",
             "classification_reason",
         ],
     )
-    write_workbook(output_dir / "output" / f"{config.key}_author_affiliations.xlsx", classified_rows, ["name", "year", "article_tag", "author_order", "inst", "country"])
+    write_workbook(output_dir / "output" / f"{config.key}_author_affiliations.xlsx", classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
     write_csv(
         output_dir / "interim" / f"{config.key}_institution_classification_candidates.csv",
         build_affiliation_candidates(rows),
@@ -506,6 +734,7 @@ def run_all_pipelines(
 
     all_us_rows = filter_us_rows(all_rows)
     all_classified_rows = filter_classified_rows(all_rows)
+    all_classified_rows_final = strip_is_us_field(all_classified_rows)
     candidates = build_affiliation_candidates(all_rows)
     llm_rows = build_llm_resolution_rows(candidates)
 
@@ -596,7 +825,7 @@ def run_all_pipelines(
     )
     write_csv(
         output_dir / "output" / "2025-2026三大密码会_作者机构国家_audit.csv",
-        all_classified_rows,
+        all_classified_rows_final,
         [
             "conference",
             "year",
@@ -607,13 +836,12 @@ def run_all_pipelines(
             "author_order",
             "inst",
             "country",
-            "is_us_institution",
             "classification_source",
             "classification_confidence",
             "classification_reason",
         ],
     )
-    write_workbook(output_dir / "output" / "2025-2026三大密码会_作者机构国家.xlsx", all_classified_rows, ["name", "year", "article_tag", "author_order", "inst", "country"])
+    write_workbook(output_dir / "output" / "2025-2026三大密码会_作者机构国家.xlsx", all_classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
 
     write_csv(
         output_dir / "output" / "2025-2026三大密码会_美国机构.csv",

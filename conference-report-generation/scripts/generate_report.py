@@ -14,6 +14,8 @@ SECTION_FILES = {
     "collaboration": Path("collaboration/collaboration_edges.csv"),
 }
 
+DEFAULT_OUTPUT_DIR = Path("generated-data") / "reports"
+
 
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as handle:
@@ -84,7 +86,7 @@ def build_markdown(analysis_dir: Path, data: dict[str, list[dict[str, str]]], mi
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a Markdown report from conference analysis outputs.")
     parser.add_argument("--analysis-dir", required=True, help="Root analysis directory containing section subdirectories")
-    parser.add_argument("--output-dir", required=True, help="Output directory for generated reports")
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Output directory for generated reports")
     parser.add_argument("--top-n", type=int, default=5, help="Number of headline rows per section")
     args = parser.parse_args()
 

@@ -144,6 +144,70 @@ class AnalysisSkillsTests(unittest.TestCase):
             self.assertEqual(len(normalized_rows), 1)
             self.assertEqual(normalized_rows[0]["inst"], "Johns Hopkins University/Renmin University of China")
             self.assertEqual(normalized_rows[0]["country"], "Multiple")
+            self.assertNotIn("is_us_institution", normalized_rows[0])
+
+    def test_normalization_recovers_conference_and_title_from_article_tag(self):
+        with TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            raw_input = tmp / "author_affiliations.csv"
+            output_dir = tmp / "normalized-out"
+            rows = [
+                {
+                    "year": "2025",
+                    "article_tag": "ASIACRYPT-Haystack ciphers",
+                    "author_order": "0",
+                    "name": "Alice",
+                    "inst": "University of Luxembourg",
+                    "country": "Luxembourg",
+                },
+                {
+                    "year": "2025",
+                    "article_tag": "ASIACRYPT-Haystack ciphers",
+                    "author_order": "1",
+                    "name": "Bob",
+                    "inst": "University of Luxembourg",
+                    "country": "Luxembourg",
+                },
+                {
+                    "year": "2025",
+                    "article_tag": "CRYPTO-Another paper",
+                    "author_order": "0",
+                    "name": "Carol",
+                    "inst": "MIT",
+                    "country": "United States",
+                },
+            ]
+            with raw_input.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    "conference-dataset-normalization/scripts/normalize_dataset.py",
+                    str(raw_input),
+                    "--output-dir",
+                    str(output_dir),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            with (output_dir / "normalized" / "paper_facts.csv").open(encoding="utf-8", newline="") as handle:
+                paper_rows = list(csv.DictReader(handle))
+            with (output_dir / "normalized" / "author_affiliation_facts.csv").open(encoding="utf-8", newline="") as handle:
+                normalized_rows = list(csv.DictReader(handle))
+
+            self.assertEqual(len(paper_rows), 2)
+            self.assertEqual([row["conference"] for row in paper_rows], ["ASIACRYPT", "CRYPTO"])
+            self.assertEqual([row["title"] for row in paper_rows], ["Haystack ciphers", "Another paper"])
+            self.assertEqual(normalized_rows[0]["conference"], "ASIACRYPT")
+            self.assertEqual(normalized_rows[0]["title"], "Haystack ciphers")
 
     def test_automation_pipeline_runs_from_normalized_input(self):
         with TemporaryDirectory() as directory:
@@ -610,7 +674,6 @@ class AnalysisSkillsTests(unittest.TestCase):
                     "institution_key": "example-u-1",
                     "inst_display": "Example University",
                     "country": "Unknown",
-                    "is_us_institution": "False",
                     "source_count": "1",
                     "needs_review": "True",
                 },
@@ -618,7 +681,6 @@ class AnalysisSkillsTests(unittest.TestCase):
                     "institution_key": "example-u-2",
                     "inst_display": "Example University",
                     "country": "United States",
-                    "is_us_institution": "True",
                     "source_count": "1",
                     "needs_review": "False",
                 },

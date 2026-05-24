@@ -48,7 +48,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ## 标准输出
 
-输出到 `data/analysis/reports/`：
+输出到 `generated-data/reports/`：
 
 1. `conference_report.md`
 2. `conference_report.json`
@@ -79,8 +79,8 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ```bash
 python3 scripts/generate_report.py \
-  --analysis-dir data/analysis/automation \
-  --output-dir data/analysis/reports
+  --analysis-dir generated-data/analysis \
+  --output-dir generated-data/reports
 ```
 
 ## 常见问题

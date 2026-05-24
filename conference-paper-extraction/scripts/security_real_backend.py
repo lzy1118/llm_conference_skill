@@ -543,6 +543,10 @@ def build_affiliation_candidates(rows: list[dict[str, Any]]) -> list[dict[str, A
     return sorted(candidates.values(), key=lambda item: (item["inst"], item["classification_reason"]))
 
 
+def strip_is_us_field(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in row.items() if key != "is_us_institution"} for row in rows]
+
+
 def run_single_conference(
     config: ConferenceConfig,
     raw_json_path: Path,
@@ -556,6 +560,7 @@ def run_single_conference(
     rows, issues = expand_author_rows(config, papers, overrides, cache_dir, fetch_affiliations)
     us_rows = filter_us_rows(rows)
     classified_rows = filter_classified_rows(rows)
+    classified_rows_final = strip_is_us_field(classified_rows)
     papers_with_author_rows = len({row["paper_id"] for row in rows if row.get("paper_id")})
     papers_without_affiliation_data = sum(1 for issue in issues if issue.get("issue") == "no_affiliation_data")
 
@@ -568,11 +573,11 @@ def run_single_conference(
                "authors_count", "affiliations_count", "authors", "affiliations"])
     write_csv(output_dir / "output" / f"{config.key}_author_affiliations.csv", classified_rows,
               ["name", "year", "article_tag", "author_order", "inst", "country"])
-    write_csv(output_dir / "output" / f"{config.key}_author_affiliations_audit.csv", classified_rows,
+    write_csv(output_dir / "output" / f"{config.key}_author_affiliations_audit.csv", classified_rows_final,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
-               "author_order", "inst", "country", "is_us_institution", "classification_source",
+               "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
-    write_workbook(output_dir / "output" / f"{config.key}_author_affiliations.xlsx", classified_rows, ["name", "year", "article_tag", "author_order", "inst", "country"])
+    write_workbook(output_dir / "output" / f"{config.key}_author_affiliations.xlsx", classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
     write_csv(output_dir / "interim" / f"{config.key}_institution_classification_candidates.csv", build_affiliation_candidates(rows),
               ["inst", "country", "is_us_institution", "classification_source", "classification_confidence",
                "classification_reason", "example_conference", "example_paper_id", "example_title"])
@@ -630,6 +635,7 @@ def run_all_pipelines(
 
     all_us_rows = filter_us_rows(all_rows)
     all_classified_rows = filter_classified_rows(all_rows)
+    all_classified_rows_final = strip_is_us_field(all_classified_rows)
     candidates = build_affiliation_candidates(all_rows)
 
     write_csv(output_dir / "interim" / "papers_normalized.csv", all_papers,
@@ -649,11 +655,11 @@ def run_all_pipelines(
                "authors_count", "affiliations_count", "authors", "affiliations"])
     write_csv(output_dir / "output" / "四大安全顶会_作者机构国家.csv", all_classified_rows,
               ["name", "year", "article_tag", "author_order", "inst", "country"])
-    write_csv(output_dir / "output" / "四大安全顶会_作者机构国家_audit.csv", all_classified_rows,
+    write_csv(output_dir / "output" / "四大安全顶会_作者机构国家_audit.csv", all_classified_rows_final,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
-               "author_order", "inst", "country", "is_us_institution", "classification_source",
+               "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
-    write_workbook(output_dir / "output" / "四大安全顶会_作者机构国家.xlsx", all_classified_rows, ["name", "year", "article_tag", "author_order", "inst", "country"])
+    write_workbook(output_dir / "output" / "四大安全顶会_作者机构国家.xlsx", all_classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
     write_csv(output_dir / "output" / "四大安全顶会_美国机构.csv", all_us_rows,
               ["name", "year", "article_tag", "author_order", "inst"])
     write_csv(output_dir / "output" / "四大安全顶会_美国机构_audit.csv", all_us_rows,

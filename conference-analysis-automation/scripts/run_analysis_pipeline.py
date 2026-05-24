@@ -9,13 +9,14 @@ from pathlib import Path
 
 
 RUN_CHOICES = ("country", "institution", "author", "trend", "collaboration", "audit", "report", "visualization")
+DEFAULT_OUTPUT_DIR = Path("generated-data") / "analysis"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run normalized conference analytics with low-coupling orchestration.")
     parser.add_argument("--raw-input", action="append", default=[], help="Raw row-level CSV input. Repeat for multiple files.")
     parser.add_argument("--normalized-input", help="Existing normalized author_affiliation_facts.csv path.")
-    parser.add_argument("--output-dir", required=True, help="Automation run output directory.")
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Automation run output directory.")
     parser.add_argument("--conference")
     parser.add_argument("--year")
     parser.add_argument("--country")

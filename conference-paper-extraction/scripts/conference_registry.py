@@ -21,6 +21,14 @@ class ConferenceGroup:
 
 
 CONFERENCES: dict[str, RegisteredConference] = {
+    "asiacrypt_2024": RegisteredConference(
+        key="asiacrypt_2024",
+        conference="ASIACRYPT",
+        year=2024,
+        family="crypto",
+        backend="iacr_top3",
+        description="IACR JSON accepted papers with aligned affiliations.",
+    ),
     "asiacrypt_2025": RegisteredConference(
         key="asiacrypt_2025",
         conference="ASIACRYPT",
@@ -37,10 +45,10 @@ CONFERENCES: dict[str, RegisteredConference] = {
         backend="iacr_top3",
         description="IACR JSON accepted papers with aligned affiliations.",
     ),
-    "eurocrypt_2026": RegisteredConference(
-        key="eurocrypt_2026",
+    "eurocrypt_2025": RegisteredConference(
+        key="eurocrypt_2025",
         conference="EUROCRYPT",
-        year=2026,
+        year=2025,
         family="crypto",
         backend="iacr_top3",
         description="IACR JSON accepted papers with aligned affiliations.",
@@ -132,7 +140,7 @@ GROUPS: dict[str, ConferenceGroup] = {
     "top3_crypto": ConferenceGroup(
         key="top3_crypto",
         description="Three flagship IACR cryptography conferences.",
-        conference_keys=("asiacrypt_2025", "crypto_2025", "eurocrypt_2026"),
+        conference_keys=("asiacrypt_2025", "crypto_2025", "eurocrypt_2025"),
     ),
     "top4_security": ConferenceGroup(
         key="top4_security",

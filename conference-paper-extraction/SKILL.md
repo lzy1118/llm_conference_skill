@@ -35,22 +35,22 @@ uv pip install openpyxl pypdf
 python3 scripts/run_unified_pipeline.py --list-conferences
 
 # 运行三大密码会
-python3 scripts/run_unified_pipeline.py --group top3_crypto --output-dir data
+python3 scripts/run_unified_pipeline.py --group top3_crypto --output-dir generated-data/extraction
 
 # 运行四大安全会，并抓取站点 affiliation
-python3 scripts/run_unified_pipeline.py --group top4_security --output-dir data --fetch-affiliations
+python3 scripts/run_unified_pipeline.py --group top4_security --output-dir generated-data/extraction --fetch-affiliations
 
 # 同时运行指定密码会与安全会
-python3 scripts/run_unified_pipeline.py --conference crypto_2025 --conference usenix_security_2022 --output-dir data
+python3 scripts/run_unified_pipeline.py --conference crypto_2025 --conference usenix_security_2022 --output-dir generated-data/extraction
 
 # 查看执行计划但不实际运行
-python3 scripts/run_unified_pipeline.py --group top3_crypto --dry-run --output-dir data
+python3 scripts/run_unified_pipeline.py --group top3_crypto --dry-run --output-dir generated-data/extraction
 
 # 对 IACR mismatch 论文生成内部补源候选
-python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir data --resolve-mismatches
+python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir generated-data/extraction --resolve-mismatches
 
 # 如需在 IACR mismatch 阶段额外查询 DBLP
-python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir data --resolve-mismatches --query-dblp-for-resolution
+python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir generated-data/extraction --resolve-mismatches --query-dblp-for-resolution
 ```
 
 ## 当前统一入口覆盖范围
@@ -123,6 +123,15 @@ for article in root.findall(".//inproceedings"):
 - `country` 是正式主字段，用于后续国家统计、机构统计与泛化分析。
 - `is_us_institution` 只是从 `country` 派生出来的兼容标记，保留它是为了兼容已有美国机构统计链路，而不是让采集层继续以美国机构为主视角。
 
+当用户已经提供人工整理的 reference 表，并明确要求“以 reference 口径为准”时，采集层应切换到 reference-first 解释策略：
+
+- 优先保留论文级参与国语义，而不是只保留机构实体所属单一国家。
+- 联合 affiliation 如 `A and B`、`A & B`、`A; B` 在可靠时应拆分为多个参与机构片段。
+- 若同一条 affiliation 在 reference 中被解释为多个参与国，可在审计字段中保留一条机构文本对应多条国家参与记录。
+- 这类 reference-first 特判应尽量局部化到具体会议族或具体 reference 场景，避免污染默认的通用国家判定逻辑。
+- 若 reference 与原始数据明显冲突，应先记录冲突原因，再决定是否引入特判，而不是静默覆盖基础规则。
+- 若 reference 的作者名单与 IACR raw / DBLP 作者名单冲突，应优先保留 IACR raw / DBLP 的作者身份；reference author list 只用于辅助补机构或国家，不应用来改写作者姓名或作者顺序。
+
 分类流程采用“可解释国家判定 + 多机构保守聚合 + 未解析回退”的策略：
 
 ```python
@@ -145,6 +154,23 @@ def classify_affiliation(affiliation: str) -> dict:
 这个示例强调的是“先做国家判定，再从国家派生兼容布尔值”，而不是让 `is_us_institution` 主导分类流程。
 
 完整规则见 [分类规则参考](references/classification_rules.md)。
+
+### 第 4.5 步：处理论文级参与国与 reference 对齐
+
+对三大密码会这类 IACR 数据，泛化时应额外区分两种语义：
+
+1. 机构实体所属国家
+2. 论文级参与国
+
+若用户目标是国家参与统计，推荐采用以下顺序：
+
+1. 先对 affiliation 做保守国家识别。
+2. 对可可靠拆分的联合 affiliation 保留多国参与信号。
+3. 对作者数与 affiliation 数不一致的论文，不要整篇丢弃；至少保留可识别的论文级国家参与信号。
+4. 若有用户给定 reference 表，则以 reference 表驱动补充别名、拆分保护、联合机构特判，并把这些规则记录在审计说明中。
+   但如果 reference 作者名单与 IACR raw / DBLP 冲突，仍应以 IACR raw / DBLP 为准。
+
+泛化时不要默认把所有会议都切到 reference-first 特判模式。只有当用户明确提供金标准表、目标口径、或要求复刻既有统计结果时，才启用这层策略。
 
 ### 第 5 步：生成输出
 
@@ -223,6 +249,18 @@ python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir da
 
 当前这一步仍然是保守型 resolution stage：优先生成候选来源、保留待复核上下文，并为后续更强的 frontmatter/PDF 自动接受逻辑预留接口。
 
+若需要按人工 reference 补作者级机构信息，可使用 `reference/author_affiliation_overrides.csv`。推荐字段为：
+
+- `conference`
+- `year`
+- `article_tag`
+- `author_order`
+- `name`
+- `inst`
+- `country`（可选；已知国家时可直接写入）
+
+其中 `name` 与 `author_order` 必须同时匹配原始作者行。若 reference 中的作者名单与 IACR raw / DBLP 冲突，则该行不应进入 override，而应单独记录为冲突案例。
+
 ## 报告字段说明
 
 validation report 中优先关注以下泛化字段：
@@ -269,6 +307,11 @@ conference-data/
 - 美国统计只是消费层的一种切片，不应反向主导抽取层设计。
 - 对中国机构、欧洲机构、跨国机构等应保持同样的判定与审计结构。
 - 无法可靠判断时保持 `Unknown`，不要因为后续想做美国统计或中国统计就硬猜。
+- 若用户提供 reference 表，应先判断 reference 是“机构所属国”口径还是“论文参与国”口径，再决定是否允许一条 affiliation 贡献多个国家。
+- 当 reference 口径要求同一 affiliation 同时贡献多个国家时，应通过多行参与记录表达，而不是覆盖原有国家判定结果。
+- 对联合机构字符串，应优先通过“保护不应拆开的机构名 + 拆分可分离机构片段”的组合策略实现泛化，避免一刀切地按 `and` 或 `&` 分裂。
+- reference-first 特判应优先沉淀为可解释规则：别名、拆分保护、双参与国映射、审计原因；不要只在最终统计脚本里硬编码论文名单。
+- reference author list 的默认作用是补机构粒度和国家粒度，不是覆盖 source-of-truth 作者名单。作者身份冲突时，应优先相信 IACR raw / DBLP，并把 reference 仅作为辅助线索。
 
 ## 常见问题
 

@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 
 COUNTRY_PATTERN_RULES: list[tuple[str, list[str]]] = [
-    ("China", [r"\btsinghua\b", r"\bpeking\b", r"\bfudan\b", r"\bzhejiang\b", r"\bshanghai jiao\b", r"\bnanjing\b", r"\bwuhan\b", r"\bhuazhong\b", r"\bxidian\b", r"\bbeihang\b", r"\brenmin\b", r"\bchina\b", r"\bchinese academy of sciences\b", r"\bustc\b", r"\buniversity of science and technology of china\b", r"\bbeijing university of posts and telecommunications\b", r"\bshenzhen university\b", r"\bguangzhou university\b", r"\bshanghaitech\b", r"\bsouthern university of science and technology\b", r"\bnankai university\b", r"\bqi-?anxin\b", r"\bcoremail\b", r"\bhuawei\b", r"\balibaba\b", r"\bant group\b", r"\bsangfor\b", r"\bxi'?an jiaotong\b", r"\btencent keen security lab\b", r"\bshandong university\b", r"\bsouthern university of science and technology\b", r"\bnational university of defense technology\b", r"\bsun yat-sen university\b", r"\bbeijing institute of technology\b", r"\bzhongguancun laboratory\b", r"\bzhongguancun lab\b", r"\btianjin university\b", r"\banhui university\b", r"\banhui university of science and technology\b", r"\bxuanwu lab, tencent\b", r"\bhangzhou dianzi university\b", r"\bhunan university\b", r"\bjd explore academy\b", r"\bchinese aeronautical establishment\b", r"\bsoutheast university\b", r"\bchongqing university\b", r"\bbeijing jiaotong university\b", r"\binstitute of information engineering, cas\b", r"\bkey laboratory of cyberspace security defense, institute of information engineering, cas\b", r"\bshanghai university\b", r"\bsouthern university of science and technolog\b", r"\bbeijing university of technology\b", r"\binstitute of information engineering, chinese academy of science\b", r"\bhenan key laboratory of information security\b", r"\bpengcheng laboratory\b", r"\binformation engineering university\b", r"\binstitute for network sciences and cyberspace\b", r"\bacademy of military sciences\b", r"\bbytedance inc\.\b", r"\bbytedance inc\b", r"\bhang zhou city brain co\., ltd\b", r"\bfeiyu tech\b", r"\bshanghai decareer consulting co\., ltd\b"]),
+    ("China", [r"\btsinghua\b", r"\bpeking\b", r"\bfudan\b", r"\bzhejiang\b", r"\bshanghai jiao\b", r"\bshanghai jiaotong\b", r"\bnanjing\b", r"\bwuhan\b", r"\bhuazhong\b", r"\bxidian\b", r"\bbeihang\b", r"\brenmin\b", r"\bchina\b", r"\bchinese academy of sciences\b", r"\bustc\b", r"\buniversity of science and technology of china\b", r"\bbeijing university of posts and telecommunications\b", r"\bshenzhen university\b", r"\bguangzhou university\b", r"\bshanghaitech\b", r"\bsouthern university of science and technology\b", r"\bnankai university\b", r"\bqi-?anxin\b", r"\bcoremail\b", r"\bhuawei\b", r"\balibaba\b", r"\bant group\b", r"\bsangfor\b", r"\bxi'?an jiaotong\b", r"\btencent keen security lab\b", r"\bshandong university\b", r"\bsouthern university of science and technology\b", r"\bnational university of defense technology\b", r"\bsun yat-sen university\b", r"\bbeijing institute of technology\b", r"\bzhongguancun laboratory\b", r"\bzhongguancun lab\b", r"\btianjin university\b", r"\banhui university\b", r"\banhui university of science and technology\b", r"\bxuanwu lab, tencent\b", r"\bhangzhou dianzi university\b", r"\bhunan university\b", r"\bjd explore academy\b", r"\bchinese aeronautical establishment\b", r"\bsoutheast university\b", r"\bchongqing university\b", r"\bbeijing jiaotong university\b", r"\binstitute of information engineering, cas\b", r"\bkey laboratory of cyberspace security defense, institute of information engineering, cas\b", r"\bshanghai university\b", r"\bsouthern university of science and technolog\b", r"\bbeijing university of technology\b", r"\binstitute of information engineering, chinese academy of science\b", r"\bhenan key laboratory of information security\b", r"\bpengcheng laboratory\b", r"\binformation engineering university\b", r"\binstitute for network sciences and cyberspace\b", r"\bacademy of military sciences\b", r"\bbytedance inc\.\b", r"\bbytedance inc\b", r"\bhang zhou city brain co\., ltd\b", r"\bfeiyu tech\b", r"\bshanghai decareer consulting co\., ltd\b", r"\bjinan university\b", r"\bnyu shanghai\b", r"\bbeijing academy of blockchain and edge computing\b", r"\bbeijing electronic science\s*&\s*technology institute\b", r"\bbeijing electronic science and technology institute\b", r"\bstate key laboratory of cryptology\b"]),
     ("Hong Kong", [r"\bhong kong\b", r"\bcuhk\b", r"\bhkust\b", r"\bcity university of hong kong\b", r"\buniversity of macau\b", r"\bcity university of macau\b"]),
     ("Taiwan", [r"\btaiwan\b", r"\bnational taiwan\b", r"\bnational tsing hua\b", r"\bnational chiao tung\b", r"\bacademia sinica\b", r"\bhon hai research institute\b"]),
     ("Singapore", [r"\bsingapore\b", r"\bnational university of singapore\b", r"\bnanyang technological\b", r"\bsmu\b", r"\ba\*star\b", r"\binfocomm research\b"]),
@@ -175,8 +175,33 @@ def classify_with_patterns(
     lower = normalized.casefold()
     if overrides and lower in overrides:
         return overrides[lower]
+    if any(
+        marker in lower
+        for marker in [
+            "hubei minzu university",
+            "academy of mathematics and system science, chinese academy sciences",
+            "academy of mathematics and systems science, chinese academy of sciences",
+            "beijing institute of mathematical sciences and application",
+            "beijing institute of mathematical sciences and applications",
+        ]
+    ):
+        return classification_factory("China", False, "rule", 0.95, "reference_alias_china")
     if lower in exact_aliases:
         return classification_factory("United States", True, "rule", 1.0, "exact_us_alias")
+    if any(
+        marker in lower
+        for marker in [
+            "aws",
+            "amazon web services",
+            "university of southern california",
+        ]
+    ):
+        return classification_factory("United States", True, "rule", 0.95, "reference_alias_us")
+    if lower == "stanford":
+        return classification_factory("United States", True, "rule", 0.95, "reference_alias_us")
+    country, country_reason = detect_country_from_patterns(lower)
+    if country is not None and country != "United States":
+        return classification_factory(country, False, "rule", 0.95, country_reason or "country_keyword")
     for pattern in US_PATTERN_RULES:
         if re.search(pattern, lower):
             return classification_factory("United States", True, "rule", 0.95, "us_keyword")
@@ -185,7 +210,6 @@ def classify_with_patterns(
             return classification_factory("United States", True, "rule", 0.95, "us_keyword")
     if re.search(r"\b(united states|usa|u\.s\.a\.|, us|, usa)\b", lower):
         return classification_factory("United States", True, "rule", 0.95, "us_location_marker")
-    country, country_reason = detect_country_from_patterns(lower)
     if country is not None:
         return classification_factory(country, False, "rule", 0.95, country_reason or "country_keyword")
     for pattern in non_us_patterns:

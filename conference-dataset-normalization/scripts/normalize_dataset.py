@@ -20,6 +20,9 @@ from analytics_common import (
 )
 
 
+DEFAULT_OUTPUT_ROOT = Path("generated-data")
+
+
 CANONICAL_FIELDS = {
     "author": "name",
     "author_name": "name",
@@ -30,6 +33,14 @@ CANONICAL_FIELDS = {
     "paper_title": "title",
     "position": "author_order",
 }
+
+
+def recover_conference_and_title(article_tag: str) -> tuple[str, str]:
+    normalized_tag = normalize_whitespace(article_tag)
+    if not normalized_tag or "-" not in normalized_tag:
+        return "", ""
+    conference, title = normalized_tag.split("-", 1)
+    return normalize_whitespace(conference), normalize_whitespace(title)
 
 
 def remap_row(row: dict[str, str]) -> dict[str, str]:
@@ -57,11 +68,12 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
     seen_row_keys: set[str] = set()
 
     for row in rows:
-        conference = normalize_whitespace(row.get("conference", ""))
-        year = normalize_whitespace(row.get("year", ""))
-        title = normalize_whitespace(row.get("title", ""))
-        paper_id = normalize_whitespace(row.get("paper_id", ""))
         article_tag = normalize_whitespace(row.get("article_tag", ""))
+        recovered_conference, recovered_title = recover_conference_and_title(article_tag)
+        conference = normalize_whitespace(row.get("conference", "")) or recovered_conference
+        year = normalize_whitespace(row.get("year", ""))
+        title = normalize_whitespace(row.get("title", "")) or recovered_title
+        paper_id = normalize_whitespace(row.get("paper_id", ""))
         name = normalize_whitespace(row.get("name", ""))
         author_order_text = normalize_whitespace(row.get("author_order", ""))
         inst_value = normalize_whitespace(row.get("inst", ""))
@@ -118,7 +130,6 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
                 "inst": institution,
                 "institution_key": institution_key,
                 "country": country,
-                "is_us_institution": is_us.lower() == "true",
                 "classification_source": classification_source,
                 "classification_confidence": classification_confidence,
                 "classification_reason": classification_reason,
@@ -136,7 +147,6 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
                 "institution_key": institution_key,
                 "inst_display": choose_display_name(display_names),
                 "country": choose_display_name(sorted(countries)),
-                "is_us_institution": any(bool(row["is_us_institution"]) for row in grouped_rows),
                 "source_count": len(grouped_rows),
                 "needs_review": "Unknown" in countries,
             }
@@ -158,7 +168,7 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Normalize conference datasets for downstream analytics.")
     parser.add_argument("inputs", nargs="+", help="Input CSV files with author affiliation rows")
-    parser.add_argument("--output-dir", required=True, help="Output analysis root directory")
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_ROOT), help="Output analysis root directory")
     args = parser.parse_args()
 
     input_paths = [Path(value) for value in args.inputs]
@@ -186,7 +196,6 @@ def main() -> None:
             "inst",
             "institution_key",
             "country",
-            "is_us_institution",
             "classification_source",
             "classification_confidence",
             "classification_reason",
@@ -200,7 +209,7 @@ def main() -> None:
     write_csv_rows(
         output_dir / "institution_dim.csv",
         institution_dim,
-        ["institution_key", "inst_display", "country", "is_us_institution", "source_count", "needs_review"],
+        ["institution_key", "inst_display", "country", "source_count", "needs_review"],
     )
     write_json(output_dir / "normalization_report.json", report)
 

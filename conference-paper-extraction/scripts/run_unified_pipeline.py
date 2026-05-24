@@ -13,6 +13,7 @@ from conference_registry import CONFERENCES, GROUPS, expand_selection, group_by_
 
 
 ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUTPUT_DIR = Path("generated-data") / "extraction"
 BACKEND_SCRIPTS = {
     "iacr_top3": ROOT / "conference-paper-extraction" / "scripts" / "iacr_top3_backend.py",
     "security_real": ROOT / "conference-paper-extraction" / "scripts" / "security_real_backend.py",
@@ -35,7 +36,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=[],
         help="Conference group to run. Repeatable.",
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("data"))
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--fetch", action="store_true", help="Fetch raw paper metadata first")
     parser.add_argument(
         "--fetch-affiliations",

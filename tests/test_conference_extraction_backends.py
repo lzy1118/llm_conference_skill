@@ -42,7 +42,7 @@ class ConferenceExtractionBackendTests(unittest.TestCase):
                 "paperId": "p1",
                 "title": "Aligned Paper",
                 "authors": ["Alice", "Bob"],
-                "affiliations": ["MIT", "ETH Zurich"],
+                "affiliations": ["MIT", "UT Austin and NTT Research"],
             },
             {
                 "paperId": "p2",
@@ -50,18 +50,66 @@ class ConferenceExtractionBackendTests(unittest.TestCase):
                 "authors": ["Carol", "Dave"],
                 "affiliations": ["Stanford University"],
             },
+            {
+                "paperId": "p3",
+                "title": "Multi-country Mismatch Paper",
+                "authors": ["Eve", "Frank", "Grace"],
+                "affiliations": ["IBM Research India", "Tsinghua University"],
+            },
         ]
 
         rows, issues = self.iacr_backend.expand_author_rows(config, papers, overrides={})
         us_rows = self.iacr_backend.filter_us_rows(rows)
 
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(len(us_rows), 1)
+        self.assertEqual(len(rows), 12)
+        self.assertEqual(len(us_rows), 5)
         self.assertEqual(us_rows[0]["name"], "Alice")
         self.assertEqual(rows[0]["country"], "United States")
-        self.assertEqual(rows[1]["country"], "Switzerland")
-        self.assertEqual(len(issues), 1)
+        aligned_second_author_rows = [row for row in rows if row["title"] == "Aligned Paper" and row["name"] == "Bob"]
+        self.assertEqual({row["country"] for row in aligned_second_author_rows}, {"United States", "Japan"})
+        self.assertEqual(len(issues), 2)
         self.assertEqual(issues[0]["issue"], "author_affiliation_count_mismatch")
+        mismatch_rows = [row for row in rows if row["title"] == "Mismatch Paper"]
+        self.assertEqual(len(mismatch_rows), 2)
+        self.assertTrue(all(row["country"] == "United States" for row in mismatch_rows))
+        self.assertTrue(all(row["classification_source"] == "mismatch_fallback_same_country" for row in mismatch_rows))
+        multi_country_rows = [row for row in rows if row["title"] == "Multi-country Mismatch Paper"]
+        self.assertEqual(len(multi_country_rows), 6)
+        self.assertEqual({row["country"] for row in multi_country_rows}, {"India", "China"})
+        self.assertTrue(all(row["classification_source"] == "mismatch_fallback_multi_country" for row in multi_country_rows))
+
+    def test_iacr_backend_split_combined_affiliation_into_multiple_participation_rows(self):
+        parts = self.iacr_backend.classify_affiliation_parts(
+            "UT Austin and NTT Research",
+            overrides={},
+        )
+        self.assertEqual(
+            {(affiliation, classification.country) for affiliation, classification in parts},
+            {("UT Austin", "United States"), ("NTT Research", "Japan"), ("NTT Research", "United States")},
+        )
+
+    def test_iacr_backend_keeps_specific_china_institution_names_intact(self):
+        samples = [
+            "Academy of Mathematics and System Science, Chinese Academy Sciences",
+            "Beijing Institute of Mathematical Sciences and Application",
+            "College of Computer Science and Artificial Intelligence, Fudan University, Shanghai, China",
+        ]
+        for affiliation in samples:
+            parts = self.iacr_backend.split_affiliation_parts(affiliation)
+            self.assertEqual(parts, [affiliation])
+
+    def test_iacr_backend_reference_us_dual_participation_special_cases(self):
+        cases = {
+            "NIST Associate": {("NIST Associate", "Unknown"), ("NIST Associate", "United States")},
+            "College of Computer Science and Artificial Intelligence, Fudan University, Shanghai, China": {
+                ("College of Computer Science and Artificial Intelligence, Fudan University, Shanghai, China", "China"),
+                ("College of Computer Science and Artificial Intelligence, Fudan University, Shanghai, China", "United States"),
+            },
+        }
+        for affiliation, expected in cases.items():
+            parts = self.iacr_backend.classify_affiliation_parts(affiliation, overrides={})
+            observed = {(part, classification.country) for part, classification in parts}
+            self.assertEqual(observed, expected)
 
     def test_security_backend_uses_cached_affiliations_without_network(self):
         config = self.security_backend.CONFERENCES["usenix_security_2022"]

@@ -44,7 +44,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ## 标准输出
 
-输出到 `data/analysis/visualizations/`：
+输出到 `generated-data/visualizations/`：
 
 1. `visualization_manifest.json`
 2. 零个或多个 SVG 文件，例如：
@@ -89,8 +89,8 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ```bash
 python3 scripts/generate_visualizations.py \
-  --analysis-dir data/analysis/automation \
-  --output-dir data/analysis/visualizations
+  --analysis-dir generated-data/analysis \
+  --output-dir generated-data/visualizations
 ```
 
 ## 常见问题

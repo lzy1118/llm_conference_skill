@@ -58,7 +58,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ## 标准输出
 
-将所有自动化结果写入一个专门的运行目录，例如 `data/analysis/automation/`：
+将所有自动化结果写入一个专门的运行目录，例如 `generated-data/analysis/`：
 
 1. `automation_manifest.json`
 2. `automation_report.md`
@@ -96,6 +96,8 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 随后把生成的 `normalized/author_affiliation_facts.csv` 作为后续分析唯一共享的事实表。
 
 自动化层应默认围绕“作者-机构-国家”长表组织流程，而不是围绕美国机构子集组织流程。
+
+如果上游抽取层启用了 reference-first 论文参与国模式，自动化层不应尝试把同一 `paper_key + author_order + inst` 的多国参与记录误判为重复脏数据；应把它们视为合法的多参与国事实行。
 
 ### 第 4 步：按需运行审计
 
@@ -139,14 +141,14 @@ manifest 中应始终记录：
 
 ```bash
 python3 scripts/run_analysis_pipeline.py \
-  --raw-input data/interim/conference_rows.csv \
-  --output-dir data/analysis/automation
+  --raw-input generated-data/extraction/interim/conference_rows.csv \
+  --output-dir generated-data/analysis
 ```
 
 ```bash
 python3 scripts/run_analysis_pipeline.py \
-  --normalized-input data/analysis/normalized/author_affiliation_facts.csv \
-  --output-dir data/analysis/automation \
+  --normalized-input generated-data/normalized/author_affiliation_facts.csv \
+  --output-dir generated-data/analysis \
   --conference CCS \
   --year 2024 \
   --run audit --run country --run institution --run author --run trend --run collaboration --run report --run visualization \
@@ -156,8 +158,8 @@ python3 scripts/run_analysis_pipeline.py \
 
 ```bash
 python3 scripts/run_analysis_pipeline.py \
-  --normalized-input data/analysis/normalized/author_affiliation_facts.csv \
-  --output-dir data/analysis/automation \
+  --normalized-input generated-data/normalized/author_affiliation_facts.csv \
+  --output-dir generated-data/analysis \
   --run institution \
   --country "United States" \
   --us-only

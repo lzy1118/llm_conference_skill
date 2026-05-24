@@ -17,7 +17,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=["all"],
         help="Conference keys to process, or 'all'",
     )
-    parser.add_argument("--output-dir", default="data")
+    parser.add_argument("--output-dir", default="generated-data/extraction")
     parser.add_argument("--fetch", action="store_true")
     parser.add_argument("--fetch-affiliations", action="store_true")
     parser.add_argument("--resolve-mismatches", action="store_true")

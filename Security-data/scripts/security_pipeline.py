@@ -7,10 +7,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 UNIFIED_RUNNER = ROOT / "conference-paper-extraction" / "scripts" / "run_unified_pipeline.py"
+DEFAULT_OUTPUT_DIR = ROOT / "generated-data" / "extraction"
 
 
 def translate_args(argv: list[str]) -> list[str]:
     translated: list[str] = []
+    saw_output_dir = False
     i = 0
     while i < len(argv):
         arg = argv[i]
@@ -18,8 +20,15 @@ def translate_args(argv: list[str]) -> list[str]:
             translated.extend(["--group", "top4_security"])
             i += 2
             continue
+        if arg == "--output-dir" and i + 1 < len(argv):
+            saw_output_dir = True
+            translated.extend([arg, argv[i + 1]])
+            i += 2
+            continue
         translated.append(arg)
         i += 1
+    if not saw_output_dir:
+        translated.extend(["--output-dir", str(DEFAULT_OUTPUT_DIR)])
     return translated
 
 

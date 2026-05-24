@@ -31,6 +31,19 @@
 
 `is_us_institution` 与 `*_us_institutions.*` 仍然保留，但仅作兼容已有美国机构统计链路的附加切片，不再是仓库主叙事或默认主输出。
 
+## 统一生成数据目录
+
+仓库根目录已新增 `generated-data/`，用于统一管理最终有用的生成数据文件。后续推荐把主要产物集中写到这里：
+
+- `generated-data/extraction/`：统一采集输出
+- `generated-data/normalized/`：标准化事实表与维表
+- `generated-data/analysis/`：国家、机构、作者、趋势、合作、审计分析结果
+- `generated-data/reports/`：报告
+- `generated-data/visualizations/`：可视化
+- `generated-data/manifests/`：运行记录
+
+具体命令示例见 `generated-data/README.md`。
+
 ## 通用依赖
 
 ```bash

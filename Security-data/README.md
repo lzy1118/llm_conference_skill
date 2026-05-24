@@ -8,6 +8,8 @@
 
 `is_us_institution` 与 `*_美国机构.*` / `*_us_institutions.*` 文件仅作兼容已有美国机构统计链路的附加切片，不是默认主入口。
 
+仓库根目录下的 `generated-data/` 是当前推荐的统一落盘位置。
+
 ## 当前结果
 
 | 会议 | 论文数 | 已展开作者行 | 已解析国家作者行 | 缺 affiliation |
@@ -34,12 +36,12 @@ uv pip install openpyxl
 # 中性入口：转发到统一采集主线
 python3 scripts/security_pipeline.py \
   --conference usenix_security_2025 ndss_2025 ieee_sp_2025 ccs_2025 \
-  --output-dir data --fetch-affiliations
+  --output-dir ../generated-data/extraction --fetch-affiliations
 
 # 仅用缓存数据生成输出（不联网）
 python3 scripts/security_pipeline.py \
   --conference usenix_security_2025 ndss_2025 ieee_sp_2025 ccs_2025 \
-  --output-dir data
+  --output-dir ../generated-data/extraction
 ```
 
 ## 数据来源

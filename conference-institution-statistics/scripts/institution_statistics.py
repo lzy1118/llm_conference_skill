@@ -11,7 +11,6 @@ def aggregate_institutions(rows: list[dict[str, str]]) -> tuple[list[dict[str, o
     grouped: dict[str, dict[str, object]] = defaultdict(lambda: {
         "institution_name": "",
         "country": "",
-        "is_us_institution": False,
         "paper_keys": set(),
         "author_rows": set(),
         "first_author_papers": set(),
@@ -29,7 +28,6 @@ def aggregate_institutions(rows: list[dict[str, str]]) -> tuple[list[dict[str, o
         entry = grouped[key]
         entry["institution_name"] = entry["institution_name"] or row["inst"]
         entry["country"] = entry["country"] or row["country"]
-        entry["is_us_institution"] = entry["is_us_institution"] or row["is_us_institution"] == "True"
         entry["paper_keys"].add(row["paper_key"])
         entry["author_rows"].add((row["paper_key"], row["author_key"], row["author_order"], key))
         entry["conferences"].add(row["conference"])
@@ -46,7 +44,6 @@ def aggregate_institutions(rows: list[dict[str, str]]) -> tuple[list[dict[str, o
             "institution_key": institution_key,
             "institution_name": entry["institution_name"],
             "country": entry["country"],
-            "is_us_institution": entry["is_us_institution"],
             "papers": papers,
             "authors": len(entry["author_rows"]),
             "first_author_papers": len(entry["first_author_papers"]),
@@ -92,7 +89,7 @@ def main() -> None:
     if args.country:
         rows = [row for row in rows if row.get("country") == args.country]
     if args.us_only:
-        rows = [row for row in rows if row.get("is_us_institution") == "True"]
+        rows = [row for row in rows if row.get("country") == "United States"]
 
     summary, by_conference, by_year = aggregate_institutions(rows)
     output_dir = Path(args.output_dir) / "institutions"

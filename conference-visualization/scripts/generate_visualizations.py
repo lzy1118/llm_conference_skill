@@ -15,6 +15,8 @@ SECTION_FILES = {
     "collaboration": Path("collaboration/collaboration_edges.csv"),
 }
 
+DEFAULT_OUTPUT_DIR = Path("generated-data") / "visualizations"
+
 
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as handle:
@@ -186,7 +188,7 @@ def build_collaboration_chart(rows: list[dict[str, str]], output_dir: Path, top_
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate SVG visualizations from conference analysis outputs.")
     parser.add_argument("--analysis-dir", required=True, help="Root analysis directory containing section subdirectories")
-    parser.add_argument("--output-dir", required=True, help="Output directory for generated visualizations")
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Output directory for generated visualizations")
     parser.add_argument("--top-n", type=int, default=8, help="Number of items or series to visualize")
     args = parser.parse_args()
 
