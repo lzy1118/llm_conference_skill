@@ -91,9 +91,7 @@ COUNTRY_RULES: list[tuple[str, str]] = [
 ]
 
 
-def infer_country(inst: str, is_us_institution: str) -> str:
-    if str(is_us_institution).strip().lower() == "true":
-        return "United States"
+def infer_country(inst: str) -> str:
     lowered = normalize_whitespace(inst).casefold()
     for pattern, country in COUNTRY_RULES:
         if re.search(pattern, lowered):

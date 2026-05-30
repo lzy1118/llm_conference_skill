@@ -6,10 +6,10 @@
 
 | 子项目 | 会议 | 结果 |
 |--------|------|------|
-| `Top3-data/` | Asiacrypt 2025, Crypto 2025, Eurocrypt 2026 | 377 行 |
-| `Security-data/` | USENIX Security 2025, NDSS 2025, IEEE S&P 2025, CCS 2025 | 1575 行 |
+| `conference-paper-extraction/` | 三大密码会、四大安全会、AI/ML 入口 | 统一采集主线 |
+| `generated-data/` | 抽取、标准化、分析、报告、可视化产物 | 统一结果目录 |
 
-详细说明见各子项目 README。
+当前主线以 `conference-paper-extraction/` 与 `generated-data/` 为准；`data/` 目录现仅保留机构 reference。
 
 ## Skills
 
@@ -29,7 +29,7 @@
 
 主口径是“作者-机构-国家”长表：每一条作者机构归属都保留原始机构文本、国家判定、来源、置信度与审计信息。
 
-`is_us_institution` 与 `*_us_institutions.*` 仍然保留，但仅作兼容已有美国机构统计链路的附加切片，不再是仓库主叙事或默认主输出。
+国家字段只使用 `country`；不再生成或消费额外的美国布尔标记。
 
 ## 统一生成数据目录
 

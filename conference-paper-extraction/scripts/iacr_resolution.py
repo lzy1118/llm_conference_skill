@@ -217,7 +217,7 @@ def query_eprint_search_candidates(task: ResolutionTask, retrieved_at: str) -> l
 def collect_source_candidates(task: ResolutionTask, query_dblp: bool = False) -> list[SourceCandidate]:
     now = datetime.now(timezone.utc).isoformat() if query_dblp else "offline_search_template"
     candidates = [
-        SourceCandidate(task.resolution_id, "local_iacr", f"data/raw/{task.conference.lower()}_{task.year}_papers.json", task.title, task.authors, "", 0.0, now),
+        SourceCandidate(task.resolution_id, "local_iacr", f"generated-data/extraction/raw/{task.conference.lower()}_{task.year}_papers.json", task.title, task.authors, "", 0.0, now),
         SourceCandidate(task.resolution_id, "search", search_url("https://link.springer.com/search?query=", task.title), task.title, task.authors, "", 0.0, now),
         SourceCandidate(task.resolution_id, "search", search_url("https://dblp.org/search/publ?q=", task.title), task.title, task.authors, "", 0.0, now),
         SourceCandidate(task.resolution_id, "search", search_url("https://eprint.iacr.org/search?q=", task.title), task.title, task.authors, "", 0.0, now),
@@ -299,7 +299,7 @@ def run_resolution(queue_path: Path, output_dir: Path, query_dblp: bool = False)
     )
     report = {
         "tasks": len(tasks),
-        "resolved_us_rows": 0,
+        "resolved_rows": 0,
         "unresolved_tasks": len(unresolved_rows),
         "parsed_records": 0,
         "query_dblp": query_dblp,

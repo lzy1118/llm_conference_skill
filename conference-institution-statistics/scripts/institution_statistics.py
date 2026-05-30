@@ -82,14 +82,11 @@ def main() -> None:
     parser.add_argument("--conference")
     parser.add_argument("--year")
     parser.add_argument("--country")
-    parser.add_argument("--us-only", action="store_true")
     args = parser.parse_args()
 
     rows = filter_rows(load_normalized_rows(Path(args.input)), conference=args.conference, year=args.year)
     if args.country:
         rows = [row for row in rows if row.get("country") == args.country]
-    if args.us_only:
-        rows = [row for row in rows if row.get("country") == "United States"]
 
     summary, by_conference, by_year = aggregate_institutions(rows)
     output_dir = Path(args.output_dir) / "institutions"
@@ -103,7 +100,6 @@ def main() -> None:
             "conference": args.conference or "all",
             "year": args.year or "all",
             "country": args.country or "all",
-            "us_only": args.us_only,
             "rows": len(rows),
         },
         highlights=summary[:10],

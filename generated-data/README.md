@@ -54,9 +54,8 @@ python3 conference-visualization/scripts/generate_visualizations.py \
 
 ## 说明
 
-- 现有脚本仍兼容旧的 `data/` 输出位置。
-- 新工作流建议优先使用本目录，减少跨子项目目录查找成本。
-- 如果需要保留历史产物，可以继续保存在旧目录；本目录面向后续统一管理。
+- 新工作流应优先使用本目录，减少跨子项目目录查找成本。
+- 历史目录应逐步收缩；新的主流程结果应集中保存在本目录。
 - 当前 `generated-data/` 不保留仅美国切片文件；统一管理的主对象是通用的“作者-机构-国家”主输出及其下游产物。
 
 ## 当前默认落盘行为
@@ -64,8 +63,6 @@ python3 conference-visualization/scripts/generate_visualizations.py \
 以下主链路脚本在未显式传入 `--output-dir` 时，已经默认写入 `generated-data/`：
 
 - `conference-paper-extraction/scripts/run_unified_pipeline.py` -> `generated-data/extraction`
-- `Security-data/scripts/security_pipeline.py` -> `generated-data/extraction`
-- `Top3-data/scripts/top3_pipeline.py` -> `generated-data/extraction`
 - `conference-dataset-normalization/scripts/normalize_dataset.py` -> `generated-data/normalized`
 - `conference-analysis-automation/scripts/run_analysis_pipeline.py` -> `generated-data/analysis`
 - `conference-report-generation/scripts/generate_report.py` -> `generated-data/reports`
@@ -75,7 +72,7 @@ python3 conference-visualization/scripts/generate_visualizations.py \
 
 ## 当前归档情况
 
-- `generated-data/extraction/`：已集中复制当前仓库中可见的历史采集层最终输出
+- `generated-data/extraction/`：统一采集主输出目录
 - `generated-data/normalized/`：已写入标准化主产物
 - `generated-data/analysis/`：已写入分析主产物
 - `generated-data/reports/`：已写入汇总报告

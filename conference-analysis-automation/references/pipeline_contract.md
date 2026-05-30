@@ -8,7 +8,7 @@
 
 自动化层应把 `normalized/author_affiliation_facts.csv` 视为最主要的共享事实表。
 
-如果输入仍停留在抽取层，则应优先从 `conference-paper-extraction` 的 `output/*_author_affiliations.csv` 或汇总版 `*_作者机构国家.csv` 进入标准化；不要把 `*_us_institutions.csv` 视为默认主入口。
+如果输入仍停留在抽取层，则应优先从 `conference-paper-extraction` 的 `output/*_author_affiliations.csv` 或汇总版 `*_作者机构国家.csv` 进入标准化；不要把历史 `*_us_institutions.csv` 视为默认主入口。
 
 最低应包含以下字段：
 
@@ -23,8 +23,6 @@
 - `country`
 
 其中 `country` 是正式主字段。
-
-`is_us_institution` 如果存在，只应被视为兼容旧美国机构切片链路的附加字段，而不是自动化层的主判断字段。
 
 推荐保留的附加字段：
 
@@ -42,7 +40,7 @@
 
 - 标准化：`python3 conference-dataset-normalization/scripts/normalize_dataset.py <inputs...> --output-dir <dir>`
 - 国家统计：`python3 conference-country-statistics/scripts/country_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y]`
-- 机构统计：`python3 conference-institution-statistics/scripts/institution_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y] [--country X] [--us-only]`
+- 机构统计：`python3 conference-institution-statistics/scripts/institution_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y] [--country X]`
 - 作者统计：`python3 conference-author-statistics/scripts/author_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y]`
 - 趋势分析：`python3 conference-trend-analysis/scripts/trend_analysis.py --input <csv> --output-dir <dir> --entity <country|institution|author> [--conference X] [--year Y]`
 - 合作分析：`python3 conference-collaboration-analysis/scripts/collaboration_analysis.py --input <csv> --output-dir <dir> --mode <author|country|institution> [--conference X] [--year Y]`

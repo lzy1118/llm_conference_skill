@@ -15,7 +15,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 当前推荐通过统一入口运行三大密码会与四大安全会采集。该入口位于 skill 内部，用统一 registry 选择会议，再按后端能力路由到 skill 内部的真实采集实现。
 
-`scripts/run_unified_pipeline.py` 是正式主入口。`scripts/conference_pipeline.py` 仅保留为兼容转发层，避免旧命令立即失效，但不再承载独立实现。
+`scripts/run_unified_pipeline.py` 是正式主入口。`scripts/conference_pipeline.py` 是过渡期转发层，不再承载独立实现。
 
 ## 支持的会议类型
 
@@ -51,6 +51,12 @@ python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir ge
 
 # 如需在 IACR mismatch 阶段额外查询 DBLP
 python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir generated-data/extraction --resolve-mismatches --query-dblp-for-resolution
+
+# 下载论文 PDF，但不解析 PDF 内容
+python3 scripts/run_unified_pipeline.py --conference usenix_security_2020 --output-dir generated-data/extraction --download-pdfs
+
+# 先小规模验证 PDF 下载链路
+python3 scripts/run_unified_pipeline.py --conference usenix_security_2020 --output-dir generated-data/extraction --download-pdfs --pdf-limit 5
 ```
 
 ## 当前统一入口覆盖范围
@@ -113,24 +119,9 @@ for article in root.findall(".//inproceedings"):
 
 ### 第 4 步：识别国家与机构归属
 
-当前采集层会同时生成：
-
-- `country`
-- `is_us_institution`（可选兼容标记）
-
-其中：
-
-- `country` 是正式主字段，用于后续国家统计、机构统计与泛化分析。
-- `is_us_institution` 只是从 `country` 派生出来的兼容标记，保留它是为了兼容已有美国机构统计链路，而不是让采集层继续以美国机构为主视角。
-
-当用户已经提供人工整理的 reference 表，并明确要求“以 reference 口径为准”时，采集层应切换到 reference-first 解释策略：
-
-- 优先保留论文级参与国语义，而不是只保留机构实体所属单一国家。
-- 联合 affiliation 如 `A and B`、`A & B`、`A; B` 在可靠时应拆分为多个参与机构片段。
-- 若同一条 affiliation 在 reference 中被解释为多个参与国，可在审计字段中保留一条机构文本对应多条国家参与记录。
-- 这类 reference-first 特判应尽量局部化到具体会议族或具体 reference 场景，避免污染默认的通用国家判定逻辑。
-- 若 reference 与原始数据明显冲突，应先记录冲突原因，再决定是否引入特判，而不是静默覆盖基础规则。
-- 若 reference 的作者名单与 IACR raw / DBLP 作者名单冲突，应优先保留 IACR raw / DBLP 的作者身份；reference author list 只用于辅助补机构或国家，不应用来改写作者姓名或作者顺序。
+当前采集层只生成 `country` 作为正式国家字段，用于后续国家统计、机构统计与泛化分析。
+- 中美口径应统一按论文级参与国语义处理；中国口径仅统计中国大陆机构，美国口径按美国参与机构统计。
+- 对 2025 以外的三大密码会，作者身份与论文基础事实默认以 IACR raw / DBLP 为准；外部 reference 只作为验证与补充线索，不是默认规则来源。
 
 分类流程采用“可解释国家判定 + 多机构保守聚合 + 未解析回退”的策略：
 
@@ -140,37 +131,52 @@ def classify_affiliation(affiliation: str) -> dict:
 
     # 第 1 层：精确别名匹配（可命中美国机构，也可命中其他高频稳定简称）
     if lower in US_EXACT_ALIASES:
-        return {"country": "United States", "is_us": True, "source": "rule", "confidence": 1.0}
+        return {"country": "United States", "source": "rule", "confidence": 1.0}
 
     # 第 2 层：国家关键词识别（例如 China, Canada, Switzerland）
     country = detect_country(lower)
     if country:
-        return {"country": country, "is_us": country == "United States", "source": "rule", "confidence": 0.95}
+        return {"country": country, "source": "rule", "confidence": 0.95}
 
     # 第 3 层：无法可靠判断时保守保留 Unknown，进入复核队列
-    return {"country": "Unknown", "is_us": False, "source": "unresolved", "confidence": 0.0}
+    return {"country": "Unknown", "source": "unresolved", "confidence": 0.0}
 ```
-
-这个示例强调的是“先做国家判定，再从国家派生兼容布尔值”，而不是让 `is_us_institution` 主导分类流程。
 
 完整规则见 [分类规则参考](references/classification_rules.md)。
 
-### 第 4.5 步：处理论文级参与国与 reference 对齐
+若以下标准化 reference 文件存在，安全会与密码会抽取都应把它们视为统一的“标准化 reference”来源：
 
-对三大密码会这类 IACR 数据，泛化时应额外区分两种语义：
+- `conference-dataset-normalization/references/institution_aliases.csv`
+- `conference-dataset-normalization/references/institution_registry.csv`
+
+统一定位：
+
+- `institution_aliases.csv` 负责把机构别名映射到稳定 `institution_id`
+- `institution_registry.csv` 负责提供 `canonical_name`、`country`、`region`、`type`
+- 在抽取层中，这组 reference 只用于 exact alias / canonical name 命中的机构 country 保守兜底
+
+推荐使用方式：
+
+- 先按网页 / DBLP / IACR 原始来源抽取作者与 affiliation。
+- 再用规则做国家判定。
+- 最后仅对 exact alias 或 canonical name 命中的机构，使用 registry 中的 `country` 做保守 fallback。
+
+不要让这组标准化 reference 覆盖作者身份、作者顺序或论文事实；它只应用于机构标准化与 country 保守兜底。
+
+### 第 4.5 步：处理论文级参与国
+
+对三大密码会这类 IACR 数据，应额外区分两种语义：
 
 1. 机构实体所属国家
 2. 论文级参与国
 
-若用户目标是国家参与统计，推荐采用以下顺序：
+若目标是国家参与统计，推荐采用以下顺序：
 
 1. 先对 affiliation 做保守国家识别。
 2. 对可可靠拆分的联合 affiliation 保留多国参与信号。
 3. 对作者数与 affiliation 数不一致的论文，不要整篇丢弃；至少保留可识别的论文级国家参与信号。
-4. 若有用户给定 reference 表，则以 reference 表驱动补充别名、拆分保护、联合机构特判，并把这些规则记录在审计说明中。
-   但如果 reference 作者名单与 IACR raw / DBLP 冲突，仍应以 IACR raw / DBLP 为准。
-
-泛化时不要默认把所有会议都切到 reference-first 特判模式。只有当用户明确提供金标准表、目标口径、或要求复刻既有统计结果时，才启用这层策略。
+4. 若有验证用 reference 表，只把它用于检查规则缺口、补充 alias、补充拆分保护，并把相关原因记录在审计说明中。
+5. 若 reference 作者名单与 IACR raw / DBLP 冲突，仍应以 IACR raw / DBLP 为准，不用 reference 覆盖作者身份。
 
 ### 第 5 步：生成输出
 
@@ -185,17 +191,11 @@ def classify_affiliation(affiliation: str) -> dict:
   - 安全会：`output/四大安全顶会_作者机构国家.csv`
   - 密码会：`output/2025-2026三大密码会_作者机构国家.csv`
 
-兼容输出仍会保留美国机构子集：
-
-- `*_us_institutions.csv`
-- `*_us_institutions_audit.csv`
-- `*_us_institutions.xlsx`
+当前主流程不再生成 `*_us_institutions.*` 或 `*美国机构*` 这类美国子集最终输出。
 
 中间候选主文件也改为泛化命名：
 
 - `interim/institution_classification_candidates.csv`
-
-旧文件名 `interim/us_institution_candidates.csv` 仍保留，作为兼容别名。
 
 **基础输出字段：**
 
@@ -207,7 +207,6 @@ def classify_affiliation(affiliation: str) -> dict:
 | `author_order` | integer | 从 0 开始的作者顺序 |
 | `inst` | string | 机构归属文本 |
 | `country` | string | 机构所属国家，无法可靠判断时为 `Unknown` |
-| `is_us_institution` | boolean | 兼容字段，仅用于保留旧美国机构切片链路 |
 
 **审计字段（附加）：**
 
@@ -227,14 +226,14 @@ def classify_affiliation(affiliation: str) -> dict:
 
 ```bash
 # 统一入口运行后，优先检查中间产物
-data/interim/affiliation_resolution_queue.csv
-data/interim/institution_classification_candidates.csv
+generated-data/extraction/interim/affiliation_resolution_queue.csv
+generated-data/extraction/interim/institution_classification_candidates.csv
 
 # 对安全会，可在需要时启用站点机构抓取
 python3 scripts/run_unified_pipeline.py --group top4_security --output-dir data --fetch-affiliations
 
 # 对密码会，未解析机构会保守保留在待复核结果中
-data/interim/llm_resolution_input.jsonl
+generated-data/extraction/interim/llm_resolution_input.jsonl
 
 # 对 IACR mismatch 论文，可生成内部补源候选与 resolution report
 python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir data --resolve-mismatches
@@ -249,6 +248,14 @@ python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir da
 
 当前这一步仍然是保守型 resolution stage：优先生成候选来源、保留待复核上下文，并为后续更强的 frontmatter/PDF 自动接受逻辑预留接口。
 
+若启用 `--download-pdfs`，当前行为是：
+
+- 只下载 PDF，不解析 PDF 内容
+- PDF 默认落盘到 `output-dir/pdfs/<conference_key>/`
+- 下载审计表写到 `output-dir/interim/<conference_key>_pdf_download_report.csv`
+- 对于只有 landing page 的安全会论文，会先从页面中查找 `.pdf` 链接再下载
+- 对 IACR 会议，只有在 raw paper metadata 中能拿到 `.pdf` 直链时才会下载；拿不到时会在下载报告中保留 `no_pdf_url`
+
 若需要按人工 reference 补作者级机构信息，可使用 `reference/author_affiliation_overrides.csv`。推荐字段为：
 
 - `conference`
@@ -259,7 +266,18 @@ python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir da
 - `inst`
 - `country`（可选；已知国家时可直接写入）
 
-其中 `name` 与 `author_order` 必须同时匹配原始作者行。若 reference 中的作者名单与 IACR raw / DBLP 冲突，则该行不应进入 override，而应单独记录为冲突案例。
+其中 `name` 与 `author_order` 必须同时匹配原始作者行。若外部参考名单与 IACR raw / DBLP 冲突，则该行不应进入 override，而应单独记录为冲突案例。
+
+若需要补机构级 country override，可在运行目录下提供：
+
+- `reference/institution_country_overrides.csv`
+
+优先级建议为：
+
+1. 运行目录下的人工 override
+2. `conference-dataset-normalization/references/` 中的标准化 reference exact match
+3. 通用规则分类
+4. `Unknown`
 
 ## 报告字段说明
 
@@ -277,7 +295,6 @@ validation report 中优先关注以下泛化字段：
 
 - `resolved_country_rows` 与 `classified_author_rows` 当前等价
 - `unresolved_country_rows` 表示仍保留为 `Unknown` 的作者-机构行数
-- `us_author_rows` 仅是兼容字段，用于旧美国机构统计链路；新的自动化与统计入口应优先使用 `resolved_country_rows` / `unresolved_country_rows`
 
 ## 目录结构
 
@@ -307,11 +324,10 @@ conference-data/
 - 美国统计只是消费层的一种切片，不应反向主导抽取层设计。
 - 对中国机构、欧洲机构、跨国机构等应保持同样的判定与审计结构。
 - 无法可靠判断时保持 `Unknown`，不要因为后续想做美国统计或中国统计就硬猜。
-- 若用户提供 reference 表，应先判断 reference 是“机构所属国”口径还是“论文参与国”口径，再决定是否允许一条 affiliation 贡献多个国家。
-- 当 reference 口径要求同一 affiliation 同时贡献多个国家时，应通过多行参与记录表达，而不是覆盖原有国家判定结果。
+- 三大密码会国家统计默认应按论文级参与国语义处理，而不是只按单机构所属国处理。
+- 外部 reference 主要用于验证规则是否完善，不应被写成默认业务规则。
 - 对联合机构字符串，应优先通过“保护不应拆开的机构名 + 拆分可分离机构片段”的组合策略实现泛化，避免一刀切地按 `and` 或 `&` 分裂。
-- reference-first 特判应优先沉淀为可解释规则：别名、拆分保护、双参与国映射、审计原因；不要只在最终统计脚本里硬编码论文名单。
-- reference author list 的默认作用是补机构粒度和国家粒度，不是覆盖 source-of-truth 作者名单。作者身份冲突时，应优先相信 IACR raw / DBLP，并把 reference 仅作为辅助线索。
+- 作者身份冲突时，应优先相信 IACR raw / DBLP，并把外部 reference 仅作为辅助线索。
 
 ## 常见问题
 

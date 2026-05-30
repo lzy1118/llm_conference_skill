@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from collections import defaultdict
 from pathlib import Path
 
@@ -35,6 +36,52 @@ CANONICAL_FIELDS = {
 }
 
 
+def csv_row_get(row: dict[str, str], *keys: str) -> str:
+    normalized = {
+        normalize_whitespace(key).lstrip("\ufeff").strip('"'): value
+        for key, value in row.items()
+    }
+    for key in keys:
+        if key in normalized:
+            return normalized[key]
+    return ""
+
+
+def load_reference_institutions() -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    root = Path(__file__).resolve().parents[2]
+    alias_path = root / "conference-dataset-normalization" / "references" / "institution_aliases.csv"
+    registry_path = root / "conference-dataset-normalization" / "references" / "institution_registry.csv"
+    alias_to_id: dict[str, str] = {}
+    registry_by_id: dict[str, dict[str, str]] = {}
+
+    if registry_path.exists():
+        with registry_path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                institution_id = normalize_whitespace(csv_row_get(row, "institution_id"))
+                if not institution_id:
+                    continue
+                registry_by_id[institution_id] = {
+                    "canonical_name": normalize_whitespace(csv_row_get(row, "canonical_name")),
+                    "country": normalize_whitespace(csv_row_get(row, "country")),
+                    "region": normalize_whitespace(csv_row_get(row, "region")),
+                    "type": normalize_whitespace(csv_row_get(row, "type")),
+                }
+
+    if alias_path.exists():
+        with alias_path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                alias = normalize_whitespace(csv_row_get(row, "alias"))
+                institution_id = normalize_whitespace(csv_row_get(row, "institution_id"))
+                if alias and institution_id:
+                    alias_to_id[alias.casefold()] = institution_id
+
+    for institution_id, registry_row in registry_by_id.items():
+        canonical_name = registry_row.get("canonical_name", "")
+        if canonical_name:
+            alias_to_id.setdefault(canonical_name.casefold(), institution_id)
+    return alias_to_id, registry_by_id
+
+
 def recover_conference_and_title(article_tag: str) -> tuple[str, str]:
     normalized_tag = normalize_whitespace(article_tag)
     if not normalized_tag or "-" not in normalized_tag:
@@ -66,6 +113,7 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
     institution_rows: dict[str, list[dict[str, object]]] = defaultdict(list)
     duplicate_row_keys = 0
     seen_row_keys: set[str] = set()
+    alias_to_id, registry_by_id = load_reference_institutions()
 
     for row in rows:
         article_tag = normalize_whitespace(row.get("article_tag", ""))
@@ -81,7 +129,6 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
         classification_source = normalize_whitespace(row.get("classification_source", ""))
         classification_confidence = normalize_whitespace(row.get("classification_confidence", ""))
         classification_reason = normalize_whitespace(row.get("classification_reason", ""))
-        is_us = normalize_whitespace(row.get("is_us_institution", ""))
 
         paper_key = normalize_paper_key(conference, year, title, paper_id)
         author_key = normalize_author_key(name)
@@ -109,7 +156,11 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
 
         for institution in institutions:
             institution_key = normalize_institution_key(institution)
-            country = source_country or infer_country(institution, is_us)
+            institution_id = alias_to_id.get(institution.casefold(), "")
+            registry_row = registry_by_id.get(institution_id, {})
+            registry_country = normalize_whitespace(registry_row.get("country", ""))
+            canonical_name = normalize_whitespace(registry_row.get("canonical_name", ""))
+            country = source_country or registry_country or infer_country(institution)
             row_key = stable_key(paper_key, author_order_text, institution_key)
             if row_key in seen_row_keys:
                 duplicate_row_keys += 1
@@ -129,6 +180,8 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
                 "author_order": int(author_order_text or "0"),
                 "inst": institution,
                 "institution_key": institution_key,
+                "institution_id": institution_id,
+                "canonical_institution_name": canonical_name,
                 "country": country,
                 "classification_source": classification_source,
                 "classification_confidence": classification_confidence,
@@ -142,11 +195,19 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
     for institution_key, grouped_rows in institution_rows.items():
         countries = {str(row["country"]) for row in grouped_rows if str(row["country"])}
         display_names = [str(row["inst"]) for row in grouped_rows]
+        institution_ids = [str(row.get("institution_id", "")) for row in grouped_rows if str(row.get("institution_id", ""))]
+        canonical_names = [str(row.get("canonical_institution_name", "")) for row in grouped_rows if str(row.get("canonical_institution_name", ""))]
+        institution_id = choose_display_name(institution_ids)
+        registry_row = registry_by_id.get(institution_id, {}) if institution_id else {}
         institution_dim.append(
             {
                 "institution_key": institution_key,
                 "inst_display": choose_display_name(display_names),
-                "country": choose_display_name(sorted(countries)),
+                "institution_id": institution_id,
+                "canonical_name": choose_display_name(canonical_names) or str(registry_row.get("canonical_name", "")),
+                "country": choose_display_name(sorted(countries)) or str(registry_row.get("country", "")),
+                "region": str(registry_row.get("region", "")),
+                "type": str(registry_row.get("type", "")),
                 "source_count": len(grouped_rows),
                 "needs_review": "Unknown" in countries,
             }
@@ -157,6 +218,7 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
         "normalized_rows": len(author_rows),
         "paper_count": len(paper_facts),
         "institution_count": len(institution_dim),
+        "rows_with_reference_institution_id": sum(1 for row in author_rows if row.get("institution_id")),
         "duplicate_row_keys_skipped": duplicate_row_keys,
         "rows_missing_name": sum(1 for row in author_rows if not row["name"]),
         "rows_missing_inst": sum(1 for row in author_rows if not row["inst"]),
@@ -195,6 +257,8 @@ def main() -> None:
             "author_order",
             "inst",
             "institution_key",
+            "institution_id",
+            "canonical_institution_name",
             "country",
             "classification_source",
             "classification_confidence",
@@ -209,7 +273,7 @@ def main() -> None:
     write_csv_rows(
         output_dir / "institution_dim.csv",
         institution_dim,
-        ["institution_key", "inst_display", "country", "source_count", "needs_review"],
+        ["institution_key", "inst_display", "institution_id", "canonical_name", "country", "region", "type", "source_count", "needs_review"],
     )
     write_json(output_dir / "normalization_report.json", report)
 

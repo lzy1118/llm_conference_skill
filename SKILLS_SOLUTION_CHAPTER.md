@@ -44,11 +44,11 @@
 
 ### 4.2 作者-机构事实表
 
-`author_affiliation_facts.csv` 是整个系统最核心的共享事实表。每一行表示一条作者与机构归属记录，通常包含 `row_key`、`paper_key`、`conference`、`year`、`title`、`name`、`author_key`、`author_order`、`inst`、`institution_key`、`country`、`is_us_institution`、`classification_source`、`classification_confidence` 和 `classification_reason` 等字段。国家统计、机构统计、作者统计、趋势分析和合作分析都依赖这张表。
+`author_affiliation_facts.csv` 是整个系统最核心的共享事实表。每一行表示一条作者与机构归属记录，通常包含 `row_key`、`paper_key`、`conference`、`year`、`title`、`name`、`author_key`、`author_order`、`inst`、`institution_key`、`country`、`classification_source`、`classification_confidence` 和 `classification_reason` 等字段。国家统计、机构统计、作者统计、趋势分析和合作分析都依赖这张表。
 
 ### 4.3 机构维表
 
-`institution_dim.csv` 用于描述标准化后的机构实体信息。每个 `institution_key` 在此表中对应一行，通常包含 `inst_display`、`country`、`is_us_institution`、`source_count` 和 `needs_review`。它在机构统计和质量审计中尤为关键，因为它提供了机构层面的展示名称、国家信息与复核标志。
+`institution_dim.csv` 用于描述标准化后的机构实体信息。每个 `institution_key` 在此表中对应一行，通常包含 `inst_display`、`country`、`source_count` 和 `needs_review`。它在机构统计和质量审计中尤为关键，因为它提供了机构层面的展示名称、国家信息与复核标志。
 
 ### 4.4 为什么必须先标准化
 

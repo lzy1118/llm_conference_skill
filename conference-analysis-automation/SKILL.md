@@ -48,7 +48,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - `output/*_author_affiliations.csv`
 - 汇总版 `*_作者机构国家.csv`
 
-不要优先把 `*_us_institutions.csv` 当成自动化总入口输入，因为那只是美国子集兼容导出。
+不要优先把 `*_us_institutions.csv` 当成自动化总入口输入，因为那只是历史子集导出。
 
 ### 模式 2：从已有标准化数据开始
 
@@ -82,7 +82,6 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - 会议过滤条件
 - 年份过滤条件
 - 机构统计所需的国家过滤条件（如有）
-- 是否只保留美国机构（兼容切片条件，不是主输入契约）
 - 趋势分析对象（如启用）
 - 合作分析模式（如启用）
 - 需要运行的能力集合：审计、报告、可视化、国家、机构、作者、趋势、合作
@@ -95,9 +94,9 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 随后把生成的 `normalized/author_affiliation_facts.csv` 作为后续分析唯一共享的事实表。
 
-自动化层应默认围绕“作者-机构-国家”长表组织流程，而不是围绕美国机构子集组织流程。
+自动化层应默认围绕“作者-机构-国家”长表组织流程。
 
-如果上游抽取层启用了 reference-first 论文参与国模式，自动化层不应尝试把同一 `paper_key + author_order + inst` 的多国参与记录误判为重复脏数据；应把它们视为合法的多参与国事实行。
+如果上游抽取层保留了论文级参与国多行记录，自动化层不应尝试把同一 `paper_key + author_order + inst` 的多国参与记录误判为重复脏数据；应把它们视为合法的多参与国事实行。
 
 ### 第 4 步：按需运行审计
 
@@ -161,8 +160,7 @@ python3 scripts/run_analysis_pipeline.py \
   --normalized-input generated-data/normalized/author_affiliation_facts.csv \
   --output-dir generated-data/analysis \
   --run institution \
-  --country "United States" \
-  --us-only
+  --country "United States"
 ```
 
 ## 默认行为
@@ -179,6 +177,22 @@ python3 scripts/run_analysis_pipeline.py \
 8. 可视化生成
 
 如果用户没有指定过滤条件，则默认在标准化输入的全部行上运行。
+
+## Backfill 任务执行计划
+
+coverage ledger 生成 `generated-data/coverage/backfill_tasks.csv` 后，可用 backfill runner 生成执行计划：
+
+```bash
+python3 scripts/run_backfill_tasks.py --limit 20
+```
+
+默认只做 dry-run，不执行命令。若要执行本地任务，需要显式传入：
+
+```bash
+python3 scripts/run_backfill_tasks.py --task-type extract_author_roles --execute
+```
+
+联网任务默认不会执行；必须同时传入 `--execute --allow-network`。这可以避免补齐任务误触发大批量外部抓取。
 
 ## 常见问题
 

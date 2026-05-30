@@ -53,6 +53,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Allow online DBLP lookup during mismatch resolution when supported",
     )
+    parser.add_argument(
+        "--download-pdfs",
+        action="store_true",
+        help="Download paper PDFs when backend can resolve PDF URLs",
+    )
+    parser.add_argument(
+        "--pdf-limit",
+        type=int,
+        default=0,
+        help="Limit PDF downloads per conference; 0 means no limit",
+    )
     parser.add_argument("--list-conferences", action="store_true")
     parser.add_argument("--list-backends", action="store_true")
     parser.add_argument(
@@ -70,6 +81,8 @@ def build_plan(
     fetch_affiliations: bool,
     resolve_mismatches: bool,
     query_dblp_for_resolution: bool,
+    download_pdfs: bool,
+    pdf_limit: int,
 ) -> list[dict[str, object]]:
     grouped = group_by_backend(conference_keys)
     plan: list[dict[str, object]] = []
@@ -91,6 +104,10 @@ def build_plan(
             command.append("--resolve-mismatches")
         if query_dblp_for_resolution and backend == "iacr_top3":
             command.append("--query-dblp-for-resolution")
+        if download_pdfs:
+            command.append("--download-pdfs")
+            if pdf_limit > 0:
+                command.extend(["--pdf-limit", str(pdf_limit)])
         plan.append(
             {
                 "backend": backend,
@@ -174,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
         args.fetch_affiliations,
         args.resolve_mismatches,
         args.query_dblp_for_resolution,
+        args.download_pdfs,
+        args.pdf_limit,
     )
 
     if args.dry_run:

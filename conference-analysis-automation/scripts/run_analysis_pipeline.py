@@ -20,7 +20,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conference")
     parser.add_argument("--year")
     parser.add_argument("--country")
-    parser.add_argument("--us-only", action="store_true")
     parser.add_argument("--run", action="append", choices=RUN_CHOICES, help="Metric families to run. Defaults to all.")
     parser.add_argument("--trend-entity", choices=("country", "institution", "author"), default="country", help="Entity dimension for trend analysis.")
     parser.add_argument("--collaboration-mode", choices=("author", "country", "institution"), default="author", help="Edge mode for collaboration analysis.")
@@ -46,7 +45,6 @@ def build_scope(args: argparse.Namespace) -> dict[str, object]:
         "conference": args.conference or "all",
         "year": args.year or "all",
         "country": args.country or "all",
-        "us_only": args.us_only,
         "trend_entity": args.trend_entity,
         "collaboration_mode": args.collaboration_mode,
     }
@@ -121,8 +119,6 @@ def analytics_commands(normalized_input: Path, output_dir: Path, args: argparse.
         ]
         if args.country:
             institution_command.extend(["--country", args.country])
-        if args.us_only:
-            institution_command.append("--us-only")
         commands.append(("institution", institution_command))
     if "author" in requested_runs:
         commands.append(

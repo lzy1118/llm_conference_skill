@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import mimetypes
 import re
 import sys
 import urllib.parse
@@ -37,6 +38,7 @@ class ConferenceConfig:
 
 
 CONFERENCES = {
+    "usenix_security_2020": ConferenceConfig("usenix_security_2020", "USENIX_SECURITY", 2020, "uss", "USENIX_SECURITY"),
     "usenix_security_2022": ConferenceConfig("usenix_security_2022", "USENIX_SECURITY", 2022, "uss", "USENIX_SECURITY"),
     "usenix_security_2023": ConferenceConfig("usenix_security_2023", "USENIX_SECURITY", 2023, "uss", "USENIX_SECURITY"),
     "usenix_security_2025": ConferenceConfig("usenix_security_2025", "USENIX_SECURITY", 2025, "uss", "USENIX_SECURITY"),
@@ -151,7 +153,6 @@ def build_article_tag(config: ConferenceConfig, title: str) -> str:
 @dataclass(frozen=True)
 class AffiliationClassification:
     country: str
-    is_us: bool
     source: str
     confidence: float
     reason: str
@@ -168,7 +169,6 @@ def classify_affiliation(
         if len(countries) > 1:
             return AffiliationClassification(
                 "Multiple",
-                False,
                 "rule",
                 min((result.confidence for result in results), default=0.7),
                 "multiple_countries",
@@ -177,7 +177,6 @@ def classify_affiliation(
             country = next(iter(countries))
             return AffiliationClassification(
                 country,
-                country == "United States",
                 "rule",
                 min((result.confidence for result in results), default=0.7),
                 "multi_affiliation_consensus",
@@ -206,7 +205,7 @@ def split_affiliation_parts(affiliation: str) -> list[str]:
                 return parts
     if " and " in normalized:
         if re.search(
-            r"\b(Science and Technology|Posts and Telecommunications|Economics and Technology|Research and Technology|Information and Communications Technology|Polytechnic Institute and State University)\b",
+            r"\b(Science and Technology|Posts and Telecommunications|Economics and Technology|Research and Technology|Information and Communications Technology|Polytechnic Institute and State University|Parallel Computer Engineering and Technology|Mathematical Engineering and Advanced Computing)\b",
             normalized,
             re.IGNORECASE,
         ):
@@ -311,6 +310,130 @@ def fetch_text(url: str, timeout: int = 20) -> str:
     request = urllib.request.Request(url, headers=BROWSER_HEADERS)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read().decode("utf-8", errors="replace")
+
+
+def slug_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", normalize_space(value).casefold()).strip("-")
+
+
+def safe_pdf_stem(paper: dict[str, Any]) -> str:
+    paper_id = normalize_space(str(paper.get("paperId", ""))).replace("/", "_")
+    if paper_id:
+        return paper_id
+    title = slug_text(str(paper.get("title", "")))
+    return title or "paper"
+
+
+def extract_pdf_links_from_html(base_url: str, html_text: str) -> list[str]:
+    links: list[str] = []
+    for href in re.findall(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html_text, re.IGNORECASE):
+        absolute = urllib.parse.urljoin(base_url, html.unescape(href))
+        if absolute not in links:
+            links.append(absolute)
+    return links
+
+
+def resolve_pdf_url(config: ConferenceConfig, paper: dict[str, Any]) -> str:
+    url = normalize_space(str(paper.get("url", "")))
+    if not url:
+        return ""
+    if url.lower().endswith(".pdf"):
+        return url
+    try:
+        page_html = fetch_text(url, timeout=20)
+    except Exception:
+        return ""
+    links = extract_pdf_links_from_html(url, page_html)
+    if not links:
+        return ""
+    if config.conference == "USENIX_SECURITY":
+        for link in links:
+            if "files/conference" in link or "/presentation/" in link or "usenixsecurity" in link:
+                return link
+    return links[0]
+
+
+def download_pdf(url: str, output_path: Path, timeout: int = 60) -> tuple[bool, str, int]:
+    request = urllib.request.Request(url, headers=BROWSER_HEADERS)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        content_type = response.headers.get("Content-Type", "")
+        content = response.read()
+        final_url = response.geturl()
+    is_pdf = "pdf" in content_type.casefold() or final_url.lower().endswith(".pdf")
+    if not is_pdf:
+        return False, content_type, len(content)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(content)
+    return True, content_type, len(content)
+
+
+def download_pdfs_for_conference(
+    config: ConferenceConfig,
+    papers: list[dict[str, Any]],
+    output_dir: Path,
+    pdf_limit: int = 0,
+) -> dict[str, Any]:
+    pdf_dir = output_dir / "pdfs" / config.key
+    report_rows: list[dict[str, Any]] = []
+    downloaded = 0
+    for index, paper in enumerate(papers):
+        if pdf_limit > 0 and downloaded >= pdf_limit:
+            break
+        paper_id = normalize_space(str(paper.get("paperId", "")))
+        title = normalize_space(str(paper.get("title", "")))
+        source_url = normalize_space(str(paper.get("url", "")))
+        pdf_url = resolve_pdf_url(config, paper)
+        row = {
+            "conference": config.conference,
+            "year": config.year,
+            "paper_id": paper_id,
+            "title": title,
+            "source_url": source_url,
+            "pdf_url": pdf_url,
+            "status": "pending",
+            "content_type": "",
+            "bytes": 0,
+            "path": "",
+            "error": "",
+        }
+        if not pdf_url:
+            row["status"] = "no_pdf_url"
+            report_rows.append(row)
+            continue
+        output_path = pdf_dir / f"{safe_pdf_stem(paper)}.pdf"
+        try:
+            ok, content_type, byte_count = download_pdf(pdf_url, output_path)
+            row["content_type"] = content_type
+            row["bytes"] = byte_count
+            if ok:
+                row["status"] = "downloaded"
+                row["path"] = str(output_path)
+                downloaded += 1
+            else:
+                row["status"] = "non_pdf_response"
+        except Exception as exc:
+            row["status"] = "download_error"
+            row["error"] = str(exc)
+        report_rows.append(row)
+    report_path = output_dir / "interim" / f"{config.key}_pdf_download_report.csv"
+    write_csv(
+        report_path,
+        report_rows,
+        ["conference", "year", "paper_id", "title", "source_url", "pdf_url", "status", "content_type", "bytes", "path", "error"],
+    )
+    summary = {
+        "conference": config.conference,
+        "year": config.year,
+        "papers_seen": min(len(papers), pdf_limit) if pdf_limit > 0 else len(papers),
+        "downloaded_pdfs": downloaded,
+        "report_path": str(report_path),
+        "pdf_dir": str(pdf_dir),
+    }
+    (output_dir / "interim" / f"{config.key}_pdf_download_summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return summary
 
 
 def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
@@ -484,7 +607,6 @@ def expand_author_rows(
                         "author_order": order,
                         "inst": inst,
                         "country": classification.country,
-                        "is_us_institution": classification.is_us,
                         "classification_source": classification.source,
                         "classification_confidence": classification.confidence,
                         "classification_reason": classification.reason,
@@ -503,10 +625,6 @@ def expand_author_rows(
             "affiliations": "",
         })
     return rows, issues
-
-
-def filter_us_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [row for row in rows if row["is_us_institution"]]
 
 
 def filter_classified_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -532,7 +650,6 @@ def build_affiliation_candidates(rows: list[dict[str, Any]]) -> list[dict[str, A
         candidates.setdefault(key, {
             "inst": row["inst"],
             "country": row["country"],
-            "is_us_institution": row["is_us_institution"],
             "classification_source": row["classification_source"],
             "classification_confidence": row["classification_confidence"],
             "classification_reason": row["classification_reason"],
@@ -541,10 +658,6 @@ def build_affiliation_candidates(rows: list[dict[str, Any]]) -> list[dict[str, A
             "example_title": row["title"],
         })
     return sorted(candidates.values(), key=lambda item: (item["inst"], item["classification_reason"]))
-
-
-def strip_is_us_field(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [{key: value for key, value in row.items() if key != "is_us_institution"} for row in rows]
 
 
 def run_single_conference(
@@ -558,15 +671,14 @@ def run_single_conference(
     cache_dir = output_dir / "resolution" / "affiliation_cache"
     paper_rows = normalize_papers(config, papers)
     rows, issues = expand_author_rows(config, papers, overrides, cache_dir, fetch_affiliations)
-    us_rows = filter_us_rows(rows)
     classified_rows = filter_classified_rows(rows)
-    classified_rows_final = strip_is_us_field(classified_rows)
+    classified_rows_final = classified_rows
     papers_with_author_rows = len({row["paper_id"] for row in rows if row.get("paper_id")})
     papers_without_affiliation_data = sum(1 for issue in issues if issue.get("issue") == "no_affiliation_data")
 
     write_csv(output_dir / "interim" / f"{config.key}_author_affiliations_expanded.csv", rows,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
-               "author_order", "inst", "country", "is_us_institution", "classification_source",
+               "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
     write_csv(output_dir / "interim" / f"{config.key}_affiliation_resolution_queue.csv", issues,
               ["conference", "year", "paper_id", "title", "issue",
@@ -579,16 +691,8 @@ def run_single_conference(
                "classification_confidence", "classification_reason"])
     write_workbook(output_dir / "output" / f"{config.key}_author_affiliations.xlsx", classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
     write_csv(output_dir / "interim" / f"{config.key}_institution_classification_candidates.csv", build_affiliation_candidates(rows),
-              ["inst", "country", "is_us_institution", "classification_source", "classification_confidence",
+              ["inst", "country", "classification_source", "classification_confidence",
                "classification_reason", "example_conference", "example_paper_id", "example_title"])
-    write_csv(output_dir / "output" / f"{config.key}_us_institutions.csv", us_rows,
-              ["name", "year", "article_tag", "author_order", "inst"])
-    write_csv(output_dir / "output" / f"{config.key}_us_institutions_audit.csv", us_rows,
-              ["conference", "year", "paper_id", "title", "name", "article_tag",
-               "author_order", "inst", "country", "classification_source",
-               "classification_confidence", "classification_reason"])
-    write_workbook(output_dir / "output" / f"{config.key}_us_institutions.xlsx", us_rows, ["name", "year", "article_tag", "author_order", "inst"])
-
     report = {
         "conference": config.conference,
         "year": config.year,
@@ -600,7 +704,6 @@ def run_single_conference(
         "classified_author_rows": len(classified_rows),
         "resolved_country_rows": len(classified_rows),
         "unresolved_country_rows": len(rows) - len(classified_rows),
-        "us_author_rows": len(us_rows),
         "no_affiliation_issues": len(issues),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -614,12 +717,15 @@ def run_all_pipelines(
     output_dir: Path,
     conference_keys: list[str] | None = None,
     fetch_affiliations: bool = False,
+    download_pdfs: bool = False,
+    pdf_limit: int = 0,
 ) -> dict[str, Any]:
     selected_keys = conference_keys or list(CONFERENCES.keys())
     reports = []
     all_papers = []
     all_rows = []
     all_issues = []
+    pdf_reports = []
 
     for key in selected_keys:
         config = CONFERENCES[key]
@@ -627,28 +733,27 @@ def run_all_pipelines(
         if not raw_json_path.exists():
             print(f"Skipping {config.key}: no raw JSON at {raw_json_path}", file=sys.stderr)
             continue
+        papers = json.loads(raw_json_path.read_text(encoding="utf-8"))
+        if download_pdfs:
+            pdf_reports.append(download_pdfs_for_conference(config, papers, output_dir, pdf_limit=pdf_limit))
         report, paper_rows, rows, issues = run_single_conference(config, raw_json_path, output_dir, fetch_affiliations)
         reports.append(report)
         all_papers.extend(paper_rows)
         all_rows.extend(rows)
         all_issues.extend(issues)
 
-    all_us_rows = filter_us_rows(all_rows)
     all_classified_rows = filter_classified_rows(all_rows)
-    all_classified_rows_final = strip_is_us_field(all_classified_rows)
+    all_classified_rows_final = all_classified_rows
     candidates = build_affiliation_candidates(all_rows)
 
     write_csv(output_dir / "interim" / "papers_normalized.csv", all_papers,
               ["conference", "year", "paper_id", "title", "article_tag", "authors_count", "url"])
     write_csv(output_dir / "interim" / "author_affiliations_expanded.csv", all_rows,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
-               "author_order", "inst", "country", "is_us_institution", "classification_source",
+               "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
-    write_csv(output_dir / "interim" / "us_institution_candidates.csv", candidates,
-              ["inst", "country", "is_us_institution", "classification_source", "classification_confidence",
-               "classification_reason", "example_conference", "example_paper_id", "example_title"])
     write_csv(output_dir / "interim" / "institution_classification_candidates.csv", candidates,
-              ["inst", "country", "is_us_institution", "classification_source", "classification_confidence",
+              ["inst", "country", "classification_source", "classification_confidence",
                "classification_reason", "example_conference", "example_paper_id", "example_title"])
     write_csv(output_dir / "interim" / "affiliation_resolution_queue.csv", all_issues,
               ["conference", "year", "paper_id", "title", "issue",
@@ -660,14 +765,6 @@ def run_all_pipelines(
                "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
     write_workbook(output_dir / "output" / "四大安全顶会_作者机构国家.xlsx", all_classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
-    write_csv(output_dir / "output" / "四大安全顶会_美国机构.csv", all_us_rows,
-              ["name", "year", "article_tag", "author_order", "inst"])
-    write_csv(output_dir / "output" / "四大安全顶会_美国机构_audit.csv", all_us_rows,
-              ["conference", "year", "paper_id", "title", "name", "article_tag",
-               "author_order", "inst", "country", "classification_source",
-               "classification_confidence", "classification_reason"])
-    write_workbook(output_dir / "output" / "四大安全顶会_美国机构.xlsx", all_us_rows, ["name", "year", "article_tag", "author_order", "inst"])
-
     combined = {
         "reports": reports,
         "papers_count": sum(report["papers_count"] for report in reports),
@@ -677,8 +774,8 @@ def run_all_pipelines(
         "classified_author_rows": len(all_classified_rows),
         "resolved_country_rows": len(all_classified_rows),
         "unresolved_country_rows": len(all_rows) - len(all_classified_rows),
-        "us_author_rows": len(all_us_rows),
         "no_affiliation_issues": len(all_issues),
+        "pdf_download_reports": pdf_reports,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     (output_dir / "output" / "validation_report.json").write_text(
@@ -701,6 +798,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("data"))
     parser.add_argument("--fetch", action="store_true", help="Fetch papers from DBLP")
     parser.add_argument("--fetch-affiliations", action="store_true", help="Fetch affiliations from conference websites")
+    parser.add_argument("--download-pdfs", action="store_true", help="Download PDFs when paper pages expose PDF links")
+    parser.add_argument("--pdf-limit", type=int, default=0, help="Limit PDF downloads per conference; 0 means no limit")
     parser.add_argument("--list-conferences", action="store_true")
     args = parser.parse_args(argv)
 
@@ -719,7 +818,7 @@ def main(argv: list[str] | None = None) -> int:
             config = CONFERENCES[key]
             fetch_dblp_and_save(config, args.output_dir)
 
-    report = run_all_pipelines(args.output_dir, keys, args.fetch_affiliations)
+    report = run_all_pipelines(args.output_dir, keys, args.fetch_affiliations, args.download_pdfs, args.pdf_limit)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

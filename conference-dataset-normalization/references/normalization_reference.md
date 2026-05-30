@@ -35,7 +35,6 @@
 - `inst`
 - `institution_key`
 - `country`
-- `is_us_institution`
 - `classification_source`
 - `classification_confidence`
 - `classification_reason`
@@ -47,7 +46,6 @@
 - `institution_key`
 - `inst_display`
 - `country`
-- `is_us_institution`
 - `source_count`
 - `needs_review`
 

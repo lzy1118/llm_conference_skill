@@ -56,5 +56,4 @@
 ## 中间产物命名
 
 - 推荐主用 `interim/institution_classification_candidates.csv` 作为待复核候选清单
-- 历史文件名 `interim/us_institution_candidates.csv` 当前仍会继续写出，但仅作兼容保留
 - 正式主输出应优先读取 `output/*_author_affiliations.csv` 或汇总版 `*_作者机构国家.csv`

@@ -48,7 +48,6 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 | `classification_confidence` | 数值型置信度 |
 | `classification_reason` | 匹配或判定原因 |
 | `country` | 可选的国家映射结果 |
-| `is_us_institution` | 来自现有流程的兼容布尔值，仅用于旧美国机构切片链路 |
 
 目标数据契约见 [标准化参考](references/normalization_reference.md)。
 
@@ -62,6 +61,18 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 这些表应保持字段明确、结构稳定、含义可复用。下游 skills 应能直接消费，而不需要重新解析会议源文件。
 
+标准化层应优先接入以下“标准化 reference”文件：
+
+- `conference-dataset-normalization/references/institution_aliases.csv`
+- `conference-dataset-normalization/references/institution_registry.csv`
+
+统一定位：
+
+- 通过 `institution_aliases.csv` 把原始 `inst` 精确映射到稳定 `institution_id`
+- 通过 `institution_registry.csv` 补 `canonical_name`、`country`、`region`、`type`
+- 在上游 `country` 缺失或仍为 `Unknown` 时，把 registry `country` 作为保守 fallback
+- 不用这组 reference 改写作者身份、论文标题或作者顺序事实
+
 ## 工作流程
 
 ### 第 1 步：定位候选输入文件
@@ -72,12 +83,12 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - `**/*.xlsx`
 - `**/*output*.*`
 - `**/*audit*.*`
-- `Top3-data/data/`
-- `Security-data/data/`
+- `generated-data/extraction/output/`
+- 仓库内其他历史输出目录
 
 如果存在多个文件，优先选择结构化的行级导出结果，而不是重新解析原始 HTML 或 PDF。
 
-当同时看到 `*_author_affiliations.csv` 与 `*_us_institutions.csv` 时，应优先选择前者作为标准化输入，因为它保留了完整国家视角，而不仅是美国机构切片。
+当同时看到 `*_author_affiliations.csv` 与历史子集文件时，应优先选择前者作为标准化输入，因为它保留了完整国家视角。
 
 ### 第 2 步：统一列名
 
@@ -125,6 +136,17 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 这样可以减少重复计算，也能让国家、机构、作者统计保持低耦合。
 
+如果已经接入这组标准化 reference，推荐额外输出以下字段：
+
+- `author_affiliation_facts.csv`
+  - `institution_id`
+  - `canonical_institution_name`
+- `institution_dim.csv`
+  - `institution_id`
+  - `canonical_name`
+  - `region`
+  - `type`
+
 ### 第 6 步：输出数据质量摘要
 
 始终输出简短的 `normalization_report.md` 或 `normalization_report.json`，至少覆盖：
@@ -146,10 +168,10 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 4. 重复记录是可解释的，并被有意保留或确定性去重
 5. `conference` 与 `year` 与源文件一致
 
-如果上游采用了论文级参与国 reference-first 口径，需要额外检查：
+如果上游采用了论文级参与国语义，需要额外检查：
 
 6. 同一 `paper_key + author_order + inst` 出现多行、但 `country` 不同的情况是否来自合法的多参与国展开
-7. 不要因为看起来像“重复机构行”就把 reference-first 展开的多国参与记录错误去重
+7. 不要因为看起来像“重复机构行”就把合法的多参与国记录错误去重
 
 ## 交接契约
 

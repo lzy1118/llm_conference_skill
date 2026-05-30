@@ -2,7 +2,7 @@
 
 ## 概述
 
-从学术会议论文中采集作者、机构与国家归属信息，输出可复用的“作者-机构-国家”长表，并在需要时兼容导出历史美国机构切片。
+从学术会议论文中采集作者、机构与国家归属信息，输出可复用的“作者-机构-国家”长表，并按论文级参与国语义支撑国家统计。
 
 ## 适用场景
 
@@ -60,7 +60,7 @@ for article in root.findall('.//inproceedings'):
     url = article.find('ee').text if article.find('ee') is not None else ''
 ```
 
-**输出：** `data/raw/{conference}_{year}_papers.json`
+**输出：** `generated-data/extraction/raw/{conference}_{year}_papers.json`
 
 ### 第三步：Affiliation 抓取
 
@@ -137,9 +137,9 @@ COUNTRY_PATTERN_RULES = [
 ]
 
 # Override 文件（人工覆盖）
-# data/reference/institution_country_overrides.csv
-# inst,country,is_us_institution,reason
-# Example Lab,United States,true,manual_review
+# generated-data/extraction/reference/institution_country_overrides.csv
+# inst,country,reason
+# Example Lab,United States,manual_review
 ```
 
 **分类函数：**
@@ -149,19 +149,18 @@ def classify_affiliation(affiliation, overrides=None):
     if overrides and lower in overrides:
         return overrides[lower]
     if lower in EXACT_ALIASES:
-        return {'country': 'United States', 'is_us_institution': True, 'source': 'rule', 'confidence': 1.0}
+        return {'country': 'United States', 'source': 'rule', 'confidence': 1.0}
     country = detect_country(lower)
     if country:
         return {
             'country': country,
-            'is_us_institution': country == 'United States',
             'source': 'rule',
             'confidence': 0.95,
         }
-    return {'country': 'Unknown', 'is_us_institution': False, 'source': 'unresolved', 'confidence': 0.0}
+    return {'country': 'Unknown', 'source': 'unresolved', 'confidence': 0.0}
 ```
 
-其中 `country` 是正式主字段，`is_us_institution` 只是兼容旧链路的附加标记，不应作为主分析字段。
+三大密码会国家统计默认应按论文级参与国语义处理。中国口径仅包括中国大陆机构；美国口径与其他国家口径一致，均按论文参与机构信号统计。除 2025 年验证案例外，其他年份若出现作者身份或基础事实冲突，应优先以 IACR raw / DBLP 为准。
 
 ### 第五步：输出生成
 
@@ -186,7 +185,7 @@ ws.append(['name', 'year', 'article_tag', 'author_order', 'inst', 'country'])
 fields = ['name', 'year', 'article_tag', 'author_order', 'inst', 'country']
 ```
 
-如需兼容历史美国机构工作流，可另外导出 `*_us_institutions.*` 子集，但不应把它视为正式主输出。
+当前主流程不再默认导出 `*_us_institutions.*`；若确有历史对照需要，应通过独立旧材料或额外脚本处理，而不应把它视为正式主输出。
 
 **审计表（额外字段）：**
 - `conference`: 会议名称
@@ -224,19 +223,22 @@ if (len(key_parts) >= 2 and len(aa_parts) >= 2 and
 
 ## 目录结构
 
-```
-{project}-data/
-  Plan/              规划文档
-  scripts/           处理脚本
-    unified pipeline / backend  主 pipeline
-  data/
+```text
+conference-paper-extraction/
+  scripts/           统一入口与 backend
+  references/        采集规则说明
+
+generated-data/
+  extraction/
     raw/             原始数据快照
     interim/         中间结果
-    reference/       override 规则
     output/          最终输出
     resolution/      复核缓存
-  tests/             测试
-  README.md          项目说明
+  normalized/        标准化事实表与维表
+  analysis/          下游分析结果
+
+data/
+  reference/         机构主 reference
 ```
 
 ## 关键注意事项
@@ -253,22 +255,28 @@ if (len(key_parts) >= 2 and len(aa_parts) >= 2 and
 # 安装依赖
 uv pip install openpyxl pypdf
 
-# 运行主 pipeline
-python3 scripts/{project}_us_pipeline.py --conference all --output-dir data
+# 运行统一抽取 pipeline
+python3 conference-paper-extraction/scripts/run_unified_pipeline.py --group all --output-dir generated-data/extraction
 
-# 从 DBLP 抓取论文
-python3 scripts/{project}_us_pipeline.py --conference all --output-dir data --fetch
+# 抽取指定会议并抓取原始论文元数据
+python3 conference-paper-extraction/scripts/run_unified_pipeline.py --conference crypto_2022 --output-dir generated-data/extraction --fetch
 
-# 抓取 affiliations
-python3 scripts/{project}_us_pipeline.py --conference all --output-dir data --fetch-affiliations
+# 安全会额外抓取 affiliations
+python3 conference-paper-extraction/scripts/run_unified_pipeline.py --conference usenix_security_2022 --output-dir generated-data/extraction --fetch --fetch-affiliations
 
 # 运行复核（密码会）
-python3 scripts/resolve_affiliations_from_sources.py \
-  --queue data/interim/affiliation_resolution_queue.csv \
-  --output-dir data/resolution --query-dblp --checkpoint-every 50
+python3 conference-paper-extraction/scripts/run_unified_pipeline.py \
+  --conference crypto_2022 \
+  --output-dir generated-data/extraction \
+  --resolve-mismatches
+
+# 如需更深入的补源阶段，可使用内部 resolution 产物
+python3 conference-paper-extraction/scripts/resolve_affiliations_from_sources.py \
+  --queue generated-data/extraction/interim/affiliation_resolution_queue.csv \
+  --output-dir generated-data/extraction/resolution --query-dblp --checkpoint-every 50
 
 # 合并 enriched 输出（密码会）
-python3 scripts/merge_resolved_us_rows.py
+python3 conference-paper-extraction/scripts/merge_resolved_rows.py
 
 # 运行测试
 python3 -m unittest discover -s tests -v

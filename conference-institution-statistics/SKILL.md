@@ -17,7 +17,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 - 用户希望查看一个或多个会议中的头部机构。
 - 用户希望查看机构按年份的变化趋势。
-- 用户需要按国家、会议、年份或机构类型切片查看机构排名；美国机构只应视为其中一种兼容切片。
+- 用户需要按国家、会议、年份或机构类型切片查看机构排名；美国机构只应视为其中一种可选国家切片。
 - 用户需要能追溯到标准化明细行的机构排名结果。
 
 ## 输入要求
@@ -45,7 +45,6 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 可选但很有用的字段：
 
 - `country`
-- `is_us_institution`：兼容字段，可用于旧链路快速切美国子集，但不应替代 `country`
 - `classification_confidence`
 
 ## 标准输出
@@ -80,11 +79,11 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 从以下范围中选择一种：
 
 - 全部机构
-- 仅某个国家或某个兼容切片（例如美国机构）
+- 仅某个国家切片
 - 某一国家的机构
 - 某一会议家族中的机构
 
-默认应把“全球机构长表”视为主输入，把国家过滤或美国过滤视为后续切片条件，而不是主输入文件类型。
+默认应把“全球机构长表”视为主输入，把国家过滤视为后续切片条件，而不是主输入文件类型。
 
 如果组合了多个范围条件，必须在报告中明确写出。
 
@@ -117,7 +116,6 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - `institution_key`
 - `institution_name`
 - `country`
-- `is_us_institution`
 - `papers`
 - `authors`
 - `first_author_papers`
