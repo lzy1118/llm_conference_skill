@@ -8,6 +8,7 @@ import sys
 import urllib.error
 import urllib.request
 import urllib.parse
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -738,8 +739,180 @@ def extract_pdf_url_from_paper(paper: dict[str, Any]) -> str:
     return ""
 
 
-def download_pdf(url: str, output_path: Path) -> tuple[bool, str, int]:
-    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/pdf,*/*;q=0.8"})
+def normalized_title_key(title: str) -> str:
+    return normalize_space(title).casefold().rstrip(".")
+
+
+def fetch_dblp_search_hits(title: str) -> list[dict[str, Any]]:
+    query = urllib.parse.quote(title)
+    url = f"https://dblp.org/search/publ/api?q={query}&format=json&h=5"
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,*/*;q=0.8"},
+    )
+    with urllib.request.urlopen(request, timeout=45) as response:
+        payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    hits = payload.get("result", {}).get("hits", {}).get("hit", [])
+    if isinstance(hits, dict):
+        return [hits]
+    return hits if isinstance(hits, list) else []
+
+
+def candidate_pdf_url_from_dblp_hit(
+    hit: dict[str, Any],
+    title: str,
+    year: int,
+) -> tuple[str, str, str]:
+    info = hit.get("info", {})
+    hit_title = normalize_space(str(info.get("title", "")))
+    if normalized_title_key(hit_title) != normalized_title_key(title):
+        return "", "", ""
+    hit_year = normalize_space(str(info.get("year", "")))
+    if hit_year and hit_year != str(year):
+        return "", "", ""
+    ee = normalize_space(str(info.get("ee", "")))
+    if not ee:
+        return "", "", ""
+    if "eprint.iacr.org" in ee:
+        pdf_url = ee if ee.lower().endswith(".pdf") else f"{ee}.pdf"
+        return pdf_url, ee, "dblp_eprint_exact"
+    if ee.lower().endswith(".pdf"):
+        return ee, ee, "dblp_direct_pdf"
+    return "", "", ""
+
+
+def fetch_arxiv_search_hits(title: str) -> list[dict[str, str]]:
+    query = urllib.parse.quote(title)
+    url = f"http://export.arxiv.org/api/query?search_query=all:%22{query}%22&start=0&max_results=5"
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/atom+xml,*/*;q=0.8"})
+    with urllib.request.urlopen(request, timeout=45) as response:
+        payload = response.read().decode("utf-8", errors="replace")
+    root = ET.fromstring(payload)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    hits: list[dict[str, str]] = []
+    for entry in root.findall("atom:entry", ns):
+        entry_title = normalize_space(entry.findtext("atom:title", default="", namespaces=ns))
+        entry_id = normalize_space(entry.findtext("atom:id", default="", namespaces=ns))
+        pdf_url = ""
+        for link in entry.findall("atom:link", ns):
+            title_attr = normalize_space(str(link.attrib.get("title", "")))
+            href = normalize_space(str(link.attrib.get("href", "")))
+            if title_attr.casefold() == "pdf" and href:
+                pdf_url = href if href.lower().endswith(".pdf") else f"{href}.pdf"
+                break
+        if entry_title:
+            hits.append({"title": entry_title, "id": entry_id, "pdf_url": pdf_url})
+    return hits
+
+
+def candidate_pdf_url_from_arxiv_hit(hit: dict[str, str], title: str) -> tuple[str, str, str]:
+    hit_title = normalize_space(hit.get("title", ""))
+    if normalized_title_key(hit_title) != normalized_title_key(title):
+        return "", "", ""
+    pdf_url = normalize_space(hit.get("pdf_url", ""))
+    source_url = normalize_space(hit.get("id", ""))
+    if pdf_url:
+        return pdf_url, source_url or pdf_url, "arxiv_exact"
+    return "", "", ""
+
+
+def fetch_openreview_search_hits(title: str) -> list[dict[str, str]]:
+    query = urllib.parse.quote(title)
+    url = f"https://api2.openreview.net/notes/search?query={query}&limit=5"
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,*/*;q=0.8"})
+    with urllib.request.urlopen(request, timeout=45) as response:
+        payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    notes = payload.get("notes", [])
+    hits: list[dict[str, str]] = []
+    for note in notes if isinstance(notes, list) else []:
+        content = note.get("content", {}) if isinstance(note, dict) else {}
+        title_value = content.get("title", "")
+        if isinstance(title_value, dict):
+            title_value = title_value.get("value", "")
+        note_id = normalize_space(str(note.get("id", "")))
+        hits.append({"title": normalize_space(str(title_value)), "id": note_id})
+    return hits
+
+
+def candidate_pdf_url_from_openreview_hit(hit: dict[str, str], title: str) -> tuple[str, str, str]:
+    hit_title = normalize_space(hit.get("title", ""))
+    if normalized_title_key(hit_title) != normalized_title_key(title):
+        return "", "", ""
+    note_id = normalize_space(hit.get("id", ""))
+    if note_id:
+        return f"https://openreview.net/pdf?id={note_id}", f"https://openreview.net/forum?id={note_id}", "openreview_exact"
+    return "", "", ""
+
+
+def resolve_iacr_pdf_candidate(
+    config: ConferenceConfig,
+    paper: dict[str, Any],
+    cache_dir: Path,
+) -> tuple[str, str, str]:
+    direct_pdf = extract_pdf_url_from_paper(paper)
+    if direct_pdf:
+        return direct_pdf, direct_pdf, "raw_pdf_url"
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = safe_pdf_stem(paper)
+    cache_path = cache_dir / f"{cache_key}_dblp_search.json"
+    if cache_path.exists():
+        hits = json.loads(cache_path.read_text(encoding="utf-8"))
+    else:
+        try:
+            hits = fetch_dblp_search_hits(normalize_space(str(paper.get("title", ""))))
+        except Exception:
+            hits = []
+        cache_path.write_text(json.dumps(hits, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    title = normalize_space(str(paper.get("title", "")))
+    for hit in hits:
+        pdf_url, source_url, strategy = candidate_pdf_url_from_dblp_hit(hit, title, config.year)
+        if pdf_url:
+            return pdf_url, source_url, strategy
+
+    arxiv_cache_path = cache_dir / f"{cache_key}_arxiv_search.json"
+    if arxiv_cache_path.exists():
+        arxiv_hits = json.loads(arxiv_cache_path.read_text(encoding="utf-8"))
+    else:
+        try:
+            arxiv_hits = fetch_arxiv_search_hits(title)
+        except Exception:
+            arxiv_hits = []
+        arxiv_cache_path.write_text(json.dumps(arxiv_hits, ensure_ascii=False, indent=2), encoding="utf-8")
+    for hit in arxiv_hits:
+        pdf_url, source_url, strategy = candidate_pdf_url_from_arxiv_hit(hit, title)
+        if pdf_url:
+            return pdf_url, source_url, strategy
+
+    openreview_cache_path = cache_dir / f"{cache_key}_openreview_search.json"
+    if openreview_cache_path.exists():
+        openreview_hits = json.loads(openreview_cache_path.read_text(encoding="utf-8"))
+    else:
+        try:
+            openreview_hits = fetch_openreview_search_hits(title)
+        except Exception:
+            openreview_hits = []
+        openreview_cache_path.write_text(json.dumps(openreview_hits, ensure_ascii=False, indent=2), encoding="utf-8")
+    for hit in openreview_hits:
+        pdf_url, source_url, strategy = candidate_pdf_url_from_openreview_hit(hit, title)
+        if pdf_url:
+            return pdf_url, source_url, strategy
+    return "", "", ""
+
+
+def download_pdf(url: str, output_path: Path, referer: str = "") -> tuple[bool, str, int]:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/pdf,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    if referer:
+        headers["Referer"] = referer
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=60) as response:
         content_type = response.headers.get("Content-Type", "")
         content = response.read()
@@ -759,22 +932,25 @@ def download_pdfs_for_conference(
     pdf_limit: int = 0,
 ) -> dict[str, Any]:
     pdf_dir = output_dir / "pdfs" / config.key
+    cache_dir = output_dir / "resolution" / config.key / "dblp_pdf_search_cache"
     report_rows: list[dict[str, Any]] = []
     downloaded = 0
     papers_seen = 0
     for paper in papers:
-        if pdf_limit > 0 and downloaded >= pdf_limit:
+        if pdf_limit > 0 and papers_seen >= pdf_limit:
             break
         papers_seen += 1
         paper_id = normalize_space(str(paper.get("paperId", "")))
         title = normalize_space(str(paper.get("title", "")))
-        pdf_url = extract_pdf_url_from_paper(paper)
+        pdf_url, source_url, strategy = resolve_iacr_pdf_candidate(config, paper, cache_dir)
         row = {
             "conference": config.conference,
             "year": config.year,
             "paper_id": paper_id,
             "title": title,
+            "source_url": source_url,
             "pdf_url": pdf_url,
+            "resolution_strategy": strategy,
             "status": "pending",
             "content_type": "",
             "bytes": 0,
@@ -787,7 +963,7 @@ def download_pdfs_for_conference(
             continue
         output_path = pdf_dir / f"{safe_pdf_stem(paper)}.pdf"
         try:
-            ok, content_type, byte_count = download_pdf(pdf_url, output_path)
+            ok, content_type, byte_count = download_pdf(pdf_url, output_path, referer=source_url)
             row["content_type"] = content_type
             row["bytes"] = byte_count
             if ok:
@@ -804,7 +980,7 @@ def download_pdfs_for_conference(
     write_csv(
         report_path,
         report_rows,
-        ["conference", "year", "paper_id", "title", "pdf_url", "status", "content_type", "bytes", "path", "error"],
+        ["conference", "year", "paper_id", "title", "source_url", "pdf_url", "resolution_strategy", "status", "content_type", "bytes", "path", "error"],
     )
     summary = {
         "conference": config.conference,

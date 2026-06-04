@@ -333,28 +333,61 @@ def extract_pdf_links_from_html(base_url: str, html_text: str) -> list[str]:
     return links
 
 
-def resolve_pdf_url(config: ConferenceConfig, paper: dict[str, Any]) -> str:
+def extract_public_pdf_candidates(base_url: str, html_text: str) -> list[tuple[str, str]]:
+    candidates: list[tuple[str, str]] = []
+
+    def add(url: str, strategy: str) -> None:
+        absolute = urllib.parse.urljoin(base_url, html.unescape(url.strip()))
+        if absolute and all(existing[0] != absolute for existing in candidates):
+            candidates.append((absolute, strategy))
+
+    for pattern in [
+        r'<meta[^>]+name="citation_pdf_url"[^>]+content="([^"]+)"',
+        r'<meta[^>]+property="citation_pdf_url"[^>]+content="([^"]+)"',
+        r'<meta[^>]+name="wkhealth_pdf_url"[^>]+content="([^"]+)"',
+    ]:
+        for match in re.findall(pattern, html_text, re.IGNORECASE):
+            add(match, "meta_pdf_url")
+
+    for href in re.findall(r'href=["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']', html_text, re.IGNORECASE):
+        add(href, "href_pdf")
+
+    for pattern in [
+        r'pdfUrl["\']?\s*[:=]\s*["\']([^"\']+)',
+        r'epdf["\']?\s*[:=]\s*["\']([^"\']+)',
+        r'data-pdf-url=["\']([^"\']+)["\']',
+    ]:
+        for match in re.findall(pattern, html_text, re.IGNORECASE):
+            add(match, "script_pdf_hint")
+    return candidates
+
+
+def resolve_pdf_url(config: ConferenceConfig, paper: dict[str, Any]) -> tuple[str, str]:
     url = normalize_space(str(paper.get("url", "")))
     if not url:
-        return ""
+        return "", ""
     if url.lower().endswith(".pdf"):
-        return url
+        return url, "raw_pdf_url"
     try:
         page_html = fetch_text(url, timeout=20)
     except Exception:
-        return ""
-    links = extract_pdf_links_from_html(url, page_html)
-    if not links:
-        return ""
+        return "", ""
+    candidates = extract_public_pdf_candidates(url, page_html)
+    if not candidates:
+        return "", ""
     if config.conference == "USENIX_SECURITY":
-        for link in links:
+        for link, strategy in candidates:
             if "files/conference" in link or "/presentation/" in link or "usenixsecurity" in link:
-                return link
-    return links[0]
+                return link, strategy
+    return candidates[0]
 
 
-def download_pdf(url: str, output_path: Path, timeout: int = 60) -> tuple[bool, str, int]:
-    request = urllib.request.Request(url, headers=BROWSER_HEADERS)
+def download_pdf(url: str, output_path: Path, referer: str = "", timeout: int = 60) -> tuple[bool, str, int]:
+    headers = dict(BROWSER_HEADERS)
+    headers["Accept"] = "application/pdf,*/*;q=0.8"
+    if referer:
+        headers["Referer"] = referer
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         content_type = response.headers.get("Content-Type", "")
         content = response.read()
@@ -376,13 +409,15 @@ def download_pdfs_for_conference(
     pdf_dir = output_dir / "pdfs" / config.key
     report_rows: list[dict[str, Any]] = []
     downloaded = 0
+    papers_seen = 0
     for index, paper in enumerate(papers):
-        if pdf_limit > 0 and downloaded >= pdf_limit:
+        if pdf_limit > 0 and papers_seen >= pdf_limit:
             break
+        papers_seen += 1
         paper_id = normalize_space(str(paper.get("paperId", "")))
         title = normalize_space(str(paper.get("title", "")))
         source_url = normalize_space(str(paper.get("url", "")))
-        pdf_url = resolve_pdf_url(config, paper)
+        pdf_url, resolution_strategy = resolve_pdf_url(config, paper)
         row = {
             "conference": config.conference,
             "year": config.year,
@@ -390,6 +425,7 @@ def download_pdfs_for_conference(
             "title": title,
             "source_url": source_url,
             "pdf_url": pdf_url,
+            "resolution_strategy": resolution_strategy,
             "status": "pending",
             "content_type": "",
             "bytes": 0,
@@ -402,7 +438,7 @@ def download_pdfs_for_conference(
             continue
         output_path = pdf_dir / f"{safe_pdf_stem(paper)}.pdf"
         try:
-            ok, content_type, byte_count = download_pdf(pdf_url, output_path)
+            ok, content_type, byte_count = download_pdf(pdf_url, output_path, referer=source_url)
             row["content_type"] = content_type
             row["bytes"] = byte_count
             if ok:
@@ -419,12 +455,12 @@ def download_pdfs_for_conference(
     write_csv(
         report_path,
         report_rows,
-        ["conference", "year", "paper_id", "title", "source_url", "pdf_url", "status", "content_type", "bytes", "path", "error"],
+        ["conference", "year", "paper_id", "title", "source_url", "pdf_url", "resolution_strategy", "status", "content_type", "bytes", "path", "error"],
     )
     summary = {
         "conference": config.conference,
         "year": config.year,
-        "papers_seen": min(len(papers), pdf_limit) if pdf_limit > 0 else len(papers),
+        "papers_seen": papers_seen,
         "downloaded_pdfs": downloaded,
         "report_path": str(report_path),
         "pdf_dir": str(pdf_dir),

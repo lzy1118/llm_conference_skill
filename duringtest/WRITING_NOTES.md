@@ -108,6 +108,16 @@
 - 回填自动化不应以“一键执行全部任务”为目标，而应先建立 dry-run、network gate、task filtering 与 command dedupe。
 - 在质量敏感的数据系统中，安全可控的执行边界往往比更高的自动化覆盖率更重要。
 
+### 4.4 PDF：先下载、后解析
+
+可复用表述：
+
+- PDF 下载层和 PDF 解析层应分开设计，先建立稳定缓存，再单独评估 frontmatter 或全文解析质量。
+- 对页面结构较稳定的会议平台，先把论文 PDF 落地为本地审计资产，通常比一开始直接做 PDF 内容解析更稳妥。
+- 这种“download-first, parse-later”的策略有助于把下载错误与解析错误解耦。
+- 对开放版本覆盖不完整的会议家族，可先通过 DBLP / ePrint 等公开来源补一部分 PDF，而不把“未下载到 PDF”直接等同于系统失败。
+- 当引入标题搜索型公开来源时，应只接受归一化后的精确标题匹配，避免把语义相似但并非同一论文的结果误当作有效 PDF 来源。
+
 ## 5. 实验对比写法模板
 
 适合复用的结构：
@@ -170,6 +180,7 @@
 - coverage ledger 作为数据质量控制层
 - evidence-driven author role construction
 - template-first CFP extraction
+- download-first PDF acquisition
 
 ## 9. 如何与现有记录联动
 
@@ -177,4 +188,5 @@
 - Author role / override：`AUTHOR_ROLE_PIPELINE_AND_COVERAGE_2026_05_29.md`
 - CFP：`CFP_PIPELINE_AND_COVERAGE_2026_05_29.md`
 - Backfill：`BACKFILL_RUNNER_AND_DEDUP_2026_05_29.md`
+- PDF 下载能力：`PDF_DOWNLOAD_CAPABILITY_2026_05_30.md`
 - 单会议高质量案例：`USENIX_SECURITY_2020_REFERENCE_INTEGRATION_2026_05_29.md`
