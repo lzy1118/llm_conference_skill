@@ -56,6 +56,20 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 这是重复出报告时的优先模式，因为它减少重复计算，也能保持不同运行之间的可比性。
 
+### 模式 3：从统一抽取入口开始
+
+如果用户只给出会议选择，而不想手工先跑抽取与标准化，则可由分析自动化直接调用：
+
+- `conference-paper-extraction/scripts/run_unified_pipeline.py`
+- `conference-paper-extraction/scripts/clean_extraction_noise.py`
+- `conference-dataset-normalization/scripts/normalize_dataset.py`
+
+也就是说，这个自动化层现在既可以从现成 CSV 起跑，也可以从会议 key / group 起跑，再一路进入标准化与下游分析。
+
+当自动化层从会议 key / group 起跑时，默认会在统一抽取之后自动执行一次抽取层去噪，再把清理后的 `author_affiliations_audit.csv` 送入标准化。若确实需要保留原始未去噪结果，可显式传入：
+
+- `--skip-extract-noise-cleaning`
+
 ## 标准输出
 
 将所有自动化结果写入一个专门的运行目录，例如 `generated-data/analysis/`：
@@ -72,6 +86,10 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 1. 需要先标准化的原始 CSV
 2. 已有标准化作者-机构事实表
+
+或者走第三种模式：
+
+3. 先执行统一抽取，再把抽取输出自动送入标准化
 
 如果二者同时提供，只有在用户明确要求跳过标准化时，才把标准化输入视为优先来源。
 
@@ -91,6 +109,10 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 如果从原始输入开始，则调用：
 
 `conference-dataset-normalization/scripts/normalize_dataset.py`
+
+如果前一步来自统一抽取入口，则在标准化之前先调用：
+
+`conference-paper-extraction/scripts/clean_extraction_noise.py`
 
 随后把生成的 `normalized/author_affiliation_facts.csv` 作为后续分析唯一共享的事实表。
 
@@ -141,6 +163,25 @@ manifest 中应始终记录：
 ```bash
 python3 scripts/run_analysis_pipeline.py \
   --raw-input generated-data/extraction/interim/conference_rows.csv \
+  --output-dir generated-data/analysis
+```
+
+```bash
+python3 scripts/run_analysis_pipeline.py \
+  --extract-group top4_security \
+  --extract-fetch \
+  --extract-fetch-affiliations \
+  --output-dir generated-data/analysis
+```
+
+如需跳过自动去噪：
+
+```bash
+python3 scripts/run_analysis_pipeline.py \
+  --extract-group top4_security \
+  --extract-fetch \
+  --extract-fetch-affiliations \
+  --skip-extract-noise-cleaning \
   --output-dir generated-data/analysis
 ```
 

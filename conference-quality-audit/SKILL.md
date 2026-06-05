@@ -56,6 +56,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - `author_key` 缺失或过弱的行
 - `classification_confidence` 过低或非数值
 - 同一机构显示名对应多个标准化 key
+- 是否仍残留明显噪声机构名，例如 `Independent Researcher`、`None`、`Privacy`
 
 ### 第 2 步：审计机构维表
 

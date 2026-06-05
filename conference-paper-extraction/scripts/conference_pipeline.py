@@ -22,6 +22,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fetch-affiliations", action="store_true")
     parser.add_argument("--resolve-mismatches", action="store_true")
     parser.add_argument("--query-dblp-for-resolution", action="store_true")
+    parser.add_argument("--download-pdfs", action="store_true")
+    parser.add_argument("--pdf-limit", type=int, default=0)
+    parser.add_argument("--webdriver-search", action="store_true")
     parser.add_argument("--list-conferences", action="store_true")
     parser.add_argument("--list-backends", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -42,6 +45,12 @@ def build_forward_argv(args: argparse.Namespace) -> list[str]:
         forwarded.append("--resolve-mismatches")
     if args.query_dblp_for_resolution:
         forwarded.append("--query-dblp-for-resolution")
+    if args.download_pdfs:
+        forwarded.append("--download-pdfs")
+        if args.pdf_limit > 0:
+            forwarded.extend(["--pdf-limit", str(args.pdf_limit)])
+    if args.webdriver_search:
+        forwarded.append("--webdriver-search")
     if args.dry_run:
         forwarded.append("--dry-run")
 

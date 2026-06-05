@@ -154,10 +154,15 @@ def candidate_paths(key: str) -> ArtifactSet:
     queue_candidates: list[Path] = []
     for root in SEARCH_ROOTS:
         raw_candidates.extend(root.glob(f"**/{key}_papers.json"))
+        raw_candidates.extend(root.glob(f"**/by_conference/{key}/papers.json"))
         report_candidates.extend(root.glob(f"**/{key}_validation_report.json"))
+        report_candidates.extend(root.glob(f"**/by_conference/{key}/validation_report.json"))
         author_candidates.extend(root.glob(f"**/{key}_author_affiliations_expanded.csv"))
         author_candidates.extend(root.glob(f"**/{key}_author_affiliations.csv"))
+        author_candidates.extend(root.glob(f"**/by_conference/{key}/author_affiliations_expanded.csv"))
+        author_candidates.extend(root.glob(f"**/by_conference/{key}/author_affiliations.csv"))
         queue_candidates.extend(root.glob(f"**/{key}_affiliation_resolution_queue.csv"))
+        queue_candidates.extend(root.glob(f"**/by_conference/{key}/affiliation_resolution_queue.csv"))
     return ArtifactSet(
         raw_json=pick_newest(raw_candidates),
         validation_report=pick_newest(report_candidates),
@@ -318,13 +323,21 @@ def build_ledger(
     expected_counts: dict[str, int],
     cfp_statuses: dict[str, str],
     author_role_statuses: dict[tuple[str, int], str],
+    min_year: int | None = None,
+    max_year: int | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     ledger: list[dict[str, object]] = []
     tasks: list[dict[str, object]] = []
     paper_audit: list[dict[str, object]] = []
     generated_at = datetime.now(timezone.utc).isoformat()
 
-    for key, conference in sorted(CONFERENCES.items(), key=lambda item: (item[1].family, item[1].conference, item[1].year)):
+    selected_conferences = [
+        (key, conference)
+        for key, conference in CONFERENCES.items()
+        if (min_year is None or conference.year >= min_year)
+        and (max_year is None or conference.year <= max_year)
+    ]
+    for key, conference in sorted(selected_conferences, key=lambda item: (item[1].family, item[1].conference, item[1].year)):
         artifacts = candidate_paths(key)
         report = read_json(artifacts.validation_report) or {}
         raw_payload = read_json(artifacts.raw_json)
@@ -495,6 +508,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-counts", type=Path, default=DEFAULT_EXPECTED_COUNTS, help="Optional CSV with conference_key,expected_papers columns")
     parser.add_argument("--cfp-dir", type=Path, default=DEFAULT_CFP_DIR, help="Directory containing CFP output CSV files")
     parser.add_argument("--author-roles-dir", type=Path, default=DEFAULT_AUTHOR_ROLES_DIR, help="Directory containing paper_author_roles.csv")
+    parser.add_argument("--min-year", type=int, default=2020, help="Minimum conference year to include.")
+    parser.add_argument("--max-year", type=int, default=2025, help="Maximum conference year to include.")
     return parser.parse_args()
 
 
@@ -504,7 +519,13 @@ def main() -> None:
     expected_counts = load_expected_counts(args.expected_counts.resolve())
     cfp_statuses = load_cfp_status(args.cfp_dir.resolve())
     author_role_statuses = load_author_role_status(args.author_roles_dir.resolve())
-    ledger, tasks, paper_audit = build_ledger(expected_counts, cfp_statuses, author_role_statuses)
+    ledger, tasks, paper_audit = build_ledger(
+        expected_counts,
+        cfp_statuses,
+        author_role_statuses,
+        args.min_year,
+        args.max_year,
+    )
     write_csv(
         output_dir / "conference_coverage_ledger.csv",
         ledger,

@@ -18,6 +18,14 @@ DEFAULT_AUTHOR_ROLES_DIR = ROOT / "generated-data" / "author-roles"
 DEFAULT_NORMALIZED_INPUT = ROOT / "generated-data" / "normalized" / "author_affiliation_facts.csv"
 
 
+def conference_family_for_key(conference_key: str) -> str:
+    if conference_key.startswith(("asiacrypt_", "crypto_", "eurocrypt_")):
+        return "crypto"
+    if conference_key.startswith(("usenix_security_", "ndss_", "ieee_sp_", "ccs_")):
+        return "security"
+    return "unknown"
+
+
 def read_tasks(path: Path) -> list[dict[str, str]]:
     if not path.exists() or path.stat().st_size == 0:
         return []
@@ -33,6 +41,7 @@ def write_json(path: Path, payload: dict[str, object]) -> None:
 def command_for_task(task: dict[str, str], args: argparse.Namespace) -> tuple[list[str], str]:
     task_type = task.get("task_type", "")
     conference_key = task.get("conference_key", "")
+    conference_family = conference_family_for_key(conference_key)
     if task_type == "fetch_papers":
         return (
             [
@@ -47,17 +56,22 @@ def command_for_task(task: dict[str, str], args: argparse.Namespace) -> tuple[li
             "network",
         )
     if task_type == "fetch_affiliations":
+        command = [
+            sys.executable,
+            str(ROOT / "conference-paper-extraction" / "scripts" / "run_unified_pipeline.py"),
+            "--conference",
+            conference_key,
+            "--output-dir",
+            str(args.extraction_dir),
+        ]
+        if conference_family == "security":
+            command.append("--fetch-affiliations")
+        elif conference_family == "crypto":
+            command.append("--resolve-mismatches")
+        else:
+            return [], "unsupported"
         return (
-            [
-                sys.executable,
-                str(ROOT / "conference-paper-extraction" / "scripts" / "run_unified_pipeline.py"),
-                "--conference",
-                conference_key,
-                "--output-dir",
-                str(args.extraction_dir),
-                "--fetch-affiliations",
-                "--resolve-mismatches",
-            ],
+            command,
             "network",
         )
     if task_type == "extract_cfp":

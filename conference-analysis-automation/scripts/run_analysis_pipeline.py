@@ -10,6 +10,7 @@ from pathlib import Path
 
 RUN_CHOICES = ("country", "institution", "author", "trend", "collaboration", "audit", "report", "visualization")
 DEFAULT_OUTPUT_DIR = Path("generated-data") / "analysis"
+DEFAULT_EXTRACTION_OUTPUT_DIR = Path("generated-data") / "extraction"
 
 
 def parse_args() -> argparse.Namespace:
@@ -17,6 +18,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--raw-input", action="append", default=[], help="Raw row-level CSV input. Repeat for multiple files.")
     parser.add_argument("--normalized-input", help="Existing normalized author_affiliation_facts.csv path.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Automation run output directory.")
+    parser.add_argument("--extract-conference", action="append", default=[], help="Conference key to extract before normalization. Repeatable.")
+    parser.add_argument("--extract-group", action="append", default=[], help="Conference group to extract before normalization. Repeatable.")
+    parser.add_argument("--extraction-output-dir", default=str(DEFAULT_EXTRACTION_OUTPUT_DIR), help="Extraction output directory when running unified extraction.")
+    parser.add_argument("--extract-fetch", action="store_true", help="Fetch raw metadata during unified extraction stage.")
+    parser.add_argument("--extract-fetch-affiliations", action="store_true", help="Fetch security venue affiliations during unified extraction stage.")
+    parser.add_argument("--extract-resolve-mismatches", action="store_true", help="Run crypto mismatch resolution during unified extraction stage.")
+    parser.add_argument("--extract-query-dblp-for-resolution", action="store_true", help="Allow DBLP lookup during crypto mismatch resolution.")
+    parser.add_argument(
+        "--skip-extract-noise-cleaning",
+        action="store_true",
+        help="Skip extraction-layer noise cleaning after unified extraction.",
+    )
     parser.add_argument("--conference")
     parser.add_argument("--year")
     parser.add_argument("--country")
@@ -50,6 +63,105 @@ def build_scope(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def run_unified_extraction_if_needed(args: argparse.Namespace, manifest: dict[str, object]) -> list[Path]:
+    if not args.extract_conference and not args.extract_group:
+        manifest["extraction"] = {"executed": False}
+        return []
+
+    extraction_output_dir = Path(args.extraction_output_dir).resolve()
+    dry_run_command = [
+        sys.executable,
+        str(repo_root() / "conference-paper-extraction" / "scripts" / "run_unified_pipeline.py"),
+        "--output-dir",
+        str(extraction_output_dir),
+        "--dry-run",
+    ]
+    for conference in args.extract_conference:
+        dry_run_command.extend(["--conference", conference])
+    for group in args.extract_group:
+        dry_run_command.extend(["--group", group])
+    if args.extract_fetch:
+        dry_run_command.append("--fetch")
+    if args.extract_fetch_affiliations:
+        dry_run_command.append("--fetch-affiliations")
+    if args.extract_resolve_mismatches:
+        dry_run_command.append("--resolve-mismatches")
+    if args.extract_query_dblp_for_resolution:
+        dry_run_command.append("--query-dblp-for-resolution")
+
+    dry_returncode, dry_stdout, dry_stderr = run_command(dry_run_command, cwd=repo_root())
+    if dry_returncode != 0:
+        manifest["extraction"] = {
+            "executed": False,
+            "dry_run_command": dry_run_command,
+            "returncode": dry_returncode,
+            "stdout": dry_stdout,
+            "stderr": dry_stderr,
+        }
+        raise RuntimeError("Unified extraction dry-run failed")
+
+    dry_payload = json.loads(dry_stdout)
+    selected_keys = dry_payload.get("conference_keys", [])
+
+    extraction_command = [part for part in dry_run_command if part != "--dry-run"]
+    returncode, stdout, stderr = run_command(extraction_command, cwd=repo_root())
+    manifest["extraction"] = {
+        "executed": True,
+        "command": extraction_command,
+        "conference_keys": selected_keys,
+        "returncode": returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "output_dir": str(extraction_output_dir),
+    }
+    if returncode != 0:
+        raise RuntimeError("Unified extraction failed")
+
+    raw_inputs: list[Path] = []
+    missing_outputs: list[str] = []
+    for conference_key in selected_keys:
+        candidate = extraction_output_dir / "output" / "by_conference" / conference_key / "author_affiliations_audit.csv"
+        if candidate.exists():
+            raw_inputs.append(candidate)
+        else:
+            missing_outputs.append(conference_key)
+    manifest["extraction"]["raw_inputs"] = [str(path) for path in raw_inputs]
+    manifest["extraction"]["missing_outputs"] = missing_outputs
+    return raw_inputs
+
+
+def run_extraction_noise_cleaning_if_needed(args: argparse.Namespace, manifest: dict[str, object]) -> None:
+    extraction = manifest.get("extraction", {})
+    if not extraction.get("executed"):
+        manifest["extraction_noise_cleaning"] = {"executed": False, "reason": "extraction_not_run"}
+        return
+    if args.skip_extract_noise_cleaning:
+        manifest["extraction_noise_cleaning"] = {"executed": False, "reason": "skipped_by_flag"}
+        return
+
+    extraction_output_dir = Path(str(extraction.get("output_dir", DEFAULT_EXTRACTION_OUTPUT_DIR))).resolve()
+    command = [
+        sys.executable,
+        str(repo_root() / "conference-paper-extraction" / "scripts" / "clean_extraction_noise.py"),
+        "--output-dir",
+        str(extraction_output_dir),
+    ]
+    for conference_key in extraction.get("conference_keys", []):
+        command.extend(["--conference", str(conference_key)])
+
+    returncode, stdout, stderr = run_command(command, cwd=repo_root())
+    manifest["extraction_noise_cleaning"] = {
+        "executed": True,
+        "command": command,
+        "returncode": returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "output_dir": str(extraction_output_dir),
+    }
+    if returncode != 0:
+        raise RuntimeError("Extraction noise cleaning failed")
+
+
 def normalize_inputs_if_needed(args: argparse.Namespace, output_dir: Path, manifest: dict[str, object]) -> Path:
     if args.normalized_input:
         normalized_input = Path(args.normalized_input).resolve()
@@ -61,10 +173,17 @@ def normalize_inputs_if_needed(args: argparse.Namespace, output_dir: Path, manif
         }
         return normalized_input
 
-    if not args.raw_input:
-        raise ValueError("Provide either --normalized-input or at least one --raw-input")
+    extracted_inputs = run_unified_extraction_if_needed(args, manifest)
+    if extracted_inputs:
+        run_extraction_noise_cleaning_if_needed(args, manifest)
+    if extracted_inputs:
+        raw_inputs = [str(path.resolve()) for path in extracted_inputs]
+    else:
+        raw_inputs = [str(Path(value).resolve()) for value in args.raw_input]
 
-    raw_inputs = [str(Path(value).resolve()) for value in args.raw_input]
+    if not raw_inputs:
+        raise ValueError("Provide either --normalized-input, at least one --raw-input, or extraction selection flags")
+
     normalized_root = output_dir / "normalized_run"
     ensure_directory(normalized_root)
 
@@ -275,6 +394,46 @@ def write_report(output_dir: Path, manifest: dict[str, object]) -> Path:
         f"- normalized_input: {manifest['normalized_input']}",
         f"- raw_inputs: {', '.join(manifest.get('raw_inputs', [])) or 'none'}",
         "",
+        "## Extraction",
+        "",
+    ])
+
+    extraction = manifest.get("extraction", {})
+    if extraction.get("executed"):
+        lines.extend([
+            f"- executed: True",
+            f"- extraction_output_dir: {extraction.get('output_dir', '')}",
+            f"- extracted_conference_keys: {', '.join(extraction.get('conference_keys', [])) or 'none'}",
+            f"- extracted_raw_inputs: {', '.join(extraction.get('raw_inputs', [])) or 'none'}",
+            f"- missing_outputs: {', '.join(extraction.get('missing_outputs', [])) or 'none'}",
+            "",
+        ])
+    else:
+        lines.extend([
+            "- executed: False",
+            "",
+        ])
+
+    lines.extend([
+        "## Extraction Noise Cleaning",
+        "",
+    ])
+    extraction_noise_cleaning = manifest.get("extraction_noise_cleaning", {})
+    if extraction_noise_cleaning.get("executed"):
+        lines.extend([
+            f"- executed: True",
+            f"- extraction_output_dir: {extraction_noise_cleaning.get('output_dir', '')}",
+            f"- returncode: {extraction_noise_cleaning.get('returncode', '')}",
+            "",
+        ])
+    else:
+        lines.extend([
+            f"- executed: False",
+            f"- reason: {extraction_noise_cleaning.get('reason', 'not_applicable')}",
+            "",
+        ])
+
+    lines.extend([
         "## Steps",
         "",
     ])

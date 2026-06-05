@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -37,3 +38,31 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def slug_path_part(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-") or "unknown"
+
+
+def conference_output_dir(root: Path, conference_key: str) -> Path:
+    return root / "output" / "by_conference" / conference_key
+
+
+def conference_interim_dir(root: Path, conference_key: str) -> Path:
+    return root / "interim" / "by_conference" / conference_key
+
+
+def summary_output_dir(root: Path, summary_key: str) -> Path:
+    return root / "output" / "summaries" / summary_key
+
+
+def summary_interim_dir(root: Path, summary_key: str) -> Path:
+    return root / "interim" / "summaries" / summary_key
+
+
+def conference_raw_dir(root: Path, conference_key: str) -> Path:
+    return root / "raw" / "by_conference" / conference_key
+
+
+def conference_pdf_dir(root: Path, conference_key: str) -> Path:
+    return root / "pdfs" / "by_conference" / conference_key

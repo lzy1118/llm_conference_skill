@@ -59,6 +59,21 @@ python3 scripts/run_unified_pipeline.py --conference usenix_security_2020 --outp
 python3 scripts/run_unified_pipeline.py --conference usenix_security_2020 --output-dir generated-data/extraction --download-pdfs --pdf-limit 5
 ```
 
+若后续需要接入需要登录的 OpenReview 工作流，凭据只应通过环境变量提供：
+
+```bash
+export OPENREVIEW_USERNAME="your_email"
+export OPENREVIEW_PASSWORD="your_password"
+```
+
+不要把凭据写进仓库、脚本、notebook、`duringtest/` 或任何生成产物。
+
+当前对 `Semantic Scholar` 与 `OpenReview` 的 API 调用应统一走低速率节流：
+
+- 目标速率：每分钟低于 40 个请求
+- 默认最小请求间隔：约 `1.6s`
+- 对 `429/5xx` 和临时网络错误做保守重试
+
 ## 当前统一入口覆盖范围
 
 | 分组 | 覆盖会议 | 当前后端 |
@@ -144,6 +159,32 @@ def classify_affiliation(affiliation: str) -> dict:
 
 完整规则见 [分类规则参考](references/classification_rules.md)。
 
+### 第 4.2 步：抽取后去噪
+
+在国家判定之后、标准化之前，建议执行一次抽取层去噪，移除明显不是机构的 affiliation 字符串，例如：
+
+- 身份占位：`Independent Researcher`、`Unaffiliated`
+- 空值或通用占位：`None`、`Privacy`、`Technology`
+- 过短碎片：`Department of Computer Science`
+- 非机构文本：`GFW Report`
+
+当前去噪入口：
+
+```bash
+python3 scripts/clean_extraction_noise.py --output-dir generated-data/extraction
+```
+
+规则文件位于：
+
+- `references/affiliation_noise_rules.csv`
+
+执行后会：
+
+- 回写清理后的 `interim/by_conference/*/author_affiliations_expanded.csv`
+- 回写清理后的 `output/by_conference/*/author_affiliations_audit.csv`
+- 生成 `interim/by_conference/*/noise_rows.csv` 作为审计副产物
+- 更新 `validation_report.json` 中的未解析计数
+
 若以下标准化 reference 文件存在，安全会与密码会抽取都应把它们视为统一的“标准化 reference”来源：
 
 - `conference-dataset-normalization/references/institution_aliases.csv`
@@ -184,18 +225,18 @@ def classify_affiliation(affiliation: str) -> dict:
 
 **主输出：**
 
-- `output/<conference_key>_author_affiliations.csv`
-- `output/<conference_key>_author_affiliations_audit.csv`
-- `output/<conference_key>_author_affiliations.xlsx`
+- `output/by_conference/<conference_key>/author_affiliations.csv`
+- `output/by_conference/<conference_key>/author_affiliations_audit.csv`
+- `output/by_conference/<conference_key>/author_affiliations.xlsx`
 - 多会议汇总时：
-  - 安全会：`output/四大安全顶会_作者机构国家.csv`
-  - 密码会：`output/2025-2026三大密码会_作者机构国家.csv`
+  - 安全会：`output/summaries/top4_security/四大安全顶会_作者机构国家.csv`
+  - 密码会：`output/summaries/top3_crypto/2025-2026三大密码会_作者机构国家.csv`
 
 当前主流程不再生成 `*_us_institutions.*` 或 `*美国机构*` 这类美国子集最终输出。
 
 中间候选主文件也改为泛化命名：
 
-- `interim/institution_classification_candidates.csv`
+- `interim/by_conference/<conference_key>/institution_classification_candidates.csv`
 
 **基础输出字段：**
 
@@ -237,6 +278,9 @@ generated-data/extraction/interim/llm_resolution_input.jsonl
 
 # 对 IACR mismatch 论文，可生成内部补源候选与 resolution report
 python3 scripts/run_unified_pipeline.py --conference crypto_2025 --output-dir data --resolve-mismatches
+
+# 对统一抽取结果做一次去噪清理，再交给标准化层
+python3 scripts/clean_extraction_noise.py --output-dir generated-data/extraction
 ```
 
 启用后，常见产物包括：

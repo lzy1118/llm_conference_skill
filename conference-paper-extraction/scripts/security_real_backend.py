@@ -9,12 +9,14 @@ import sys
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend_common import write_csv, write_workbook
+from backend_common import conference_interim_dir, conference_output_dir, conference_pdf_dir, conference_raw_dir, summary_interim_dir, summary_output_dir, write_csv, write_workbook
+from api_runtime import fetch_json_with_rate_limit, openalex_headers, semantic_scholar_headers
 from classification_common import classify_with_patterns, load_override_rows, normalize_space
 
 
@@ -39,12 +41,29 @@ class ConferenceConfig:
 
 CONFERENCES = {
     "usenix_security_2020": ConferenceConfig("usenix_security_2020", "USENIX_SECURITY", 2020, "uss", "USENIX_SECURITY"),
+    "usenix_security_2021": ConferenceConfig("usenix_security_2021", "USENIX_SECURITY", 2021, "uss", "USENIX_SECURITY"),
     "usenix_security_2022": ConferenceConfig("usenix_security_2022", "USENIX_SECURITY", 2022, "uss", "USENIX_SECURITY"),
     "usenix_security_2023": ConferenceConfig("usenix_security_2023", "USENIX_SECURITY", 2023, "uss", "USENIX_SECURITY"),
+    "usenix_security_2024": ConferenceConfig("usenix_security_2024", "USENIX_SECURITY", 2024, "uss", "USENIX_SECURITY"),
     "usenix_security_2025": ConferenceConfig("usenix_security_2025", "USENIX_SECURITY", 2025, "uss", "USENIX_SECURITY"),
+    "ndss_2020": ConferenceConfig("ndss_2020", "NDSS", 2020, "ndss", "NDSS"),
+    "ndss_2021": ConferenceConfig("ndss_2021", "NDSS", 2021, "ndss", "NDSS"),
+    "ndss_2022": ConferenceConfig("ndss_2022", "NDSS", 2022, "ndss", "NDSS"),
+    "ndss_2023": ConferenceConfig("ndss_2023", "NDSS", 2023, "ndss", "NDSS"),
+    "ndss_2024": ConferenceConfig("ndss_2024", "NDSS", 2024, "ndss", "NDSS"),
     "ndss_2025": ConferenceConfig("ndss_2025", "NDSS", 2025, "ndss", "NDSS"),
+    "ieee_sp_2020": ConferenceConfig("ieee_sp_2020", "IEEE_S&P", 2020, "sp", "IEEE_S&P"),
+    "ieee_sp_2021": ConferenceConfig("ieee_sp_2021", "IEEE_S&P", 2021, "sp", "IEEE_S&P"),
+    "ieee_sp_2022": ConferenceConfig("ieee_sp_2022", "IEEE_S&P", 2022, "sp", "IEEE_S&P"),
+    "ieee_sp_2023": ConferenceConfig("ieee_sp_2023", "IEEE_S&P", 2023, "sp", "IEEE_S&P"),
+    "ieee_sp_2024": ConferenceConfig("ieee_sp_2024", "IEEE_S&P", 2024, "sp", "IEEE_S&P"),
     "ieee_sp_2025": ConferenceConfig("ieee_sp_2025", "IEEE_S&P", 2025, "sp", "IEEE_S&P"),
     "ieee_sp_2026": ConferenceConfig("ieee_sp_2026", "IEEE_S&P", 2026, "sp", "IEEE_S&P"),
+    "ccs_2020": ConferenceConfig("ccs_2020", "CCS", 2020, "ccs", "CCS"),
+    "ccs_2021": ConferenceConfig("ccs_2021", "CCS", 2021, "ccs", "CCS"),
+    "ccs_2022": ConferenceConfig("ccs_2022", "CCS", 2022, "ccs", "CCS"),
+    "ccs_2023": ConferenceConfig("ccs_2023", "CCS", 2023, "ccs", "CCS"),
+    "ccs_2024": ConferenceConfig("ccs_2024", "CCS", 2024, "ccs", "CCS"),
     "ccs_2025": ConferenceConfig("ccs_2025", "CCS", 2025, "ccs", "CCS"),
     "ccs_2026": ConferenceConfig("ccs_2026", "CCS", 2026, "ccs", "CCS"),
     "ndss_2026": ConferenceConfig("ndss_2026", "NDSS", 2026, "ndss", "NDSS"),
@@ -162,15 +181,24 @@ def classify_affiliation(
     affiliation: str,
     overrides: dict[str, AffiliationClassification] | None = None,
 ) -> AffiliationClassification:
+    normalized = normalize_space(affiliation)
+    if overrides and normalized.casefold() in overrides:
+        return overrides[normalized.casefold()]
     parts = split_affiliation_parts(affiliation)
     if len(parts) > 1:
         results = [classify_single_affiliation(part, overrides) for part in parts]
         countries = {result.country for result in results if result.country != "Unknown"}
+        if countries == {"China", "Hong Kong"}:
+            lower = normalized.casefold()
+            if "shenzhen" in lower:
+                return AffiliationClassification("China", "rule", 0.95, "hong_kong_shenzhen_consensus")
+            if "hong kong" in lower:
+                return AffiliationClassification("Hong Kong", "rule", 0.95, "hong_kong_consensus")
         if len(countries) > 1:
             return AffiliationClassification(
                 "Multiple",
                 "rule",
-                min((result.confidence for result in results), default=0.7),
+                min((result.confidence for result in results if result.country != "Unknown"), default=0.7),
                 "multiple_countries",
             )
         if len(countries) == 1:
@@ -178,7 +206,7 @@ def classify_affiliation(
             return AffiliationClassification(
                 country,
                 "rule",
-                min((result.confidence for result in results), default=0.7),
+                min((result.confidence for result in results if result.country != "Unknown"), default=0.7),
                 "multi_affiliation_consensus",
             )
         return results[-1]
@@ -273,6 +301,25 @@ def parse_usenix_affiliations_html(html_text: str) -> list[dict[str, Any]]:
 def parse_ndss_affiliations_html(html: str) -> list[dict[str, Any]]:
     text = re.sub(r"<script.*?</script>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<style.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+
+    paper_data_match = re.search(r'<div class="paper-data">(.*?)</div>\s*<div class="paper-buttons">', text, re.DOTALL | re.IGNORECASE)
+    if paper_data_match:
+        paper_data = paper_data_match.group(1)
+        paragraphs = re.findall(r"<p>(.*?)</p>", paper_data, re.DOTALL | re.IGNORECASE)
+        for paragraph in paragraphs:
+            clean = normalize_space(re.sub(r"<[^>]+>", " ", paragraph))
+            if "(" not in clean or ")" not in clean:
+                continue
+            result = []
+            for match in re.finditer(r"([^,]+?)\s*\(([^)]+)\)", clean):
+                name = normalize_space(re.sub(r"\s+\d{4}$", "", match.group(1)))
+                inst = normalize_space(match.group(2))
+                if len(name.split()) < 2 or len(inst) <= 3 or inst.startswith("http") or inst[0].isdigit():
+                    continue
+                result.append({"name": name, "affiliations": [inst]})
+            if result:
+                return result
+
     h1_match = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.DOTALL | re.IGNORECASE)
     if not h1_match:
         return []
@@ -406,7 +453,7 @@ def download_pdfs_for_conference(
     output_dir: Path,
     pdf_limit: int = 0,
 ) -> dict[str, Any]:
-    pdf_dir = output_dir / "pdfs" / config.key
+    pdf_dir = conference_pdf_dir(output_dir, config.key)
     report_rows: list[dict[str, Any]] = []
     downloaded = 0
     papers_seen = 0
@@ -533,9 +580,12 @@ def fetch_semantic_scholar_affiliations(title: str, authors: list[str]) -> list[
     query = urllib.parse.quote_plus(title[:100])
     url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={query}&limit=1&fields=title,authors"
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": BROWSER_HEADERS["User-Agent"]})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            data = json.loads(response.read().decode("utf-8", errors="replace"))
+        data = fetch_json_with_rate_limit(
+            "semantic_scholar",
+            url,
+            headers=semantic_scholar_headers(),
+            timeout=20,
+        )
     except Exception:
         return []
     papers = data.get("data", [])
@@ -550,6 +600,159 @@ def fetch_semantic_scholar_affiliations(title: str, authors: list[str]) -> list[
     return result
 
 
+def normalized_title_key(title: str) -> str:
+    title = re.sub(r"<[^>]+>", " ", title)
+    return normalize_space(title).casefold().rstrip(".")
+
+
+def normalize_person_name(value: str) -> list[str]:
+    text = unicodedata.normalize("NFKD", value)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = normalize_space(text)
+    if "," in text:
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) >= 2:
+            text = f"{' '.join(parts[1:])} {parts[0]}"
+    text = re.sub(r"[^A-Za-z0-9 ]+", " ", text)
+    return [part.casefold() for part in text.split() if part]
+
+
+def names_match(left: str, right: str) -> bool:
+    left_parts = normalize_person_name(left)
+    right_parts = normalize_person_name(right)
+    if not left_parts or not right_parts:
+        return False
+    if left_parts == right_parts:
+        return True
+    if left_parts[-1] != right_parts[-1]:
+        return False
+    if left_parts[0][0] != right_parts[0][0]:
+        return False
+    return True
+
+
+def map_author_name(input_authors: list[str], candidate_name: str) -> str:
+    for name in input_authors:
+        if names_match(name, candidate_name):
+            return name
+    return ""
+
+
+def extract_doi_from_url(url: str) -> str:
+    value = normalize_space(url)
+    if not value:
+        return ""
+    value = value.rstrip("/")
+    if "doi.org/" not in value:
+        return ""
+    doi = value.split("doi.org/", 1)[1].strip()
+    return doi
+
+
+def map_openalex_authorships(authorships: list[dict[str, Any]], authors: list[str]) -> list[dict[str, Any]]:
+    mapped_rows: list[dict[str, Any]] = []
+    matched = 0
+    for authorship in authorships:
+        author_info = authorship.get("author", {})
+        candidate_names = [
+            normalize_space(str(author_info.get("display_name", ""))),
+            normalize_space(str(authorship.get("raw_author_name", ""))),
+        ]
+        mapped_name = ""
+        for candidate_name in candidate_names:
+            if not candidate_name:
+                continue
+            mapped_name = map_author_name(authors, candidate_name)
+            if mapped_name:
+                break
+        if not mapped_name:
+            continue
+
+        affiliations: list[str] = []
+        for institution in authorship.get("institutions", []):
+            inst_name = normalize_space(str(institution.get("display_name", "")))
+            if inst_name and inst_name not in affiliations:
+                affiliations.append(inst_name)
+        for raw_aff in authorship.get("raw_affiliation_strings", []):
+            raw_name = normalize_space(str(raw_aff))
+            if raw_name and raw_name not in affiliations:
+                affiliations.append(raw_name)
+        mapped_rows.append({"name": mapped_name, "affiliations": affiliations})
+        if affiliations:
+            matched += 1
+    if matched > 0:
+        return mapped_rows
+    return []
+
+
+def has_resolved_affiliations(rows: list[dict[str, Any]]) -> bool:
+    for row in rows:
+        affiliations = row.get("affiliations", [])
+        if any(normalize_space(str(value)) for value in affiliations):
+            return True
+    return False
+
+
+def fetch_openalex_affiliations_by_doi(doi: str, authors: list[str], year: int | None = None) -> list[dict[str, Any]]:
+    normalized_doi = normalize_space(doi)
+    if not normalized_doi:
+        return []
+    url = f"https://api.openalex.org/works/doi:{urllib.parse.quote(normalized_doi, safe='')}"
+    try:
+        payload = fetch_json_with_rate_limit(
+            "openalex",
+            url,
+            headers=openalex_headers(),
+            timeout=20,
+        )
+    except Exception:
+        return []
+
+    publication_year = payload.get("publication_year")
+    if year is not None and publication_year is not None and int(publication_year) != int(year):
+        return []
+    return map_openalex_authorships(payload.get("authorships", []), authors)
+
+
+def fetch_openalex_affiliations(title: str, authors: list[str], year: int | None = None) -> list[dict[str, Any]]:
+    query = urllib.parse.quote(title)
+    url = f"https://api.openalex.org/works?search={query}&per-page=5"
+    try:
+        payload = fetch_json_with_rate_limit(
+            "openalex",
+            url,
+            headers=openalex_headers(),
+            timeout=20,
+        )
+    except Exception:
+        return []
+
+    for result in payload.get("results", []):
+        display_name = normalize_space(str(result.get("display_name", "")))
+        publication_year = result.get("publication_year")
+        if normalized_title_key(display_name) != normalized_title_key(title):
+            continue
+        if year is not None and publication_year is not None and int(publication_year) != int(year):
+            continue
+        mapped_rows = map_openalex_authorships(result.get("authorships", []), authors)
+        if mapped_rows:
+            return mapped_rows
+    return []
+
+
+def resolve_openalex_fallback(url: str, title: str, authors: list[str], year: int | None = None) -> list[dict[str, Any]]:
+    doi = extract_doi_from_url(url)
+    if doi:
+        affiliations = fetch_openalex_affiliations_by_doi(doi, authors, year)
+        if has_resolved_affiliations(affiliations):
+            return affiliations
+    affiliations = fetch_openalex_affiliations(title, authors, year)
+    if has_resolved_affiliations(affiliations):
+        return affiliations
+    return []
+
+
 def resolve_affiliations_for_paper(
     config: ConferenceConfig,
     paper: dict[str, Any],
@@ -561,22 +764,36 @@ def resolve_affiliations_for_paper(
     cache_file = cache_dir / f"{paper['paperId'].replace('/', '_')}_affiliations.json"
     if cache_file.exists():
         cached = json.loads(cache_file.read_text(encoding="utf-8"))
-        if cached or not fetch_from_network:
+        if has_resolved_affiliations(cached) or not fetch_from_network:
             return cached
     if not fetch_from_network:
         return []
 
     affiliations = []
     url = paper.get("url", "")
+    title = paper.get("title", "")
+    authors = paper.get("authors", [])
     time.sleep(0.3)
     if config.conference == "USENIX_SECURITY" and url:
         affiliations = fetch_usenix_affiliations(url)
+        if not has_resolved_affiliations(affiliations):
+            affiliations = resolve_openalex_fallback(url, title, authors, config.year)
     elif config.conference == "NDSS" and url:
         affiliations = fetch_ndss_affiliations(url)
+        if not has_resolved_affiliations(affiliations):
+            affiliations = resolve_openalex_fallback(url, title, authors, config.year)
     elif config.conference == "IEEE_S&P" and url and "doi.org" in url:
         affiliations = fetch_ieee_affiliations(url)
+        if not has_resolved_affiliations(affiliations):
+            affiliations = resolve_openalex_fallback(url, title, authors, config.year)
     elif config.conference == "CCS" and url:
-        affiliations = fetch_semantic_scholar_affiliations(paper["title"], paper["authors"])
+        doi = extract_doi_from_url(url)
+        if doi:
+            affiliations = fetch_openalex_affiliations_by_doi(doi, authors, config.year)
+        if not affiliations:
+            affiliations = fetch_openalex_affiliations(title, authors, config.year)
+        if not affiliations:
+            affiliations = fetch_semantic_scholar_affiliations(title, authors)
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps(affiliations, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -700,11 +917,15 @@ def run_single_conference(
     config: ConferenceConfig,
     raw_json_path: Path,
     output_dir: Path,
+    papers: list[dict[str, Any]] | None = None,
     fetch_affiliations: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
-    papers = json.loads(raw_json_path.read_text(encoding="utf-8"))
+    if papers is None:
+        papers = json.loads(raw_json_path.read_text(encoding="utf-8"))
     overrides = load_institution_overrides(output_dir / "reference" / "institution_country_overrides.csv")
     cache_dir = output_dir / "resolution" / "affiliation_cache"
+    conference_output = conference_output_dir(output_dir, config.key)
+    conference_interim = conference_interim_dir(output_dir, config.key)
     paper_rows = normalize_papers(config, papers)
     rows, issues = expand_author_rows(config, papers, overrides, cache_dir, fetch_affiliations)
     classified_rows = filter_classified_rows(rows)
@@ -712,21 +933,21 @@ def run_single_conference(
     papers_with_author_rows = len({row["paper_id"] for row in rows if row.get("paper_id")})
     papers_without_affiliation_data = sum(1 for issue in issues if issue.get("issue") == "no_affiliation_data")
 
-    write_csv(output_dir / "interim" / f"{config.key}_author_affiliations_expanded.csv", rows,
+    write_csv(conference_interim / "author_affiliations_expanded.csv", rows,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
                "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
-    write_csv(output_dir / "interim" / f"{config.key}_affiliation_resolution_queue.csv", issues,
+    write_csv(conference_interim / "affiliation_resolution_queue.csv", issues,
               ["conference", "year", "paper_id", "title", "issue",
                "authors_count", "affiliations_count", "authors", "affiliations"])
-    write_csv(output_dir / "output" / f"{config.key}_author_affiliations.csv", classified_rows,
+    write_csv(conference_output / "author_affiliations.csv", classified_rows,
               ["name", "year", "article_tag", "author_order", "inst", "country"])
-    write_csv(output_dir / "output" / f"{config.key}_author_affiliations_audit.csv", classified_rows_final,
+    write_csv(conference_output / "author_affiliations_audit.csv", classified_rows_final,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
                "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
-    write_workbook(output_dir / "output" / f"{config.key}_author_affiliations.xlsx", classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
-    write_csv(output_dir / "interim" / f"{config.key}_institution_classification_candidates.csv", build_affiliation_candidates(rows),
+    write_workbook(conference_output / "author_affiliations.xlsx", classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
+    write_csv(conference_interim / "institution_classification_candidates.csv", build_affiliation_candidates(rows),
               ["inst", "country", "classification_source", "classification_confidence",
                "classification_reason", "example_conference", "example_paper_id", "example_title"])
     report = {
@@ -743,7 +964,7 @@ def run_single_conference(
         "no_affiliation_issues": len(issues),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    (output_dir / "output" / f"{config.key}_validation_report.json").write_text(
+    (conference_output / "validation_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8",
     )
     return report, paper_rows, rows, issues
@@ -755,8 +976,12 @@ def run_all_pipelines(
     fetch_affiliations: bool = False,
     download_pdfs: bool = False,
     pdf_limit: int = 0,
+    start: int = 0,
+    limit: int = 0,
 ) -> dict[str, Any]:
     selected_keys = conference_keys or list(CONFERENCES.keys())
+    summary_output = summary_output_dir(output_dir, "top4_security")
+    summary_interim = summary_interim_dir(output_dir, "top4_security")
     reports = []
     all_papers = []
     all_rows = []
@@ -765,14 +990,23 @@ def run_all_pipelines(
 
     for key in selected_keys:
         config = CONFERENCES[key]
-        raw_json_path = output_dir / "raw" / f"{config.key}_papers.json"
+        raw_json_path = conference_raw_dir(output_dir, config.key) / "papers.json"
         if not raw_json_path.exists():
             print(f"Skipping {config.key}: no raw JSON at {raw_json_path}", file=sys.stderr)
             continue
         papers = json.loads(raw_json_path.read_text(encoding="utf-8"))
+        if start > 0 or limit > 0:
+            stop = start + limit if limit > 0 else None
+            papers = papers[start:stop]
         if download_pdfs:
             pdf_reports.append(download_pdfs_for_conference(config, papers, output_dir, pdf_limit=pdf_limit))
-        report, paper_rows, rows, issues = run_single_conference(config, raw_json_path, output_dir, fetch_affiliations)
+        report, paper_rows, rows, issues = run_single_conference(
+            config,
+            raw_json_path,
+            output_dir,
+            papers=papers,
+            fetch_affiliations=fetch_affiliations,
+        )
         reports.append(report)
         all_papers.extend(paper_rows)
         all_rows.extend(rows)
@@ -782,25 +1016,25 @@ def run_all_pipelines(
     all_classified_rows_final = all_classified_rows
     candidates = build_affiliation_candidates(all_rows)
 
-    write_csv(output_dir / "interim" / "papers_normalized.csv", all_papers,
+    write_csv(summary_interim / "papers_normalized.csv", all_papers,
               ["conference", "year", "paper_id", "title", "article_tag", "authors_count", "url"])
-    write_csv(output_dir / "interim" / "author_affiliations_expanded.csv", all_rows,
+    write_csv(summary_interim / "author_affiliations_expanded.csv", all_rows,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
                "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
-    write_csv(output_dir / "interim" / "institution_classification_candidates.csv", candidates,
+    write_csv(summary_interim / "institution_classification_candidates.csv", candidates,
               ["inst", "country", "classification_source", "classification_confidence",
                "classification_reason", "example_conference", "example_paper_id", "example_title"])
-    write_csv(output_dir / "interim" / "affiliation_resolution_queue.csv", all_issues,
+    write_csv(summary_interim / "affiliation_resolution_queue.csv", all_issues,
               ["conference", "year", "paper_id", "title", "issue",
                "authors_count", "affiliations_count", "authors", "affiliations"])
-    write_csv(output_dir / "output" / "四大安全顶会_作者机构国家.csv", all_classified_rows,
+    write_csv(summary_output / "四大安全顶会_作者机构国家.csv", all_classified_rows,
               ["name", "year", "article_tag", "author_order", "inst", "country"])
-    write_csv(output_dir / "output" / "四大安全顶会_作者机构国家_audit.csv", all_classified_rows_final,
+    write_csv(summary_output / "四大安全顶会_作者机构国家_audit.csv", all_classified_rows_final,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
                "author_order", "inst", "country", "classification_source",
                "classification_confidence", "classification_reason"])
-    write_workbook(output_dir / "output" / "四大安全顶会_作者机构国家.xlsx", all_classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
+    write_workbook(summary_output / "四大安全顶会_作者机构国家.xlsx", all_classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
     combined = {
         "reports": reports,
         "papers_count": sum(report["papers_count"] for report in reports),
@@ -814,7 +1048,7 @@ def run_all_pipelines(
         "pdf_download_reports": pdf_reports,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    (output_dir / "output" / "validation_report.json").write_text(
+    (summary_output / "validation_report.json").write_text(
         json.dumps(combined, ensure_ascii=False, indent=2), encoding="utf-8",
     )
     return combined
@@ -822,7 +1056,7 @@ def run_all_pipelines(
 
 def fetch_dblp_and_save(config: ConferenceConfig, output_dir: Path) -> None:
     papers = fetch_dblp_papers(config)
-    output_path = output_dir / "raw" / f"{config.key}_papers.json"
+    output_path = conference_raw_dir(output_dir, config.key) / "papers.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(papers, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Fetched {len(papers)} papers for {config.key}", file=sys.stderr)
@@ -836,6 +1070,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fetch-affiliations", action="store_true", help="Fetch affiliations from conference websites")
     parser.add_argument("--download-pdfs", action="store_true", help="Download PDFs when paper pages expose PDF links")
     parser.add_argument("--pdf-limit", type=int, default=0, help="Limit PDF downloads per conference; 0 means no limit")
+    parser.add_argument("--start", type=int, default=0, help="Start index for per-conference batching")
+    parser.add_argument("--limit", type=int, default=0, help="Limit papers per conference for batching; 0 means no limit")
     parser.add_argument("--list-conferences", action="store_true")
     args = parser.parse_args(argv)
 
@@ -854,7 +1090,15 @@ def main(argv: list[str] | None = None) -> int:
             config = CONFERENCES[key]
             fetch_dblp_and_save(config, args.output_dir)
 
-    report = run_all_pipelines(args.output_dir, keys, args.fetch_affiliations, args.download_pdfs, args.pdf_limit)
+    report = run_all_pipelines(
+        args.output_dir,
+        keys,
+        args.fetch_affiliations,
+        args.download_pdfs,
+        args.pdf_limit,
+        args.start,
+        args.limit,
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

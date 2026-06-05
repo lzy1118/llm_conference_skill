@@ -36,8 +36,13 @@
 
 自动化 skill 应独立调用每个下游脚本。
 
+如果自动化层从统一抽取入口启动，则标准化前应先执行一次抽取层去噪，默认命令为：
+
+- `python3 conference-paper-extraction/scripts/clean_extraction_noise.py --output-dir <extraction_dir> [--conference <conference_key> ...]`
+
 推荐脚本接口如下：
 
+- 抽取后去噪：`python3 conference-paper-extraction/scripts/clean_extraction_noise.py --output-dir <dir> [--conference <conference_key> ...]`
 - 标准化：`python3 conference-dataset-normalization/scripts/normalize_dataset.py <inputs...> --output-dir <dir>`
 - 国家统计：`python3 conference-country-statistics/scripts/country_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y]`
 - 机构统计：`python3 conference-institution-statistics/scripts/institution_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y] [--country X]`

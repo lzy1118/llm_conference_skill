@@ -12,6 +12,7 @@ generated-data/
   reports/         汇总报告
   visualizations/  图表与 SVG 可视化
   manifests/       运行 manifest 与批处理记录
+  archive/         旧版本运行、冒烟测试、验证快照等过程数据存档
 ```
 
 ## 推荐用法
@@ -28,15 +29,56 @@ python3 conference-paper-extraction/scripts/run_unified_pipeline.py \
 
 ```bash
 python3 conference-dataset-normalization/scripts/normalize_dataset.py \
-  generated-data/extraction/output/*_author_affiliations.csv \
+  generated-data/extraction/output/by_conference/*/author_affiliations.csv \
   --output-dir generated-data/normalized
 ```
+
+当前推荐的抽取层目录约定：
+
+```text
+generated-data/extraction/
+  raw/                 原始快照
+  interim/by_conference/<conference_key>/
+  output/by_conference/<conference_key>/
+  output/summaries/<group>/
+  pdfs/<conference_key>/
+```
+
+其中：
+
+- 单会议正式输出统一放在 `output/by_conference/<conference_key>/`
+- 多会议汇总统一放在 `output/summaries/<group>/`
+- 单会议中间产物统一放在 `interim/by_conference/<conference_key>/`
+- 会议级路径总索引见：`generated-data/extraction/artifact_index.csv` 与 `generated-data/extraction/artifact_index.md`
+- 分析层路径总索引见：`generated-data/analysis/artifact_index.csv` 与 `generated-data/analysis/artifact_index.md`
+- 七大会 `2020-2025` 完成度总表见：`generated-data/coverage/seven_conference_completion_2020_2025.csv` 与 `generated-data/coverage/seven_conference_completion_2020_2025.md`
 
 ### 3. 自动化分析
 
 ```bash
 python3 conference-analysis-automation/scripts/run_analysis_pipeline.py \
   --normalized-input generated-data/normalized/author_affiliation_facts.csv \
+  --output-dir generated-data/analysis
+```
+
+或者直接从会议选择开始：
+
+```bash
+python3 conference-analysis-automation/scripts/run_analysis_pipeline.py \
+  --extract-group top4_security \
+  --extract-fetch \
+  --extract-fetch-affiliations \
+  --output-dir generated-data/analysis
+```
+
+对于密码会，也可以让分析自动化直接触发 mismatch resolution：
+
+```bash
+python3 conference-analysis-automation/scripts/run_analysis_pipeline.py \
+  --extract-group top3_crypto \
+  --extract-fetch \
+  --extract-resolve-mismatches \
+  --extract-query-dblp-for-resolution \
   --output-dir generated-data/analysis
 ```
 
@@ -77,5 +119,27 @@ python3 conference-visualization/scripts/generate_visualizations.py \
 - `generated-data/analysis/`：已写入分析主产物
 - `generated-data/reports/`：已写入汇总报告
 - `generated-data/visualizations/`：已写入可视化产物
+- `generated-data/archive/process_runs_2026_06_04/`：旧完整快照、smoke run、单会议检查和 superseded snapshot 的过程数据存档
 
 `generated-data/` 当前应被理解为仓库主工作流的通用结果目录，而不是历史美国切片文件的缓存区。
+
+## 论文写作推荐入口
+
+写论文时优先使用这些最新主线目录：
+
+- 数据抽取：`generated-data/extraction/`
+- 标准化事实表：`generated-data/normalized/author_affiliation_facts.csv`
+- 论文级事实表：`generated-data/normalized/paper_facts.csv`
+- 机构维表：`generated-data/normalized/institution_dim.csv`
+- 统计分析：`generated-data/analysis/`
+- 汇总报告：`generated-data/reports/`
+- 图表：`generated-data/visualizations/`
+- 覆盖率与完整性审计：`generated-data/coverage/`
+
+以下目录是过程归档，不作为当前论文统计口径：
+
+- `generated-data/archive/process_runs_2026_06_04/analysis_smoke_runs/`
+- `generated-data/archive/process_runs_2026_06_04/extraction_smoke_runs/`
+- `generated-data/archive/process_runs_2026_06_04/legacy_full_runs/`
+- `generated-data/archive/process_runs_2026_06_04/validation_checks/`
+- `generated-data/archive/process_runs_2026_06_04/superseded_snapshots/`

@@ -64,6 +64,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0,
         help="Limit PDF downloads per conference; 0 means no limit",
     )
+    parser.add_argument(
+        "--webdriver-search",
+        action="store_true",
+        help="Use Selenium WebDriver to search public PDF sources when direct discovery fails",
+    )
     parser.add_argument("--list-conferences", action="store_true")
     parser.add_argument("--list-backends", action="store_true")
     parser.add_argument(
@@ -83,6 +88,7 @@ def build_plan(
     query_dblp_for_resolution: bool,
     download_pdfs: bool,
     pdf_limit: int,
+    webdriver_search: bool,
 ) -> list[dict[str, object]]:
     grouped = group_by_backend(conference_keys)
     plan: list[dict[str, object]] = []
@@ -108,6 +114,8 @@ def build_plan(
             command.append("--download-pdfs")
             if pdf_limit > 0:
                 command.extend(["--pdf-limit", str(pdf_limit)])
+            if webdriver_search and backend == "iacr_top3":
+                command.append("--webdriver-search")
         plan.append(
             {
                 "backend": backend,
@@ -193,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         args.query_dblp_for_resolution,
         args.download_pdfs,
         args.pdf_limit,
+        args.webdriver_search,
     )
 
     if args.dry_run:

@@ -24,7 +24,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 优先使用仓库中已存在的行级表。当前最推荐的上游来源是 `conference-paper-extraction` 的主输出：
 
-- `output/*_author_affiliations.csv`
+- `output/by_conference/*/author_affiliations.csv`
 - 汇总版 `*_作者机构国家.csv`
 
 这些文件已经把主契约固定为“作者-机构-国家”长表。输入字段尽量包含以下约定列：
@@ -50,6 +50,14 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 | `country` | 可选的国家映射结果 |
 
 目标数据契约见 [标准化参考](references/normalization_reference.md)。
+
+如果上游已经执行抽取层去噪，优先消费清理后的：
+
+- `generated-data/extraction/output/by_conference/*/author_affiliations_audit.csv`
+
+并把以下文件视为抽取层噪声审计副产物，而不是标准化输入：
+
+- `generated-data/extraction/interim/by_conference/*/noise_rows.csv`
 
 ## 输出
 
@@ -83,12 +91,12 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - `**/*.xlsx`
 - `**/*output*.*`
 - `**/*audit*.*`
-- `generated-data/extraction/output/`
+- `generated-data/extraction/output/by_conference/`
 - 仓库内其他历史输出目录
 
 如果存在多个文件，优先选择结构化的行级导出结果，而不是重新解析原始 HTML 或 PDF。
 
-当同时看到 `*_author_affiliations.csv` 与历史子集文件时，应优先选择前者作为标准化输入，因为它保留了完整国家视角。
+当同时看到 `output/by_conference/*/author_affiliations.csv` 与历史子集文件时，应优先选择前者作为标准化输入，因为它保留了完整国家视角。
 
 ### 第 2 步：统一列名
 
@@ -114,6 +122,8 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - 单独生成标准化 key，例如 `author_key`、`institution_key`、`paper_key`
 
 默认不要做模糊合并。只有当精确标准化仍留下明显重复，且用户明确需要合并时才考虑。
+
+如果抽取层尚未做去噪，标准化前应先移除明显不是机构的占位值、身份标签和地址碎片，而不是把这些字符串直接写进 `institution_dim.csv`。
 
 ### 第 4 步：生成稳定 key
 

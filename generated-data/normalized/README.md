@@ -23,5 +23,11 @@
 
 ## 当前状态
 
-当前仓库已提交的历史产物中，尚未发现可直接归档到本目录的现成标准化结果文件。
-后续一旦运行标准化主链路，结果应优先集中保存在这里。
+当前目录已写入主标准化产物，包括：
+
+- `author_affiliation_facts.csv`
+- `paper_facts.csv`
+- `institution_dim.csv`
+- `normalization_report.json`
+
+后续新的标准化主链路结果仍应优先集中保存在这里。

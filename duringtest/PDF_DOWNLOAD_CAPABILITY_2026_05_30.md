@@ -112,12 +112,11 @@ python3 conference-paper-extraction/scripts/run_unified_pipeline.py --conference
 
 当前主要来源：
 
-- `dblp_eprint_exact`
-
-新增公开搜索增强：
-
-- `arxiv_exact`
-- `openreview_exact`
+- 历史 best-effort 结果中，主要命中来自 `dblp_eprint_exact`
+- 当前合规模式下，保留的公开来源是：
+  - `arxiv_exact`
+  - `openreview_exact`
+  - `webdriver_*`（仅在公开搜索结果精确命中时）
 
 解释：
 
@@ -127,14 +126,25 @@ python3 conference-paper-extraction/scripts/run_unified_pipeline.py --conference
   2. arXiv API
   3. OpenReview 公共搜索 API
 - 但只有在标题做归一化后精确匹配时才接受结果，避免把语义相近但不是同一篇论文的结果误收进来。
-- 当前已验证的实际主要收益仍来自 DBLP 命中的 `IACR Cryptol. ePrint Arch.` 开放版本，并将 ePrint 页面 URL 转成 `.pdf` 下载。
-- 因此当前能下载到的主要是“同时存在 ePrint 公开版本”的论文，而不是全部 accepted papers。
+- 历史 best-effort 结果的主要收益来自 DBLP 命中的 `IACR Cryptol. ePrint Arch.` 开放版本。
+- 但 `eprint.iacr.org` 当前会明确返回基于 robots / crawler policy 的阻断页，因此现已从自动 PDF 下载来源中移除。
+- 当前合规模式下，密码会下载更多依赖 `arXiv / OpenReview / 公开搜索结果直链 PDF` 这些未受限来源。
 
 额外观察：
 
 - 通过 DBLP 命中的 Springer DOI 落地页，通常可以读到 `citation_pdf_url` 这类 PDF 元信息。
 - 但当前直接访问 `link.springer.com/content/pdf/...` 返回的是空响应或受限响应，不适合作为“公开可下载 PDF”来源接入主逻辑。
 - OpenReview 公共搜索接口可访问，但更偏语义搜索，因此当前只把它作为“精确标题命中时的保守候选来源”。
+
+当前合规模式小样本验证：
+
+- `CRYPTO 2025 --pdf-limit 10 --webdriver-search`
+- downloaded_pdfs: 1
+
+说明：
+
+- 在不再抓取 ePrint PDF 后，密码会覆盖率会进一步下降。
+- 这说明此前的较高命中主要来自 ePrint，而不是会议站点自身公开提供了稳定 PDF。
 
 ### 5.9 ASIACRYPT 2025
 
@@ -145,7 +155,7 @@ python3 conference-paper-extraction/scripts/run_unified_pipeline.py --conference
 说明：
 
 - 同一策略可迁移到 ASIACRYPT。
-- 但成功仍主要依赖论文是否存在同标题的公开 ePrint 版本。
+- 但当前公开来源覆盖仍然很低。
 
 ### 5.10 EUROCRYPT 2025
 
@@ -155,7 +165,7 @@ python3 conference-paper-extraction/scripts/run_unified_pipeline.py --conference
 
 说明：
 
-- 当前只有极少量论文命中可公开下载的 ePrint PDF。
+- 当前只有极少量论文命中可公开下载的公开版本 PDF。
 - 这更像是开放版本覆盖不足，而不是统一入口失效。
 
 ### 5.11 三大密码会 2020-2025 全量覆盖表
@@ -189,7 +199,7 @@ python3 conference-paper-extraction/scripts/run_unified_pipeline.py --conference
 
 观察：
 
-- 三大密码会的当前覆盖率整体明显低于 USENIX / NDSS。
+- 三大密码会的历史 best-effort 覆盖率整体明显低于 USENIX / NDSS。
 - 主要决定因素不是统一入口是否能下载，而是同标题公开版本是否存在并可公开访问。
 - `EUROCRYPT 2024` 与 `ASIACRYPT 2023`、`CRYPTO 2020/2025` 是当前相对较高的几个年份，但也仍处于低覆盖状态。
 - 因此对密码会而言，当前下载能力应被视为“公开版本补充层”，而不是“主 proceedings PDF 完整镜像能力”。
