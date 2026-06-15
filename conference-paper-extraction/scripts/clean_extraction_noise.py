@@ -91,6 +91,17 @@ def classify_noise(inst: str, exact_rules: dict[str, str], regex_rules: list[tup
     return ""
 
 
+def count_country_resolution_rows(rows: list[dict[str, str]]) -> dict[str, int]:
+    single_country_rows = sum(1 for row in rows if row.get("country") not in {"", "Unknown", "Multiple"})
+    multiple_country_rows = sum(1 for row in rows if row.get("country") == "Multiple")
+    unresolved_country_rows = sum(1 for row in rows if row.get("country") in {"", "Unknown"})
+    return {
+        "single_country_resolved_rows": single_country_rows,
+        "multiple_country_rows": multiple_country_rows,
+        "unresolved_country_rows": unresolved_country_rows,
+    }
+
+
 def clean_conference(
     extraction_dir: Path,
     conference_key: str,
@@ -100,10 +111,11 @@ def clean_conference(
     interim_dir = extraction_dir / "interim" / "by_conference" / conference_key
     output_dir = extraction_dir / "output" / "by_conference" / conference_key
     expanded_path = interim_dir / "author_affiliations_expanded.csv"
+    cleaned_expanded_path = interim_dir / "author_affiliations_expanded_cleaned.csv"
     noise_path = interim_dir / "noise_rows.csv"
-    audit_path = output_dir / "author_affiliations_audit.csv"
-    classified_path = output_dir / "author_affiliations.csv"
-    workbook_path = output_dir / "author_affiliations.xlsx"
+    cleaned_audit_path = output_dir / "author_affiliations_audit_cleaned.csv"
+    cleaned_classified_path = output_dir / "author_affiliations_cleaned.csv"
+    cleaned_workbook_path = output_dir / "author_affiliations_cleaned.xlsx"
     validation_path = output_dir / "validation_report.json"
 
     rows = read_csv(expanded_path)
@@ -118,19 +130,21 @@ def clean_conference(
             cleaned_rows.append(row)
 
     classified_rows = [row for row in cleaned_rows if row.get("country") and row["country"] != "Unknown"]
-    unresolved_after = len(cleaned_rows) - len(classified_rows)
+    country_counts = count_country_resolution_rows(cleaned_rows)
+    unresolved_after = country_counts["unresolved_country_rows"]
 
-    write_csv(expanded_path, EXPANDED_FIELDS, cleaned_rows)
+    write_csv(cleaned_expanded_path, EXPANDED_FIELDS, cleaned_rows)
     write_csv(noise_path, NOISE_FIELDS, noise_rows)
-    write_csv(audit_path, EXPANDED_FIELDS, cleaned_rows)
-    write_csv(classified_path, OUTPUT_FIELDS, classified_rows)
-    write_workbook(workbook_path, classified_rows)
+    write_csv(cleaned_audit_path, EXPANDED_FIELDS, cleaned_rows)
+    write_csv(cleaned_classified_path, OUTPUT_FIELDS, classified_rows)
+    write_workbook(cleaned_workbook_path, classified_rows)
 
     report = json.loads(validation_path.read_text(encoding="utf-8"))
-    report["expanded_author_rows"] = len(cleaned_rows)
-    report["classified_author_rows"] = len(classified_rows)
-    report["resolved_country_rows"] = len(classified_rows)
-    report["unresolved_country_rows"] = unresolved_after
+    report["noise_cleaned_author_rows"] = len(cleaned_rows)
+    report["noise_cleaned_classified_rows"] = len(classified_rows)
+    report["noise_cleaned_unresolved_rows"] = unresolved_after
+    report["noise_cleaned_single_country_resolved_rows"] = country_counts["single_country_resolved_rows"]
+    report["noise_cleaned_multiple_country_rows"] = country_counts["multiple_country_rows"]
     report["noise_rows_removed"] = len(noise_rows)
     validation_path.write_text(json.dumps(report, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 

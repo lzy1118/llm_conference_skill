@@ -235,6 +235,8 @@ def generate_validation_status_report(extraction_dir: Path, report_path: Path) -
     total_papers = sum_int(reports, "papers_count")
     total_expanded_rows = sum_int(reports, "expanded_author_rows")
     total_classified_rows = sum_int(reports, "classified_author_rows")
+    total_single_country_rows = sum_int(reports, "single_country_resolved_rows")
+    total_multiple_country_rows = sum_int(reports, "multiple_country_rows")
     total_unresolved_countries = sum_int(reports, "unresolved_country_rows")
     total_missing_affiliations = sum_int(reports, "papers_without_affiliation_data")
     total_mismatch_issues = sum_int(reports, "affiliation_mismatch_issues")
@@ -272,7 +274,9 @@ def generate_validation_status_report(extraction_dir: Path, report_path: Path) -
         "",
         f"- papers: {total_papers}",
         f"- expanded author-affiliation rows: {total_expanded_rows}",
-        f"- classified author-affiliation-country rows: {total_classified_rows}",
+        f"- classified author-affiliation-country rows (single-country + Multiple): {total_classified_rows}",
+        f"- single-country resolved rows: {total_single_country_rows}",
+        f"- multiple-country rows: {total_multiple_country_rows}",
         f"- unresolved country rows before normalization: {total_unresolved_countries}",
         f"- papers still missing affiliation data: {total_missing_affiliations}",
         f"- affiliation mismatch issues: {total_mismatch_issues}",
@@ -281,13 +285,17 @@ def generate_validation_status_report(extraction_dir: Path, report_path: Path) -
         "",
         f"- top3_crypto conference-years: {len(crypto_reports)}",
         f"- top3_crypto papers: {sum_int(crypto_reports, 'papers_count')}",
-        f"- top3_crypto classified rows: {sum_int(crypto_reports, 'classified_author_rows')}",
+        f"- top3_crypto classified rows (single-country + Multiple): {sum_int(crypto_reports, 'classified_author_rows')}",
+        f"- top3_crypto single-country resolved rows: {sum_int(crypto_reports, 'single_country_resolved_rows')}",
+        f"- top3_crypto multiple-country rows: {sum_int(crypto_reports, 'multiple_country_rows')}",
         f"- top3_crypto unresolved country rows: {sum_int(crypto_reports, 'unresolved_country_rows')}",
         f"- top3_crypto mismatch issues: {sum_int(crypto_reports, 'affiliation_mismatch_issues')}",
         f"- top4_security conference-years: {len(security_reports)}",
         f"- top4_security papers: {sum_int(security_reports, 'papers_count')}",
         f"- top4_security papers without affiliation data: {sum_int(security_reports, 'papers_without_affiliation_data')}",
-        f"- top4_security classified rows: {sum_int(security_reports, 'classified_author_rows')}",
+        f"- top4_security classified rows (single-country + Multiple): {sum_int(security_reports, 'classified_author_rows')}",
+        f"- top4_security single-country resolved rows: {sum_int(security_reports, 'single_country_resolved_rows')}",
+        f"- top4_security multiple-country rows: {sum_int(security_reports, 'multiple_country_rows')}",
         f"- top4_security unresolved country rows: {sum_int(security_reports, 'unresolved_country_rows')}",
         "",
         "## Remaining Explicit Affiliation Gaps",

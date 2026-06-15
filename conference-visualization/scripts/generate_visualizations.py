@@ -7,6 +7,14 @@ import json
 from pathlib import Path
 
 
+def normalize_author_display_name(name: str) -> str:
+    import re
+    text = (name or "").strip()
+    if not text:
+        return ""
+    return re.sub(r"\s0+\d+$", "", text).strip()
+
+
 SECTION_FILES = {
     "country": Path("country/country_summary.csv"),
     "institution": Path("institutions/institution_summary.csv"),
@@ -44,15 +52,34 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def wrap_label(label: str, max_chars: int = 34) -> list[str]:
+    words = (label or "").split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+        lines.append(current)
+        current = word
+    lines.append(current)
+    return lines
+
+
 def bar_chart_svg(title: str, labels: list[str], values: list[float], value_suffix: str = "") -> str:
     width = 960
     top = 70
-    left = 220
+    left = 320
     bar_height = 28
     bar_gap = 18
-    chart_width = 620
-    rows = max(len(labels), 1)
-    height = top + rows * (bar_height + bar_gap) + 60
+    chart_width = 500
+    label_line_height = 16
+    wrapped_labels = [wrap_label(label) for label in labels]
+    row_heights = [max(bar_height, len(lines) * label_line_height) for lines in wrapped_labels]
+    height = top + sum(row_heights) + max(len(labels) - 1, 0) * bar_gap + 60
     max_value = max(values) if values else 1.0
     max_value = max(max_value, 1.0)
 
@@ -62,13 +89,24 @@ def bar_chart_svg(title: str, labels: list[str], values: list[float], value_suff
         f'<text x="40" y="40" font-size="24" font-family="Arial, Helvetica, sans-serif" font-weight="700">{escape(title)}</text>',
     ]
 
-    for index, (label, value) in enumerate(zip(labels, values)):
-        y = top + index * (bar_height + bar_gap)
+    y = top
+    for label_lines, value in zip(wrapped_labels, values):
+        row_height = max(bar_height, len(label_lines) * label_line_height)
+        bar_y = y + (row_height - bar_height) / 2
         bar_width = 0 if max_value == 0 else chart_width * (float(value) / max_value)
-        parts.append(f'<text x="40" y="{y + 19}" font-size="14" font-family="Arial, Helvetica, sans-serif">{escape(label)}</text>')
-        parts.append(f'<rect x="{left}" y="{y}" width="{chart_width}" height="{bar_height}" rx="4" fill="#edf2f7"/>')
-        parts.append(f'<rect x="{left}" y="{y}" width="{bar_width:.2f}" height="{bar_height}" rx="4" fill="#2563eb"/>')
-        parts.append(f'<text x="{left + bar_width + 10:.2f}" y="{y + 19}" font-size="13" font-family="Arial, Helvetica, sans-serif" fill="#111827">{escape(f"{value}{value_suffix}")}</text>')
+        label_block_height = len(label_lines) * label_line_height
+        label_y = y + (row_height - label_block_height) / 2 + 13
+        for offset, line in enumerate(label_lines):
+            parts.append(
+                f'<text x="40" y="{label_y + offset * label_line_height:.2f}" font-size="14" font-family="Arial, Helvetica, sans-serif">{escape(line)}</text>'
+            )
+        parts.append(f'<rect x="{left}" y="{bar_y:.2f}" width="{chart_width}" height="{bar_height}" rx="4" fill="#edf2f7"/>')
+        parts.append(f'<rect x="{left}" y="{bar_y:.2f}" width="{bar_width:.2f}" height="{bar_height}" rx="4" fill="#2563eb"/>')
+        value_x = min(left + bar_width + 10, width - 40)
+        parts.append(
+            f'<text x="{value_x:.2f}" y="{bar_y + 19:.2f}" font-size="13" font-family="Arial, Helvetica, sans-serif" fill="#111827">{escape(f"{value}{value_suffix}")}</text>'
+        )
+        y += row_height + bar_gap
 
     parts.append('</svg>')
     return "\n".join(parts) + "\n"
@@ -151,7 +189,7 @@ def build_institution_chart(rows: list[dict[str, str]], output_dir: Path, top_n:
 
 def build_author_chart(rows: list[dict[str, str]], output_dir: Path, top_n: int) -> str:
     top_rows = rows[:top_n]
-    labels = [row.get("author_name", "Unknown") for row in top_rows]
+    labels = [normalize_author_display_name(row.get("author_name", "Unknown")) for row in top_rows]
     values = [float(row.get("papers", "0") or "0") for row in top_rows]
     path = output_dir / "author_top_papers.svg"
     write_text(path, bar_chart_svg("Top Authors By Papers", labels, values))
@@ -178,7 +216,10 @@ def build_trend_chart(rows: list[dict[str, str]], output_dir: Path, top_n: int) 
 
 def build_collaboration_chart(rows: list[dict[str, str]], output_dir: Path, top_n: int) -> str:
     top_rows = rows[:top_n]
-    labels = [f"{row.get('left_name', 'Unknown')} <-> {row.get('right_name', 'Unknown')}" for row in top_rows]
+    labels = [
+        f"{normalize_author_display_name(row.get('left_name', 'Unknown'))} <-> {normalize_author_display_name(row.get('right_name', 'Unknown'))}"
+        for row in top_rows
+    ]
     values = [float(row.get("shared_papers", "0") or "0") for row in top_rows]
     path = output_dir / "collaboration_top_edges.svg"
     write_text(path, bar_chart_svg("Top Collaboration Edges By Shared Papers", labels, values))

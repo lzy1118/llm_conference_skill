@@ -31,3 +31,13 @@
 - `normalization_report.json`
 
 后续新的标准化主链路结果仍应优先集中保存在这里。
+
+## 口径说明
+
+- `normalization_report.json` 中的 `rows_missing_name` 与 `rows_missing_inst` 仅表示“已进入标准化作者机构事实表的行”里是否存在空作者名或空机构名。
+- 这两个指标不能等同于“论文级作者机构缺失已经清零”。
+- 论文级缺失应以 `generated-data/coverage/paper_completeness_audit.csv` 为准，重点关注：
+  - `coverage_status = missing`：论文级没有作者机构行
+  - `coverage_status = partial`：论文级仅部分 affiliation 覆盖
+  - `coverage_status = complete_unverified`：论文级覆盖完整，但仍保留未人工复核语义
+- 当前目录只保留现行主标准化结果；历史或旧口径标准化快照不应继续放在本目录下与当前结果并列。

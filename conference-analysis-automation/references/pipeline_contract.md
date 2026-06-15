@@ -8,7 +8,7 @@
 
 自动化层应把 `normalized/author_affiliation_facts.csv` 视为最主要的共享事实表。
 
-如果输入仍停留在抽取层，则应优先从 `conference-paper-extraction` 的 `output/*_author_affiliations.csv` 或汇总版 `*_作者机构国家.csv` 进入标准化；不要把历史 `*_us_institutions.csv` 视为默认主入口。
+如果输入仍停留在抽取层，则应优先从 `conference-paper-extraction` 的 `output/*_author_affiliations.csv` 或汇总版 `*_作者机构国家.csv` 进入标准化
 
 最低应包含以下字段：
 

@@ -281,11 +281,112 @@ def build_article_tag(config: ConferenceConfig, paper: dict[str, Any]) -> str:
     return f"{config.conference}-{title}"
 
 
+AUTHOR_NOISE_PATTERN = re.compile(
+    r"\b(corresponding author|author to whom correspondence|equal contribution|shared first author|present address)\b",
+    re.IGNORECASE,
+)
+AUTHOR_INSTITUTION_PATTERN = re.compile(
+    r"\b(university|institute|college|school|department|laborator(?:y|ies)|center|centre|faculty|academy|hospital|research|group|team|corporation|corp\.?|inc\.?|ltd\.?|gmbh|company)\b",
+    re.IGNORECASE,
+)
+
+
+def split_top_level(value: str, separators: tuple[str, ...]) -> list[str]:
+    text = str(value)
+    parts: list[str] = []
+    buffer: list[str] = []
+    depth = 0
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth > 0:
+            depth -= 1
+        if depth == 0:
+            matched = next((separator for separator in separators if text.startswith(separator, index)), "")
+            if matched:
+                part = normalize_space("".join(buffer))
+                if part:
+                    parts.append(part)
+                buffer = []
+                index += len(matched)
+                continue
+        buffer.append(char)
+        index += 1
+    tail = normalize_space("".join(buffer))
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def clean_author_candidate(value: str) -> str:
+    text = normalize_space(str(value))
+    text = re.sub(r"\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+\d{4}$", "", text)
+    text = re.sub(r"\s*[\*\u2020\u2021\u00a7]+\s*$", "", text)
+    text = re.sub(r"\s*\([^)]*\)$", lambda match: "" if AUTHOR_NOISE_PATTERN.search(match.group(0)) else match.group(0), text)
+    return normalize_space(text.strip(" ,;"))
+
+
+def looks_like_author_name(value: str) -> bool:
+    text = clean_author_candidate(value)
+    if not text or "@" in text or AUTHOR_NOISE_PATTERN.search(text):
+        return False
+    if any(char.isdigit() for char in text):
+        return False
+    if "(" in text or ")" in text:
+        return False
+    compact = re.sub(r"[,\-'. ]+", " ", text)
+    parts = [part for part in compact.split() if part]
+    if len(parts) < 2 or len(parts) > 6:
+        return False
+    if AUTHOR_INSTITUTION_PATTERN.search(text):
+        return False
+    if not any(part[0].isalpha() and part[0].isupper() for part in parts):
+        return False
+    return True
+
+
+def looks_like_inline_author_affiliation_entry(value: str) -> bool:
+    match = re.fullmatch(r"(.+?)\s*\((.+)\)", normalize_space(value))
+    if not match:
+        return False
+    return looks_like_author_name(match.group(1))
+
+
+def split_iacr_people_entries(value: str) -> list[str]:
+    text = normalize_space(value)
+    if not text:
+        return []
+    entries = split_top_level(text, (";",))
+    if len(entries) > 1:
+        return entries
+    comma_entries = split_top_level(text, (",",))
+    if len(comma_entries) > 1 and all(
+        looks_like_author_name(entry) or looks_like_inline_author_affiliation_entry(entry)
+        for entry in comma_entries
+    ):
+        return comma_entries
+    and_entries = split_top_level(text, (" and ",))
+    if len(and_entries) > 1 and all(looks_like_author_name(entry) for entry in and_entries):
+        return and_entries
+    return [text]
+
+
 def parse_iacr_people_field(value: Any) -> list[str]:
     if isinstance(value, list):
-        return [normalize_space(str(item)) for item in value if normalize_space(str(item))]
+        people: list[str] = []
+        for item in value:
+            people.extend(parse_iacr_people_field(item))
+        return people
     if isinstance(value, str):
-        return [normalize_space(item) for item in value.split(";") if normalize_space(item)]
+        people: list[str] = []
+        for item in split_iacr_people_entries(value):
+            cleaned = clean_author_candidate(item)
+            if cleaned:
+                people.append(cleaned)
+        return people
     return []
 
 
@@ -293,7 +394,7 @@ def parse_iacr_affiliations_field(value: Any) -> list[str]:
     if isinstance(value, list):
         return [normalize_space(str(item)) for item in value if normalize_space(str(item))]
     if isinstance(value, str):
-        return [normalize_space(item) for item in value.split(";") if normalize_space(item)]
+        return [normalize_space(item) for item in split_top_level(value, (";",)) if normalize_space(item)]
     return []
 
 
@@ -312,16 +413,16 @@ def extract_iacr_affiliations(paper: dict[str, Any]) -> list[str]:
 
 
 def parse_inline_author_affiliation_pairs(value: Any) -> tuple[list[str], list[str]]:
-    entries = parse_iacr_people_field(value)
+    entries = parse_iacr_people_field(value) if isinstance(value, list) else split_iacr_people_entries(str(value))
     authors: list[str] = []
     affiliations: list[str] = []
     for entry in entries:
         match = re.fullmatch(r"(.+?)\s*\((.+)\)", entry)
         if not match:
             return [], []
-        author = normalize_space(match.group(1))
+        author = clean_author_candidate(match.group(1))
         affiliation = normalize_space(match.group(2))
-        if not author or not affiliation:
+        if not author or not affiliation or not looks_like_author_name(author):
             return [], []
         authors.append(author)
         affiliations.append(affiliation)
@@ -341,9 +442,9 @@ def extract_iacr_paper_id(paper: dict[str, Any], fallback_index: int) -> str:
 def extract_iacr_author_affiliation_lists(paper: dict[str, Any]) -> tuple[list[str], list[str]]:
     authors = extract_iacr_authors(paper)
     affiliations = extract_iacr_affiliations(paper)
-    if authors and affiliations:
-        return authors, affiliations
     inline_authors, inline_affiliations = parse_inline_author_affiliation_pairs(paper.get("author", []))
+    if authors and affiliations and len(authors) == len(affiliations):
+        return authors, affiliations
     if inline_authors and inline_affiliations:
         return inline_authors, inline_affiliations
     return authors, affiliations
@@ -363,9 +464,41 @@ def classify_affiliation(
     )
 
 
+ADDRESS_ONLY_FRAGMENT_PATTERN = re.compile(
+    r"^(?:[A-Z][a-z]+(?:[- ][A-Z][a-z]+)*|the [A-Z][a-z]+|[A-Z][a-z]+(?:, [A-Z][a-z]+)*)$"
+)
+INSTITUTION_HINT_PATTERN = re.compile(
+    r"\b(university|institute|college|school|laborator(?:y|ies)|center|centre|academy|department|faculty|research|group|lab|company|inc\.?|ltd\.?|gmbh|corp\.?)\b",
+    re.IGNORECASE,
+)
+
+
+def should_keep_semicolon_affiliation_together(normalized: str) -> bool:
+    parts = [part.strip() for part in normalized.split(";") if part.strip()]
+    if len(parts) < 3:
+        return False
+    last_country = classify_affiliation(parts[-1]).country
+    if last_country == "Unknown":
+        return False
+    middle_address_only = all(
+        not INSTITUTION_HINT_PATTERN.search(part) and ADDRESS_ONLY_FRAGMENT_PATTERN.fullmatch(part)
+        for part in parts[1:-1]
+    )
+    first_is_compact_label = len(parts[0].split()) <= 6
+    return middle_address_only and first_is_compact_label
+
+
 def split_affiliation_parts(affiliation: str) -> list[str]:
     normalized = normalize_space(affiliation)
+    if re.search(r"\bendress\s*&\s*hauser\b", normalized, re.IGNORECASE):
+        return [normalized]
+    if ", and " in normalized:
+        parts = [part.strip(" ,") for part in re.split(r",\s+and\s+", normalized) if part.strip(" ,")]
+        if len(parts) > 1:
+            return parts
     if ";" in normalized:
+        if should_keep_semicolon_affiliation_together(normalized):
+            return [normalized]
         return [part.strip() for part in normalized.split(";") if part.strip()]
     if "/" in normalized:
         return [part.strip() for part in normalized.split("/") if part.strip()]
@@ -375,7 +508,7 @@ def split_affiliation_parts(affiliation: str) -> list[str]:
             return parts
     if " and " in normalized:
         if re.search(
-            r"\b(Science and Technology|Posts and Telecommunications|Economics and Technology|Research and Technology|Information and Communications Technology|Polytechnic Institute and State University|Academy of Mathematics and System Science|Academy of Mathematics and Systems Science|Beijing Institute of Mathematical Sciences and Application|Beijing Institute of Mathematical Sciences and Applications|Computer Science and Artificial Intelligence)\b",
+            r"\b(Science and Technology|Posts and Telecommunications|Economics and Technology|Research and Technology|Information and Communications Technology|Polytechnic Institute and State University|Academy of Mathematics and System Science|Academy of Mathematics and Systems Science|Beijing Institute of Mathematical Sciences and Application|Beijing Institute of Mathematical Sciences and Applications|Computer Science and Artificial Intelligence|Security and Privacy|Technology and Economics|Agriculture and Technology|Computer Science and Control|Network Sciences and Cyberspace|Physical and Mathematical Sciences|National and Kapodistrian University)\b",
             normalized,
             re.IGNORECASE,
         ):
@@ -419,21 +552,6 @@ def classify_affiliation_parts(
                     )
                 )
         if part == "NIST Associate":
-            us_key = (part, "United States")
-            if us_key not in seen:
-                seen.add(us_key)
-                results.append(
-                    (
-                        part,
-                        AffiliationClassification(
-                            country="United States",
-                            source="rule",
-                            confidence=0.95,
-                            reason="reference_dual_participation_us",
-                        ),
-                    )
-                )
-        if part == "College of Computer Science and Artificial Intelligence, Fudan University, Shanghai, China":
             us_key = (part, "United States")
             if us_key not in seen:
                 seen.add(us_key)
@@ -604,6 +722,127 @@ def expand_author_rows(
         article_tag = build_article_tag(config, paper)
 
         if len(authors) != len(affiliations):
+            # Conservative fallback for IACR mismatch rows:
+            # only keep cases that are still author-level plausible.
+            # - single author + multiple affiliations: preserve all affiliations
+            # - multiple authors + single affiliation: assign shared affiliation to all authors
+            # - multiple authors + fewer shared affiliations: assign the resolved shared
+            #   bundle to every author when the page clearly only exposes paper-level
+            #   affiliations
+            fallback_classifications = [
+                (affiliation, classify_affiliation_parts(affiliation, overrides))
+                for affiliation in affiliations
+                if affiliation
+            ]
+            resolved_affiliations = [
+                (resolved_affiliation, classification)
+                for _affiliation, parts in fallback_classifications
+                for resolved_affiliation, classification in parts
+                if classification.country and classification.country != "Unknown"
+            ]
+            fallback_mode = ""
+            if len(authors) == 1:
+                fallback_mode = "single_author_multi_affiliation"
+            elif len(affiliations) == 1:
+                fallback_mode = "shared_single_affiliation"
+            handled_conservatively = False
+
+            if resolved_affiliations and fallback_mode:
+                classification_source = f"mismatch_fallback_{fallback_mode}"
+                if fallback_mode == "single_author_multi_affiliation":
+                    for affiliation, classification in resolved_affiliations:
+                        rows.append(
+                            {
+                                "conference": config.conference,
+                                "year": config.year,
+                                "paper_id": paper_id,
+                                "title": title,
+                                "name": authors[0],
+                                "article_tag": article_tag,
+                                "author_order": 0,
+                                "inst": affiliation,
+                                "country": classification.country,
+                                "classification_source": classification_source,
+                                "classification_confidence": classification.confidence,
+                                "classification_reason": classification.reason,
+                            }
+                        )
+                    handled_conservatively = True
+                else:
+                    shared_affiliation, classification = resolved_affiliations[0]
+                    for order, author in enumerate(authors):
+                        rows.append(
+                            {
+                                "conference": config.conference,
+                                "year": config.year,
+                                "paper_id": paper_id,
+                                "title": title,
+                                "name": author,
+                                "article_tag": article_tag,
+                                "author_order": order,
+                                "inst": shared_affiliation,
+                                "country": classification.country,
+                                "classification_source": classification_source,
+                                "classification_confidence": classification.confidence,
+                                "classification_reason": classification.reason,
+                            }
+                        )
+                    handled_conservatively = True
+            if (
+                not handled_conservatively
+                and len(authors) > len(affiliations) >= 1
+                and resolved_affiliations
+            ):
+                unique_affiliations: list[tuple[str, AffiliationClassification]] = []
+                seen_affiliations: set[tuple[str, str]] = set()
+                for affiliation, classification in resolved_affiliations:
+                    key = (affiliation, classification.country)
+                    if key in seen_affiliations:
+                        continue
+                    seen_affiliations.add(key)
+                    unique_affiliations.append((affiliation, classification))
+
+                resolved_countries = {
+                    classification.country
+                    for _affiliation, classification in unique_affiliations
+                    if classification.country and classification.country != "Unknown"
+                }
+                if resolved_countries:
+                    shared_country = next(iter(resolved_countries)) if len(resolved_countries) == 1 else "Multiple"
+                    joined_affiliation = "; ".join(affiliation for affiliation, _classification in unique_affiliations)
+                    min_confidence = min(
+                        (
+                            classification.confidence
+                            for _affiliation, classification in unique_affiliations
+                            if classification.country and classification.country != "Unknown"
+                        ),
+                        default=0.7,
+                    )
+                    for order, author in enumerate(authors):
+                        rows.append(
+                            {
+                                "conference": config.conference,
+                                "year": config.year,
+                                "paper_id": paper_id,
+                                "title": title,
+                                "name": author,
+                                "article_tag": article_tag,
+                                "author_order": order,
+                                "inst": joined_affiliation,
+                                "country": shared_country,
+                                "classification_source": "mismatch_fallback_shared_multi_affiliation_bundle",
+                                "classification_confidence": min_confidence,
+                                "classification_reason": (
+                                    "shared_multi_affiliation_same_country"
+                                    if len(resolved_countries) == 1
+                                    else "shared_multi_affiliation_mixed_country"
+                                ),
+                            }
+                        )
+                    handled_conservatively = True
+            if handled_conservatively:
+                continue
+
             openalex_rows = build_openalex_mismatch_rows(
                 config,
                 paper_id,
@@ -626,81 +865,20 @@ def expand_author_rows(
             if crossref_openalex_rows:
                 rows.extend(crossref_openalex_rows)
                 continue
-            issues.append(
-                {
-                    "conference": config.conference,
-                    "year": str(config.year),
-                    "paper_id": paper_id,
-                    "title": title,
-                    "issue": "author_affiliation_count_mismatch",
-                    "authors_count": str(len(authors)),
-                    "affiliations_count": str(len(affiliations)),
-                    "authors": " | ".join(authors),
-                    "affiliations": " | ".join(affiliations),
-                }
-            )
-            # Conservative fallback for IACR mismatch rows:
-            # only keep cases that are still author-level plausible.
-            # - single author + multiple affiliations: preserve all affiliations
-            # - multiple authors + single affiliation: assign shared affiliation to all authors
-            # We intentionally avoid duplicating multiple affiliations across multiple
-            # authors, because that creates incorrect author-institution pairs.
-            fallback_classifications = [
-                (affiliation, classify_affiliation_parts(affiliation, overrides))
-                for affiliation in affiliations
-                if affiliation
-            ]
-            resolved_affiliations = [
-                (resolved_affiliation, classification)
-                for _affiliation, parts in fallback_classifications
-                for resolved_affiliation, classification in parts
-                if classification.country and classification.country != "Unknown"
-            ]
-            fallback_mode = ""
-            if len(authors) == 1:
-                fallback_mode = "single_author_multi_affiliation"
-            elif len(affiliations) == 1:
-                fallback_mode = "shared_single_affiliation"
-
-            if resolved_affiliations and fallback_mode:
-                classification_source = f"mismatch_fallback_{fallback_mode}"
-                if fallback_mode == "single_author_multi_affiliation":
-                    for affiliation, classification in resolved_affiliations:
-                        rows.append(
-                            {
-                                "conference": config.conference,
-                                "year": config.year,
-                                "paper_id": paper_id,
-                                "title": title,
-                                "name": authors[0],
-                                "article_tag": article_tag,
-                                "author_order": 0,
-                                "inst": affiliation,
-                                "country": classification.country,
-                                "classification_source": classification_source,
-                                "classification_confidence": classification.confidence,
-                                "classification_reason": classification.reason,
-                            }
-                        )
-                else:
-                    shared_affiliation, classification = resolved_affiliations[0]
-                    for order, author in enumerate(authors):
-                        rows.append(
-                            {
-                                "conference": config.conference,
-                                "year": config.year,
-                                "paper_id": paper_id,
-                                "title": title,
-                                "name": author,
-                                "article_tag": article_tag,
-                                "author_order": order,
-                                "inst": shared_affiliation,
-                                "country": classification.country,
-                                "classification_source": classification_source,
-                                "classification_confidence": classification.confidence,
-                                "classification_reason": classification.reason,
-                            }
-                        )
+            if not handled_conservatively:
+                issues.append(
+                    {
+                        "conference": config.conference,
+                        "year": str(config.year),
+                        "paper_id": paper_id,
+                        "title": title,
+                        "issue": "author_affiliation_count_mismatch",
+                        "authors_count": str(len(authors)),
+                        "affiliations_count": str(len(affiliations)),
+                        "authors": " | ".join(authors),
+                        "affiliations": " | ".join(affiliations),
+                    }
+                )
             continue
 
         for order, (author, affiliation) in enumerate(zip(authors, affiliations)):
@@ -727,6 +905,17 @@ def expand_author_rows(
 
 def filter_classified_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [row for row in rows if row.get("country") and row["country"] != "Unknown"]
+
+
+def count_country_resolution_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
+    single_country_rows = sum(1 for row in rows if row.get("country") not in {"", "Unknown", "Multiple"})
+    multiple_country_rows = sum(1 for row in rows if row.get("country") == "Multiple")
+    unresolved_country_rows = sum(1 for row in rows if row.get("country") in {"", "Unknown"})
+    return {
+        "single_country_resolved_rows": single_country_rows,
+        "multiple_country_rows": multiple_country_rows,
+        "unresolved_country_rows": unresolved_country_rows,
+    }
 
 
 def normalize_papers(config: ConferenceConfig, papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1300,6 +1489,7 @@ def run_single_conference(
     rows = apply_author_affiliation_overrides(rows, author_affiliation_overrides, overrides)
     classified_rows = filter_classified_rows(rows)
     classified_rows_final = classified_rows
+    country_counts = count_country_resolution_rows(rows)
 
     write_csv(
         conference_interim / "author_affiliations_expanded.csv",
@@ -1380,7 +1570,7 @@ def run_single_conference(
         "expanded_author_rows": len(rows),
         "classified_author_rows": len(classified_rows),
         "resolved_country_rows": len(classified_rows),
-        "unresolved_country_rows": len(rows) - len(classified_rows),
+        **country_counts,
         "affiliation_mismatch_issues": len(issues),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1437,6 +1627,7 @@ def run_all_pipelines(
 
     all_classified_rows = filter_classified_rows(all_rows)
     all_classified_rows_final = all_classified_rows
+    country_counts = count_country_resolution_rows(all_rows)
     candidates = build_affiliation_candidates(all_rows)
     llm_rows = build_llm_resolution_rows(candidates)
 
@@ -1534,7 +1725,7 @@ def run_all_pipelines(
         "expanded_author_rows": len(all_rows),
         "classified_author_rows": len(all_classified_rows),
         "resolved_country_rows": len(all_classified_rows),
-        "unresolved_country_rows": len(all_rows) - len(all_classified_rows),
+        **country_counts,
         "affiliation_mismatch_issues": len(all_issues),
         "unresolved_affiliation_candidates": len(llm_rows),
         "pdf_download_reports": pdf_reports,

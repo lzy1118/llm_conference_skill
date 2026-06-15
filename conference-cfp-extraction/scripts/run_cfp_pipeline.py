@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = ROOT / "generated-data" / "cfp"
 IACR_SNAPSHOT_PATH = ROOT / "conference-cfp-extraction" / "references" / "iacr_metadata_snapshots.json"
+SECURITY_SNAPSHOT_PATH = ROOT / "conference-cfp-extraction" / "references" / "security_cfp_snapshots.json"
 
 sys.path.insert(0, str(ROOT / "conference-paper-extraction" / "scripts"))
 from conference_registry import CONFERENCES, expand_selection  # noqa: E402
@@ -176,6 +177,13 @@ def load_iacr_snapshots() -> dict[str, dict[str, object]]:
     return payload if isinstance(payload, dict) else {}
 
 
+def load_security_snapshots() -> dict[str, dict[str, object]]:
+    if not SECURITY_SNAPSHOT_PATH.exists():
+        return {}
+    payload = json.loads(SECURITY_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
 def infer_cfp_urls(conference_key: str, conference: str, year: int) -> dict[str, str]:
     if conference in {"ASIACRYPT", "CRYPTO", "EUROCRYPT"}:
         family_slug = conference.casefold()
@@ -196,7 +204,7 @@ def infer_cfp_urls(conference_key: str, conference: str, year: int) -> dict[str,
         base = f"https://www.ndss-symposium.org/ndss{year}/"
         return {
             "website_url": base,
-            "cfp_url": base + "submisions/call-for-papers/",
+            "cfp_url": base + ("submisions/call-for-papers/" if year == 2025 else "submissions/call-for-papers/" if year == 2024 else "call-for-papers/"),
             "proceedings_url": base + "program/",
         }
     if conference == "IEEE_S&P":
@@ -208,9 +216,19 @@ def infer_cfp_urls(conference_key: str, conference: str, year: int) -> dict[str,
         }
     if conference == "CCS":
         base = f"https://www.sigsac.org/ccs/CCS{year}/"
+        if year == 2020:
+            cfp_path = "call-for-papers.html"
+        elif year == 2021:
+            cfp_path = "call-for-papers.html"
+        elif year == 2023:
+            cfp_path = "call-for-paper.html"
+        elif year >= 2025:
+            cfp_path = "call-for-papers/"
+        else:
+            cfp_path = "call-for/call-for-papers.html"
         return {
             "website_url": base,
-            "cfp_url": base + ("call-for-papers/" if year >= 2025 else "call-for/call-for-papers.html"),
+            "cfp_url": base + cfp_path,
             "proceedings_url": base + "accepted-papers/",
         }
     return {"website_url": "", "cfp_url": "", "proceedings_url": ""}
@@ -356,6 +374,26 @@ def parse_date_range_text(value: str) -> tuple[str, str]:
     text = normalize_space(value)
     if not text:
         return "", ""
+    dual_day_month_year = re.fullmatch(r"(\d{1,2}) ([A-Za-z]+) to (\d{1,2}) ([A-Za-z]+) (\d{4})", text)
+    if dual_day_month_year:
+        start_day, start_month, end_day, end_month, year = dual_day_month_year.groups()
+        return f"{int(start_day)} {start_month} {year}", f"{int(end_day)} {end_month} {year}"
+    month_day_year = re.fullmatch(r"([A-Za-z]+) (\d{1,2})[–—-](\d{1,2}), (\d{4})", text)
+    if month_day_year:
+        month, start_day, end_day, year = month_day_year.groups()
+        return f"{month} {int(start_day)}, {year}", f"{month} {int(end_day)}, {year}"
+    short_month_day_year = re.fullmatch(r"([A-Za-z]{3}) (\d{1,2})-(\d{1,2}), (\d{4})", text)
+    if short_month_day_year:
+        month, start_day, end_day, year = short_month_day_year.groups()
+        return f"{month} {int(start_day)}, {year}", f"{month} {int(end_day)}, {year}"
+    day_month_year = re.fullmatch(r"(\d{1,2}) ?(?:-|–|—|to) ?(\d{1,2}) ([A-Za-z]+) (\d{4})", text)
+    if day_month_year:
+        start_day, end_day, month, year = day_month_year.groups()
+        return f"{int(start_day)} {month} {year}", f"{int(end_day)} {month} {year}"
+    dual_month_day_year = re.fullmatch(r"([A-Za-z]+ \d{1,2}) ?(?:-|–|—|to) ?([A-Za-z]+ \d{1,2}), (\d{4})", text)
+    if dual_month_day_year:
+        start_part, end_part, year = dual_month_day_year.groups()
+        return f"{start_part}, {year}", f"{end_part}, {year}"
     for separator in ("–", "—", " - "):
         if separator in text:
             left, right = [normalize_space(part) for part in text.split(separator, 1)]
@@ -403,22 +441,45 @@ def extract_security_header_metadata(conference_key: str, text: str) -> dict[str
     result = {"location": "", "country": "", "start_date": "", "end_date": ""}
     if conference.conference == "USENIX_SECURITY":
         match = re.search(r"held (?:on )?([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4}), in ([^.]+)\.", text)
+        if not match:
+            match = re.search(r"held as a virtual event on ([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4})", text)
+            if match:
+                result["location"] = "Virtual"
+                result["country"] = ""
+                result["start_date"], result["end_date"] = parse_date_range_text(match.group(1))
+                return result
+        if not match:
+            match = re.search(r"held ([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4})\.", text)
         if match:
-            result["location"] = normalize_space(match.group(2))
-            result["country"] = "United States" if "USA" in match.group(2) else ""
-            result["start_date"], result["end_date"] = parse_date_range_text(match.group(1).replace(",", ", "))
+            if match.lastindex and match.lastindex >= 2:
+                result["location"] = normalize_space(match.group(2))
+                result["country"] = "United States" if any(marker in match.group(2) for marker in ("USA", ", CA", ", WA", ", PA")) else ""
+            result["start_date"], result["end_date"] = parse_date_range_text(match.group(1))
     elif conference.conference == "NDSS":
         match = re.search(r"will take place in ([^.]+), from ([^.]+?)\.", text)
         if match:
             result["location"] = normalize_space(match.group(1))
             result["country"] = "United States" if "USA" in match.group(1) else ""
-            result["start_date"], result["end_date"] = parse_date_range_text(match.group(2).replace(" to ", " - "))
+            result["start_date"], result["end_date"] = parse_date_range_text(match.group(2))
+        else:
+            match = re.search(r"(?:NDSS \d{4} Workshops and Symposium|NDSS Symposium,? and Workshops):?\s*([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4}|\d{1,2} ?[–-] ?\d{1,2} [A-Za-z]+ \d{4}|February \d{1,2}-\d{1,2}, \d{4})\s*[—-]\s*([A-Za-z ,]+)", text)
+            if match:
+                result["location"] = normalize_space(match.group(2))
+                result["country"] = "United States" if "CA" in match.group(2) or "USA" in match.group(2) else ""
+                result["start_date"], result["end_date"] = parse_date_range_text(match.group(1))
     elif conference.conference == "IEEE_S&P":
         match = re.search(r"The Symposium will be held on ([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4}).*? in ([^.]+)\.", text)
+        if not match:
+            match = re.search(r"([A-Z]+ \d{1,2}[–-]\d{1,2}, \d{4}) AT ([A-Za-z0-9 ,.'-]+)", text)
         if match:
-            result["location"] = normalize_space(match.group(2))
-            result["country"] = "United States" if any(marker in match.group(2) for marker in ("CA", "USA", "San Francisco")) else ""
-            result["start_date"], result["end_date"] = parse_date_range_text(match.group(1).replace(",", ", "))
+            if match.lastindex and match.lastindex >= 2:
+                result["location"] = normalize_space(match.group(2)).title()
+                result["country"] = "United States" if any(marker in match.group(2) for marker in ("CA", "USA", "San Francisco")) else ""
+            result["start_date"], result["end_date"] = parse_date_range_text(match.group(1).title())
+        else:
+            match = re.search(r"([A-Z]+ \d{1,2}[–-]\d{1,2}, \d{4})", text)
+            if match:
+                result["start_date"], result["end_date"] = parse_date_range_text(match.group(1).title())
     elif conference.conference == "CCS":
         match = re.search(r"ACM CCS \d{4} ([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4}) ([A-Za-z ,.'-]+?(?:U\.S\.A\.|USA|Taiwan))", text)
         if match:
@@ -427,7 +488,17 @@ def extract_security_header_metadata(conference_key: str, text: str) -> dict[str
                 result["country"] = "Taiwan"
             elif "USA" in match.group(2) or "U.S.A." in match.group(2):
                 result["country"] = "United States"
-            result["start_date"], result["end_date"] = parse_date_range_text(match.group(1).replace(",", ", "))
+            result["start_date"], result["end_date"] = parse_date_range_text(match.group(1))
+        else:
+            match = re.search(r"ACM CCS \d{4},? ([A-Za-z]+ \d{1,2}[–-]\d{1,2})", text)
+            if match:
+                result["location"] = "Virtual"
+                result["start_date"], result["end_date"] = parse_date_range_text(match.group(1) + ", 2021")
+            else:
+                match = re.search(r"ACM CCS 2020 - ([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4})", text)
+                if match:
+                    result["location"] = "Virtual"
+                    result["start_date"], result["end_date"] = parse_date_range_text(match.group(1))
     return result
 
 
@@ -436,21 +507,40 @@ def extract_security_events(conference_key: str, text: str, source_url: str) -> 
     rows: list[dict[str, str]] = []
     if conference.conference == "USENIX_SECURITY":
         patterns = [
-            (r"Paper submissions due:\s*([A-Za-z]+,? [A-Za-z]+ \d{1,2}, \d{4}(?:, 11:59 pm AoE)?)", "paper_submission_deadline"),
-            (r"Early reject notification:\s*([A-Za-z]+,? [A-Za-z]+ \d{1,2}, \d{4})", "first_round_notification"),
+            (r"submissions? due:\s*([^\n*]+?\d{4}(?:, 11:59 pm [A-Za-z]+)?)", "paper_submission_deadline"),
+            (r"Early reject notification:\s*([^\n*]+?\d{4})", "first_round_notification"),
             (r"Rebuttal Period:\s*([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4})", "rebuttal_range"),
-            (r"Notification to authors:\s*([A-Za-z]+,? [A-Za-z]+ \d{1,2}, \d{4})", "notification"),
-            (r"Final paper files due:\s*([A-Za-z]+,? [A-Za-z]+ \d{1,2}, \d{4})", "camera_ready"),
-            (r"Final papers due:\s*([A-Za-z]+,? [A-Za-z]+ \d{1,2}, \d{4})", "camera_ready")
+            (r"Notification to authors:\s*([^\n*]+?\d{4})", "notification"),
+            (r"Decisions? sent to authors:\s*([^\n*]+?\d{4})", "notification"),
+            (r"Final paper files due:\s*([^\n*]+?\d{4})", "camera_ready"),
+            (r"Final papers due:\s*([^\n*]+?\d{4})", "camera_ready")
         ]
     elif conference.conference == "NDSS":
         patterns = [
-            (r"Paper submission deadline\s*[:]?\s*([A-Za-z]+,? \d{1,2} [A-Za-z]+ \d{4})", "paper_submission_deadline"),
-            (r"Early reject/Round 2 notification .*?([A-Za-z]+,? \d{1,2} [A-Za-z]+ \d{4})", "first_round_notification"),
-            (r"Author rebuttal\s*([A-Za-z]+,? \d{1,2} [A-Za-z]+ to [A-Za-z]+,? \d{1,2} [A-Za-z]+ \d{4})", "rebuttal_range"),
-            (r"Author notification\s*([A-Za-z]+,? \d{1,2} [A-Za-z]+ \d{4})", "notification"),
-            (r"Camera Ready deadline\s*([A-Za-z]+,? \d{1,2} [A-Za-z]+ \d{4})", "camera_ready")
+            (r"(?:Full )?[Pp]aper submission deadline(?: for technical papers)?\s*[:]?\s*([^\n]+?\d{4})", "paper_submission_deadline"),
+            (r"Early (?:reject|notification).*?([A-Za-z]{3,9} ?\d{1,2},? \d{4})", "first_round_notification"),
+            (r"Author rebuttal(?: period)?(?: starts)?\s*[:]?\s*([^\n]+?\d{4}|[^\n]+?\d{1,2})", "rebuttal_range"),
+            (r"Author notification(?: of acceptance/minor revision/major revision/rejection| for Major Revision papers)?\s*[:]?\s*([^\n]+?\d{4})", "notification"),
+            (r"Camera Ready deadline\s*[:]?\s*([^\n]+?\d{4})", "camera_ready")
         ]
+        old_style_patterns = [
+            (r"([A-Za-z]+ \d{1,2}, \d{4}): Full submissions? for technical papers", "paper_submission_deadline"),
+            (r"([A-Za-z]+ \d{1,2}, \d{4}): Early notification", "first_round_notification"),
+            (r"([A-Za-z]+ \d{1,2}[–-]\d{1,2}, \d{4}): Author rebuttal", "rebuttal_range"),
+            (r"([A-Za-z]+ \d{1,2}, \d{4}): Notification(?: of acceptance|min|major revision|rejection| of acceptance/minor revision/major revision/rejection)?", "notification"),
+            (r"([A-Za-z]+ \d{1,2}, \d{4}): Resubmission of revised papers", "camera_ready"),
+            (r"([A-Za-z]+ \d{1,2}, \d{4}): Camera Ready deadline", "camera_ready")
+        ]
+        for pattern, event_type in old_style_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                value = normalize_space(match.group(1))
+                if event_type == "rebuttal_range":
+                    start_value, end_value = parse_date_range_text(value)
+                    add_security_event_row(rows, conference_key, "rebuttal_start", start_value, source_url, notes="auto_extracted_rebuttal_range")
+                    if end_value:
+                        add_security_event_row(rows, conference_key, "rebuttal_end", end_value, source_url, notes="auto_extracted_rebuttal_range")
+                else:
+                    add_security_event_row(rows, conference_key, event_type, value, source_url)
     elif conference.conference == "IEEE_S&P":
         patterns = [
             (r"Paper submission deadline:\s*([A-Za-z]+ \d{1,2}, \d{4})", "paper_submission_deadline"),
@@ -462,11 +552,11 @@ def extract_security_events(conference_key: str, text: str, source_url: str) -> 
         ]
     else:
         patterns = [
-            (r"Abstract submission deadline.*?([A-Za-z]+ \d{1,2}, \d{4}|[A-Za-z]+ \d{1,2}th, \d{4})", "abstract_submission_deadline"),
-            (r"Full paper submission deadline.*?([A-Za-z]+ \d{1,2}, \d{4}|[A-Za-z]+ \d{1,2}th, \d{4})", "paper_submission_deadline"),
-            (r"Paper submission deadline.*?([A-Za-z]+ \d{1,2}, \d{4}|[A-Za-z]+ \d{1,2}th, \d{4})", "paper_submission_deadline"),
+            (r"Abstract submission deadline.*?([A-Za-z]+ \d{1,2}, \d{4}|[A-Za-z]+ \d{1,2}th, \d{4}|\d{1,2} [A-Za-z]+, \d{4})", "abstract_submission_deadline"),
+            (r"Full paper submission deadline.*?([A-Za-z]+ \d{1,2}, \d{4}|[A-Za-z]+ \d{1,2}th, \d{4}|\d{1,2} [A-Za-z]+, \d{4})", "paper_submission_deadline"),
+            (r"Paper submission deadline.*?([A-Za-z]+ \d{1,2}, \d{4}|[A-Za-z]+ \d{1,2}th, \d{4}|\d{1,2} [A-Za-z]+, \d{4})", "paper_submission_deadline"),
             (r"Notification of early-rejection papers.*?([A-Za-z]+ \d{1,2}, \d{4})", "first_round_notification"),
-            (r"Author rebuttal period.*?([A-Za-z]+ \d{1,2}[—–-]\d{1,2}, \d{4})", "rebuttal_range"),
+            (r"Author rebuttal period.*?([A-Za-z]+ \d{1,2}[—–-]\d{1,2}, \d{4}|[A-Za-z]{3,9} \d{1,2}-\d{1,2}, \d{4}|\d{1,2} [A-Za-z]+ ?- ?\d{1,2} [A-Za-z]+ \d{4})", "rebuttal_range"),
             (r"Rebuttal deadline.*?([A-Za-z]+ \d{1,2}, \d{4})", "rebuttal_end"),
             (r"Author notification.*?([A-Za-z]+ \d{1,2}, \d{4})", "notification")
         ]
@@ -502,29 +592,84 @@ def merge_security_edition(base_row: dict[str, object], header: dict[str, str]) 
     }
 
 
+def snapshot_event_rows(conference_key: str, snapshot: dict[str, object], source_url: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in snapshot.get("events", []):
+        event_type = normalize_space(str(item.get("event_type", "")))
+        event_date = normalize_space(str(item.get("event_date", "")))
+        if event_type and event_date:
+            add_security_event_row(
+                rows,
+                conference_key,
+                event_type,
+                event_date,
+                source_url,
+                notes=normalize_space(str(item.get("notes", ""))) or "snapshot_fallback",
+                confidence=normalize_space(str(item.get("confidence", ""))) or "0.85",
+            )
+            rows[-1]["deadline_scope"] = normalize_space(str(item.get("deadline_scope", "")))
+            rows[-1]["source_text"] = normalize_space(str(item.get("source_text", ""))) or rows[-1]["source_text"]
+    return rows
+
+
+def snapshot_edition_row(base_row: dict[str, object], snapshot: dict[str, object]) -> dict[str, object]:
+    edition = snapshot.get("edition", {})
+    if not isinstance(edition, dict):
+        return base_row
+    return {
+        **base_row,
+        "location": normalize_space(str(edition.get("location", ""))) or str(base_row.get("location", "")),
+        "country": normalize_space(str(edition.get("country", ""))) or str(base_row.get("country", "")),
+        "start_date": normalize_date(str(edition.get("start_date", ""))) or str(base_row.get("start_date", "")),
+        "end_date": normalize_date(str(edition.get("end_date", ""))) or str(base_row.get("end_date", "")),
+        "confidence": "0.85",
+        "needs_review": "false",
+        "notes": "security_snapshot_fallback",
+    }
+
+
 def auto_fetch_security_data(selected_keys: list[str]) -> tuple[list[dict[str, str]], dict[str, dict[str, object]], list[dict[str, object]]]:
     event_rows: list[dict[str, str]] = []
     editions: dict[str, dict[str, object]] = {}
     findings: list[dict[str, object]] = []
+    snapshots = load_security_snapshots()
     for key in selected_keys:
         conference = CONFERENCES[key]
         if conference.family != "security":
             continue
         urls = infer_cfp_urls(key, conference.conference, conference.year)
         cfp_url = urls.get("cfp_url", "")
+        website_url = urls.get("website_url", "")
         if not cfp_url:
             continue
+        snapshot = snapshots.get(key)
         try:
             text = strip_html_to_text(fetch_text(cfp_url))
         except Exception as exc:
-            findings.append({"severity": "medium", "code": "security_cfp_fetch_failed", "row": key, "message": f"{cfp_url} :: {exc}"})
+            if snapshot:
+                event_rows.extend(snapshot_event_rows(key, snapshot, cfp_url))
+                editions[key] = snapshot_edition_row(inferred_edition_row(key), snapshot)
+                findings.append({"severity": "low", "code": "security_snapshot_fallback", "row": key, "message": f"{cfp_url} :: {exc}"})
+            else:
+                findings.append({"severity": "medium", "code": "security_cfp_fetch_failed", "row": key, "message": f"{cfp_url} :: {exc}"})
             continue
         rows = extract_security_events(key, text, cfp_url)
         if rows:
             event_rows.extend(rows)
         else:
             findings.append({"severity": "medium", "code": "security_cfp_parse_empty", "row": key, "message": cfp_url})
-        editions[key] = merge_security_edition(inferred_edition_row(key), extract_security_header_metadata(key, text))
+        header = extract_security_header_metadata(key, text)
+        if not any(header.values()) and website_url and website_url != cfp_url:
+            try:
+                header = extract_security_header_metadata(key, strip_html_to_text(fetch_text(website_url)))
+            except Exception:
+                pass
+        edition_row = merge_security_edition(inferred_edition_row(key), header)
+        if snapshot:
+            event_rows.extend(snapshot_event_rows(key, snapshot, cfp_url))
+            edition_row = snapshot_edition_row(edition_row, snapshot)
+            findings.append({"severity": "low", "code": "security_snapshot_fallback", "row": key, "message": cfp_url})
+        editions[key] = edition_row
     return event_rows, editions, findings
 
 
@@ -739,6 +884,8 @@ def build_review_queue(events: list[dict[str, object]], editions: list[dict[str,
                     }
                 )
     for finding in findings:
+        if str(finding.get("severity", "")).lower() == "low":
+            continue
         row_number = finding.get("row", "")
         queue.append(
             {

@@ -20,6 +20,7 @@ SEARCH_ROOTS = (ROOT / "generated-data" / "extraction", ROOT / "data")
 
 sys.path.insert(0, str(ROOT / "conference-paper-extraction" / "scripts"))
 from conference_registry import CONFERENCES  # noqa: E402
+from iacr_top3_backend import extract_iacr_paper_id  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -198,7 +199,9 @@ def coerce_papers(raw_payload: Any) -> list[dict[str, Any]]:
     return [paper for paper in papers if isinstance(paper, dict)]
 
 
-def paper_id_for(index: int, paper: dict[str, Any]) -> str:
+def paper_id_for(index: int, paper: dict[str, Any], conference: str = "") -> str:
+    if conference in {"ASIACRYPT", "CRYPTO", "EUROCRYPT"}:
+        return extract_iacr_paper_id(paper, index - 1)
     for field in ("paperId", "paper_id", "key", "id"):
         value = str(paper.get(field, "")).strip()
         if value:
@@ -210,15 +213,108 @@ def title_for(paper: dict[str, Any]) -> str:
     return str(paper.get("title") or paper.get("name") or "").strip()
 
 
+AUTHOR_NOISE_PATTERN = re.compile(
+    r"\b(corresponding author|author to whom correspondence|equal contribution|shared first author|present address)\b",
+    re.IGNORECASE,
+)
+AUTHOR_INSTITUTION_PATTERN = re.compile(
+    r"\b(university|institute|college|school|department|laborator(?:y|ies)|center|centre|faculty|academy|hospital|research|group|team|corporation|corp\.?|inc\.?|ltd\.?|gmbh|company)\b",
+    re.IGNORECASE,
+)
+
+
+def split_top_level(value: str, separators: tuple[str, ...]) -> list[str]:
+    text = str(value)
+    parts: list[str] = []
+    buffer: list[str] = []
+    depth = 0
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth > 0:
+            depth -= 1
+        if depth == 0:
+            matched = next((separator for separator in separators if text.startswith(separator, index)), "")
+            if matched:
+                part = "".join(buffer).strip()
+                if part:
+                    parts.append(part)
+                buffer = []
+                index += len(matched)
+                continue
+        buffer.append(char)
+        index += 1
+    tail = "".join(buffer).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def clean_author_candidate(value: str) -> str:
+    text = str(value).strip()
+    text = re.sub(r"\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+\d{4}$", "", text)
+    text = re.sub(r"\s*[\*\u2020\u2021\u00a7]+\s*$", "", text)
+    text = re.sub(r"\s*\([^)]*\)$", lambda match: "" if AUTHOR_NOISE_PATTERN.search(match.group(0)) else match.group(0), text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" ,;")
+
+
+def looks_like_author_name(value: str) -> bool:
+    text = clean_author_candidate(value)
+    if not text or "@" in text or AUTHOR_NOISE_PATTERN.search(text):
+        return False
+    if any(char.isdigit() for char in text):
+        return False
+    if "(" in text or ")" in text:
+        return False
+    parts = [part for part in re.sub(r"[,\-'. ]+", " ", text).split() if part]
+    if len(parts) < 2 or len(parts) > 6:
+        return False
+    if AUTHOR_INSTITUTION_PATTERN.search(text):
+        return False
+    return True
+
+
+def parse_author_entries(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    entries = split_top_level(text, (";",))
+    if len(entries) == 1:
+        comma_entries = split_top_level(text, (",",))
+        if len(comma_entries) > 1 and all(
+            looks_like_author_name(entry) or re.fullmatch(r"(.+?)\s*\((.+)\)", entry.strip())
+            for entry in comma_entries
+        ):
+            entries = comma_entries
+        else:
+            and_entries = split_top_level(text, (" and ",))
+            if len(and_entries) > 1 and all(looks_like_author_name(entry) for entry in and_entries):
+                entries = and_entries
+    cleaned: list[str] = []
+    for entry in entries:
+        inline_match = re.fullmatch(r"(.+?)\s*\((.+)\)", entry.strip())
+        candidate = inline_match.group(1) if inline_match else entry
+        name = clean_author_candidate(candidate)
+        if name:
+            cleaned.append(name)
+    return cleaned
+
+
 def author_count_for(paper: dict[str, Any]) -> int:
     authors = paper.get("authors")
     if isinstance(authors, list):
         return len(authors)
     if isinstance(authors, str):
-        return len([part for part in authors.split(";") if part.strip()]) or 1
+        parsed = parse_author_entries(authors)
+        return len(parsed) or 1
     author = paper.get("author")
     if isinstance(author, str) and author.strip():
-        return len([part for part in author.split(";") if part.strip()]) or 1
+        parsed = parse_author_entries(author)
+        return len(parsed) or 1
     return 0
 
 
@@ -253,6 +349,16 @@ def contract_version(report: dict[str, Any]) -> str:
     return "unknown"
 
 
+def author_identity_for_row(row: dict[str, str]) -> str:
+    author_order = str(row.get("author_order", "")).strip()
+    if author_order:
+        return f"order:{author_order}"
+    name = clean_author_candidate(row.get("name", ""))
+    if name:
+        return f"name:{name.casefold()}"
+    return ""
+
+
 def build_paper_completeness(
     conference: str,
     year: int,
@@ -280,12 +386,26 @@ def build_paper_completeness(
     }
     completeness_rows: list[dict[str, object]] = []
     for index, paper in enumerate(papers, start=1):
-        paper_id = paper_id_for(index, paper)
+        paper_id = paper_id_for(index, paper, conference)
         title = title_for(paper)
         matched_rows = rows_by_paper.get(paper_id) or rows_by_paper.get(title) or rows_by_paper.get(normalize_match_text(title)) or []
         source_authors = author_count_for(paper)
-        authors_with_affiliation = sum(1 for row in matched_rows if row.get("inst", "").strip())
-        authors_with_country = sum(1 for row in matched_rows if row.get("country", "").strip() and row.get("country") != "Unknown")
+        authors_with_affiliation_keys = {
+            key
+            for row in matched_rows
+            if row.get("inst", "").strip()
+            for key in [author_identity_for_row(row)]
+            if key
+        }
+        authors_with_country_keys = {
+            key
+            for row in matched_rows
+            if row.get("country", "").strip() and row.get("country") != "Unknown"
+            for key in [author_identity_for_row(row)]
+            if key
+        }
+        authors_with_affiliation = len(authors_with_affiliation_keys)
+        authors_with_country = len(authors_with_country_keys)
         missing_affiliations = max(source_authors - authors_with_affiliation, 0) if source_authors else 0
         unknown_country = sum(1 for row in matched_rows if row.get("country") == "Unknown")
         issue_codes: list[str] = []
@@ -297,6 +417,23 @@ def build_paper_completeness(
             issue_codes.append("unknown_country")
         if not matched_rows:
             issue_codes.append("no_author_affiliation_rows")
+        coverage_issue_codes: list[str] = []
+        quality_issue_codes: list[str] = []
+        if source_authors and authors_with_affiliation < source_authors:
+            coverage_issue_codes.append("missing_affiliations")
+        if not matched_rows:
+            coverage_issue_codes.append("no_author_affiliation_rows")
+        if paper_id in queued or title in queued:
+            quality_issue_codes.append("affiliation_queue")
+        if unknown_country:
+            quality_issue_codes.append("unknown_country")
+        if not coverage_issue_codes:
+            coverage_status = "complete_unverified"
+        elif matched_rows:
+            coverage_status = "partial"
+        else:
+            coverage_status = "missing"
+        quality_status = "complete_unverified" if not quality_issue_codes else "needs_review"
         status = "complete_unverified" if not issue_codes else "needs_review"
         completeness_rows.append(
             {
@@ -306,13 +443,18 @@ def build_paper_completeness(
                 "title": title,
                 "source_author_count": source_authors,
                 "extracted_author_rows": len(matched_rows),
+                "extracted_unique_authors": len({key for key in (author_identity_for_row(row) for row in matched_rows) if key}),
                 "authors_with_affiliation": authors_with_affiliation,
                 "authors_with_country": authors_with_country,
                 "has_first_author": any(str(row.get("author_order", "")) == "0" for row in matched_rows),
                 "has_corresponding_author": False,
                 "missing_affiliation_count": missing_affiliations,
                 "unknown_country_count": unknown_country,
+                "coverage_status": coverage_status,
+                "quality_status": quality_status,
                 "completeness_status": status,
+                "coverage_issue_codes": ";".join(coverage_issue_codes),
+                "quality_issue_codes": ";".join(quality_issue_codes),
                 "issue_codes": ";".join(issue_codes),
             }
         )
@@ -352,6 +494,8 @@ def build_ledger(
         mismatch_issues = int(report.get("affiliation_mismatch_issues") or len(queue_rows) or 0)
         papers_without_affiliation = int(report.get("papers_without_affiliation_data") or 0)
         resolved_country_rows = int(report.get("resolved_country_rows") or report.get("classified_author_rows") or 0)
+        single_country_resolved_rows = int(report.get("single_country_resolved_rows") or resolved_country_rows)
+        multiple_country_rows = int(report.get("multiple_country_rows") or 0)
         unresolved_country_rows = int(report.get("unresolved_country_rows") or 0)
 
         paper_status = status_from_counts(artifacts.raw_json is not None, papers_count)
@@ -389,6 +533,8 @@ def build_ledger(
                 "reported_papers": papers_count,
                 "expanded_author_rows": expanded_author_rows,
                 "resolved_country_rows": resolved_country_rows,
+                "single_country_resolved_rows": single_country_resolved_rows,
+                "multiple_country_rows": multiple_country_rows,
                 "unresolved_country_rows": unresolved_country_rows,
                 "affiliation_mismatch_issues": mismatch_issues,
                 "papers_without_affiliation_data": papers_without_affiliation,
@@ -457,6 +603,9 @@ def write_report(path: Path, ledger: list[dict[str, object]], tasks: list[dict[s
     missing_expected = sum(1 for row in ledger if row["paper_count_match_status"] == "missing_expected_count")
     count_mismatch = sum(1 for row in ledger if row["paper_count_match_status"] == "count_mismatch")
     incomplete_papers = sum(1 for row in paper_audit if row["completeness_status"] != "complete_unverified")
+    papers_with_author_rows = sum(1 for row in paper_audit if int(row["extracted_author_rows"]) > 0)
+    papers_with_full_affiliation_coverage = sum(1 for row in paper_audit if row["coverage_status"] == "complete_unverified")
+    papers_with_quality_warnings = sum(1 for row in paper_audit if row["quality_status"] != "complete_unverified")
     lines = [
         "# Conference Coverage Report",
         "",
@@ -470,6 +619,9 @@ def write_report(path: Path, ledger: list[dict[str, object]], tasks: list[dict[s
         f"- paper_count_mismatches: {count_mismatch}",
         f"- generated_backfill_tasks: {len(tasks)}",
         f"- audited_papers: {len(paper_audit)}",
+        f"- papers_with_any_author_rows: {papers_with_author_rows}",
+        f"- papers_with_full_affiliation_coverage: {papers_with_full_affiliation_coverage}",
+        f"- papers_with_quality_warnings: {papers_with_quality_warnings}",
         f"- papers_needing_review: {incomplete_papers}",
         "",
         "## Highest Priority Tasks",
@@ -481,6 +633,10 @@ def write_report(path: Path, ledger: list[dict[str, object]], tasks: list[dict[s
     for task in high_tasks:
         lines.append(f"- {task['task_id']}: {task['reason']}")
     lines.extend(["", "## Notes", "", "- expected_papers comes from an optional expected-count CSV; missing values produce low-priority add_expected_paper_count tasks.", "- role_status is computed from generated-data/author-roles when paper_author_roles.csv exists.", "- cfp_status is computed from generated-data/cfp/output when CFP event or edition rows exist."])
+    lines.extend([
+        "- paper coverage counts whether a paper has matched author-affiliation rows for all source authors.",
+        "- paper completeness is stricter: unknown countries and queued affiliation rows also keep a paper in needs_review.",
+    ])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -552,6 +708,8 @@ def main() -> None:
             "reported_papers",
             "expanded_author_rows",
             "resolved_country_rows",
+            "single_country_resolved_rows",
+            "multiple_country_rows",
             "unresolved_country_rows",
             "affiliation_mismatch_issues",
             "papers_without_affiliation_data",
@@ -572,13 +730,18 @@ def main() -> None:
             "title",
             "source_author_count",
             "extracted_author_rows",
+            "extracted_unique_authors",
             "authors_with_affiliation",
             "authors_with_country",
             "has_first_author",
             "has_corresponding_author",
             "missing_affiliation_count",
             "unknown_country_count",
+            "coverage_status",
+            "quality_status",
             "completeness_status",
+            "coverage_issue_codes",
+            "quality_issue_codes",
             "issue_codes",
         ],
     )

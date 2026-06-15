@@ -4,6 +4,14 @@ import argparse
 import csv
 from collections import defaultdict
 from pathlib import Path
+import re
+
+
+def normalize_author_display_name(name: str) -> str:
+    text = (name or "").strip()
+    if not text:
+        return ""
+    return re.sub(r"\s0+\d+$", "", text).strip()
 
 
 MODE_CHOICES = ("author", "country", "institution")
@@ -37,7 +45,7 @@ def filter_rows(rows: list[dict[str, str]], conference: str | None, year: str | 
 def node_for_mode(row: dict[str, str], mode: str) -> tuple[str, str]:
     if mode == "author":
         key = row.get("author_key") or row.get("name") or "Unknown"
-        return key, row.get("name") or key
+        return key, normalize_author_display_name(row.get("name") or key)
     if mode == "country":
         key = row.get("country") or "Unknown"
         return key, key
@@ -47,6 +55,7 @@ def node_for_mode(row: dict[str, str], mode: str) -> tuple[str, str]:
 
 def aggregate_edges(rows: list[dict[str, str]], mode: str) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     paper_nodes: dict[str, dict[str, tuple[str, str]]] = defaultdict(dict)
+    paper_meta: dict[str, dict[str, set[str]]] = defaultdict(lambda: {"conferences": set(), "years": set()})
     edge_stats: dict[tuple[str, str], dict[str, object]] = {}
 
     for row in rows:
@@ -55,15 +64,19 @@ def aggregate_edges(rows: list[dict[str, str]], mode: str) -> tuple[list[dict[st
             continue
         node_key, node_name = node_for_mode(row, mode)
         paper_nodes[paper_key][node_key] = (node_key, node_name)
+        conference = row.get("conference", "")
+        year = row.get("year", "")
+        if conference:
+            paper_meta[paper_key]["conferences"].add(conference)
+        if year:
+            paper_meta[paper_key]["years"].add(year)
 
     for paper_key, nodes_map in paper_nodes.items():
         nodes = [nodes_map[key] for key in sorted(nodes_map)]
         if len(nodes) < 2:
             continue
-        conferences = {row.get("conference", "") for row in rows if row.get("paper_key") == paper_key}
-        years = {row.get("year", "") for row in rows if row.get("paper_key") == paper_key and row.get("year")}
-        conference = sorted(conferences)[0] if conferences else ""
-        year = sorted(years)[0] if years else ""
+        conferences = paper_meta[paper_key]["conferences"]
+        years = paper_meta[paper_key]["years"]
         for index, (left_key, left_name) in enumerate(nodes):
             for right_key, right_name in nodes[index + 1 :]:
                 edge_key = (left_key, right_key)
@@ -81,10 +94,8 @@ def aggregate_edges(rows: list[dict[str, str]], mode: str) -> tuple[list[dict[st
                     },
                 )
                 edge["shared_papers"] += 1
-                if conference:
-                    edge["conferences"].add(conference)
-                if year:
-                    edge["years"].add(year)
+                edge["conferences"].update(conferences)
+                edge["years"].update(years)
 
     edge_rows: list[dict[str, object]] = []
     nodes_all = set()

@@ -164,6 +164,11 @@ NON_US_KEYWORD_PATTERNS = [
     r"\bsquare enix\b", r"\bbandai\b", r"\bfrom software\b",
 ]
 
+AUTHOR_NOTE_PATTERN = re.compile(
+    r"\b(corresponding author|author to whom correspondence|equal contribution|shared first author|present address)\b",
+    re.IGNORECASE,
+)
+
 
 def build_article_tag(config: ConferenceConfig, title: str) -> str:
     return f"{config.venue_tag}-{normalize_space(title)}"
@@ -175,6 +180,15 @@ class AffiliationClassification:
     source: str
     confidence: float
     reason: str
+
+
+def clean_author_name(value: str) -> str:
+    text = normalize_space(html.unescape(str(value)))
+    text = re.sub(r"\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+\d{4}$", "", text)
+    text = re.sub(r"\s*[\*\u2020\u2021\u00a7]+\s*$", "", text)
+    text = re.sub(r"\s*\([^)]*\)$", lambda match: "" if AUTHOR_NOTE_PATTERN.search(match.group(0)) else match.group(0), text)
+    return normalize_space(text.strip(" ,;"))
 
 
 def classify_affiliation(
@@ -215,6 +229,10 @@ def classify_affiliation(
 
 def split_affiliation_parts(affiliation: str) -> list[str]:
     normalized = normalize_space(affiliation)
+    if ", and " in normalized:
+        parts = [part.strip(" ,") for part in re.split(r",\s+and\s+", normalized) if part.strip(" ,")]
+        if len(parts) > 1:
+            return parts
     if ";" in normalized:
         return [part.strip() for part in normalized.split(";") if part.strip()]
     if "/" in normalized:
@@ -271,31 +289,51 @@ def load_institution_overrides(path: Path) -> dict[str, AffiliationClassificatio
 
 
 def parse_usenix_affiliations_html(html_text: str) -> list[dict[str, Any]]:
+    def split_author_group(names_text: str) -> list[str]:
+        normalized_names = html.unescape(names_text)
+        normalized_names = re.sub(r"\s+", " ", normalized_names).strip(" ,;")
+        normalized_names = re.sub(r",\s+and\s+", ", ", normalized_names)
+        normalized_names = re.sub(r"\s+and\s+", ", ", normalized_names)
+        return [name for name in (clean_author_name(part) for part in normalized_names.split(",")) if name]
+
     authors = re.findall(r'<meta\s+name="citation_author"\s+content="([^"]+)"', html_text)
     institutions = re.findall(r'<meta\s+name="citation_author_institution"\s+content="([^"]+)"', html_text)
-    if not authors:
-        author_block_match = re.search(
-            r'<div class="field field-name-field-paper-people-text.*?<p>(.*?)</p>',
-            html_text,
-            re.DOTALL,
-        )
-        if not author_block_match:
-            return []
-        author_block = author_block_match.group(1)
-        result = []
-        for names_text, institution_text in re.findall(r'([^<]+?),\s*<em>(.*?)</em>', author_block, re.DOTALL):
-            institution = normalize_space(html.unescape(re.sub(r"<[^>]+>", " ", institution_text)).rstrip(";"))
-            names = [normalize_space(html.unescape(part)) for part in re.split(r"\s+and\s+", names_text) if normalize_space(html.unescape(part))]
-            for name in names:
-                result.append({"name": name, "affiliations": [institution] if institution else []})
-        return result
-    result = []
+    meta_rows = []
     for index, author in enumerate(authors):
         inst = institutions[index] if index < len(institutions) else ""
-        clean_author = normalize_space(html.unescape(author))
+        clean_author = clean_author_name(author)
         clean_inst = normalize_space(html.unescape(inst).rstrip(";"))
-        result.append({"name": clean_author, "affiliations": [clean_inst] if clean_inst else []})
-    return result
+        meta_rows.append({"name": clean_author, "affiliations": [clean_inst] if clean_inst else []})
+
+    author_block_rows = []
+    author_block_match = re.search(
+        r'<div class="field field-name-field-paper-people-text.*?<p>(.*?)</p>',
+        html_text,
+        re.DOTALL,
+    )
+    if author_block_match:
+        author_block = author_block_match.group(1)
+        for names_text, institution_text in re.findall(r'([^<]+?),\s*<em>(.*?)</em>', author_block, re.DOTALL):
+            institution = normalize_space(html.unescape(re.sub(r"<[^>]+>", " ", institution_text)).rstrip(";"))
+            for name in split_author_group(names_text):
+                author_block_rows.append({"name": name, "affiliations": [institution] if institution else []})
+
+    if not meta_rows:
+        return author_block_rows
+    if not author_block_rows:
+        return meta_rows
+
+    merged = {row["name"]: {"name": row["name"], "affiliations": list(row.get("affiliations", []))} for row in meta_rows if row.get("name")}
+    for row in author_block_rows:
+        name = row.get("name", "")
+        if not name:
+            continue
+        if name not in merged:
+            merged[name] = {"name": name, "affiliations": list(row.get("affiliations", []))}
+            continue
+        if not merged[name].get("affiliations") and row.get("affiliations"):
+            merged[name]["affiliations"] = list(row["affiliations"])
+    return list(merged.values())
 
 
 def parse_ndss_affiliations_html(html: str) -> list[dict[str, Any]]:
@@ -312,7 +350,7 @@ def parse_ndss_affiliations_html(html: str) -> list[dict[str, Any]]:
                 continue
             result = []
             for match in re.finditer(r"([^,]+?)\s*\(([^)]+)\)", clean):
-                name = normalize_space(re.sub(r"\s+\d{4}$", "", match.group(1)))
+                name = clean_author_name(match.group(1))
                 inst = normalize_space(match.group(2))
                 if len(name.split()) < 2 or len(inst) <= 3 or inst.startswith("http") or inst[0].isdigit():
                     continue
@@ -329,7 +367,7 @@ def parse_ndss_affiliations_html(html: str) -> list[dict[str, Any]]:
     result = []
     pattern = r"([A-Z][a-zA-ZÀ-ÿ\-']+(?:\s+(?:van|de|di|da|von|le|la|el)\s+)?(?:\s+[A-Z][a-zA-ZÀ-ÿ\-']+(?:\s+\d{4})?)+)\s*\(([^)]+)\)"
     for match in re.finditer(pattern, after_h1_clean):
-        name = re.sub(r"\s+\d{4}$", "", match.group(1).strip())
+        name = clean_author_name(match.group(1))
         inst = match.group(2).strip()
         if len(inst) > 3 and not inst.startswith("http") and not inst[0].isdigit():
             result.append({"name": name, "affiliations": [inst]})
@@ -346,7 +384,7 @@ def parse_ieee_affiliations_html(html: str) -> list[dict[str, Any]]:
         return []
     result = []
     for author in data.get("authors", []):
-        name = author.get("name", "")
+        name = clean_author_name(author.get("name", ""))
         affiliations = author.get("affiliation", [])
         if name:
             result.append({"name": name, "affiliations": affiliations})
@@ -539,7 +577,9 @@ def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
         authors = []
         for author in article.findall(".//author"):
             if author.text:
-                authors.append(normalize_space(author.text))
+                cleaned = clean_author_name(author.text)
+                if cleaned:
+                    authors.append(cleaned)
         ee = article.find("ee")
         url = ee.text.strip() if ee is not None and ee.text else ""
         paper_id = article.get("key", "")
@@ -606,7 +646,8 @@ def normalized_title_key(title: str) -> str:
 
 
 def normalize_person_name(value: str) -> list[str]:
-    text = unicodedata.normalize("NFKD", value)
+    text = clean_author_name(value)
+    text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = re.sub(r"<[^>]+>", " ", text)
     text = normalize_space(text)
@@ -625,6 +666,11 @@ def names_match(left: str, right: str) -> bool:
         return False
     if left_parts == right_parts:
         return True
+    if left_parts[0] == right_parts[0]:
+        left_tail = "".join(left_parts[1:])
+        right_tail = "".join(right_parts[1:])
+        if left_tail and left_tail == right_tail:
+            return True
     if left_parts[-1] != right_parts[-1]:
         return False
     if left_parts[0][0] != right_parts[0][0]:
@@ -637,6 +683,78 @@ def map_author_name(input_authors: list[str], candidate_name: str) -> str:
         if names_match(name, candidate_name):
             return name
     return ""
+
+
+def normalized_person_key(value: str) -> str:
+    return " ".join(normalize_person_name(value))
+
+
+def build_affiliation_map(author_affiliations: list[dict[str, Any]]) -> tuple[dict[str, list[str]], list[tuple[str, list[str]]]]:
+    aff_map: dict[str, list[str]] = {}
+    aff_name_pairs: list[tuple[str, list[str]]] = []
+    for item in author_affiliations:
+        source_name = normalize_space(str(item.get("name", "")))
+        affiliations = item.get("affiliations", [])
+        if not source_name:
+            continue
+        aff_name_pairs.append((source_name, affiliations))
+        aff_map[normalized_person_key(source_name)] = affiliations
+    return aff_map, aff_name_pairs
+
+
+def match_author_affiliations(
+    authors: list[str],
+    aff_map: dict[str, list[str]],
+    aff_name_pairs: list[tuple[str, list[str]]],
+) -> list[list[str]]:
+    matched_affiliations: list[list[str]] = []
+    for author in authors:
+        key = normalized_person_key(author)
+        if key in aff_map:
+            matched_affiliations.append(aff_map[key])
+            continue
+        matched = False
+        for aff_name, affs in aff_name_pairs:
+            aff_key = normalized_person_key(aff_name)
+            if not aff_key:
+                continue
+            if names_match(author, aff_name):
+                matched_affiliations.append(affs)
+                matched = True
+                break
+            if aff_key in key or key in aff_key:
+                matched_affiliations.append(affs)
+                matched = True
+                break
+            key_parts = key.split()
+            aff_parts = aff_key.split()
+            if (
+                len(key_parts) >= 2
+                and len(aff_parts) >= 2
+                and key_parts[-1] == aff_parts[-1]
+                and key_parts[0][0] == aff_parts[0][0]
+            ):
+                matched_affiliations.append(affs)
+                matched = True
+                break
+        if not matched:
+            matched_affiliations.append([])
+    return matched_affiliations
+
+
+def fill_shared_affiliation_gaps(matched_affiliations: list[list[str]]) -> list[list[str]]:
+    known_affiliations = [
+        "; ".join(affs)
+        for affs in matched_affiliations
+        if affs and "; ".join(affs).strip()
+    ]
+    unique_known_affiliations = sorted(set(known_affiliations))
+    if len(unique_known_affiliations) != 1:
+        return matched_affiliations
+    shared_affiliations = next((affs for affs in matched_affiliations if affs), [])
+    if not shared_affiliations:
+        return matched_affiliations
+    return [affs if affs else list(shared_affiliations) for affs in matched_affiliations]
 
 
 def extract_doi_from_url(url: str) -> str:
@@ -692,6 +810,14 @@ def has_resolved_affiliations(rows: list[dict[str, Any]]) -> bool:
         if any(normalize_space(str(value)) for value in affiliations):
             return True
     return False
+
+
+def cache_has_full_author_coverage(rows: list[dict[str, Any]], authors: list[str]) -> bool:
+    if not rows:
+        return False
+    aff_map, aff_name_pairs = build_affiliation_map(rows)
+    matched_affiliations = match_author_affiliations(authors, aff_map, aff_name_pairs)
+    return bool(authors) and all(bool(affs) for affs in matched_affiliations)
 
 
 def fetch_openalex_affiliations_by_doi(doi: str, authors: list[str], year: int | None = None) -> list[dict[str, Any]]:
@@ -762,9 +888,10 @@ def resolve_affiliations_for_paper(
     import time
 
     cache_file = cache_dir / f"{paper['paperId'].replace('/', '_')}_affiliations.json"
+    authors = paper.get("authors", [])
     if cache_file.exists():
         cached = json.loads(cache_file.read_text(encoding="utf-8"))
-        if has_resolved_affiliations(cached) or not fetch_from_network:
+        if has_resolved_affiliations(cached) and (cache_has_full_author_coverage(cached, authors) or not fetch_from_network):
             return cached
     if not fetch_from_network:
         return []
@@ -772,7 +899,6 @@ def resolve_affiliations_for_paper(
     affiliations = []
     url = paper.get("url", "")
     title = paper.get("title", "")
-    authors = paper.get("authors", [])
     time.sleep(0.3)
     if config.conference == "USENIX_SECURITY" and url:
         affiliations = fetch_usenix_affiliations(url)
@@ -817,39 +943,70 @@ def expand_author_rows(
         author_affiliations = resolve_affiliations_for_paper(config, paper, cache_dir, fetch_from_network) if cache_dir else []
 
         if author_affiliations:
-            aff_map = {normalize_space(item["name"]).lower(): item.get("affiliations", []) for item in author_affiliations}
-            matched_affiliations = []
-            for author in authors:
-                key = author.lower().strip()
-                if key in aff_map:
-                    matched_affiliations.append(aff_map[key])
-                    continue
-                matched = False
-                for aff_name, affs in aff_map.items():
-                    if aff_name in key or key in aff_name:
-                        matched_affiliations.append(affs)
-                        matched = True
-                        break
-                    key_parts = key.split()
-                    aff_parts = aff_name.split()
-                    if (
-                        len(key_parts) >= 2
-                        and len(aff_parts) >= 2
-                        and key_parts[-1] == aff_parts[-1]
-                        and key_parts[0][0] == aff_parts[0][0]
-                    ):
-                        matched_affiliations.append(affs)
-                        matched = True
-                        break
-                if not matched:
-                    matched_affiliations.append([])
+            aff_map, aff_name_pairs = build_affiliation_map(author_affiliations)
+            matched_affiliations = match_author_affiliations(authors, aff_map, aff_name_pairs)
+            original_match_flags = [bool(affs) for affs in matched_affiliations]
+            fallback_match_flags = [False] * len(authors)
+            shared_fill_flags = [False] * len(authors)
 
-            if sum(1 for affs in matched_affiliations if affs) > 0:
+            if any(not affs for affs in matched_affiliations):
+                openalex_affiliations = resolve_openalex_fallback(
+                    paper.get("url", ""),
+                    title,
+                    authors,
+                    config.year,
+                )
+                if openalex_affiliations:
+                    fallback_map, fallback_name_pairs = build_affiliation_map(openalex_affiliations)
+                    fallback_matches = match_author_affiliations(authors, fallback_map, fallback_name_pairs)
+                    fallback_match_flags = [bool(affs) for affs in fallback_matches]
+                    matched_affiliations = [
+                        primary if primary else fallback
+                        for primary, fallback in zip(matched_affiliations, fallback_matches)
+                    ]
+
+            if any(not affs for affs in matched_affiliations):
+                before_shared_fill = [bool(affs) for affs in matched_affiliations]
+                matched_affiliations = fill_shared_affiliation_gaps(matched_affiliations)
+                shared_fill_flags = [
+                    (not before) and bool(after)
+                    for before, after in zip(before_shared_fill, matched_affiliations)
+                ]
+
+            matched_count = sum(1 for affs in matched_affiliations if affs)
+            if matched_count > 0:
+                unmatched_authors: list[str] = []
                 for order, (author, affs) in enumerate(zip(authors, matched_affiliations)):
                     if not affs:
+                        unmatched_authors.append(author)
+                        rows.append({
+                            "conference": config.conference,
+                            "year": config.year,
+                            "paper_id": paper_id,
+                            "title": title,
+                            "name": author,
+                            "article_tag": article_tag,
+                            "author_order": order,
+                            "inst": "",
+                            "country": "Unknown",
+                            "classification_source": "author_affiliation_unmatched",
+                            "classification_confidence": 0.0,
+                            "classification_reason": "author_not_matched_in_source_affiliations",
+                        })
                         continue
                     inst = "; ".join(affs)
                     classification = classify_affiliation(inst, overrides)
+                    classification_source = classification.source
+                    classification_confidence = classification.confidence
+                    classification_reason = classification.reason
+                    if shared_fill_flags[order]:
+                        classification_source = "paper_shared_affiliation_backfill"
+                        classification_confidence = min(classification.confidence, 0.7)
+                        classification_reason = "paper_level_single_affiliation_consensus"
+                    elif (not original_match_flags[order]) and fallback_match_flags[order]:
+                        classification_source = "openalex_partial_gap_fill"
+                        classification_confidence = min(classification.confidence, 0.8)
+                        classification_reason = "openalex_partial_author_gap_fill"
                     rows.append({
                         "conference": config.conference,
                         "year": config.year,
@@ -860,11 +1017,42 @@ def expand_author_rows(
                         "author_order": order,
                         "inst": inst,
                         "country": classification.country,
-                        "classification_source": classification.source,
-                        "classification_confidence": classification.confidence,
-                        "classification_reason": classification.reason,
+                        "classification_source": classification_source,
+                        "classification_confidence": classification_confidence,
+                        "classification_reason": classification_reason,
+                    })
+                if unmatched_authors:
+                    issues.append({
+                        "conference": config.conference,
+                        "year": str(config.year),
+                        "paper_id": paper_id,
+                        "title": title,
+                        "issue": "partial_author_affiliation_coverage",
+                        "authors_count": str(len(authors)),
+                        "affiliations_count": str(len(author_affiliations)),
+                        "authors": " | ".join(unmatched_authors),
+                        "affiliations": " | ".join(
+                            f"{item.get('name', '').strip()}: {'; '.join(item.get('affiliations', []))}".strip(": ")
+                            for item in author_affiliations
+                        ),
                     })
                 continue
+
+            issues.append({
+                "conference": config.conference,
+                "year": str(config.year),
+                "paper_id": paper_id,
+                "title": title,
+                "issue": "author_affiliation_match_failed",
+                "authors_count": str(len(authors)),
+                "affiliations_count": str(len(author_affiliations)),
+                "authors": " | ".join(authors),
+                "affiliations": " | ".join(
+                    f"{item.get('name', '').strip()}: {'; '.join(item.get('affiliations', []))}".strip(": ")
+                    for item in author_affiliations
+                ),
+            })
+            continue
 
         issues.append({
             "conference": config.conference,
@@ -882,6 +1070,17 @@ def expand_author_rows(
 
 def filter_classified_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [row for row in rows if row.get("country") and row["country"] != "Unknown"]
+
+
+def count_country_resolution_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
+    single_country_rows = sum(1 for row in rows if row.get("country") not in {"", "Unknown", "Multiple"})
+    multiple_country_rows = sum(1 for row in rows if row.get("country") == "Multiple")
+    unresolved_country_rows = sum(1 for row in rows if row.get("country") in {"", "Unknown"})
+    return {
+        "single_country_resolved_rows": single_country_rows,
+        "multiple_country_rows": multiple_country_rows,
+        "unresolved_country_rows": unresolved_country_rows,
+    }
 
 
 def normalize_papers(config: ConferenceConfig, papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -930,8 +1129,11 @@ def run_single_conference(
     rows, issues = expand_author_rows(config, papers, overrides, cache_dir, fetch_affiliations)
     classified_rows = filter_classified_rows(rows)
     classified_rows_final = classified_rows
+    country_counts = count_country_resolution_rows(rows)
     papers_with_author_rows = len({row["paper_id"] for row in rows if row.get("paper_id")})
     papers_without_affiliation_data = sum(1 for issue in issues if issue.get("issue") == "no_affiliation_data")
+    partial_affiliation_coverage = sum(1 for issue in issues if issue.get("issue") == "partial_author_affiliation_coverage")
+    author_affiliation_match_failed = sum(1 for issue in issues if issue.get("issue") == "author_affiliation_match_failed")
 
     write_csv(conference_interim / "author_affiliations_expanded.csv", rows,
               ["conference", "year", "paper_id", "title", "name", "article_tag",
@@ -957,10 +1159,12 @@ def run_single_conference(
         "papers_count": len(papers),
         "papers_with_author_rows": papers_with_author_rows,
         "papers_without_affiliation_data": papers_without_affiliation_data,
+        "papers_with_partial_affiliation_coverage": partial_affiliation_coverage,
+        "papers_with_author_affiliation_match_failed": author_affiliation_match_failed,
         "expanded_author_rows": len(rows),
         "classified_author_rows": len(classified_rows),
         "resolved_country_rows": len(classified_rows),
-        "unresolved_country_rows": len(rows) - len(classified_rows),
+        **country_counts,
         "no_affiliation_issues": len(issues),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -1014,6 +1218,7 @@ def run_all_pipelines(
 
     all_classified_rows = filter_classified_rows(all_rows)
     all_classified_rows_final = all_classified_rows
+    country_counts = count_country_resolution_rows(all_rows)
     candidates = build_affiliation_candidates(all_rows)
 
     write_csv(summary_interim / "papers_normalized.csv", all_papers,
@@ -1040,10 +1245,12 @@ def run_all_pipelines(
         "papers_count": sum(report["papers_count"] for report in reports),
         "papers_with_author_rows": len({row["paper_id"] for row in all_rows if row.get("paper_id")}),
         "papers_without_affiliation_data": sum(1 for issue in all_issues if issue.get("issue") == "no_affiliation_data"),
+        "papers_with_partial_affiliation_coverage": sum(1 for issue in all_issues if issue.get("issue") == "partial_author_affiliation_coverage"),
+        "papers_with_author_affiliation_match_failed": sum(1 for issue in all_issues if issue.get("issue") == "author_affiliation_match_failed"),
         "expanded_author_rows": len(all_rows),
         "classified_author_rows": len(all_classified_rows),
         "resolved_country_rows": len(all_classified_rows),
-        "unresolved_country_rows": len(all_rows) - len(all_classified_rows),
+        **country_counts,
         "no_affiliation_issues": len(all_issues),
         "pdf_download_reports": pdf_reports,
         "generated_at": datetime.now(timezone.utc).isoformat(),

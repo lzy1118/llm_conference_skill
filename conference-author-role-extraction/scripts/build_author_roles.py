@@ -54,6 +54,13 @@ def normalize_space(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def normalize_author_display_name(value: object) -> str:
+    text = normalize_space(value)
+    if not text:
+        return ""
+    return re.sub(r"\s0+\d+$", "", text).strip()
+
+
 def slug_text(value: str) -> str:
     lowered = normalize_space(value).casefold()
     return re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
@@ -117,7 +124,7 @@ def build_roles(rows: list[dict[str, str]]) -> tuple[list[dict[str, object]], di
 
     for row in rows:
         paper_key = row_paper_key(row)
-        author_name = normalize_space(row.get("name", "")) or normalize_space(row.get("author_name", ""))
+        author_name = normalize_author_display_name(row.get("name", "")) or normalize_author_display_name(row.get("author_name", ""))
         author_key = row_author_key(row)
         author_order = parse_author_order(row.get("author_order", ""))
         if not author_name:
@@ -225,6 +232,9 @@ def write_override_template(output_dir: Path, roles: list[dict[str, object]], li
 
 def write_report(output_dir: Path, report: dict[str, object]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    report.setdefault("coverage_scope_note", "This role report is not a full-batch paper-level coverage report.")
+    report.setdefault("pipeline_scope_note", "The current deterministic role pipeline covers only papers that already have normalized author rows.")
+    report.setdefault("corresponding_author_note", "Corresponding author remains evidence-driven and is not automatically completed in the current pipeline.")
     (output_dir / "author_role_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     lines = [
         "# Author Role Extraction Report",
@@ -242,8 +252,9 @@ def write_report(output_dir: Path, report: dict[str, object]) -> None:
         "",
         "## Notes",
         "",
-        "- Corresponding author and equal-contribution fields are placeholders in this minimal pipeline.",
+        "- This is not a full-batch paper coverage report; it only summarizes rows that already entered the normalized role pipeline.",
         "- The current deterministic role source is author_order only.",
+        "- Corresponding author and equal-contribution fields remain evidence-driven placeholders in the current pipeline.",
     ]
     (output_dir / "author_role_report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

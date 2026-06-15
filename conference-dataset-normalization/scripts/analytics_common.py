@@ -103,6 +103,13 @@ def normalize_author_key(name: str) -> str:
     return stable_key(name)
 
 
+def normalize_author_display_name(name: str) -> str:
+    text = normalize_whitespace(name)
+    if not text:
+        return ""
+    return normalize_whitespace(re.sub(r"\s0+\d+$", "", text))
+
+
 def normalize_institution_key(inst: str) -> str:
     return stable_key(inst)
 

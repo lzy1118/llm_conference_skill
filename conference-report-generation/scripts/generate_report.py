@@ -6,6 +6,14 @@ import json
 from pathlib import Path
 
 
+def normalize_author_display_name(name: str) -> str:
+    import re
+    text = (name or "").strip()
+    if not text:
+        return ""
+    return re.sub(r"\s0+\d+$", "", text).strip()
+
+
 SECTION_FILES = {
     "country": Path("country/country_summary.csv"),
     "institution": Path("institutions/institution_summary.csv"),
@@ -74,9 +82,12 @@ def build_markdown(analysis_dir: Path, data: dict[str, list[dict[str, str]]], mi
         for row in top_rows(rows, limit):
             label = row.get(label_fields[section], "item")
             if section == "collaboration":
-                right_name = row.get("right_name", "item")
+                label = normalize_author_display_name(label)
+                right_name = normalize_author_display_name(row.get("right_name", "item"))
                 lines.append(f"- {label} <-> {right_name}: {metric_fields[section]}={row.get(metric_fields[section], '')}")
             else:
+                if section == "author":
+                    label = normalize_author_display_name(label)
                 lines.append(f"- {label}: {metric_fields[section]}={row.get(metric_fields[section], '')}")
         if not rows:
             lines.append("- No rows available.")
