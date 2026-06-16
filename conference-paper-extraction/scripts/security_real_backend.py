@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import html
 import json
 import mimetypes
+import os
 import re
 import sys
 import urllib.parse
@@ -12,8 +14,23 @@ import xml.etree.ElementTree as ET
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    sync_playwright = None
+
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options as SeleniumChromeOptions
+    from selenium.webdriver.chrome.service import Service as SeleniumChromeService
+except Exception:
+    webdriver = None
+    SeleniumChromeOptions = None
+    SeleniumChromeService = None
 
 from backend_common import conference_interim_dir, conference_output_dir, conference_pdf_dir, conference_raw_dir, summary_interim_dir, summary_output_dir, write_csv, write_workbook
 from api_runtime import fetch_json_with_rate_limit, openalex_headers, semantic_scholar_headers
@@ -169,6 +186,91 @@ AUTHOR_NOTE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+SPECIAL_NAME_CHAR_MAP = str.maketrans(
+    {
+        "ı": "i",
+        "İ": "I",
+        "đ": "d",
+        "Đ": "D",
+        "ð": "d",
+        "Ð": "D",
+        "ł": "l",
+        "Ł": "L",
+        "ø": "o",
+        "Ø": "O",
+        "ß": "ss",
+        "æ": "ae",
+        "Æ": "Ae",
+        "œ": "oe",
+        "Œ": "Oe",
+    }
+)
+
+AUTHOR_NAME_PLACEHOLDERS = {
+    "available media",
+}
+
+CCS_POSTER_PATTERN = re.compile(r"(^poster\b[\s:\-]?|\(poster\)\.?$)", re.IGNORECASE)
+CCS_WORKSHOP_PATTERN = re.compile(
+    r"\b("
+    r"workshop|"
+    r"wpes\s*'?\d{2}|"
+    r"aisec\s*'?\d{2}|"
+    r"ccsw\s*'?\d{2}|"
+    r"mtd\s*'?\d{2}|"
+    r"ashes\s*\d{4}|"
+    r"cpsi?otsec\s*'?\d{2}|"
+    r"consensusday\s*'?\d{2}|"
+    r"plas\b|"
+    r"defi\s*'?\d{2}|"
+    r"healthsec\s*'?\d{2}|"
+    r"aacd\s*'?\d{2}|"
+    r"lamps\s*'?\d{2}|"
+    r"ricss\s*'?\d{2}|"
+    r"feast\s*'?\d{2}|"
+    r"watch\s*'?\d{2}|"
+    r"sats\s*'?\d{2}|"
+    r"wahc\s*'?\d{2}|"
+    r"scored\s*'?\d{2}|"
+    r"haips\s*'?\d{2}|"
+    r"sure\s*'?\d{2}|"
+    r"artman\s*'?\d{2}|"
+    r"checkmate\s*'?\d{2}|"
+    r"free5gc\s*'?\d{2}"
+    r")\b",
+    re.IGNORECASE,
+)
+CCS_DEMO_PATTERN = re.compile(r"^demo\s*[:\-]", re.IGNORECASE)
+CCS_TUTORIAL_PATTERN = re.compile(r"^tutorial\b", re.IGNORECASE)
+CCS_DOCTORAL_PATTERN = re.compile(r"doctoral symposium", re.IGNORECASE)
+CCS_COMPETITION_PATTERN = re.compile(r"course competition", re.IGNORECASE)
+CCS_DISSERTATION_PATTERN = re.compile(r"dissertation research description", re.IGNORECASE)
+CCS_PROGRAM_PATTERN = re.compile(r"young scholars development program", re.IGNORECASE)
+CCS_NON_MAIN_TITLES_BY_YEAR: dict[int, set[str]] = {
+    2020: {
+        "Machine Learning and Security: The Good, The Bad, and The Ugly.",
+    },
+    2021: {
+        "Pseudo-Randomness and the Crystal Ball.",
+        "Towards Building a Responsible Data Economy.",
+        "Are we done yet? Our Journey to Fight against Memory-safety Bugs.",
+    },
+    2022: {
+        "Designing Hardware for Cryptography and Cryptography for Hardware.",
+        "We Are the Experts, and We Are the Problem: The Security Advice Fiasco.",
+        "Sustainability is a Security Problem.",
+    },
+    2024: {
+        "Cryptography and Computer Security: A View From the Year 2100.",
+        "Staving off the IoT Armageddon.",
+        "Verifiable Security Policies for Distributed Systems.",
+    },
+    2025: {
+        "Autonomous Vulnerability Analysis, Triaging, and Repair: A Historical Perspective.",
+        "Mechanizing Privacy by Design.",
+    },
+}
+
 
 def build_article_tag(config: ConferenceConfig, title: str) -> str:
     return f"{config.venue_tag}-{normalize_space(title)}"
@@ -188,7 +290,10 @@ def clean_author_name(value: str) -> str:
     text = re.sub(r"\s+\d{4}$", "", text)
     text = re.sub(r"\s*[\*\u2020\u2021\u00a7]+\s*$", "", text)
     text = re.sub(r"\s*\([^)]*\)$", lambda match: "" if AUTHOR_NOTE_PATTERN.search(match.group(0)) else match.group(0), text)
-    return normalize_space(text.strip(" ,;"))
+    text = normalize_space(text.strip(" ,;"))
+    if text.casefold() in AUTHOR_NAME_PLACEHOLDERS:
+        return ""
+    return text
 
 
 def classify_affiliation(
@@ -225,6 +330,121 @@ def classify_affiliation(
             )
         return results[-1]
     return classify_single_affiliation(affiliation, overrides)
+
+def fetch_acm_text_via_playwright(paper_url: str) -> str:
+    if sync_playwright is None:
+        return ""
+    try:
+        with sync_playwright() as p:
+            launch_kwargs: dict[str, Any] = {"headless": True}
+            chrome_path = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+            if chrome_path.exists():
+                launch_kwargs["executable_path"] = str(chrome_path)
+            browser = p.chromium.launch(**launch_kwargs)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720},
+            )
+            page = context.new_page()
+            try:
+                page.goto(paper_url, timeout=20000, wait_until="domcontentloaded")
+                html = page.content()
+            except Exception:
+                html = ""
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+            return html
+    except Exception:
+        return ""
+
+
+def find_local_chrome_binary() -> str:
+    candidates = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate
+    return ""
+
+
+def find_local_chromedriver() -> str:
+    import os
+
+    candidates = [
+        os.environ.get("ACM_CHROMEDRIVER_PATH", "").strip(),
+        "/tmp/chromedriver149/chromedriver-mac-arm64/chromedriver",
+        "/usr/local/bin/chromedriver",
+        "/opt/homebrew/bin/chromedriver",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return ""
+
+
+def fetch_acm_text_via_selenium(paper_url: str) -> str:
+    if webdriver is None or SeleniumChromeOptions is None or SeleniumChromeService is None:
+        return ""
+    chromedriver_path = find_local_chromedriver()
+    chrome_binary = find_local_chrome_binary()
+    if not chromedriver_path or not chrome_binary:
+        return ""
+    options = SeleniumChromeOptions()
+    options.binary_location = chrome_binary
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1280,720")
+    options.add_argument("--no-proxy-server")
+    options.add_argument("--proxy-server=direct://")
+    options.add_argument("--proxy-bypass-list=*")
+    driver = None
+    try:
+        driver = webdriver.Chrome(
+            service=SeleniumChromeService(chromedriver_path),
+            options=options,
+        )
+        driver.set_page_load_timeout(30)
+        driver.get(paper_url)
+        return driver.page_source
+    except Exception:
+        return ""
+    finally:
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+
+def fetch_acm_affiliations(
+    paper_url: str,
+    title: str = "",
+) -> list[dict[str, Any]]:
+    html = ""
+    if not html:
+        try:
+            html = fetch_acm_text_via_playwright(paper_url)
+        except Exception:
+            html = ""
+    if not html:
+        try:
+            html = fetch_acm_text_via_selenium(paper_url)
+        except Exception:
+            html = ""
+    if not html:
+        try:
+            html = fetch_text(paper_url, timeout=20)
+        except Exception:
+            return []
+    rows = parse_acm_affiliations_html(html)
+    return rows if has_resolved_affiliations(rows) else []
 
 
 def split_affiliation_parts(affiliation: str) -> list[str]:
@@ -286,6 +506,144 @@ def classify_single_affiliation(
 
 def load_institution_overrides(path: Path) -> dict[str, AffiliationClassification]:
     return load_override_rows(path, AffiliationClassification)
+
+
+def load_author_name_aliases(path: Path) -> dict[str, set[str]]:
+    if not path.exists():
+        return {}
+    aliases: dict[str, set[str]] = {}
+    with path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            canonical = normalize_space(row.get("canonical_name", ""))
+            alias = normalize_space(row.get("alias", ""))
+            if not canonical or not alias:
+                continue
+            aliases.setdefault(canonical, set()).add(alias)
+    return aliases
+
+
+def author_matches_with_aliases(
+    author: str,
+    candidate_name: str,
+    author_name_aliases: dict[str, set[str]] | None = None,
+) -> bool:
+    if names_match(author, candidate_name):
+        return True
+    if not author_name_aliases:
+        return False
+    for canonical_name, aliases in author_name_aliases.items():
+        variants = aliases | {canonical_name}
+        if any(names_match(author, variant) for variant in variants) and any(
+            names_match(candidate_name, variant) for variant in variants
+        ):
+            return True
+    return False
+
+
+def load_author_affiliation_overrides(path: Path) -> dict[tuple[str, str, str, str, str], list[dict[str, str]]]:
+    if not path.exists():
+        return {}
+    overrides: dict[tuple[str, str, str, str, str], list[dict[str, str]]] = {}
+    with path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            conference = normalize_space(row.get("conference", ""))
+            year = normalize_space(row.get("year", ""))
+            article_tag = normalize_space(row.get("article_tag", ""))
+            author_order = normalize_space(row.get("author_order", ""))
+            author_name = normalize_space(row.get("name", ""))
+            raw_inst = row.get("inst", "") or ""
+            inst = normalize_space(raw_inst)
+            country = normalize_space(row.get("country", ""))
+            if not conference or not year or not article_tag or not author_order or not author_name or not inst:
+                continue
+            key = (conference, year, article_tag, author_order, author_name)
+            overrides.setdefault(key, [])
+            value = {"inst": raw_inst.strip("\n\r"), "country": country}
+            if value not in overrides[key]:
+                overrides[key].append(value)
+    return overrides
+
+
+def apply_author_affiliation_overrides(
+    config: ConferenceConfig,
+    papers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    issues: list[dict[str, str]],
+    overrides: dict[tuple[str, str, str, str, str], list[dict[str, str]]],
+    institution_overrides: dict[str, AffiliationClassification] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    if not overrides:
+        return rows, issues
+
+    paper_key_to_override_rows: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    paper_id_by_key: dict[tuple[str, str, str], str] = {}
+    title_by_key: dict[tuple[str, str, str], str] = {}
+
+    for paper in papers:
+        title = normalize_space(str(paper.get("title", "")))
+        authors = [normalize_space(str(author)) for author in paper.get("authors", [])]
+        article_tag = build_article_tag(config, title)
+        paper_key = (
+            normalize_space(config.conference),
+            normalize_space(str(config.year)),
+            normalize_space(article_tag),
+        )
+        override_rows: list[dict[str, Any]] = []
+        complete = True
+        for order, author in enumerate(authors):
+            key = (
+                paper_key[0],
+                paper_key[1],
+                paper_key[2],
+                str(order),
+                author,
+            )
+            override_insts = overrides.get(key, [])
+            if not override_insts:
+                complete = False
+                break
+            for override in override_insts:
+                inst = override["inst"]
+                forced_country = normalize_space(override.get("country", ""))
+                if forced_country:
+                    classification = AffiliationClassification(
+                        country=forced_country,
+                        source="override",
+                        confidence=1.0,
+                        reason="author_affiliation_override_country",
+                    )
+                else:
+                    classification = classify_affiliation(inst, institution_overrides)
+                override_rows.append(
+                    {
+                        "conference": config.conference,
+                        "year": config.year,
+                        "paper_id": paper.get("paperId", ""),
+                        "title": title,
+                        "name": author,
+                        "article_tag": article_tag,
+                        "author_order": order,
+                        "inst": inst,
+                        "country": classification.country,
+                        "classification_source": "author_affiliation_override",
+                        "classification_confidence": 1.0,
+                        "classification_reason": "author_affiliation_override",
+                    }
+                )
+        if complete and override_rows:
+            paper_key_to_override_rows[paper_key] = override_rows
+            paper_id_by_key[paper_key] = str(paper.get("paperId", ""))
+            title_by_key[paper_key] = title
+
+    if not paper_key_to_override_rows:
+        return rows, issues
+
+    overridden_paper_ids = set(paper_id_by_key.values())
+    updated_rows = [row for row in rows if str(row.get("paper_id", "")) not in overridden_paper_ids]
+    updated_issues = [issue for issue in issues if str(issue.get("paper_id", "")) not in overridden_paper_ids]
+    for paper_key in sorted(paper_key_to_override_rows):
+        updated_rows.extend(paper_key_to_override_rows[paper_key])
+    return updated_rows, updated_issues
 
 
 def parse_usenix_affiliations_html(html_text: str) -> list[dict[str, Any]]:
@@ -389,6 +747,217 @@ def parse_ieee_affiliations_html(html: str) -> list[dict[str, Any]]:
         if name:
             result.append({"name": name, "affiliations": affiliations})
     return result
+
+
+def extract_meta_contents(html_text: str, meta_name: str) -> list[str]:
+    pattern = rf'<meta[^>]+name=["\']{re.escape(meta_name)}["\'][^>]+content=["\']([^"\']*)["\']'
+    return [normalize_space(html.unescape(value)) for value in re.findall(pattern, html_text, re.IGNORECASE)]
+
+
+def normalize_affiliation_values(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        clean = normalize_space(re.sub(r"<[^>]+>", " ", html.unescape(value)))
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(clean)
+    return normalized
+
+
+def affiliation_names_from_value(value: Any) -> list[str]:
+    if isinstance(value, list):
+        names: list[str] = []
+        for item in value:
+            names.extend(affiliation_names_from_value(item))
+        return normalize_affiliation_values(names)
+    if isinstance(value, dict):
+        candidates = [
+            value.get("name", ""),
+            value.get("alternateName", ""),
+            value.get("legalName", ""),
+        ]
+        return normalize_affiliation_values([str(candidate) for candidate in candidates if normalize_space(str(candidate))])
+    text = normalize_space(str(value))
+    return normalize_affiliation_values([text]) if text else []
+
+
+def parse_acm_json_ld_authors(html_text: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for block in re.findall(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>\s*(.*?)\s*</script>',
+        html_text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        try:
+            payload = json.loads(html.unescape(block))
+        except Exception:
+            continue
+
+        def visit(node: Any) -> None:
+            if isinstance(node, list):
+                for item in node:
+                    visit(item)
+                return
+            if not isinstance(node, dict):
+                return
+            author_value = node.get("author")
+            if isinstance(author_value, list):
+                for author in author_value:
+                    if not isinstance(author, dict):
+                        continue
+                    name = clean_author_name(author.get("name", ""))
+                    if not name:
+                        continue
+                    affiliations = affiliation_names_from_value(author.get("affiliation", []))
+                    rows.append({"name": name, "affiliations": affiliations})
+            for nested in node.values():
+                if isinstance(nested, (dict, list)):
+                    visit(nested)
+
+        visit(payload)
+    return rows
+
+
+def parse_acm_microdata_authors(html_text: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    pattern = re.compile(
+        r'<div[^>]+class="dropBlock__body"[^>]*>.*?<div[^>]+property="name"[^>]*>.*?'
+        r'<span[^>]+property="givenName"[^>]*>(.*?)</span>\s*'
+        r'<span[^>]+property="familyName"[^>]*>(.*?)</span>.*?'
+        r'<div[^>]+class="affiliations"[^>]*>(.*?)</div>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    for given_name, family_name, affiliation_block in pattern.findall(html_text):
+        name = clean_author_name(
+            f"{normalize_space(html.unescape(re.sub(r'<[^>]+>', ' ', given_name)))} "
+            f"{normalize_space(html.unescape(re.sub(r'<[^>]+>', ' ', family_name)))}"
+        )
+        if not name:
+            continue
+        affiliations = normalize_affiliation_values(
+            re.findall(
+                r'<span[^>]+property="name"[^>]*>(.*?)</span>',
+                affiliation_block,
+                re.IGNORECASE | re.DOTALL,
+            )
+        )
+        key = name.casefold()
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        rows.append({"name": name, "affiliations": affiliations})
+    return rows
+
+
+def parse_acm_contributor_holders(html_text: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    holder_pattern = re.compile(
+        r"<div[^>]+data-doi=[\"']10\.1145/contrib-[^\"']+[\"'][^>]*>.*?(?=<div[^>]+data-doi=[\"']10\.1145/contrib-|<div class=\"core-self-citation\"|$)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for block in holder_pattern.findall(html_text):
+        given_name = ""
+        family_name = ""
+        given_match = re.search(r"<span[^>]+property=[\"']givenName[\"'][^>]*>(.*?)</span>", block, re.IGNORECASE | re.DOTALL)
+        family_match = re.search(r"<span[^>]+property=[\"']familyName[\"'][^>]*>(.*?)</span>", block, re.IGNORECASE | re.DOTALL)
+        if given_match:
+            given_name = normalize_space(html.unescape(re.sub(r"<[^>]+>", " ", given_match.group(1))))
+        if family_match:
+            family_name = normalize_space(html.unescape(re.sub(r"<[^>]+>", " ", family_match.group(1))))
+        name = clean_author_name(f"{given_name} {family_name}")
+        if not name:
+            name_match = re.search(r"<a[^>]+title=[\"']([^\"']+)[\"'][^>]*role=[\"']button[\"']", block, re.IGNORECASE)
+            if name_match:
+                name = clean_author_name(name_match.group(1))
+        if not name:
+            name_match = re.search(r"<div[^>]+property=[\"']name[\"'][^>]*>(.*?)</div>", block, re.IGNORECASE | re.DOTALL)
+            if name_match:
+                name = clean_author_name(re.sub(r"<[^>]+>", " ", name_match.group(1)))
+        if not name:
+            continue
+        affiliations = normalize_affiliation_values(
+            re.findall(
+                r"<(?:div|span)[^>]+property=[\"']affiliation[\"'][^>]*>.*?<span[^>]+property=[\"']name[\"'][^>]*>(.*?)</span>",
+                block,
+                re.IGNORECASE | re.DOTALL,
+            )
+        )
+        if not affiliations:
+            affiliations = normalize_affiliation_values(
+                re.findall(
+                    r"<div[^>]+class=[\"'][^\"']*affiliations[^\"']*[\"'][^>]*>(.*?)</div>",
+                    block,
+                    re.IGNORECASE | re.DOTALL,
+                )
+            )
+        key = name.casefold()
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        rows.append({"name": name, "affiliations": affiliations})
+    return rows
+
+
+def parse_acm_affiliations_html(html_text: str) -> list[dict[str, Any]]:
+    meta_authors = extract_meta_contents(html_text, "citation_author")
+    meta_institutions = extract_meta_contents(html_text, "citation_author_institution")
+    if meta_authors:
+        rows: list[dict[str, Any]] = []
+        for index, author in enumerate(meta_authors):
+            affiliations = []
+            if index < len(meta_institutions):
+                affiliations = normalize_affiliation_values([meta_institutions[index]])
+            rows.append({"name": clean_author_name(author), "affiliations": affiliations})
+        if any(row.get("affiliations") for row in rows):
+            return rows
+
+    json_ld_rows = parse_acm_json_ld_authors(html_text)
+    if any(row.get("affiliations") for row in json_ld_rows):
+        return json_ld_rows
+
+    microdata_rows = parse_acm_microdata_authors(html_text)
+    if any(row.get("affiliations") for row in microdata_rows):
+        return microdata_rows
+
+    contributor_rows = parse_acm_contributor_holders(html_text)
+    if any(row.get("affiliations") for row in contributor_rows):
+        return contributor_rows
+
+    author_blocks = re.findall(
+        r'(<[^>]+class=["\'][^"\']*author[^"\']*["\'][^>]*>.*?</(?:article|div|li|section)>)',
+        html_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    parsed_rows: list[dict[str, Any]] = []
+    for block in author_blocks:
+        block_text = normalize_space(html.unescape(re.sub(r"<[^>]+>", " ", block)))
+        if not block_text:
+            continue
+        name_match = re.search(r"\b([A-Z][A-Za-zÀ-ÿ'`\-]+(?:\s+[A-Z][A-Za-zÀ-ÿ'`\-]+){1,5})\b", block_text)
+        if not name_match:
+            continue
+        name = clean_author_name(name_match.group(1))
+        if not name:
+            continue
+        affiliations = normalize_affiliation_values(
+            re.findall(
+                r'(?:affiliation|institution)[^<>:]{0,40}[:\s]\s*([^<>{}]{4,200})',
+                block_text,
+                re.IGNORECASE,
+            )
+        )
+        if affiliations:
+            parsed_rows.append({"name": name, "affiliations": affiliations})
+    if any(row.get("affiliations") for row in parsed_rows):
+        return parsed_rows
+    return []
 
 
 def fetch_text(url: str, timeout: int = 20) -> str:
@@ -557,6 +1126,59 @@ def download_pdfs_for_conference(
     return summary
 
 
+def is_ccs_main_conference_paper(config: ConferenceConfig, title: str) -> bool:
+    return is_ccs_main_conference_paper_with_pages(config, title, "")
+
+
+def page_span_from_string(pages: str) -> int | None:
+    normalized_pages = normalize_space(pages)
+    if not normalized_pages:
+        return None
+    if "-" in normalized_pages:
+        start, end = normalized_pages.split("-", 1)
+        try:
+            return int(end) - int(start) + 1
+        except Exception:
+            return None
+    try:
+        int(normalized_pages)
+    except Exception:
+        return None
+    return 1
+
+
+def is_ccs_main_conference_paper_with_pages(
+    config: ConferenceConfig,
+    title: str,
+    pages: str,
+) -> bool:
+    normalized_title = normalize_space(title)
+    if not normalized_title:
+        return False
+    if CCS_POSTER_PATTERN.search(normalized_title):
+        return False
+    if CCS_WORKSHOP_PATTERN.search(normalized_title):
+        return False
+    if CCS_DEMO_PATTERN.search(normalized_title):
+        return False
+    if CCS_TUTORIAL_PATTERN.search(normalized_title):
+        return False
+    if CCS_DOCTORAL_PATTERN.search(normalized_title):
+        return False
+    if CCS_COMPETITION_PATTERN.search(normalized_title):
+        return False
+    if CCS_DISSERTATION_PATTERN.search(normalized_title):
+        return False
+    if CCS_PROGRAM_PATTERN.search(normalized_title):
+        return False
+    if normalized_title in CCS_NON_MAIN_TITLES_BY_YEAR.get(config.year, set()):
+        return False
+    span = page_span_from_string(pages)
+    if span is not None and span <= 4:
+        return False
+    return True
+
+
 def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
     url = f"https://dblp.org/db/conf/{config.dblp_key}/{config.dblp_key}{config.year}.xml"
     request = urllib.request.Request(url, headers={"User-Agent": BROWSER_HEADERS["User-Agent"]})
@@ -574,6 +1196,9 @@ def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
         title = normalize_space(title_el.text) if title_el is not None and title_el.text else ""
         if not title:
             continue
+        pages = normalize_space(article.findtext("pages", ""))
+        if config.conference == "CCS" and not is_ccs_main_conference_paper_with_pages(config, title, pages):
+            continue
         authors = []
         for author in article.findall(".//author"):
             if author.text:
@@ -588,6 +1213,7 @@ def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
             "title": title,
             "authors": authors,
             "url": url,
+            "pages": pages,
         })
     return papers
 
@@ -640,6 +1266,97 @@ def fetch_semantic_scholar_affiliations(title: str, authors: list[str]) -> list[
     return result
 
 
+def fetch_openalex_work_by_doi(doi: str) -> dict[str, Any]:
+    normalized_doi = normalize_space(doi)
+    if not normalized_doi:
+        return {}
+    url = f"https://api.openalex.org/works/doi:{urllib.parse.quote(normalized_doi, safe='')}"
+    try:
+        payload = fetch_json_with_rate_limit(
+            "openalex",
+            url,
+            headers=openalex_headers(),
+            timeout=8,
+            max_retries=1,
+        )
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def unpaywall_email() -> str:
+    for env_name in ("UNPAYWALL_EMAIL", "OPENALEX_MAILTO"):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            return value
+    return "test@example.com"
+
+
+def fetch_unpaywall_by_doi(doi: str) -> dict[str, Any]:
+    normalized_doi = normalize_space(doi)
+    if not normalized_doi:
+        return {}
+    email = urllib.parse.quote(unpaywall_email(), safe="@")
+    encoded_doi = urllib.parse.quote(normalized_doi, safe="")
+    url = f"https://api.unpaywall.org/v2/{encoded_doi}?email={email}"
+    try:
+        payload = fetch_json_with_rate_limit(
+            "unpaywall",
+            url,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json,*/*;q=0.8"},
+            timeout=8,
+            max_retries=1,
+        )
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def fetch_semantic_scholar_paper(title: str, doi: str = "") -> dict[str, Any]:
+    normalized_doi = normalize_space(doi)
+    try:
+        if normalized_doi:
+            encoded_doi = urllib.parse.quote(normalized_doi, safe="")
+            url = (
+                f"https://api.semanticscholar.org/graph/v1/paper/DOI:{encoded_doi}"
+                "?fields=title,externalIds,authors,year,venue,openAccessPdf"
+            )
+            payload = fetch_json_with_rate_limit(
+                "semantic_scholar",
+                url,
+                headers=semantic_scholar_headers(),
+                timeout=8,
+                max_retries=1,
+            )
+            if isinstance(payload, dict) and payload:
+                return payload
+    except Exception:
+        pass
+
+    query = urllib.parse.quote_plus(title[:100])
+    url = (
+        "https://api.semanticscholar.org/graph/v1/paper/search"
+        f"?query={query}&limit=1&fields=title,externalIds,authors,year,venue,openAccessPdf"
+    )
+    try:
+        payload = fetch_json_with_rate_limit(
+            "semantic_scholar",
+            url,
+            headers=semantic_scholar_headers(),
+            timeout=8,
+            max_retries=1,
+        )
+    except Exception:
+        return {}
+    data = payload.get("data", []) if isinstance(payload, dict) else []
+    if not data:
+        return {}
+    first = data[0]
+    if normalized_title_key(str(first.get("title", ""))) != normalized_title_key(title):
+        return {}
+    return first if isinstance(first, dict) else {}
+
+
 def normalized_title_key(title: str) -> str:
     title = re.sub(r"<[^>]+>", " ", title)
     return normalize_space(title).casefold().rstrip(".")
@@ -647,6 +1364,7 @@ def normalized_title_key(title: str) -> str:
 
 def normalize_person_name(value: str) -> list[str]:
     text = clean_author_name(value)
+    text = text.translate(SPECIAL_NAME_CHAR_MAP)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = re.sub(r"<[^>]+>", " ", text)
@@ -657,6 +1375,61 @@ def normalize_person_name(value: str) -> list[str]:
             text = f"{' '.join(parts[1:])} {parts[0]}"
     text = re.sub(r"[^A-Za-z0-9 ]+", " ", text)
     return [part.casefold() for part in text.split() if part]
+
+
+def normalize_person_name_loose(value: str) -> list[str]:
+    parts = normalize_person_name(value)
+    loose_parts: list[str] = []
+    for part in parts:
+        loose = part
+        for src, dst in (("ae", "a"), ("oe", "o"), ("ue", "u")):
+            loose = loose.replace(src, dst)
+        loose_parts.append(loose)
+    return loose_parts
+
+
+def bounded_edit_distance(left: str, right: str, limit: int) -> int:
+    if left == right:
+        return 0
+    if abs(len(left) - len(right)) > limit:
+        return limit + 1
+    previous = list(range(len(right) + 1))
+    for i, left_char in enumerate(left, start=1):
+        current = [i]
+        row_min = current[0]
+        for j, right_char in enumerate(right, start=1):
+            cost = 0 if left_char == right_char else 1
+            current.append(
+                min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + cost,
+                )
+            )
+            row_min = min(row_min, current[-1])
+        if row_min > limit:
+            return limit + 1
+        previous = current
+    return previous[-1]
+
+
+def loose_name_variant_match(left_parts: list[str], right_parts: list[str]) -> bool:
+    if not left_parts or not right_parts or len(left_parts) != len(right_parts):
+        return False
+    if left_parts == right_parts:
+        return True
+    if len(left_parts) >= 2:
+        if left_parts[:-1] == right_parts[:-1]:
+            left_last = left_parts[-1]
+            right_last = right_parts[-1]
+            if left_last and right_last and left_last[0] == right_last[0]:
+                if bounded_edit_distance(left_last, right_last, 2) <= 2:
+                    return True
+    if len(left_parts) == 2:
+        if left_parts[0] == right_parts[0]:
+            if bounded_edit_distance(left_parts[1], right_parts[1], 2) <= 2:
+                return True
+    return False
 
 
 def names_match(left: str, right: str) -> bool:
@@ -671,6 +1444,20 @@ def names_match(left: str, right: str) -> bool:
         right_tail = "".join(right_parts[1:])
         if left_tail and left_tail == right_tail:
             return True
+    if len(left_parts) >= 2 and len(right_parts) >= 2:
+        # Handle surname-first renderings such as "Wang Tao" or "Zhu Wei-dong".
+        if left_parts[-1] == right_parts[0]:
+            if "".join(left_parts[:-1]) == "".join(right_parts[1:]):
+                return True
+        if right_parts[-1] == left_parts[0]:
+            if "".join(right_parts[:-1]) == "".join(left_parts[1:]):
+                return True
+    left_loose_parts = normalize_person_name_loose(left)
+    right_loose_parts = normalize_person_name_loose(right)
+    if loose_name_variant_match(left_parts, right_parts):
+        return True
+    if loose_name_variant_match(left_loose_parts, right_loose_parts):
+        return True
     if left_parts[-1] != right_parts[-1]:
         return False
     if left_parts[0][0] != right_parts[0][0]:
@@ -706,6 +1493,7 @@ def match_author_affiliations(
     authors: list[str],
     aff_map: dict[str, list[str]],
     aff_name_pairs: list[tuple[str, list[str]]],
+    author_name_aliases: dict[str, set[str]] | None = None,
 ) -> list[list[str]]:
     matched_affiliations: list[list[str]] = []
     for author in authors:
@@ -718,7 +1506,7 @@ def match_author_affiliations(
             aff_key = normalized_person_key(aff_name)
             if not aff_key:
                 continue
-            if names_match(author, aff_name):
+            if author_matches_with_aliases(author, aff_name, author_name_aliases):
                 matched_affiliations.append(affs)
                 matched = True
                 break
@@ -812,12 +1600,154 @@ def has_resolved_affiliations(rows: list[dict[str, Any]]) -> bool:
     return False
 
 
-def cache_has_full_author_coverage(rows: list[dict[str, Any]], authors: list[str]) -> bool:
+def cache_has_full_author_coverage(
+    rows: list[dict[str, Any]],
+    authors: list[str],
+    author_name_aliases: dict[str, set[str]] | None = None,
+) -> bool:
     if not rows:
         return False
     aff_map, aff_name_pairs = build_affiliation_map(rows)
-    matched_affiliations = match_author_affiliations(authors, aff_map, aff_name_pairs)
+    matched_affiliations = match_author_affiliations(authors, aff_map, aff_name_pairs, author_name_aliases)
     return bool(authors) and all(bool(affs) for affs in matched_affiliations)
+
+
+def count_covered_authors(
+    rows: list[dict[str, Any]],
+    authors: list[str],
+    author_name_aliases: dict[str, set[str]] | None = None,
+) -> int:
+    if not rows or not authors:
+        return 0
+    aff_map, aff_name_pairs = build_affiliation_map(rows)
+    matched_affiliations = match_author_affiliations(authors, aff_map, aff_name_pairs, author_name_aliases)
+    return sum(1 for affs in matched_affiliations if affs)
+
+
+def choose_best_affiliation_rows(
+    authors: list[str],
+    author_name_aliases: dict[str, set[str]] | None,
+    *candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    best_rows: list[dict[str, Any]] = []
+    best_score = (-1, -1)
+    for rows in candidates:
+        if not has_resolved_affiliations(rows):
+            continue
+        score = (count_covered_authors(rows, authors, author_name_aliases), len(rows))
+        if score > best_score:
+            best_rows = rows
+            best_score = score
+    return best_rows
+
+
+def candidate_legacy_affiliation_cache_dirs() -> list[Path]:
+    dirs: list[Path] = []
+    env_dir = os.environ.get("LEGACY_AFFILIATION_CACHE_DIR", "").strip()
+    if env_dir:
+        dirs.append(Path(env_dir))
+    dirs.append(Path("/Users/liziyu/llm_conference_us/Security-data/data/resolution/affiliation_cache_2020-2026"))
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for directory in dirs:
+        key = str(directory)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(directory)
+    return deduped
+
+
+def candidate_legacy_open_pdf_manifest_paths(config: ConferenceConfig) -> list[Path]:
+    paths: list[Path] = []
+    env_path = os.environ.get("LEGACY_OPEN_PDF_MANIFEST_PATH", "").strip()
+    if env_path:
+        paths.append(Path(env_path))
+    if config.conference == "CCS":
+        paths.append(
+            Path(
+                "/Users/liziyu/graduation/会议主题及自动化采集的文件（原名during)/ccstry/data/ccs/ccs2020_2025_open_pdf_manifest.json"
+            )
+        )
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(path)
+    return deduped
+
+
+@lru_cache(maxsize=8)
+def load_legacy_open_pdf_manifest_index(path_str: str) -> dict[str, dict[str, Any]]:
+    path = Path(path_str)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, list):
+        return {}
+
+    index: dict[str, dict[str, Any]] = {}
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        doi = normalize_space(str(row.get("doi", ""))).casefold()
+        if not doi or doi in index:
+            continue
+        index[doi] = row
+    return index
+
+
+def load_legacy_affiliations_for_paper(
+    config: ConferenceConfig,
+    paper: dict[str, Any],
+) -> list[dict[str, Any]]:
+    url = normalize_space(str(paper.get("url", "")))
+    doi = extract_doi_from_url(url)
+    if not doi:
+        return []
+    cache_key = f"{config.key}_{doi.replace('/', '_')}_affiliations.json"
+    for directory in candidate_legacy_affiliation_cache_dirs():
+        path = directory / cache_key
+        if not path.exists():
+            continue
+        try:
+            rows = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if has_resolved_affiliations(rows):
+            return rows
+    return []
+
+
+def load_legacy_openalex_affiliations_for_paper(
+    config: ConferenceConfig,
+    paper: dict[str, Any],
+) -> list[dict[str, Any]]:
+    doi = extract_doi_from_url(normalize_space(str(paper.get("url", ""))))
+    authors = paper.get("authors", [])
+    if not doi or not authors:
+        return []
+
+    for manifest_path in candidate_legacy_open_pdf_manifest_paths(config):
+        index = load_legacy_open_pdf_manifest_index(str(manifest_path))
+        if not index:
+            continue
+        row = index.get(doi.casefold())
+        if not row:
+            continue
+        openalex = row.get("openalex")
+        if not isinstance(openalex, dict):
+            continue
+        mapped_rows = map_openalex_authorships(openalex.get("authorships", []), authors)
+        if has_resolved_affiliations(mapped_rows):
+            return mapped_rows
+    return []
 
 
 def fetch_openalex_affiliations_by_doi(doi: str, authors: list[str], year: int | None = None) -> list[dict[str, Any]]:
@@ -879,26 +1809,140 @@ def resolve_openalex_fallback(url: str, title: str, authors: list[str], year: in
     return []
 
 
+def manifest_csv_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "conference": row.get("conference", ""),
+        "year": row.get("year", ""),
+        "paper_id": row.get("paper_id", ""),
+        "title": row.get("title", ""),
+        "doi": row.get("doi", ""),
+        "url": row.get("url", ""),
+        "status": row.get("status", ""),
+        "source": row.get("source", ""),
+        "pdf_url": row.get("pdf_url", ""),
+        "pdf_path": row.get("pdf_path", ""),
+    }
+
+
+def resolve_pdf_manifest_fields(
+    config: ConferenceConfig,
+    paper: dict[str, Any],
+) -> dict[str, Any]:
+    pdf_url, resolution_strategy = resolve_pdf_url(config, paper)
+    if pdf_url:
+        return {
+            "status": "open_pdf_found",
+            "source": resolution_strategy or "landing_page",
+            "pdf_url": pdf_url,
+            "pdf_path": "",
+        }
+    return {
+        "status": "no_open_pdf",
+        "source": "",
+        "pdf_url": "",
+        "pdf_path": "",
+    }
+
+
+def build_manifest_row(
+    config: ConferenceConfig,
+    paper: dict[str, Any],
+) -> dict[str, Any]:
+    url = normalize_space(str(paper.get("url", "")))
+    return {
+        "conference": config.conference,
+        "year": config.year,
+        "paper_id": paper.get("paperId", ""),
+        "title": normalize_space(str(paper.get("title", ""))),
+        "doi": extract_doi_from_url(url),
+        "url": url,
+        "status": "",
+        "source": "",
+        "pdf_url": "",
+        "pdf_path": "",
+        "openalex": None,
+        "unpaywall": None,
+        "semantic_scholar": None,
+    }
+
+
+def enrich_manifest_row(
+    config: ConferenceConfig,
+    paper: dict[str, Any],
+) -> dict[str, Any]:
+    row = build_manifest_row(config, paper)
+    row.update(resolve_pdf_manifest_fields(config, paper))
+    doi = normalize_space(str(row.get("doi", "")))
+    if doi:
+        openalex_work = fetch_openalex_work_by_doi(doi)
+        if openalex_work:
+            row["openalex"] = openalex_work
+            if row["status"] == "no_open_pdf":
+                primary_location = openalex_work.get("primary_location") or {}
+                pdf_url = normalize_space(str(primary_location.get("pdf_url", "")))
+                if pdf_url:
+                    row["status"] = "open_pdf_found"
+                    row["source"] = "openalex"
+                    row["pdf_url"] = pdf_url
+        unpaywall = fetch_unpaywall_by_doi(doi)
+        if unpaywall:
+            row["unpaywall"] = unpaywall
+            best_oa_location = unpaywall.get("best_oa_location") or {}
+            pdf_url = normalize_space(str(best_oa_location.get("url_for_pdf", "")))
+            if pdf_url and row["status"] == "no_open_pdf":
+                row["status"] = "open_pdf_found"
+                row["source"] = "unpaywall"
+                row["pdf_url"] = pdf_url
+    semantic_scholar = fetch_semantic_scholar_paper(row["title"], doi)
+    if semantic_scholar:
+        row["semantic_scholar"] = semantic_scholar
+        if row["status"] == "no_open_pdf":
+            open_access_pdf = semantic_scholar.get("openAccessPdf") or {}
+            pdf_url = normalize_space(str(open_access_pdf.get("url", "")))
+            if pdf_url:
+                row["status"] = "open_pdf_found"
+                row["source"] = "semantic_scholar"
+                row["pdf_url"] = pdf_url
+    return row
+
+
+def build_conference_manifest_rows(
+    config: ConferenceConfig,
+    papers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [enrich_manifest_row(config, paper) for paper in papers]
+
+
 def resolve_affiliations_for_paper(
     config: ConferenceConfig,
     paper: dict[str, Any],
     cache_dir: Path,
     fetch_from_network: bool = False,
+    author_name_aliases: dict[str, set[str]] | None = None,
 ) -> list[dict[str, Any]]:
     import time
 
     cache_file = cache_dir / f"{paper['paperId'].replace('/', '_')}_affiliations.json"
     authors = paper.get("authors", [])
+    url = paper.get("url", "")
+    title = paper.get("title", "")
+    cached: list[dict[str, Any]] = []
     if cache_file.exists():
         cached = json.loads(cache_file.read_text(encoding="utf-8"))
-        if has_resolved_affiliations(cached) and (cache_has_full_author_coverage(cached, authors) or not fetch_from_network):
+        if has_resolved_affiliations(cached) and cache_has_full_author_coverage(cached, authors, author_name_aliases):
             return cached
+    legacy_cached = load_legacy_affiliations_for_paper(config, paper)
+    legacy_openalex = load_legacy_openalex_affiliations_for_paper(config, paper)
+    best_local_rows = choose_best_affiliation_rows(authors, author_name_aliases, cached, legacy_cached, legacy_openalex)
+    if best_local_rows:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(best_local_rows, ensure_ascii=False, indent=2), encoding="utf-8")
+        if cache_has_full_author_coverage(best_local_rows, authors, author_name_aliases) or not fetch_from_network:
+            return best_local_rows
     if not fetch_from_network:
         return []
 
     affiliations = []
-    url = paper.get("url", "")
-    title = paper.get("title", "")
     time.sleep(0.3)
     if config.conference == "USENIX_SECURITY" and url:
         affiliations = fetch_usenix_affiliations(url)
@@ -913,14 +1957,16 @@ def resolve_affiliations_for_paper(
         if not has_resolved_affiliations(affiliations):
             affiliations = resolve_openalex_fallback(url, title, authors, config.year)
     elif config.conference == "CCS" and url:
+        affiliations = fetch_acm_affiliations(url, title=title)
         doi = extract_doi_from_url(url)
-        if doi:
+        if not has_resolved_affiliations(affiliations) and doi:
             affiliations = fetch_openalex_affiliations_by_doi(doi, authors, config.year)
-        if not affiliations:
+        if not has_resolved_affiliations(affiliations):
             affiliations = fetch_openalex_affiliations(title, authors, config.year)
-        if not affiliations:
+        if not has_resolved_affiliations(affiliations):
             affiliations = fetch_semantic_scholar_affiliations(title, authors)
 
+    affiliations = choose_best_affiliation_rows(authors, author_name_aliases, best_local_rows, affiliations)
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps(affiliations, ensure_ascii=False, indent=2), encoding="utf-8")
     return affiliations
@@ -932,6 +1978,7 @@ def expand_author_rows(
     overrides: dict[str, AffiliationClassification] | None = None,
     cache_dir: Path | None = None,
     fetch_from_network: bool = False,
+    author_name_aliases: dict[str, set[str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     rows: list[dict[str, Any]] = []
     issues: list[dict[str, str]] = []
@@ -940,16 +1987,22 @@ def expand_author_rows(
         authors = [normalize_space(author) for author in paper.get("authors", [])]
         paper_id = paper.get("paperId", "")
         article_tag = build_article_tag(config, title)
-        author_affiliations = resolve_affiliations_for_paper(config, paper, cache_dir, fetch_from_network) if cache_dir else []
+        author_affiliations = resolve_affiliations_for_paper(
+            config,
+            paper,
+            cache_dir,
+            fetch_from_network,
+            author_name_aliases,
+        ) if cache_dir else []
 
         if author_affiliations:
             aff_map, aff_name_pairs = build_affiliation_map(author_affiliations)
-            matched_affiliations = match_author_affiliations(authors, aff_map, aff_name_pairs)
+            matched_affiliations = match_author_affiliations(authors, aff_map, aff_name_pairs, author_name_aliases)
             original_match_flags = [bool(affs) for affs in matched_affiliations]
             fallback_match_flags = [False] * len(authors)
             shared_fill_flags = [False] * len(authors)
 
-            if any(not affs for affs in matched_affiliations):
+            if fetch_from_network and any(not affs for affs in matched_affiliations):
                 openalex_affiliations = resolve_openalex_fallback(
                     paper.get("url", ""),
                     title,
@@ -958,7 +2011,7 @@ def expand_author_rows(
                 )
                 if openalex_affiliations:
                     fallback_map, fallback_name_pairs = build_affiliation_map(openalex_affiliations)
-                    fallback_matches = match_author_affiliations(authors, fallback_map, fallback_name_pairs)
+                    fallback_matches = match_author_affiliations(authors, fallback_map, fallback_name_pairs, author_name_aliases)
                     fallback_match_flags = [bool(affs) for affs in fallback_matches]
                     matched_affiliations = [
                         primary if primary else fallback
@@ -1122,11 +2175,33 @@ def run_single_conference(
     if papers is None:
         papers = json.loads(raw_json_path.read_text(encoding="utf-8"))
     overrides = load_institution_overrides(output_dir / "reference" / "institution_country_overrides.csv")
+    author_name_aliases = load_author_name_aliases(
+        output_dir / "reference" / "author_name_aliases.csv"
+    )
+    author_affiliation_overrides = load_author_affiliation_overrides(
+        output_dir / "reference" / "author_affiliation_overrides.csv"
+    )
     cache_dir = output_dir / "resolution" / "affiliation_cache"
     conference_output = conference_output_dir(output_dir, config.key)
     conference_interim = conference_interim_dir(output_dir, config.key)
     paper_rows = normalize_papers(config, papers)
-    rows, issues = expand_author_rows(config, papers, overrides, cache_dir, fetch_affiliations)
+    manifest_rows = build_conference_manifest_rows(config, papers)
+    rows, issues = expand_author_rows(
+        config,
+        papers,
+        overrides,
+        cache_dir,
+        fetch_affiliations,
+        author_name_aliases,
+    )
+    rows, issues = apply_author_affiliation_overrides(
+        config,
+        papers,
+        rows,
+        issues,
+        author_affiliation_overrides,
+        overrides,
+    )
     classified_rows = filter_classified_rows(rows)
     classified_rows_final = classified_rows
     country_counts = count_country_resolution_rows(rows)
@@ -1152,6 +2227,15 @@ def run_single_conference(
     write_csv(conference_interim / "institution_classification_candidates.csv", build_affiliation_candidates(rows),
               ["inst", "country", "classification_source", "classification_confidence",
                "classification_reason", "example_conference", "example_paper_id", "example_title"])
+    write_csv(
+        conference_interim / "open_pdf_manifest.csv",
+        [manifest_csv_row(row) for row in manifest_rows],
+        ["conference", "year", "paper_id", "title", "doi", "url", "status", "source", "pdf_url", "pdf_path"],
+    )
+    (conference_interim / "open_pdf_manifest.json").write_text(
+        json.dumps(manifest_rows, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     report = {
         "conference": config.conference,
         "year": config.year,
@@ -1171,7 +2255,7 @@ def run_single_conference(
     (conference_output / "validation_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8",
     )
-    return report, paper_rows, rows, issues
+    return report, paper_rows, rows, issues, manifest_rows
 
 
 def run_all_pipelines(
@@ -1190,6 +2274,7 @@ def run_all_pipelines(
     all_papers = []
     all_rows = []
     all_issues = []
+    all_manifest_rows = []
     pdf_reports = []
 
     for key in selected_keys:
@@ -1204,7 +2289,7 @@ def run_all_pipelines(
             papers = papers[start:stop]
         if download_pdfs:
             pdf_reports.append(download_pdfs_for_conference(config, papers, output_dir, pdf_limit=pdf_limit))
-        report, paper_rows, rows, issues = run_single_conference(
+        report, paper_rows, rows, issues, manifest_rows = run_single_conference(
             config,
             raw_json_path,
             output_dir,
@@ -1215,6 +2300,7 @@ def run_all_pipelines(
         all_papers.extend(paper_rows)
         all_rows.extend(rows)
         all_issues.extend(issues)
+        all_manifest_rows.extend(manifest_rows)
 
     all_classified_rows = filter_classified_rows(all_rows)
     all_classified_rows_final = all_classified_rows
@@ -1233,6 +2319,16 @@ def run_all_pipelines(
     write_csv(summary_interim / "affiliation_resolution_queue.csv", all_issues,
               ["conference", "year", "paper_id", "title", "issue",
                "authors_count", "affiliations_count", "authors", "affiliations"])
+    manifests_dir = output_dir / "manifests"
+    write_csv(
+        manifests_dir / "open_pdf_manifest.csv",
+        [manifest_csv_row(row) for row in all_manifest_rows],
+        ["conference", "year", "paper_id", "title", "doi", "url", "status", "source", "pdf_url", "pdf_path"],
+    )
+    (manifests_dir / "open_pdf_manifest.json").write_text(
+        json.dumps(all_manifest_rows, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     write_csv(summary_output / "四大安全顶会_作者机构国家.csv", all_classified_rows,
               ["name", "year", "article_tag", "author_order", "inst", "country"])
     write_csv(summary_output / "四大安全顶会_作者机构国家_audit.csv", all_classified_rows_final,

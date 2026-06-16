@@ -16,7 +16,7 @@ COUNTRY_PATTERN_RULES: list[tuple[str, list[str]]] = [
     ("Taiwan", [r"\btaiwan\b", r"\bnational taiwan\b", r"\bnational tsing hua\b", r"\bnational chiao tung\b", r"\bacademia sinica\b", r"\bhon hai research institute\b", r"\bnational yang ming chiao tung university\b"]),
     ("Singapore", [r"\bsingapore\b", r"\bnational university of singapore\b", r"\bnanyang technological\b", r"\bsmu\b", r"\ba\*star\b", r"\binfocomm research\b"]),
     ("Singapore", [r"\bkyber network\b"]),
-    ("Japan", [r"\bjapan\b", r"\buniversity of tokyo\b", r"\bkyoto\b", r"\bsony\b", r"\bntt\b", r"\bfujitsu\b", r"\bhitachi\b", r"\bpanasonic\b", r"\baist\b", r"\bnational institute of advanced industrial science and technology\b", r"\bnational institute of information and communications technology\b", r"\bnict\b", r"\bkeio university\b", r"\bnec laboratories europe\b", r"\bnagoya university\b", r"\byokohama national university\b", r"\bwaseda university\b"]),
+    ("Japan", [r"\bjapan\b", r"\buniversity of tokyo\b", r"\bkyoto\b", r"\bsony\b", r"\bntt\b", r"\bhitachi\b", r"\bpanasonic\b", r"\baist\b", r"\bnational institute of advanced industrial science and technology\b", r"\bnational institute of information and communications technology\b", r"\bnict\b", r"\bkeio university\b", r"\bnagoya university\b", r"\byokohama national university\b", r"\bwaseda university\b"]),
     ("Japan", [r"\bthe university of electro-communications\b"]),
     ("South Korea", [r"\bkorea\b", r"\bkaist\b", r"\bseoul national\b", r"\byonsei\b", r"\bkorea university\b", r"\bsamsung\b", r"\bsoongsil university\b", r"\bkookmin university\b", r"\bunist\b", r"\bewha womans university\b", r"\bkyung hee university\b", r"\bthe affiliated institute of etri, rok\b"]),
     ("South Korea", [r"\bchung-ang university\b", r"\bsungkyunkwan university\b", r"\bsk hynix\b"]),
@@ -25,7 +25,7 @@ COUNTRY_PATTERN_RULES: list[tuple[str, list[str]]] = [
     ("India", [r"\bamrita vishwa vidyapeetham\b"]),
     ("Israel", [r"\bisrael\b", r"\bweizmann\b", r"\btechnion\b", r"\btel aviv\b", r"\btel-?aviv university\b", r"\bhebrew university\b", r"\bbar ilan\b", r"\bbar-ilan\b", r"\bben-gurion\b", r"\breichman university\b", r"\buniversity of haifa\b"]),
     ("Canada", [r"\bcanada\b", r"\buniversity of toronto\b", r"\buniversity of waterloo\b", r"\bmcgill\b", r"\buniversity of british columbia\b", r"\bmerit network\b", r"\buniversity of calgary\b", r"\buniversity of guelph\b", r"\bconcordia university\b", r"\bsimon fraser university\b", r"\buniversity of victoria\b"]),
-    ("United Kingdom", [r"\buk\b", r"\bunited kingdom\b", r"\bengland\b", r"\buniversity of cambridge\b", r"\buniversity of oxford\b", r"\bimperial college\b", r"\bucl\b", r"\buniversity college london\b", r"\bking'?s college london\b", r"\broyal holloway\b", r"\buniversity of edinburgh\b", r"\buniversity of manchester\b", r"\buniversity of birmingham\b", r"\buniversity of bristol\b", r"\buniversity of glasgow\b", r"\balan turing institute\b", r"\bdurham university\b", r"\blancaster university\b", r"\bnewcastle university\b", r"\bnorthumbria university\b", r"\bdeepmind\b", r"\buniversity of liverpool\b", r"\buniversity of warwick\b", r"\buniversity of surrey\b", r"\bsurrey centre for cyber security\b"]),
+    ("United Kingdom", [r"\buk\b", r"\bunited kingdom\b", r"\bengland\b", r"\buniversity of cambridge\b", r"\buniversity of oxford\b", r"\bimperial college\b", r"\bucl\b", r"\buniversity college london\b", r"\bking'?s college london\b", r"\broyal holloway\b", r"\buniversity of edinburgh\b", r"\buniversity of manchester\b", r"\buniversity of birmingham\b", r"\buniversity of bristol\b", r"\buniversity of glasgow\b", r"\balan turing institute\b", r"\bdurham university\b", r"\blancaster university\b", r"\bnewcastle university\b", r"\bnorthumbria university\b", r"\buniversity of liverpool\b", r"\buniversity of warwick\b", r"\buniversity of surrey\b", r"\bsurrey centre for cyber security\b"]),
     ("United Kingdom", [r"\bscotland\b"]),
     ("United Kingdom", [r"\boxford university\b"]),
     ("United Kingdom", [r"\buniversity of southampton\b"]),
@@ -91,7 +91,6 @@ US_PATTERN_RULES: list[str] = [
     r"\bakamai\b",
     r"\bcisco\b",
     r"\bcisco talos\b",
-    r"\bibm\b",
     r"\bibm t\.j\. watson\b",
     r"\bicann\b",
     r"\bduckduckgo\b",
@@ -293,7 +292,6 @@ US_PATTERN_RULES.extend(
         r"\bnexus\b",
         r"\bpeckshield\b",
         r"\bzero point dynamics\b",
-        r"\bidc\b",
         r"\buniversity of st\. thomas\b",
         r"\bisothermal community college\b",
         r"\bjohns hopkins medicine\b",
@@ -322,6 +320,63 @@ def normalize_space(value: str) -> str:
     value = unicodedata.normalize("NFKC", value)
     value = value.replace("’", "'")
     return re.sub(r"\s+", " ", value).strip()
+
+
+PROTECTED_COMPOSITE_INSTITUTION_PATTERN = re.compile(
+    r"\b("
+    r"Science and Technology|"
+    r"Posts and Telecommunications|"
+    r"Economics and Technology|"
+    r"Research and Technology|"
+    r"Information and Communications Technology|"
+    r"Polytechnic Institute and State University|"
+    r"Academy of Mathematics and System Science|"
+    r"Academy of Mathematics and Systems Science|"
+    r"Beijing Institute of Mathematical Sciences and Application|"
+    r"Beijing Institute of Mathematical Sciences and Applications|"
+    r"Computer Science and Artificial Intelligence|"
+    r"Security and Privacy|"
+    r"Technology and Economics|"
+    r"Agriculture and Technology|"
+    r"Computer Science and Control|"
+    r"Network Sciences and Cyberspace|"
+    r"Physical and Mathematical Sciences|"
+    r"National and Kapodistrian University|"
+    r"Budapest University of Technology and Economics|"
+    r"Institute of Science and Technology Austria|"
+    r"King Abdulaziz City for Science and Technology|"
+    r"William & Mary|"
+    r"Centrum Wiskunde & Informatica"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def split_reference_institution_parts(value: str, known_names: set[str] | None = None) -> list[str]:
+    normalized = normalize_space(value)
+    if not normalized:
+        return []
+    if PROTECTED_COMPOSITE_INSTITUTION_PATTERN.search(normalized):
+        return [normalized]
+
+    parts: list[str] = [normalized]
+    if ", and " in normalized:
+        parts = [part.strip(" ,") for part in re.split(r",\s+and\s+", normalized) if part.strip(" ,")]
+    elif ";" in normalized:
+        parts = [part.strip() for part in normalized.split(";") if part.strip()]
+    elif "/" in normalized:
+        parts = [part.strip() for part in normalized.split("/") if part.strip()]
+    elif " & " in normalized:
+        parts = [part.strip() for part in normalized.split(" & ") if part.strip()]
+    elif " and " in normalized:
+        parts = [part.strip() for part in normalized.split(" and ") if part.strip()]
+
+    cleaned = [normalize_space(part) for part in parts if normalize_space(part)]
+    if len(cleaned) <= 1:
+        return [normalized]
+    if known_names is not None and not all(part.casefold() in known_names for part in cleaned):
+        return [normalized]
+    return cleaned
 
 
 def csv_row_get(row: dict[str, str], *keys: str) -> str:
@@ -364,31 +419,41 @@ def load_reference_registry_overrides(
 
     registry_country_by_id: dict[str, str] = {}
     canonical_name_by_id: dict[str, str] = {}
+    reference_names: set[str] = set()
     with registry_path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             institution_id = normalize_space(csv_row_get(row, "institution_id"))
             if not institution_id:
                 continue
-            canonical_name_by_id[institution_id] = normalize_space(csv_row_get(row, "canonical_name"))
+            canonical_name = normalize_space(csv_row_get(row, "canonical_name"))
+            canonical_name_by_id[institution_id] = canonical_name
             registry_country_by_id[institution_id] = normalize_space(csv_row_get(row, "country"))
+            if canonical_name:
+                reference_names.add(canonical_name.casefold())
 
-    overrides: dict[str, Any] = {}
+    alias_rows: list[tuple[str, str]] = []
     with alias_path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             alias = normalize_space(csv_row_get(row, "alias"))
             institution_id = normalize_space(csv_row_get(row, "institution_id"))
-            country = registry_country_by_id.get(institution_id, "")
-            if alias and country:
-                overrides[alias.casefold()] = classification_factory(
-                    country,
-                    "reference_registry",
-                    0.98,
-                    "reference_registry_exact",
-                )
+            if alias and institution_id:
+                alias_rows.append((alias, institution_id))
+                reference_names.add(alias.casefold())
+
+    overrides: dict[str, Any] = {}
+    for alias, institution_id in alias_rows:
+        country = registry_country_by_id.get(institution_id, "")
+        if alias and country and len(split_reference_institution_parts(alias)) == 1:
+            overrides[alias.casefold()] = classification_factory(
+                country,
+                "reference_registry",
+                0.98,
+                "reference_registry_exact",
+            )
 
     for institution_id, canonical_name in canonical_name_by_id.items():
         country = registry_country_by_id.get(institution_id, "")
-        if canonical_name and country:
+        if canonical_name and country and len(split_reference_institution_parts(canonical_name)) == 1:
             overrides[canonical_name.casefold()] = classification_factory(
                 country,
                 "reference_registry",

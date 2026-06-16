@@ -12,7 +12,6 @@ generated-data/
   reports/         汇总报告
   visualizations/  图表与 SVG 可视化
   manifests/       运行 manifest 与批处理记录
-  archive/         旧版本运行、冒烟测试、验证快照等过程数据存档
 ```
 
 ## 推荐用法
@@ -112,14 +111,13 @@ python3 conference-visualization/scripts/generate_visualizations.py \
 
 因此现在可以把 `generated-data/` 视为仓库主工作流的统一数据出口。
 
-## 当前归档情况
+## 当前正式目录
 
 - `generated-data/extraction/`：统一采集主输出目录
 - `generated-data/normalized/`：已写入标准化主产物
 - `generated-data/analysis/`：已写入分析主产物
 - `generated-data/reports/`：已写入汇总报告
 - `generated-data/visualizations/`：已写入可视化产物
-- `generated-data/archive/process_runs_2026_06_04/`：旧完整快照、smoke run、单会议检查和 superseded snapshot 的过程数据存档
 
 `generated-data/` 当前应被理解为仓库主工作流的通用结果目录，而不是历史美国切片文件的缓存区。
 
@@ -135,11 +133,3 @@ python3 conference-visualization/scripts/generate_visualizations.py \
 - 汇总报告：`generated-data/reports/`
 - 图表：`generated-data/visualizations/`
 - 覆盖率与完整性审计：`generated-data/coverage/`
-
-以下目录是过程归档，不作为当前论文统计口径：
-
-- `generated-data/archive/process_runs_2026_06_04/analysis_smoke_runs/`
-- `generated-data/archive/process_runs_2026_06_04/extraction_smoke_runs/`
-- `generated-data/archive/process_runs_2026_06_04/legacy_full_runs/`
-- `generated-data/archive/process_runs_2026_06_04/validation_checks/`
-- `generated-data/archive/process_runs_2026_06_04/superseded_snapshots/`

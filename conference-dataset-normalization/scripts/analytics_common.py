@@ -61,13 +61,65 @@ def choose_display_name(values: Iterable[str]) -> str:
     return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
 
 
-def split_institutions(value: str) -> list[str]:
+PROTECTED_COMPOSITE_INSTITUTION_PATTERN = re.compile(
+    r"\b("
+    r"Science and Technology|"
+    r"Posts and Telecommunications|"
+    r"Economics and Technology|"
+    r"Research and Technology|"
+    r"Information and Communications Technology|"
+    r"Polytechnic Institute and State University|"
+    r"Academy of Mathematics and System Science|"
+    r"Academy of Mathematics and Systems Science|"
+    r"Beijing Institute of Mathematical Sciences and Application|"
+    r"Beijing Institute of Mathematical Sciences and Applications|"
+    r"Computer Science and Artificial Intelligence|"
+    r"Security and Privacy|"
+    r"Technology and Economics|"
+    r"Agriculture and Technology|"
+    r"Computer Science and Control|"
+    r"Network Sciences and Cyberspace|"
+    r"Physical and Mathematical Sciences|"
+    r"National and Kapodistrian University|"
+    r"Budapest University of Technology and Economics|"
+    r"Institute of Science and Technology Austria|"
+    r"King Abdulaziz City for Science and Technology|"
+    r"William & Mary|"
+    r"Centrum Wiskunde & Informatica"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def split_institutions(value: str, known_names: set[str] | None = None) -> list[str]:
     text = normalize_whitespace(value)
     if not text:
         return []
-    parts = re.split(r"\s*(?:;|\s+and\s+|\s*&\s*|\s*/\s*)\s*", text)
+    if PROTECTED_COMPOSITE_INSTITUTION_PATTERN.search(text):
+        return [text]
+
+    parts: list[str] = [text]
+    if ", and " in text:
+        parts = [part.strip(" ,") for part in re.split(r",\s+and\s+", text) if part.strip(" ,")]
+    elif ", " in text and known_names is not None:
+        comma_parts = [part.strip(" ,") for part in text.split(",") if part.strip(" ,")]
+        if len(comma_parts) > 1 and all(part.casefold() in known_names for part in comma_parts):
+            parts = comma_parts
+    elif ";" in text:
+        parts = [part.strip() for part in text.split(";") if part.strip()]
+    elif "/" in text:
+        parts = [part.strip() for part in text.split("/") if part.strip()]
+    elif " & " in text:
+        parts = [part.strip() for part in text.split(" & ") if part.strip()]
+    elif " and " in text:
+        parts = [part.strip() for part in text.split(" and ") if part.strip()]
+
     cleaned = [normalize_whitespace(part) for part in parts if normalize_whitespace(part)]
-    return cleaned or [text]
+    if len(cleaned) <= 1:
+        return [text]
+    if known_names is not None and not all(part.casefold() in known_names for part in cleaned):
+        return [text]
+    return cleaned
 
 
 COUNTRY_RULES: list[tuple[str, str]] = [

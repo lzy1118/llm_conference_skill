@@ -398,6 +398,21 @@ def parse_iacr_affiliations_field(value: Any) -> list[str]:
     return []
 
 
+def dedupe_preserving_order_casefold(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = normalize_space(value)
+        if not normalized:
+            continue
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
+
+
 def extract_iacr_authors(paper: dict[str, Any]) -> list[str]:
     authors = parse_iacr_people_field(paper.get("authors", []))
     if authors:
@@ -408,8 +423,8 @@ def extract_iacr_authors(paper: dict[str, Any]) -> list[str]:
 def extract_iacr_affiliations(paper: dict[str, Any]) -> list[str]:
     affiliations = parse_iacr_affiliations_field(paper.get("affiliations", []))
     if affiliations:
-        return affiliations
-    return parse_iacr_affiliations_field(paper.get("institution", []))
+        return dedupe_preserving_order_casefold(affiliations)
+    return dedupe_preserving_order_casefold(parse_iacr_affiliations_field(paper.get("institution", [])))
 
 
 def parse_inline_author_affiliation_pairs(value: Any) -> tuple[list[str], list[str]]:
@@ -488,13 +503,20 @@ def should_keep_semicolon_affiliation_together(normalized: str) -> bool:
     return middle_address_only and first_is_compact_label
 
 
-def split_affiliation_parts(affiliation: str) -> list[str]:
+def split_affiliation_parts(
+    affiliation: str,
+    overrides: dict[str, AffiliationClassification] | None = None,
+) -> list[str]:
     normalized = normalize_space(affiliation)
     if re.search(r"\bendress\s*&\s*hauser\b", normalized, re.IGNORECASE):
         return [normalized]
     if ", and " in normalized:
         parts = [part.strip(" ,") for part in re.split(r",\s+and\s+", normalized) if part.strip(" ,")]
         if len(parts) > 1:
+            return parts
+    if ", " in normalized and overrides:
+        parts = [part.strip(" ,") for part in normalized.split(",") if part.strip(" ,")]
+        if len(parts) > 1 and all(part.casefold() in overrides for part in parts):
             return parts
     if ";" in normalized:
         if should_keep_semicolon_affiliation_together(normalized):
@@ -526,9 +548,10 @@ def classify_affiliation_parts(
     normalized = normalize_space(affiliation)
     if overrides and normalized.casefold() in overrides:
         return [(normalized, overrides[normalized.casefold()])]
-    parts = split_affiliation_parts(affiliation)
+    parts = split_affiliation_parts(affiliation, overrides)
     results: list[tuple[str, AffiliationClassification]] = []
     seen: set[tuple[str, str]] = set()
+    has_resolved_part = False
     for part in parts:
         classification = classify_affiliation(part, overrides)
         key = (part, classification.country)
@@ -536,6 +559,8 @@ def classify_affiliation_parts(
             continue
         seen.add(key)
         results.append((part, classification))
+        if classification.country and classification.country != "Unknown":
+            has_resolved_part = True
         if part == "NTT Research":
             us_key = (part, "United States")
             if us_key not in seen:
@@ -551,6 +576,7 @@ def classify_affiliation_parts(
                         ),
                     )
                 )
+                has_resolved_part = True
         if part == "NIST Associate":
             us_key = (part, "United States")
             if us_key not in seen:
@@ -566,7 +592,27 @@ def classify_affiliation_parts(
                         ),
                     )
                 )
+                has_resolved_part = True
+    if len(parts) > 1 and not has_resolved_part:
+        fallback_classification = classify_affiliation(normalized, overrides)
+        fallback_key = (normalized, fallback_classification.country)
+        if fallback_key not in seen:
+            results = [(normalized, fallback_classification)]
     return results
+
+
+def dedupe_affiliation_classifications(
+    classifications: list[tuple[str, AffiliationClassification]],
+) -> list[tuple[str, AffiliationClassification]]:
+    unique_affiliations: list[tuple[str, AffiliationClassification]] = []
+    seen_affiliations: set[tuple[str, str]] = set()
+    for affiliation, classification in classifications:
+        key = (affiliation, classification.country)
+        if key in seen_affiliations:
+            continue
+        seen_affiliations.add(key)
+        unique_affiliations.append((affiliation, classification))
+    return unique_affiliations
 
 
 def build_openalex_mismatch_rows(
@@ -740,6 +786,13 @@ def expand_author_rows(
                 for resolved_affiliation, classification in parts
                 if classification.country and classification.country != "Unknown"
             ]
+            fallback_affiliations = dedupe_affiliation_classifications(
+                [
+                    (resolved_affiliation, classification)
+                    for _affiliation, parts in fallback_classifications
+                    for resolved_affiliation, classification in parts
+                ]
+            )
             fallback_mode = ""
             if len(authors) == 1:
                 fallback_mode = "single_author_multi_affiliation"
@@ -788,58 +841,57 @@ def expand_author_rows(
                             }
                         )
                     handled_conservatively = True
-            if (
-                not handled_conservatively
-                and len(authors) > len(affiliations) >= 1
-                and resolved_affiliations
-            ):
-                unique_affiliations: list[tuple[str, AffiliationClassification]] = []
-                seen_affiliations: set[tuple[str, str]] = set()
-                for affiliation, classification in resolved_affiliations:
-                    key = (affiliation, classification.country)
-                    if key in seen_affiliations:
-                        continue
-                    seen_affiliations.add(key)
-                    unique_affiliations.append((affiliation, classification))
-
+            if not handled_conservatively and len(authors) > len(affiliations) >= 1 and fallback_affiliations:
                 resolved_countries = {
                     classification.country
-                    for _affiliation, classification in unique_affiliations
+                    for _affiliation, classification in fallback_affiliations
                     if classification.country and classification.country != "Unknown"
                 }
-                if resolved_countries:
-                    shared_country = next(iter(resolved_countries)) if len(resolved_countries) == 1 else "Multiple"
-                    joined_affiliation = "; ".join(affiliation for affiliation, _classification in unique_affiliations)
-                    min_confidence = min(
-                        (
-                            classification.confidence
-                            for _affiliation, classification in unique_affiliations
-                            if classification.country and classification.country != "Unknown"
-                        ),
-                        default=0.7,
+                shared_country = (
+                    next(iter(resolved_countries))
+                    if len(resolved_countries) == 1
+                    else "Multiple"
+                    if len(resolved_countries) > 1
+                    else "Unknown"
+                )
+                joined_affiliation = "; ".join(
+                    dict.fromkeys(affiliation for affiliation, _classification in fallback_affiliations)
+                )
+                min_confidence = min(
+                    (
+                        classification.confidence
+                        for _affiliation, classification in fallback_affiliations
+                    ),
+                    default=0.0,
+                )
+                for order, author in enumerate(authors):
+                    rows.append(
+                        {
+                            "conference": config.conference,
+                            "year": config.year,
+                            "paper_id": paper_id,
+                            "title": title,
+                            "name": author,
+                            "article_tag": article_tag,
+                            "author_order": order,
+                            "inst": joined_affiliation,
+                            "country": shared_country,
+                            "classification_source": (
+                                "mismatch_fallback_shared_multi_affiliation_bundle"
+                                if resolved_countries
+                                else "mismatch_fallback_shared_multi_affiliation_bundle_unresolved"
+                            ),
+                            "classification_confidence": min_confidence,
+                            "classification_reason": (
+                                "shared_multi_affiliation_same_country"
+                                if len(resolved_countries) == 1
+                                else "shared_multi_affiliation_mixed_country"
+                                if len(resolved_countries) > 1
+                                else "shared_multi_affiliation_unresolved_country"
+                            ),
+                        }
                     )
-                    for order, author in enumerate(authors):
-                        rows.append(
-                            {
-                                "conference": config.conference,
-                                "year": config.year,
-                                "paper_id": paper_id,
-                                "title": title,
-                                "name": author,
-                                "article_tag": article_tag,
-                                "author_order": order,
-                                "inst": joined_affiliation,
-                                "country": shared_country,
-                                "classification_source": "mismatch_fallback_shared_multi_affiliation_bundle",
-                                "classification_confidence": min_confidence,
-                                "classification_reason": (
-                                    "shared_multi_affiliation_same_country"
-                                    if len(resolved_countries) == 1
-                                    else "shared_multi_affiliation_mixed_country"
-                                ),
-                            }
-                        )
-                    handled_conservatively = True
+                handled_conservatively = True
             if handled_conservatively:
                 continue
 
@@ -904,7 +956,18 @@ def expand_author_rows(
 
 
 def filter_classified_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [row for row in rows if row.get("country") and row["country"] != "Unknown"]
+    included_unknown_institutions = {
+        "independent researcher",
+    }
+    return [
+        row
+        for row in rows
+        if (
+            row.get("country")
+            and row["country"] != "Unknown"
+        )
+        or normalize_space(str(row.get("inst", ""))).casefold() in included_unknown_institutions
+    ]
 
 
 def count_country_resolution_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -1488,7 +1551,7 @@ def run_single_conference(
     rows, issues = expand_author_rows(config, papers, overrides)
     rows = apply_author_affiliation_overrides(rows, author_affiliation_overrides, overrides)
     classified_rows = filter_classified_rows(rows)
-    classified_rows_final = classified_rows
+    classified_rows_final = rows
     country_counts = count_country_resolution_rows(rows)
 
     write_csv(
@@ -1626,7 +1689,7 @@ def run_all_pipelines(
         all_issues.extend(issues)
 
     all_classified_rows = filter_classified_rows(all_rows)
-    all_classified_rows_final = all_classified_rows
+    all_classified_rows_final = all_rows
     country_counts = count_country_resolution_rows(all_rows)
     candidates = build_affiliation_candidates(all_rows)
     llm_rows = build_llm_resolution_rows(candidates)
@@ -1731,8 +1794,8 @@ def run_all_pipelines(
         "pdf_download_reports": pdf_reports,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "notes": [
-            "Main output contains author rows whose author and affiliation arrays aligned and whose country could be resolved conservatively.",
-            "Mismatched author-affiliation papers are preserved in generated-data/extraction/interim/affiliation_resolution_queue.csv for review.",
+            "Main output contains only conservatively country-resolved author rows.",
+            "Audit output preserves mismatch fallback rows even when the country remains Unknown.",
             "LLM resolution output is conservative: unresolved institutions remain marked for manual review.",
         ],
     }

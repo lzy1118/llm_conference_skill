@@ -47,12 +47,13 @@ def csv_row_get(row: dict[str, str], *keys: str) -> str:
     return ""
 
 
-def load_reference_institutions() -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+def load_reference_institutions() -> tuple[dict[str, str], dict[str, dict[str, str]], set[str]]:
     root = Path(__file__).resolve().parents[2]
     alias_path = root / "conference-dataset-normalization" / "references" / "institution_aliases.csv"
     registry_path = root / "conference-dataset-normalization" / "references" / "institution_registry.csv"
     alias_to_id: dict[str, str] = {}
     registry_by_id: dict[str, dict[str, str]] = {}
+    reference_names: set[str] = set()
 
     if registry_path.exists():
         with registry_path.open(encoding="utf-8", newline="") as handle:
@@ -60,12 +61,15 @@ def load_reference_institutions() -> tuple[dict[str, str], dict[str, dict[str, s
                 institution_id = normalize_whitespace(csv_row_get(row, "institution_id"))
                 if not institution_id:
                     continue
+                canonical_name = normalize_whitespace(csv_row_get(row, "canonical_name"))
                 registry_by_id[institution_id] = {
-                    "canonical_name": normalize_whitespace(csv_row_get(row, "canonical_name")),
+                    "canonical_name": canonical_name,
                     "country": normalize_whitespace(csv_row_get(row, "country")),
                     "region": normalize_whitespace(csv_row_get(row, "region")),
                     "type": normalize_whitespace(csv_row_get(row, "type")),
                 }
+                if canonical_name:
+                    reference_names.add(canonical_name.casefold())
 
     if alias_path.exists():
         with alias_path.open(encoding="utf-8", newline="") as handle:
@@ -74,12 +78,13 @@ def load_reference_institutions() -> tuple[dict[str, str], dict[str, dict[str, s
                 institution_id = normalize_whitespace(csv_row_get(row, "institution_id"))
                 if alias and institution_id:
                     alias_to_id[alias.casefold()] = institution_id
+                    reference_names.add(alias.casefold())
 
     for institution_id, registry_row in registry_by_id.items():
         canonical_name = registry_row.get("canonical_name", "")
         if canonical_name:
             alias_to_id.setdefault(canonical_name.casefold(), institution_id)
-    return alias_to_id, registry_by_id
+    return alias_to_id, registry_by_id, reference_names
 
 
 def recover_conference_and_title(article_tag: str) -> tuple[str, str]:
@@ -113,7 +118,7 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
     institution_rows: dict[str, list[dict[str, object]]] = defaultdict(list)
     duplicate_row_keys = 0
     seen_row_keys: set[str] = set()
-    alias_to_id, registry_by_id = load_reference_institutions()
+    alias_to_id, registry_by_id, reference_names = load_reference_institutions()
 
     for row in rows:
         article_tag = normalize_whitespace(row.get("article_tag", ""))
@@ -133,12 +138,8 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
         paper_key = normalize_paper_key(conference, year, title, paper_id)
         author_key = normalize_author_key(name)
 
-        # Extraction backends may already emit one expanded row per author-affiliation with
-        # a resolved country. Preserve that contract instead of splitting and re-inferring.
-        if source_country:
-            institutions = [inst_value]
-        else:
-            institutions = split_institutions(inst_value) or [inst_value]
+        institutions = split_institutions(inst_value, known_names=reference_names) or [inst_value]
+        split_combined_institutions = len(institutions) > 1
 
         paper_entry = paper_index.setdefault(
             paper_key,
@@ -160,7 +161,7 @@ def build_normalized_tables(rows: list[dict[str, str]]) -> tuple[list[dict[str, 
             registry_row = registry_by_id.get(institution_id, {})
             registry_country = normalize_whitespace(registry_row.get("country", ""))
             canonical_name = normalize_whitespace(registry_row.get("canonical_name", ""))
-            country = source_country or registry_country or infer_country(institution)
+            country = ("" if split_combined_institutions else source_country) or registry_country or infer_country(institution)
             row_key = stable_key(paper_key, author_order_text, institution_key)
             if row_key in seen_row_keys:
                 duplicate_row_keys += 1

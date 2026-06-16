@@ -15,10 +15,26 @@
 - `country_top_papers.svg`
 - `institution_top_papers.svg`
 - `author_top_papers.svg`
+- `conference_papers.svg`
+- `conference_authors.svg`
+- `conference_rows.svg`
+- `conference_unknown_rate.svg`
 - `trend_entity_year.svg`
 - `collaboration_top_edges.svg`
 
 ## 当前状态
 
-当前仓库已提交的历史产物中，尚未发现可直接归档到本目录的现成可视化文件。
-后续图表产物应统一保存在这里。
+当前目录已经写入可直接使用的 SVG 图表与 manifest，包括：
+
+- `country_top_papers.svg`
+- `institution_top_papers.svg`
+- `author_top_papers.svg`
+- `trend_entity_year.svg`
+- `collaboration_top_edges.svg`
+- `conference_papers.svg`
+- `conference_authors.svg`
+- `conference_rows.svg`
+- `conference_unknown_rate.svg`
+- `visualization_manifest.json`
+
+后续新的图表产物仍应统一保存在这里，并保持 manifest 与实际文件同步。
