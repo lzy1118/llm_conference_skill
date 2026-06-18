@@ -36,7 +36,7 @@ COUNTRY_PATTERN_RULES: list[tuple[str, list[str]]] = [
     ("Germany", [r"\bgermany\b", r"\bbochum\b", r"\bdarmstadt\b", r"\bkarlsruhe institute\b", r"\bmax planck\b", r"\btechnische universit\b", r"\bludwig maximilian\b", r"\buniversity of stuttgart\b", r"\bcispa\b", r"\bfraunhofer\b", r"\bfreie universität berlin\b", r"\bfreie universitat berlin\b", r"\bhamburg\b", r"\bleibniz university hannover\b", r"\bleibniz universität hannover\b", r"\bleibniz universitat hannover\b", r"\buniversity of würzburg\b", r"\buniversity of wurzburg\b", r"\btechnische universität braunschweig\b", r"\btechnische universitat braunschweig\b", r"\buniversity of duisburg-essen\b", r"\bpaderborn university\b", r"\btechnische universität berlin\b", r"\btechnische universitat berlin\b", r"\btu braunschweig\b", r"\buniversity of lübeck\b", r"\bfriedrich-alexander-universität erlangen-nürnberg\b", r"\bfriedrich-alexander-universitat erlangen-nurnberg\b", r"\bmünster university of applied sciences\b", r"\bmunster university of applied sciences\b", r"\bdatenanfragen\.de\b", r"\bsaarland university\b", r"\brwth aachen university\b", r"\btechnical university of munich\b", r"\btu dortmund university\b", r"\bhasso plattner institute\b", r"\buniversity of potsdam\b", r"\buniversity of osnabrück\b", r"\buniversity of osnabruck\b", r"\bbifold\b", r"\bcarl von ossietzky universität oldenburg\b", r"\bcarl von ossietzky universitat oldenburg\b"]),
     ("Germany", [r"\buniversity of luebeck\b", r"\buniversity luebeck\b", r"\buniversity of bayreuth\b"]),
     ("Germany", [r"\btu dresden\b", r"\bbundeswehr university munich\b", r"\bsap security research\b"]),
-    ("France", [r"\bfrance\b", r"\binria\b", r"\bcnrs\b", r"\borange\b", r"\beurecom\b", r"\bcea, list, université paris saclay\b", r"\bcea, list, universite paris saclay\b", r"\buniversité paris saclay\b", r"\buniversite paris saclay\b"]),
+    ("France", [r"\bfrance\b", r"\binria\b", r"\bcnrs\b", r"\borange\b", r"\beurecom\b", r"\bcea, list, université paris saclay\b", r"\bcea, list, universite paris saclay\b", r"\buniversité paris saclay\b", r"\buniversite paris saclay\b", r"\bimt atlantique\b", r"\birisa\b"]),
     ("Netherlands", [r"\bnetherlands\b", r"\bdelft\b", r"\beindhoven\b", r"\braadboud\b", r"\bradboud university\b", r"\bvrije universiteit\b", r"\buniversiteit leiden\b", r"\buniversiteit utrecht\b", r"\buniversiteit amsterdam\b", r"\bsidn labs\b", r"\buniversity of twente\b", r"\butrecht university\b", r"\bqusoft\b", r"\bcwi\b", r"\bcentrum wiskunde en informatica\b", r"\bu\. amsterdam\b"]),
     ("Netherlands", [r"\bvu amsterdam\b"]),
     ("Luxembourg", [r"\bluxembourg\b", r"\buniversity of luxembourg\b"]),
@@ -316,10 +316,32 @@ US_PATTERN_RULES.extend(
 
 
 def normalize_space(value: str) -> str:
+    """规范化 HTML 实体、Unicode 变体与重复空白。"""
     value = html.unescape(value)
     value = unicodedata.normalize("NFKC", value)
     value = value.replace("’", "'")
     return re.sub(r"\s+", " ", value).strip()
+
+
+TRAILING_COUNTRY_PAREN_PATTERN = re.compile(
+    r"\s*\(("
+    r"United States|United Kingdom|China|Japan|Germany|France|Canada|Singapore|Australia|"
+    r"Netherlands|Denmark|Switzerland|Israel|Spain|Italy|South Korea|India|Austria|Belgium|"
+    r"Brazil|Qatar|Sweden|Norway|Finland|Ireland|Pakistan|Saudi Arabia|United Arab Emirates|"
+    r"Greece|Czech Republic|New Zealand|Portugal|Romania|Thailand|Estonia|Mexico|Cyprus|"
+    r"Sri Lanka|Colombia|Mongolia|Russia|Ukraine|Poland|Turkey|Hungary|Malaysia|Egypt|"
+    r"Luxembourg|Taiwan|Hong Kong"
+    r")\)$",
+    re.IGNORECASE,
+)
+
+
+def clean_institution_label(value: str) -> str:
+    """在匹配前去除机构名称尾部的国家后缀。"""
+    text = normalize_space(value)
+    if not text:
+        return ""
+    return normalize_space(TRAILING_COUNTRY_PAREN_PATTERN.sub("", text))
 
 
 PROTECTED_COMPOSITE_INSTITUTION_PATTERN = re.compile(
@@ -335,6 +357,17 @@ PROTECTED_COMPOSITE_INSTITUTION_PATTERN = re.compile(
     r"Beijing Institute of Mathematical Sciences and Application|"
     r"Beijing Institute of Mathematical Sciences and Applications|"
     r"Computer Science and Artificial Intelligence|"
+    r"Computer Science and Engineering|"
+    r"Computer Science and Information Technology|"
+    r"Computer and Cyber Security|"
+    r"School of Electrical Engineering and Computer Science|"
+    r"Mathematics and Computer Science|"
+    r"Applied Mathematics and Computer Science|"
+    r"Electrical and Computer Engineering|"
+    r"Information and Engineering|"
+    r"Information Engineering, CAS|"
+    r"Trustworthy Distributed Computing and Service|"
+    r"High Performance Computing and Networking|"
     r"Security and Privacy|"
     r"Technology and Economics|"
     r"Agriculture and Technology|"
@@ -345,41 +378,258 @@ PROTECTED_COMPOSITE_INSTITUTION_PATTERN = re.compile(
     r"Budapest University of Technology and Economics|"
     r"Institute of Science and Technology Austria|"
     r"King Abdulaziz City for Science and Technology|"
+    r"Applied Sciences and Arts|"
+    r"Electronics and Telecommunications Research Institute|"
+    r"Electronics and Applied Mathematics|"
+    r"Advanced Computing and Intelligence Engineering|"
+    r"London School of Economics and Political Science|"
     r"William & Mary|"
     r"Centrum Wiskunde & Informatica"
     r")\b",
     re.IGNORECASE,
 )
 
+SPLIT_NORMALIZATION_RULES: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(
+            r"^\s*School of Electrical Engineering\s*;\s*Computer Science,\s*Oregon State University,\s*Corvallis,\s*OR,\s*USA\s*$",
+            re.IGNORECASE,
+        ),
+        "School of Electrical Engineering and Computer Science, Oregon State University, Corvallis, OR, USA",
+    ),
+    (
+        re.compile(
+            r"^\s*ICTEAM\s*/\s*ELEN\s*/\s*Crypto Group,\s*UCL,\s*Louvain-la-Neuve,\s*Belgium\s*$",
+            re.IGNORECASE,
+        ),
+        "Crypto Group, ICTEAM Institute, UCLouvain, Louvain-la-Neuve, Belgium",
+    ),
+    (
+        re.compile(
+            r"^\s*National Research Council\s*;\s*Institute for High Performance Computing and Networking\s*$",
+            re.IGNORECASE,
+        ),
+        "National Research Council, Institute for High Performance Computing and Networking",
+    ),
+    (
+        re.compile(r"^\s*Brown,\s*UVa\s*$", re.IGNORECASE),
+        "Brown University; University of Virginia",
+    ),
+    (
+        re.compile(r"^\s*TAU,\s*Stellar Foundation\s*$", re.IGNORECASE),
+        "TAU; Stellar Foundation",
+    ),
+    (
+        re.compile(r"^\s*Technion,\s*Amazon(?:/AWS)?\s*$", re.IGNORECASE),
+        "Technion; Amazon Web Services",
+    ),
+    (
+        re.compile(
+            r"^\s*College of Computer Science\s*;\s*Engineering,\s*Taibah University,\s*Medina,\s*Saudi Arabia\s*$",
+            re.IGNORECASE,
+        ),
+        "College of Computer Science and Engineering, Taibah University, Medina, Saudi Arabia",
+    ),
+    (
+        re.compile(
+            r"^\s*Department of Applied Mathematics\s*;\s*Computer Science,\s*Technical University of Denmark\s*$",
+            re.IGNORECASE,
+        ),
+        "Department of Applied Mathematics and Computer Science, Technical University of Denmark",
+    ),
+    (
+        re.compile(
+            r"^\s*School of Computing\s*;\s*Information Technology,\s*University of Wollongong\s*$",
+            re.IGNORECASE,
+        ),
+        "School of Computing and Information Technology, University of Wollongong",
+    ),
+    (
+        re.compile(
+            r"^\s*Paul G\. Allen School of Computer Science\s*;\s*Engineering,\s*University of Washington\s*$",
+            re.IGNORECASE,
+        ),
+        "Paul G. Allen School of Computer Science and Engineering, University of Washington",
+    ),
+    (
+        re.compile(
+            r"^\s*Institute of Information\s*;\s*Engineering,\s*CAS\s*$",
+            re.IGNORECASE,
+        ),
+        "Institute of Information Engineering, CAS",
+    ),
+    (
+        re.compile(
+            r"^\s*Key Laboratory of Trustworthy Distributed Computing\s*;\s*Service\s*\(BUPT\),\s*Ministry of Education\s*$",
+            re.IGNORECASE,
+        ),
+        "Key Laboratory of Trustworthy Distributed Computing and Service (BUPT), Ministry of Education",
+    ),
+    (
+        re.compile(
+            r"^\s*BULL SAS,\s*Universit[ée]\s+Grenoble Alpes\s*$",
+            re.IGNORECASE,
+        ),
+        "BULL SAS; Université Grenoble Alpes",
+    ),
+    (
+        re.compile(
+            r"\bImperial College London,\s*UCL Centre for Blockchain Technologies\b",
+            re.IGNORECASE,
+        ),
+        "Imperial College London; UCL Centre for Blockchain Technologies",
+    ),
+    (
+        re.compile(
+            r"\bInstitute for Network Science and Cyberspace\s*&\s*BNRist,\s*Tsinghua University\b",
+            re.IGNORECASE,
+        ),
+        "Institute for Network Science and Cyberspace, Tsinghua University; BNRist, Tsinghua University",
+    ),
+    (
+        re.compile(
+            r"\b((?:Department|School) of Computer Science)\s*;\s*Engineering\b",
+            re.IGNORECASE,
+        ),
+        r"\1 and Engineering",
+    ),
+    (
+        re.compile(
+            r"\bInstitute of Information\s*;\s*Communication Technologies,\s*Electronics\s*;\s*Applied Mathematics\b",
+            re.IGNORECASE,
+        ),
+        "Institute of Information, Communication Technologies, Electronics and Applied Mathematics",
+    ),
+    (
+        re.compile(
+            r"\bDept\.\s+of Computer Science\s*;\s*Engineering\b",
+            re.IGNORECASE,
+        ),
+        "Dept. of Computer Science and Engineering",
+    ),
+    (
+        re.compile(
+            r"\bDepartment of Computer Science\s*;\s*Engineering\b",
+            re.IGNORECASE,
+        ),
+        "Department of Computer Science and Engineering",
+    ),
+    (
+        re.compile(
+            r"\bElectrical\s*;\s*Computer Engineering\b",
+            re.IGNORECASE,
+        ),
+        "Electrical and Computer Engineering",
+    ),
+    (
+        re.compile(
+            r"\bLaboratory for Advanced Computing\s*;\s*Intelligence Engineering\b",
+            re.IGNORECASE,
+        ),
+        "Laboratory for Advanced Computing and Intelligence Engineering",
+    ),
+    (
+        re.compile(
+            r"\bImperial College London\s*&amp\s*;?",
+            re.IGNORECASE,
+        ),
+        "Imperial College London &",
+    ),
+    (
+        re.compile(
+            r"\b(ETH Zurich|Georgia Institute of Technology|Paderborn University|Purdue University|Tokyo Institute of Technology)\s*&amp\s*$",
+            re.IGNORECASE,
+        ),
+        r"\1",
+    ),
+]
+
+PROTECTED_TOKEN_TEMPLATE = "__INST_PROTECTED_{index}__"
+DROP_IF_SUBSTRING_FRAGMENT_LABELS = {
+    "Software",
+}
+
+
+def _normalize_split_text(value: str) -> str:
+    """对含噪的多机构字符串执行拆分前清洗。"""
+    text = value
+    for pattern, replacement in SPLIT_NORMALIZATION_RULES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _protect_composite_phrases(value: str) -> tuple[str, dict[str, str]]:
+    """保护包含分隔符但不应被拆开的短语。"""
+    replacements: dict[str, str] = {}
+
+    def replacer(match: re.Match[str]) -> str:
+        token = PROTECTED_TOKEN_TEMPLATE.format(index=len(replacements))
+        protected = re.sub(r"\s*&\s*", " __AMP__ ", match.group(0))
+        protected = re.sub(r"\s+and\s+", " __AND__ ", protected, flags=re.IGNORECASE)
+        replacements[token] = protected
+        return token
+
+    return PROTECTED_COMPOSITE_INSTITUTION_PATTERN.sub(replacer, value), replacements
+
+
+def _restore_composite_phrases(value: str, replacements: dict[str, str]) -> str:
+    """在拆分结束后恢复被保护的短语。"""
+    restored = value
+    for token, protected in replacements.items():
+        restored = restored.replace(token, protected)
+    restored = restored.replace("__AMP__", "&").replace("__AND__", "and")
+    return normalize_space(restored)
+
 
 def split_reference_institution_parts(value: str, known_names: set[str] | None = None) -> list[str]:
-    normalized = normalize_space(value)
+    """将原始机构字符串拆分为机构级参考片段。"""
+    normalized = clean_institution_label(value)
     if not normalized:
         return []
-    if PROTECTED_COMPOSITE_INSTITUTION_PATTERN.search(normalized):
-        return [normalized]
+    normalized = _normalize_split_text(normalized)
+    protected_text, replacements = _protect_composite_phrases(normalized)
 
-    parts: list[str] = [normalized]
-    if ", and " in normalized:
-        parts = [part.strip(" ,") for part in re.split(r",\s+and\s+", normalized) if part.strip(" ,")]
-    elif ";" in normalized:
-        parts = [part.strip() for part in normalized.split(";") if part.strip()]
-    elif "/" in normalized:
-        parts = [part.strip() for part in normalized.split("/") if part.strip()]
-    elif " & " in normalized:
-        parts = [part.strip() for part in normalized.split(" & ") if part.strip()]
-    elif " and " in normalized:
-        parts = [part.strip() for part in normalized.split(" and ") if part.strip()]
+    parts: list[str] = [protected_text]
+    split_mode = "none"
+    if ";" in protected_text:
+        parts = [part.strip() for part in protected_text.split(";") if part.strip()]
+        split_mode = "semicolon"
+    elif ", and " in protected_text:
+        parts = [part.strip(" ,") for part in re.split(r",\s+and\s+", protected_text) if part.strip(" ,")]
+        split_mode = "comma_and"
+    elif " & " in protected_text:
+        parts = [part.strip() for part in protected_text.split(" & ") if part.strip()]
+        split_mode = "ampersand"
+    elif " and " in protected_text:
+        parts = [part.strip() for part in re.split(r"\s+and\s+", protected_text) if part.strip()]
+        split_mode = "and"
+    elif "/" in protected_text:
+        parts = [part.strip() for part in protected_text.split("/") if part.strip()]
+        split_mode = "slash"
 
-    cleaned = [normalize_space(part) for part in parts if normalize_space(part)]
+    cleaned = [
+        clean_institution_label(_restore_composite_phrases(part, replacements))
+        for part in parts
+        if normalize_space(part)
+    ]
+    if len(cleaned) > 1:
+        cleaned = [
+            part
+            for part in cleaned
+            if not (
+                part in DROP_IF_SUBSTRING_FRAGMENT_LABELS
+                and any(part.casefold() in other.casefold() and len(other) > len(part) for other in cleaned if other != part)
+            )
+        ]
     if len(cleaned) <= 1:
         return [normalized]
-    if known_names is not None and not all(part.casefold() in known_names for part in cleaned):
+    if split_mode == "comma_known" and known_names is not None and not all(part.casefold() in known_names for part in cleaned):
         return [normalized]
     return cleaned
 
 
 def csv_row_get(row: dict[str, str], *keys: str) -> str:
+    """在多个候选列名中返回第一个非空 CSV 值。"""
     normalized = {
         normalize_space(key).lstrip("\ufeff").strip('"'): value
         for key, value in row.items()
@@ -391,6 +641,7 @@ def csv_row_get(row: dict[str, str], *keys: str) -> str:
 
 
 def load_override_rows(path: Path, classification_factory: Callable[[str, str, float, str], Any]) -> dict[str, Any]:
+    """加载按规范化机构文本维护的手工覆盖规则。"""
     overrides = load_reference_registry_overrides(classification_factory)
     if not path.exists():
         return overrides
@@ -411,6 +662,7 @@ def load_override_rows(path: Path, classification_factory: Callable[[str, str, f
 def load_reference_registry_overrides(
     classification_factory: Callable[[str, str, float, str], Any]
 ) -> dict[str, Any]:
+    """从机构参考表中加载机构库驱动的国家映射。"""
     root = Path(__file__).resolve().parents[2]
     alias_path = root / "conference-dataset-normalization" / "references" / "institution_aliases.csv"
     registry_path = root / "conference-dataset-normalization" / "references" / "institution_registry.csv"
@@ -419,6 +671,7 @@ def load_reference_registry_overrides(
 
     registry_country_by_id: dict[str, str] = {}
     canonical_name_by_id: dict[str, str] = {}
+    registry_type_by_id: dict[str, str] = {}
     reference_names: set[str] = set()
     with registry_path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
@@ -428,6 +681,7 @@ def load_reference_registry_overrides(
             canonical_name = normalize_space(csv_row_get(row, "canonical_name"))
             canonical_name_by_id[institution_id] = canonical_name
             registry_country_by_id[institution_id] = normalize_space(csv_row_get(row, "country"))
+            registry_type_by_id[institution_id] = normalize_space(csv_row_get(row, "type"))
             if canonical_name:
                 reference_names.add(canonical_name.casefold())
 
@@ -443,9 +697,11 @@ def load_reference_registry_overrides(
     overrides: dict[str, Any] = {}
     for alias, institution_id in alias_rows:
         country = registry_country_by_id.get(institution_id, "")
-        if alias and country and len(split_reference_institution_parts(alias)) == 1:
+        institution_type = registry_type_by_id.get(institution_id, "")
+        effective_country = country or ("None" if institution_type == "independent" else "")
+        if alias and effective_country and len(split_reference_institution_parts(alias)) == 1:
             overrides[alias.casefold()] = classification_factory(
-                country,
+                effective_country,
                 "reference_registry",
                 0.98,
                 "reference_registry_exact",
@@ -453,9 +709,11 @@ def load_reference_registry_overrides(
 
     for institution_id, canonical_name in canonical_name_by_id.items():
         country = registry_country_by_id.get(institution_id, "")
-        if canonical_name and country and len(split_reference_institution_parts(canonical_name)) == 1:
+        institution_type = registry_type_by_id.get(institution_id, "")
+        effective_country = country or ("None" if institution_type == "independent" else "")
+        if canonical_name and effective_country and len(split_reference_institution_parts(canonical_name)) == 1:
             overrides[canonical_name.casefold()] = classification_factory(
-                country,
+                effective_country,
                 "reference_registry",
                 0.98,
                 "reference_registry_exact",
@@ -464,6 +722,7 @@ def load_reference_registry_overrides(
 
 
 def detect_country_from_patterns(lower: str) -> tuple[str | None, str | None]:
+    """用整理好的国家正则规则匹配规范化机构字符串。"""
     for country, patterns in COUNTRY_PATTERN_RULES:
         for pattern in patterns:
             if re.search(pattern, lower):
@@ -480,6 +739,7 @@ def classify_with_patterns(
     us_patterns: list[str],
     classification_factory: Callable[[str, str, float, str], Any],
 ) -> Any:
+    """优先使用覆盖规则、其次使用正则启发式对机构字符串分类。"""
     normalized = normalize_space(affiliation)
     lower = normalized.casefold()
     if overrides and lower in overrides:
@@ -497,7 +757,7 @@ def classify_with_patterns(
             "the chinese university of hong kong, shenzhen",
             "university of chinese academy of sciences",
         ]
-    ):
+):
         if "yale-nus college" in lower:
             return classification_factory("Singapore", "rule", 0.95, "reference_alias_singapore")
         return classification_factory("China", "rule", 0.95, "reference_alias_china")

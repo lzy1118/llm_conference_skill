@@ -127,9 +127,11 @@ python3 conference-visualization/scripts/generate_visualizations.py \
 
 - 数据抽取：`generated-data/extraction/`
 - 标准化事实表：`generated-data/normalized/author_affiliation_facts.csv`
+- 作者聚合事实表：`generated-data/normalized/author_paper_affiliation_facts.csv`
 - 论文级事实表：`generated-data/normalized/paper_facts.csv`
 - 机构维表：`generated-data/normalized/institution_dim.csv`
 - 统计分析：`generated-data/analysis/`
+- 双口径作者单位统计：`generated-data/analysis/affiliation_scope/`
 - 汇总报告：`generated-data/reports/`
 - 图表：`generated-data/visualizations/`
 - 覆盖率与完整性审计：`generated-data/coverage/`

@@ -277,6 +277,7 @@ NON_US_KEYWORD_PATTERNS = [
 
 
 def build_article_tag(config: ConferenceConfig, paper: dict[str, Any]) -> str:
+    """为单条 IACR 论文记录构造稳定的会议范围标签。"""
     title = normalize_space(str(paper.get("title", "")))
     return f"{config.conference}-{title}"
 
@@ -414,6 +415,7 @@ def dedupe_preserving_order_casefold(values: list[str]) -> list[str]:
 
 
 def extract_iacr_authors(paper: dict[str, Any]) -> list[str]:
+    """从异构的 IACR JSON 字段中提取规范化作者名。"""
     authors = parse_iacr_people_field(paper.get("authors", []))
     if authors:
         return authors
@@ -421,6 +423,7 @@ def extract_iacr_authors(paper: dict[str, Any]) -> list[str]:
 
 
 def extract_iacr_affiliations(paper: dict[str, Any]) -> list[str]:
+    """从异构的 IACR JSON 字段中提取机构字符串。"""
     affiliations = parse_iacr_affiliations_field(paper.get("affiliations", []))
     if affiliations:
         return dedupe_preserving_order_casefold(affiliations)
@@ -455,6 +458,7 @@ def extract_iacr_paper_id(paper: dict[str, Any], fallback_index: int) -> str:
 
 
 def extract_iacr_author_affiliation_lists(paper: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """使用当前最可靠的 IACR 字段返回对齐后的作者与机构列表。"""
     authors = extract_iacr_authors(paper)
     affiliations = extract_iacr_affiliations(paper)
     inline_authors, inline_affiliations = parse_inline_author_affiliation_pairs(paper.get("author", []))
@@ -469,6 +473,25 @@ def classify_affiliation(
     affiliation: str,
     overrides: dict[str, AffiliationClassification] | None = None,
 ) -> AffiliationClassification:
+    parts = split_affiliation_parts(affiliation, overrides)
+    if len(parts) > 1:
+        results = [classify_affiliation(part, overrides) for part in parts]
+        countries = {result.country for result in results if result.country != "Unknown"}
+        if len(countries) > 1:
+            return AffiliationClassification(
+                "Multiple",
+                "rule",
+                min((result.confidence for result in results if result.country != "Unknown"), default=0.7),
+                "multiple_countries",
+            )
+        if len(countries) == 1:
+            country = next(iter(countries))
+            return AffiliationClassification(
+                country,
+                "rule",
+                min((result.confidence for result in results if result.country != "Unknown"), default=0.7),
+                "multi_affiliation_consensus",
+            )
     return classify_with_patterns(
         affiliation,
         overrides=overrides,
@@ -545,6 +568,7 @@ def classify_affiliation_parts(
     affiliation: str,
     overrides: dict[str, AffiliationClassification] | None = None,
 ) -> list[tuple[str, AffiliationClassification]]:
+    """对拆分后的各机构片段分别分类，并在有用时保留多片段证据。"""
     normalized = normalize_space(affiliation)
     if overrides and normalized.casefold() in overrides:
         return [(normalized, overrides[normalized.casefold()])]
@@ -758,6 +782,7 @@ def expand_author_rows(
     papers: list[dict[str, Any]],
     overrides: dict[str, AffiliationClassification] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """将论文级作者机构证据展开为行级审计记录。"""
     rows: list[dict[str, Any]] = []
     issues: list[dict[str, str]] = []
 
@@ -822,7 +847,35 @@ def expand_author_rows(
                         )
                     handled_conservatively = True
                 else:
-                    shared_affiliation, classification = resolved_affiliations[0]
+                    shared_countries = {
+                        classification.country
+                        for _affiliation, classification in fallback_affiliations
+                        if classification.country and classification.country != "Unknown"
+                    }
+                    shared_country = (
+                        next(iter(shared_countries))
+                        if len(shared_countries) == 1
+                        else "Multiple"
+                        if len(shared_countries) > 1
+                        else "Unknown"
+                    )
+                    joined_shared_affiliation = "; ".join(
+                        dict.fromkeys(affiliation for affiliation, _classification in fallback_affiliations)
+                    )
+                    min_confidence = min(
+                        (
+                            classification.confidence
+                            for _affiliation, classification in fallback_affiliations
+                        ),
+                        default=0.0,
+                    )
+                    classification_reason = (
+                        "shared_single_affiliation_same_country"
+                        if len(shared_countries) == 1
+                        else "shared_single_affiliation_mixed_country"
+                        if len(shared_countries) > 1
+                        else "shared_single_affiliation_unresolved_country"
+                    )
                     for order, author in enumerate(authors):
                         rows.append(
                             {
@@ -833,11 +886,11 @@ def expand_author_rows(
                                 "name": author,
                                 "article_tag": article_tag,
                                 "author_order": order,
-                                "inst": shared_affiliation,
-                                "country": classification.country,
+                                "inst": joined_shared_affiliation,
+                                "country": shared_country,
                                 "classification_source": classification_source,
-                                "classification_confidence": classification.confidence,
-                                "classification_reason": classification.reason,
+                                "classification_confidence": min_confidence,
+                                "classification_reason": classification_reason,
                             }
                         )
                     handled_conservatively = True
@@ -982,6 +1035,7 @@ def count_country_resolution_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def normalize_papers(config: ConferenceConfig, papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将原始 IACR JSON 论文转换为下游共用的论文结构。"""
     return [
         {
             "conference": config.conference,
@@ -997,6 +1051,7 @@ def normalize_papers(config: ConferenceConfig, papers: list[dict[str, Any]]) -> 
 
 
 def build_affiliation_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """从展开后的记录中筛出仍需消歧支持的机构候选。"""
     candidates: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
         key = (row["inst"], row["classification_reason"])
@@ -1358,6 +1413,7 @@ def resolve_iacr_pdf_candidate(
     cache_dir: Path,
     driver: Any | None = None,
 ) -> tuple[str, str, str]:
+    """从多个公开来源中为单篇论文定位可用的 PDF 候选。"""
     direct_pdf = extract_pdf_url_from_paper(paper)
     if direct_pdf:
         return direct_pdf, direct_pdf, "raw_pdf_url"
@@ -1461,6 +1517,7 @@ def download_pdfs_for_conference(
     pdf_limit: int = 0,
     webdriver_search: bool = False,
 ) -> dict[str, Any]:
+    """下载会议论文 PDF，并记录成功与未解决情况。"""
     pdf_dir = conference_pdf_dir(output_dir, config.key)
     cache_dir = output_dir / "resolution" / config.key / "dblp_pdf_search_cache"
     report_rows: list[dict[str, Any]] = []
@@ -1540,6 +1597,7 @@ def run_single_conference(
     resolve_mismatches: bool = False,
     query_dblp_for_resolution: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
+    """执行单个 IACR 会议年份的完整抽取流程。"""
     papers = load_papers(raw_json_path)
     overrides = load_institution_overrides(output_dir / "reference" / "institution_country_overrides.csv")
     author_affiliation_overrides = load_author_affiliation_overrides(
@@ -1661,6 +1719,7 @@ def run_all_pipelines(
     pdf_limit: int = 0,
     webdriver_search: bool = False,
 ) -> dict[str, Any]:
+    """对请求的 IACR 会议集合批量执行抽取。"""
     selected_keys = conference_keys or list(CONFERENCE_CONFIGS.keys())
     summary_output = summary_output_dir(output_dir, "top3_crypto")
     summary_interim = summary_interim_dir(output_dir, "top3_crypto")
@@ -1758,12 +1817,12 @@ def run_all_pipelines(
     write_jsonl(summary_interim / "llm_resolution_output.jsonl", llm_rows)
 
     write_csv(
-        summary_output / "2025-2026三大密码会_作者机构国家.csv",
+        summary_output / "2020-2025三大密码会_作者机构国家.csv",
         all_classified_rows,
         ["name", "year", "article_tag", "author_order", "inst", "country"],
     )
     write_csv(
-        summary_output / "2025-2026三大密码会_作者机构国家_audit.csv",
+        summary_output / "2020-2025三大密码会_作者机构国家_audit.csv",
         all_classified_rows_final,
         [
             "conference",
@@ -1780,7 +1839,7 @@ def run_all_pipelines(
             "classification_reason",
         ],
     )
-    write_workbook(summary_output / "2025-2026三大密码会_作者机构国家.xlsx", all_classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
+    write_workbook(summary_output / "2020-2025三大密码会_作者机构国家.xlsx", all_classified_rows_final, ["name", "year", "article_tag", "author_order", "inst", "country"])
 
     combined_report = {
         "reports": reports,
@@ -1805,6 +1864,7 @@ def run_all_pipelines(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """解析命令行参数并启动 IACR 三大会抽取后端。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--conference", nargs="*", default=["all"], help="Conference keys or 'all'")
     parser.add_argument("--raw-json", type=Path)

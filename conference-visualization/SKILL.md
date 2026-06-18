@@ -47,7 +47,12 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 输出到 `generated-data/visualizations/`：
 
 1. `visualization_manifest.json`
-2. 零个或多个 SVG 文件，例如：
+2. 一份可读展示摘要，例如：
+   - `visualization_showcase.md`
+3. 零个或多个 SVG 文件，例如：
+   - `current_results_dashboard.svg`
+   - `conference_year_heatmap.svg`
+   - `coverage_tiers_by_conference.svg`
    - `country_top_papers.svg`
    - `institution_top_papers.svg`
    - `author_top_papers.svg`
@@ -75,6 +80,9 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - 国家、机构、作者：横向条形图
 - 趋势：按年份折线图
 - 合作：头部合作边条形图
+- 会议规模：conference-year 热力图
+- 覆盖质量：按会议分组的结构对比图
+- 成果展示：一页式 dashboard + Markdown 摘要
 
 ### 第 4 步：保持范围与来源可见
 
@@ -82,6 +90,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 - 输入分析目录
 - 成功渲染的图表文件
+- 展示摘要文件
 - 跳过或缺失的章节
 - 使用的 `top-n`
 

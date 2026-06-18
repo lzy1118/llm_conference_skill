@@ -230,7 +230,7 @@ python3 scripts/clean_extraction_noise.py --output-dir generated-data/extraction
 - `output/by_conference/<conference_key>/author_affiliations.xlsx`
 - 多会议汇总时：
   - 安全会：`output/summaries/top4_security/四大安全顶会_作者机构国家.csv`
-  - 密码会：`output/summaries/top3_crypto/2025-2026三大密码会_作者机构国家.csv`
+  - 密码会：`output/summaries/top3_crypto/2020-2025三大密码会_作者机构国家.csv`
 
 当前主流程不再生成 `*_us_institutions.*` 或 `*美国机构*` 这类美国子集最终输出。
 

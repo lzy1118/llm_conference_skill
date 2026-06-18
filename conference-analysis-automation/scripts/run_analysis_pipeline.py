@@ -14,6 +14,7 @@ DEFAULT_EXTRACTION_OUTPUT_DIR = Path("generated-data") / "extraction"
 
 
 def parse_args() -> argparse.Namespace:
+    """解析端到端分析编排入口的命令行参数。"""
     parser = argparse.ArgumentParser(description="Run normalized conference analytics with low-coupling orchestration.")
     parser.add_argument("--raw-input", action="append", default=[], help="Raw row-level CSV input. Repeat for multiple files.")
     parser.add_argument("--normalized-input", help="Existing normalized author_affiliation_facts.csv path.")
@@ -41,19 +42,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def repo_root() -> Path:
+    """返回仓库根目录，便于稳定调用其他子脚本。"""
     return Path(__file__).resolve().parents[2]
 
 
 def ensure_directory(path: Path) -> None:
+    """创建输出目录树；若已存在则直接复用。"""
     path.mkdir(parents=True, exist_ok=True)
 
 
 def run_command(command: list[str], cwd: Path) -> tuple[int, str, str]:
+    """执行子进程，并为清单记录返回码与标准输出信息。"""
     completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
     return completed.returncode, completed.stdout, completed.stderr
 
 
 def build_scope(args: argparse.Namespace) -> dict[str, object]:
+    """构造写入自动化清单中的标准化筛选范围记录。"""
     return {
         "conference": args.conference or "all",
         "year": args.year or "all",
@@ -64,6 +69,7 @@ def build_scope(args: argparse.Namespace) -> dict[str, object]:
 
 
 def run_unified_extraction_if_needed(args: argparse.Namespace, manifest: dict[str, object]) -> list[Path]:
+    """当指定会议选择参数时，优先执行抽取阶段。"""
     if not args.extract_conference and not args.extract_group:
         manifest["extraction"] = {"executed": False}
         return []
@@ -131,6 +137,7 @@ def run_unified_extraction_if_needed(args: argparse.Namespace, manifest: dict[st
 
 
 def run_extraction_noise_cleaning_if_needed(args: argparse.Namespace, manifest: dict[str, object]) -> None:
+    """若已执行抽取阶段，则在归一化前清理抽取层噪声。"""
     extraction = manifest.get("extraction", {})
     if not extraction.get("executed"):
         manifest["extraction_noise_cleaning"] = {"executed": False, "reason": "extraction_not_run"}
@@ -163,6 +170,7 @@ def run_extraction_noise_cleaning_if_needed(args: argparse.Namespace, manifest: 
 
 
 def normalize_inputs_if_needed(args: argparse.Namespace, output_dir: Path, manifest: dict[str, object]) -> Path:
+    """复用已有归一化结果，或根据原始抽取输出重新生成。"""
     if args.normalized_input:
         normalized_input = Path(args.normalized_input).resolve()
         if not normalized_input.exists():
@@ -211,6 +219,7 @@ def normalize_inputs_if_needed(args: argparse.Namespace, output_dir: Path, manif
 
 
 def analytics_commands(normalized_input: Path, output_dir: Path, args: argparse.Namespace, requested_runs: list[str]) -> list[tuple[str, list[str]]]:
+    """按所选统计类别组装下游分析命令。"""
     root = repo_root()
     shared_flags: list[str] = ["--input", str(normalized_input), "--output-dir", str(output_dir)]
     if args.conference:
@@ -268,10 +277,27 @@ def analytics_commands(normalized_input: Path, output_dir: Path, args: argparse.
             args.collaboration_mode,
         ]
         commands.append(("collaboration", collaboration_command))
+    if "country" in requested_runs or "institution" in requested_runs:
+        author_paper_input = normalized_input.parent / "author_paper_affiliation_facts.csv"
+        if author_paper_input.exists():
+            dual_scope_command = [
+                sys.executable,
+                str(root / "conference-analysis-automation" / "scripts" / "generate_affiliation_scope_statistics.py"),
+                "--input",
+                str(author_paper_input),
+                "--output-dir",
+                str(output_dir),
+            ]
+            if args.conference:
+                dual_scope_command.extend(["--conference", args.conference])
+            if args.year:
+                dual_scope_command.extend(["--year", str(args.year)])
+            commands.append(("affiliation-scope", dual_scope_command))
     return commands
 
 
 def audit_commands(normalized_input: Path, output_dir: Path, requested_runs: list[str]) -> list[tuple[str, list[str]]]:
+    """构造面向归一化数据与分析产物的质量审计命令。"""
     if "audit" not in requested_runs:
         return []
 
@@ -304,6 +330,7 @@ def audit_commands(normalized_input: Path, output_dir: Path, requested_runs: lis
 
 
 def report_commands(output_dir: Path, requested_runs: list[str]) -> list[tuple[str, list[str]]]:
+    """在请求报告阶段时，构造报告生成命令。"""
     if "report" not in requested_runs:
         return []
 
@@ -324,6 +351,7 @@ def report_commands(output_dir: Path, requested_runs: list[str]) -> list[tuple[s
 
 
 def visualization_commands(output_dir: Path, requested_runs: list[str]) -> list[tuple[str, list[str]]]:
+    """构造面向论文图表产出的可视化命令。"""
     if "visualization" not in requested_runs:
         return []
 
@@ -344,6 +372,7 @@ def visualization_commands(output_dir: Path, requested_runs: list[str]) -> list[
 
 
 def execute_steps(step_commands: list[tuple[str, list[str]]], args: argparse.Namespace, manifest: dict[str, object]) -> None:
+    """按顺序执行各步骤，并将执行记录写入清单。"""
     for step_name, command in step_commands:
         returncode, stdout, stderr = run_command(command, cwd=repo_root())
         step_record = {
@@ -359,6 +388,7 @@ def execute_steps(step_commands: list[tuple[str, list[str]]], args: argparse.Nam
 
 
 def run_analytics(normalized_input: Path, output_dir: Path, args: argparse.Namespace, manifest: dict[str, object]) -> None:
+    """按既定顺序执行审计、分析、报告与可视化流程。"""
     requested_runs = args.run or list(RUN_CHOICES)
     manifest["requested_runs"] = requested_runs
     manifest["steps"] = []
@@ -371,12 +401,14 @@ def run_analytics(normalized_input: Path, output_dir: Path, args: argparse.Names
 
 
 def write_manifest(output_dir: Path, manifest: dict[str, object]) -> Path:
+    """保存机器可读的自动化运行清单。"""
     path = output_dir / "automation_manifest.json"
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     return path
 
 
 def write_report(output_dir: Path, manifest: dict[str, object]) -> Path:
+    """写出便于人工查看的轻量运行摘要。"""
     report_path = output_dir / "automation_report.md"
     lines = [
         "# Conference Analysis Automation Report",
@@ -456,6 +488,7 @@ def write_report(output_dir: Path, manifest: dict[str, object]) -> Path:
 
 
 def main() -> None:
+    """统筹可选的抽取、归一化、分析与摘要输出流程。"""
     args = parse_args()
     output_dir = Path(args.output_dir).resolve()
     ensure_directory(output_dir)

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from bs4 import BeautifulSoup
 
 try:
     from playwright.sync_api import sync_playwright
@@ -271,8 +272,52 @@ CCS_NON_MAIN_TITLES_BY_YEAR: dict[int, set[str]] = {
     },
 }
 
+NDSS_NON_MAIN_TITLES_BY_YEAR: dict[int, set[str]] = {
+    2020: {
+        'Overcoming the "Evil Twins" Attack: Lessons Learned from the Industrial Battlefield.',
+    },
+}
+
+IEEE_SP_TITLE_OVERRIDES_BY_DOI: dict[str, str] = {
+    "10.1109/SP40001.2021.00111": "A2L: Anonymous Atomic Locks for Scalability in Payment Channel Hubs",
+    "10.1109/SP40001.2021.00100": "Doing good by fighting fraud: Ethical anti-fraudsystems for mobile payments",
+    "10.1109/SP40001.2021.00088": "Merkle^2: A Low-Latency Transparency Log System",
+    "10.1109/SP40001.2021.00067": "Proactive Threshold Wallets with Offline Devices",
+    "10.1109/SP40001.2021.00031": "Electromagnetic Covert Channels Can Be Super Resilient",
+    "10.1109/SP40001.2021.9796062": "Journey to the Center of the Cookie Ecosystem: Unraveling Actors' Roles and Relationships",
+    "10.1109/SP46214.2022.9833665": "Analyzing Ground-Truth Data of Mobile Gambling Scam",
+    "10.1109/SP46214.2022.9833639": "Attacks on Wireless Coexistence",
+    "10.1109/SP46214.2022.9833647": "Back to the Drawing Board: A Critical Evaluation of Poisoning Attacks on Federated Learning",
+    "10.1109/SP46214.2022.9833772": "Blacksmith: Compromising Target Row Refresh by Rowhammering in the Frequency Domain",
+    "10.1109/SP46214.2022.9833655": "MatRiCT+: More Efficient Post-Quantum Private Blockchain Payments",
+    "10.1109/SP46214.2022.9833564": "PCR-Auth: Solving Authentication Puzzle Challenges with Encoded Palm Contact Responses",
+    "10.1109/SP46214.2022.9833702": "Private Nearest Neighbor Search with Sublinear Communication and Malicious Security",
+    "10.1109/SP46214.2022.9833663": "SoK: The Dual Nature of Technology in Sexual Assault",
+}
+
+IEEE_SP_REASSIGNED_CONFERENCE_KEYS_BY_DOI: dict[str, str] = {
+    "10.1109/SP40001.2021.9796062": "ieee_sp_2021",
+}
+
+IEEE_SP_REASSIGNED_PAPER_SUPPLEMENTS: dict[str, dict[str, Any]] = {
+    "10.1109/SP40001.2021.9796062": {
+        "paperId": "conf/sp/Sanchez-RolaDBV21",
+        "title": "Journey to the Center of the Cookie Ecosystem: Unraveling Actors' Roles and Relationships",
+        "authors": [
+            "Iskander Sánchez-Rola",
+            "Matteo Dell'Amico",
+            "Davide Balzarotti",
+            "Pierre-Antoine Vervier",
+            "Leyla Bilge",
+        ],
+        "url": "https://doi.org/10.1109/SP40001.2021.9796062",
+        "pages": "",
+    },
+}
+
 
 def build_article_tag(config: ConferenceConfig, title: str) -> str:
+    """构造带会议范围的稳定标签，用于论文匹配和导出。"""
     return f"{config.venue_tag}-{normalize_space(title)}"
 
 
@@ -282,6 +327,172 @@ class AffiliationClassification:
     source: str
     confidence: float
     reason: str
+
+
+def official_title_key(value: str) -> str:
+    text = normalize_space(value)
+    text = re.sub(r"^\(#\d+\)\s*", "", text)
+    text = text.replace("^", "")
+    text = text.replace("”", '"').replace("“", '"').replace("’", "'").replace("‘", "'")
+    text = text.replace("–", "-").replace("—", "-")
+    text = text.replace(":", " ").replace("-", " ").replace(".", " ")
+    text = re.sub(r"[^0-9a-zA-Z]+", " ", text.casefold())
+    return " ".join(text.split())
+
+
+@lru_cache(maxsize=None)
+def fetch_usenix_official_entries(year: int) -> list[dict[str, str]]:
+    """抓取 USENIX 官方论文列表，并保留 accepted 页面的顺序。"""
+    yy = str(year)[-2:]
+    url = f"https://www.usenix.org/conference/usenixsecurity{yy}/technical-sessions"
+    soup = BeautifulSoup(fetch_text(url, timeout=30), "html.parser")
+    ordered_entries: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for article in soup.select("article.node.node-paper.view-mode-schedule"):
+        anchor = article.select_one(f'h2 a[href*="/conference/usenixsecurity{yy}/presentation/"]')
+        if anchor is None:
+            continue
+        if article.select_one(".usenix-schedule-media.pdf a") is None:
+            continue
+        href = normalize_space(anchor.get("href", ""))
+        title = normalize_space(anchor.get_text(" ", strip=True))
+        if not href or not title:
+            continue
+        full_url = href if href.startswith("http") else f"https://www.usenix.org{href}"
+        if full_url in seen_urls:
+            continue
+        seen_urls.add(full_url)
+        ordered_entries.append(
+            {
+                "title": title,
+                "url": full_url,
+                "official_affiliations": parse_usenix_affiliations_html(str(article)),
+            }
+        )
+
+    if year != 2025:
+        return ordered_entries
+
+    # USENIX Security '25 program chairs report 214 new Cycle 1 accepts and 193 new Cycle 2
+    # accepts, plus 32 carry-overs from the 2024 review process. The public Cycle 1 page
+    # contains 245 titles while the technical-sessions page contains 438 PDF-backed papers.
+    # Empirically, the technical-sessions entries not present on the Cycle 1 page are exactly
+    # 193, matching the Cycle 2 accepted-paper count. We therefore treat the first 214 titles
+    # listed on the Cycle 1 page as the review-cycle-new Cycle 1 set and exclude the remaining
+    # tail entries from the 2025 review-cycle paper list.
+    try:
+        cycle1_html = fetch_text("https://www.usenix.org/conference/usenixsecurity25/cycle1-accepted-papers", timeout=30)
+    except Exception:
+        return ordered_entries
+    cycle1_soup = BeautifulSoup(cycle1_html, "html.parser")
+    cycle1_titles: list[str] = []
+    seen_cycle1: set[str] = set()
+    for anchor in cycle1_soup.select('a[href*="/conference/usenixsecurity25/presentation/"]'):
+        title = normalize_space(anchor.get_text(" ", strip=True))
+        if not title or title in seen_cycle1:
+            continue
+        seen_cycle1.add(title)
+        cycle1_titles.append(title)
+
+    if len(cycle1_titles) < 214:
+        return ordered_entries
+
+    cycle1_new_keys = {official_title_key(title) for title in cycle1_titles[:214]}
+    cycle1_all_keys = {official_title_key(title) for title in cycle1_titles}
+    tech_only_keys = {
+        official_title_key(entry["title"])
+        for entry in ordered_entries
+        if official_title_key(entry["title"]) not in cycle1_all_keys
+    }
+    if len(tech_only_keys) != 193:
+        return ordered_entries
+
+    retained_keys = cycle1_new_keys | tech_only_keys
+    filtered_entries = [entry for entry in ordered_entries if official_title_key(entry["title"]) in retained_keys]
+    return filtered_entries if len(filtered_entries) == 407 else ordered_entries
+
+
+def parse_author_names_from_official_affiliation_text(text: str) -> list[str]:
+    authors: list[str] = []
+    for match in re.finditer(r"([^,;()]+?)\s*\([^)]{2,}\)", text):
+        name = clean_author_name(match.group(1))
+        if name and name not in authors:
+            authors.append(name)
+    return authors
+
+
+def parse_author_affiliations_from_parenthesized_text(text: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for match in re.finditer(r"([^,;()]+?)\s*\(([^)]+)\)", text):
+        name = clean_author_name(match.group(1))
+        inst = normalize_space(match.group(2))
+        if not name or len(inst) <= 2 or inst.startswith("http"):
+            continue
+        rows.append({"name": name, "affiliations": [inst]})
+    return rows
+
+
+def parse_ccs_row_author_text(text: str) -> tuple[list[str], list[dict[str, Any]]]:
+    normalized = normalize_space(text.replace("\xa0", " "))
+    if not normalized:
+        return [], []
+    return (
+        parse_author_names_from_official_affiliation_text(normalized),
+        parse_author_affiliations_from_parenthesized_text(normalized),
+    )
+
+
+def parse_ieee_official_author_affiliations(item: Any) -> list[dict[str, Any]]:
+    collapse = item.select_one("div.collapse.authorlist")
+    if collapse is None:
+        item_text = normalize_space(item.get_text(" ", strip=True))
+        title_el = item.find("b")
+        if title_el is not None:
+            title = normalize_space(title_el.get_text(" ", strip=True))
+            if title and item_text.startswith(title):
+                item_text = normalize_space(item_text[len(title):].strip(" -"))
+        return parse_author_affiliations_from_parenthesized_text(item_text)
+    author_segments: list[str] = []
+    aff_segments: list[str] = []
+    phase = "authors"
+    for child in collapse.children:
+        name = getattr(child, "name", None)
+        if name == "br":
+            phase = "affiliations"
+            continue
+        if name == "sup":
+            token = f"[{normalize_space(child.get_text(' ', strip=True)).replace(' ', '')}]"
+        else:
+            token = str(child)
+        if phase == "authors":
+            author_segments.append(token)
+        else:
+            aff_segments.append(token)
+    author_text = normalize_space(BeautifulSoup("".join(author_segments), "html.parser").get_text(" ", strip=True))
+    aff_text = normalize_space(BeautifulSoup("".join(aff_segments), "html.parser").get_text(" ", strip=True))
+    if not author_text or not aff_text:
+        return []
+
+    affiliation_map: dict[str, str] = {}
+    for nums, inst in re.findall(r"\[(\d+(?:,\d+)*)\]\s*:\s*(.*?)(?=(?:\s*\[\d+(?:,\d+)*\]\s*:)|$)", aff_text):
+        institution = normalize_space(inst.strip(" ,;"))
+        if not institution:
+            continue
+        for num in nums.split(","):
+            affiliation_map[normalize_space(num)] = institution
+
+    rows: list[dict[str, Any]] = []
+    for name_text, nums in re.findall(r"(.*?)\[(\d+(?:,\d+)*)\](?=\s*(?:,|$))", author_text):
+        name = clean_author_name(name_text.strip(" ,;"))
+        if not name:
+            continue
+        affiliations: list[str] = []
+        for num in nums.split(","):
+            institution = affiliation_map.get(normalize_space(num), "")
+            if institution and institution not in affiliations:
+                affiliations.append(institution)
+        rows.append({"name": name, "affiliations": affiliations})
+    return rows
 
 
 def clean_author_name(value: str) -> str:
@@ -388,6 +599,7 @@ def find_local_chromedriver() -> str:
 
 
 def fetch_acm_text_via_selenium(paper_url: str) -> str:
+    """通过本地 Selenium 驱动的 Chrome 兜底抓取 ACM DOI 页 HTML。"""
     if webdriver is None or SeleniumChromeOptions is None or SeleniumChromeService is None:
         return ""
     chromedriver_path = find_local_chromedriver()
@@ -427,6 +639,7 @@ def fetch_acm_affiliations(
     paper_url: str,
     title: str = "",
 ) -> list[dict[str, Any]]:
+    """结合 HTML 解析与浏览器兜底方式解析 ACM 的作者机构行。"""
     html = ""
     if not html:
         try:
@@ -485,7 +698,7 @@ def split_affiliation_parts(affiliation: str) -> list[str]:
             }
             if len(classified_countries) > 1:
                 return parts
-            if re.search(r"\b(University|Institute|Labs|Lab|Research|College|Technologies|Technology|Center|Centre|Group|School)\b.*\band\b.*\b(University|Institute|Labs|Lab|Research|College|Technologies|Technology|Center|Centre|Group|School)\b", normalized):
+            if re.search(r"\b(University|Universität|Universitat|Institute|Labs|Lab|Research|College|Technologies|Technology|Center|Centre|Group|School)\b.*\band\b.*\b(University|Universität|Universitat|Institute|Labs|Lab|Research|College|Technologies|Technology|Center|Centre|Group|School)\b", normalized):
                 return parts
     return [normalized]
 
@@ -906,6 +1119,7 @@ def parse_acm_contributor_holders(html_text: str) -> list[dict[str, Any]]:
 
 
 def parse_acm_affiliations_html(html_text: str) -> list[dict[str, Any]]:
+    """从元数据、JSON-LD 和可见页面块中解析 ACM 作者机构结构。"""
     meta_authors = extract_meta_contents(html_text, "citation_author")
     meta_institutions = extract_meta_contents(html_text, "citation_author_institution")
     if meta_authors:
@@ -1179,23 +1393,428 @@ def is_ccs_main_conference_paper_with_pages(
     return True
 
 
+def fetch_ccs_2020_2021_official_entries(year: int) -> list[dict[str, Any]]:
+    try:
+        soup = BeautifulSoup(fetch_text(f"https://www.sigsac.org/ccs/CCS{year}/accepted-papers.html", timeout=30), "html.parser")
+    except Exception:
+        return []
+    entries: list[dict[str, Any]] = []
+    for row in soup.select("div.row.papers-item"):
+        title_el = row.select_one("b")
+        author_el = row.select_one("p")
+        title = normalize_space(title_el.get_text(" ", strip=True)) if title_el else ""
+        author_text = normalize_space(author_el.get_text(" ", strip=True)) if author_el else ""
+        authors, official_affiliations = parse_ccs_row_author_text(author_text)
+        if title:
+            entries.append(
+                {
+                    "paperId": f"official/ccs_{year}/{slug_text(title)}",
+                    "title": title,
+                    "authors": authors,
+                    "official_affiliations": official_affiliations,
+                    "url": "",
+                    "pages": "",
+                }
+            )
+    return entries
+
+
+def fetch_ccs_2022_2024_table_official_entries(year: int) -> list[dict[str, Any]]:
+    try:
+        soup = BeautifulSoup(fetch_text(f"https://www.sigsac.org/ccs/CCS{year}/program/accepted-papers.html", timeout=30), "html.parser")
+    except Exception:
+        return []
+    entries: list[dict[str, Any]] = []
+    for row in soup.select("table tr"):
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+        title = normalize_space(cells[0].get_text(" ", strip=True))
+        if not title or title.casefold() == "title":
+            continue
+        author_text = normalize_space(cells[1].get_text(" ", strip=True))
+        authors, official_affiliations = parse_ccs_row_author_text(author_text)
+        entries.append(
+            {
+                "paperId": f"official/ccs_{year}/{slug_text(title)}",
+                "title": title,
+                "authors": authors,
+                "official_affiliations": official_affiliations,
+                "url": "",
+                "pages": "",
+            }
+        )
+    return entries
+
+
+def fetch_ccs_2023_official_entries() -> list[dict[str, Any]]:
+    try:
+        papers_root = ET.fromstring(fetch_text("https://www.sigsac.org/ccs/CCS2023/assets/data/accepted_papers.xml", timeout=30))
+        authors_root = ET.fromstring(fetch_text("https://www.sigsac.org/ccs/CCS2023/assets/data/author_profiles.xml", timeout=30))
+        institutes_root = ET.fromstring(fetch_text("https://www.sigsac.org/ccs/CCS2023/assets/data/institute_profiles.xml", timeout=30))
+    except Exception:
+        return []
+
+    institute_map: dict[str, str] = {}
+    for institute in institutes_root.findall(".//institute"):
+        institute_id = normalize_space(institute.findtext("id", ""))
+        institute_name = normalize_space(institute.findtext("name", ""))
+        if institute_id and institute_name:
+            institute_map[institute_id] = institute_name
+
+    author_map: dict[str, dict[str, Any]] = {}
+    for author in authors_root.findall(".//author"):
+        author_id = normalize_space(author.findtext("id", ""))
+        author_name = clean_author_name(author.findtext("name", ""))
+        institute_ids = [
+            normalize_space(part)
+            for part in normalize_space(author.findtext("institutes", "")).split(",")
+            if normalize_space(part)
+        ]
+        affiliations = normalize_affiliation_values(
+            [institute_map[institute_id] for institute_id in institute_ids if institute_id in institute_map]
+        )
+        if author_id and author_name:
+            author_map[author_id] = {
+                "name": author_name,
+                "affiliations": affiliations,
+            }
+
+    entries: list[dict[str, Any]] = []
+    for paper in papers_root.findall(".//paper"):
+        title = normalize_space(paper.findtext("title", ""))
+        if not title:
+            continue
+        author_ids = [
+            normalize_space(part)
+            for part in normalize_space(paper.findtext("authors", "")).split(",")
+            if normalize_space(part)
+        ]
+        authors: list[str] = []
+        official_affiliations: list[dict[str, Any]] = []
+        for author_id in author_ids:
+            author = author_map.get(author_id)
+            if not author:
+                continue
+            authors.append(author["name"])
+            official_affiliations.append(
+                {
+                    "name": author["name"],
+                    "affiliations": list(author["affiliations"]),
+                }
+            )
+        entries.append(
+            {
+                "paperId": f"official/ccs_2023/{slug_text(title)}",
+                "title": title,
+                "authors": authors,
+                "official_affiliations": official_affiliations,
+                "url": "",
+                "pages": "",
+            }
+        )
+    return entries
+
+
+def fetch_ccs_2025_official_entries() -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(fetch_text("https://www.sigsac.org/ccs/CCS2025/assets/accepted-papers.json", timeout=30))
+    except Exception:
+        return []
+    entries: list[dict[str, Any]] = []
+    for cycle_name in ("firstCycle", "secondCycle"):
+        for item in payload.get(cycle_name, []):
+            title = normalize_space(item.get("title", ""))
+            title = re.sub(r"^\(#\d+\)\s*", "", title)
+            url = normalize_space(item.get("url", ""))
+            doi = extract_doi_from_url(url)
+            authors = [
+                clean_author_name(author.get("name", ""))
+                for author in item.get("authors", [])
+                if clean_author_name(author.get("name", ""))
+            ]
+            official_affiliations = [
+                {
+                    "name": clean_author_name(author.get("name", "")),
+                    "affiliations": normalize_affiliation_values([str(author.get("affiliation", ""))]),
+                }
+                for author in item.get("authors", [])
+                if clean_author_name(author.get("name", ""))
+            ]
+            if title and doi:
+                entries.append(
+                    {
+                        "paperId": "",
+                        "title": title,
+                        "authors": authors,
+                        "official_affiliations": official_affiliations,
+                        "url": url,
+                        "pages": "",
+                        "doi": doi,
+                    }
+                )
+    return entries
+
+
+def fetch_ccs_official_entries(year: int) -> list[dict[str, Any]]:
+    if year in (2020, 2021):
+        return fetch_ccs_2020_2021_official_entries(year)
+    if year in (2022, 2024):
+        return fetch_ccs_2022_2024_table_official_entries(year)
+    if year == 2023:
+        return fetch_ccs_2023_official_entries()
+    if year == 2025:
+        return fetch_ccs_2025_official_entries()
+    return []
+
+
+def fetch_ndss_official_entries(year: int) -> list[dict[str, Any]]:
+    try:
+        soup = BeautifulSoup(fetch_text(f"https://www.ndss-symposium.org/ndss{year}/accepted-papers/", timeout=30), "html.parser")
+    except Exception:
+        return []
+    entries: list[dict[str, Any]] = []
+    for item in soup.select("div.pt-cv-content-item"):
+        title_anchor = item.select_one("h2.pt-cv-title a[href]")
+        if not title_anchor:
+            continue
+        title = normalize_space(title_anchor.get_text(" ", strip=True))
+        url = normalize_space(title_anchor.get("href", ""))
+        author_text = normalize_space(item.select_one(".pt-cv-ctf-value").get_text(" ", strip=True)) if item.select_one(".pt-cv-ctf-value") else ""
+        authors = parse_author_names_from_official_affiliation_text(author_text)
+        official_affiliations = parse_author_affiliations_from_parenthesized_text(author_text)
+        if title and url:
+            entries.append(
+                {
+                    "paperId": "",
+                    "title": title,
+                    "authors": authors,
+                    "official_affiliations": official_affiliations,
+                    "url": url,
+                    "pages": "",
+                }
+            )
+    return entries
+
+
+def fetch_ieee_sp_official_entries(year: int) -> list[dict[str, Any]]:
+    if year <= 2023:
+        url = f"https://www.ieee-security.org/TC/SP{year}/program-papers.html"
+    else:
+        url = f"https://sp{year}.ieee-security.org/accepted-papers.html"
+    try:
+        soup = BeautifulSoup(fetch_text(url, timeout=30), "html.parser")
+    except Exception:
+        return []
+    entries: list[dict[str, Any]] = []
+    for item in soup.select("div.list-group-item"):
+        title_el = item.find("b")
+        if not title_el:
+            continue
+        title = normalize_space(title_el.get_text(" ", strip=True))
+        block_text = normalize_space(item.get_text(" ", strip=True))
+        author_text = block_text.replace(title, "", 1).strip(" -")
+        authors = parse_author_names_from_official_affiliation_text(author_text)
+        official_affiliations = parse_ieee_official_author_affiliations(item)
+        if title:
+            entries.append(
+                {
+                    "paperId": f"official/ieee_sp_{year}/{slug_text(title)}",
+                    "title": title,
+                    "authors": authors,
+                    "official_affiliations": official_affiliations,
+                    "url": "",
+                    "pages": "",
+                }
+            )
+    return entries
+
+
+def dedupe_papers_by_identity(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for paper in papers:
+        doi = extract_doi_from_url(normalize_space(str(paper.get("url", ""))))
+        key = doi or official_title_key(str(paper.get("title", "")))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(paper)
+    return deduped
+
+
+def apply_ieee_sp_title_and_year_overrides(config: ConferenceConfig, papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    adjusted: list[dict[str, Any]] = []
+    for paper in papers:
+        doi = extract_doi_from_url(normalize_space(str(paper.get("url", ""))))
+        if doi:
+            target_key = IEEE_SP_REASSIGNED_CONFERENCE_KEYS_BY_DOI.get(doi, config.key)
+            if target_key != config.key:
+                continue
+            override_title = IEEE_SP_TITLE_OVERRIDES_BY_DOI.get(doi)
+            if override_title:
+                paper = dict(paper)
+                paper["title"] = override_title
+        adjusted.append(paper)
+    if config.key == "ieee_sp_2021":
+        existing_dois = {extract_doi_from_url(normalize_space(str(p.get("url", "")))) for p in adjusted}
+        for doi, target_key in IEEE_SP_REASSIGNED_CONFERENCE_KEYS_BY_DOI.items():
+            if target_key != config.key or doi in existing_dois:
+                continue
+            supplement = IEEE_SP_REASSIGNED_PAPER_SUPPLEMENTS.get(doi)
+            if supplement:
+                adjusted.append(dict(supplement))
+            else:
+                adjusted.append(
+                    {
+                        "paperId": f"official/{config.key}/{doi}",
+                        "title": IEEE_SP_TITLE_OVERRIDES_BY_DOI.get(doi, ""),
+                        "authors": [],
+                        "url": f"https://doi.org/{doi}",
+                        "pages": "",
+                    }
+                )
+    return adjusted
+
+
+def merge_official_paper_supplements(config: ConferenceConfig, papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    updated = [dict(paper) for paper in papers]
+
+    if config.conference == "USENIX_SECURITY":
+        try:
+            official_entries = fetch_usenix_official_entries(config.year)
+        except Exception:
+            official_entries = []
+        if official_entries:
+            official_by_url = {
+                normalize_space(str(entry.get("url", ""))): entry
+                for entry in official_entries
+                if normalize_space(str(entry.get("url", "")))
+            }
+            official_by_title = {
+                official_title_key(str(entry.get("title", ""))): entry
+                for entry in official_entries
+                if official_title_key(str(entry.get("title", "")))
+            }
+            filtered: list[dict[str, Any]] = []
+            for paper in updated:
+                url_key = normalize_space(str(paper.get("url", "")))
+                title_key = official_title_key(str(paper.get("title", "")))
+                official_entry = official_by_url.get(url_key) or official_by_title.get(title_key)
+                if not official_entry:
+                    continue
+                if official_entry.get("title"):
+                    paper["title"] = official_entry["title"]
+                if official_entry.get("url"):
+                    paper["url"] = official_entry["url"]
+                filtered.append(paper)
+            updated = filtered
+
+    if config.conference == "IEEE_S&P":
+        updated = apply_ieee_sp_title_and_year_overrides(config, updated)
+
+    if config.conference == "NDSS":
+        excluded_titles = NDSS_NON_MAIN_TITLES_BY_YEAR.get(config.year, set())
+        if excluded_titles:
+            updated = [paper for paper in updated if normalize_space(str(paper.get("title", ""))) not in excluded_titles]
+        official_entries = fetch_ndss_official_entries(config.year)
+        existing_urls = {normalize_space(str(paper.get("url", ""))) for paper in updated}
+        for entry in official_entries:
+            if normalize_space(entry["url"]) not in existing_urls:
+                entry = dict(entry)
+                entry["paperId"] = f"official/{config.key}/{slug_text(entry['title'])}"
+                updated.append(entry)
+
+    if config.conference == "CCS":
+        official_entries = fetch_ccs_official_entries(config.year)
+        official_by_doi = {
+            normalize_space(str(entry.get("doi", ""))): entry
+            for entry in official_entries
+            if normalize_space(str(entry.get("doi", "")))
+        }
+        official_by_title = {
+            official_title_key(str(entry.get("title", ""))): entry
+            for entry in official_entries
+            if official_title_key(str(entry.get("title", "")))
+        }
+        for paper in updated:
+            doi = extract_doi_from_url(normalize_space(str(paper.get("url", ""))))
+            title_key = official_title_key(str(paper.get("title", "")))
+            official_entry = official_by_doi.get(doi) or official_by_title.get(title_key)
+            if not official_entry:
+                continue
+            if official_entry.get("title"):
+                paper["title"] = official_entry["title"]
+            if official_entry.get("authors"):
+                paper["authors"] = official_entry["authors"]
+        if config.key == "ccs_2025":
+            filtered: list[dict[str, Any]] = []
+            seen_title_keys: set[str] = set()
+            seen_dois: set[str] = set()
+            for paper in updated:
+                doi = extract_doi_from_url(normalize_space(str(paper.get("url", ""))))
+                title_key = official_title_key(str(paper.get("title", "")))
+                official_entry = official_by_doi.get(doi) or official_by_title.get(title_key)
+                if not official_entry:
+                    continue
+                seen_title_keys.add(title_key)
+                if doi:
+                    seen_dois.add(doi)
+                filtered.append(paper)
+            updated = filtered
+            for title_key, entry in official_by_title.items():
+                entry_doi = normalize_space(str(entry.get("doi", "")))
+                if title_key in seen_title_keys or (entry_doi and entry_doi in seen_dois):
+                    continue
+                extra_entry = dict(entry)
+                extra_entry["paperId"] = f"official/{config.key}/{slug_text(entry['title'])}"
+                updated.append(extra_entry)
+
+    return dedupe_papers_by_identity(updated)
+
+
 def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
     url = f"https://dblp.org/db/conf/{config.dblp_key}/{config.dblp_key}{config.year}.xml"
     request = urllib.request.Request(url, headers={"User-Agent": BROWSER_HEADERS["User-Agent"]})
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            xml_data = response.read().decode("utf-8", errors="replace")
-    except Exception as exc:
-        print(f"DBLP fetch failed for {config.key}: {exc}", file=sys.stderr)
+    xml_data = ""
+    last_error: Exception | None = None
+    for timeout in (20, 30, 45):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                xml_data = response.read().decode("utf-8", errors="replace")
+            break
+        except Exception as exc:
+            last_error = exc
+    if not xml_data:
+        print(f"DBLP fetch failed for {config.key}: {last_error}", file=sys.stderr)
+        if config.conference == "CCS":
+            return dedupe_papers_by_identity(fetch_ccs_official_entries(config.year))
+        if config.conference == "NDSS":
+            return dedupe_papers_by_identity(fetch_ndss_official_entries(config.year))
+        if config.conference == "IEEE_S&P":
+            return dedupe_papers_by_identity(fetch_ieee_sp_official_entries(config.year))
         return []
 
     root = ET.fromstring(xml_data)
+    ccs_2025_official_by_doi = {}
+    if config.key == "ccs_2025":
+        ccs_2025_official_by_doi = {
+            entry["doi"]: entry
+            for entry in fetch_ccs_2025_official_entries()
+            if entry.get("doi")
+        }
     papers = []
     for article in root.findall(".//inproceedings") + root.findall(".//article"):
         title_el = article.find("title")
         title = normalize_space(title_el.text) if title_el is not None and title_el.text else ""
+        ee = article.find("ee")
+        url = ee.text.strip() if ee is not None and ee.text else ""
+        doi = extract_doi_from_url(url)
         if not title:
-            continue
+            official_entry = ccs_2025_official_by_doi.get(doi, {})
+            title = normalize_space(str(official_entry.get("title", "")))
+            if not title:
+                continue
         pages = normalize_space(article.findtext("pages", ""))
         if config.conference == "CCS" and not is_ccs_main_conference_paper_with_pages(config, title, pages):
             continue
@@ -1205,8 +1824,8 @@ def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
                 cleaned = clean_author_name(author.text)
                 if cleaned:
                     authors.append(cleaned)
-        ee = article.find("ee")
-        url = ee.text.strip() if ee is not None and ee.text else ""
+        if not authors and doi in ccs_2025_official_by_doi:
+            authors = list(ccs_2025_official_by_doi[doi].get("authors", []))
         paper_id = article.get("key", "")
         papers.append({
             "paperId": paper_id,
@@ -1215,7 +1834,7 @@ def fetch_dblp_papers(config: ConferenceConfig) -> list[dict[str, Any]]:
             "url": url,
             "pages": pages,
         })
-    return papers
+    return merge_official_paper_supplements(config, papers)
 
 
 def fetch_usenix_affiliations(paper_url: str) -> list[dict[str, Any]]:
@@ -1243,6 +1862,7 @@ def fetch_ieee_affiliations(paper_url: str) -> list[dict[str, Any]]:
 
 
 def fetch_semantic_scholar_affiliations(title: str, authors: list[str]) -> list[dict[str, Any]]:
+    """查询 Semantic Scholar，并将返回作者信息映射回目标作者列表。"""
     query = urllib.parse.quote_plus(title[:100])
     url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={query}&limit=1&fields=title,authors"
     try:
@@ -1476,12 +2096,111 @@ def normalized_person_key(value: str) -> str:
     return " ".join(normalize_person_name(value))
 
 
+AFFILIATION_FRAGMENT_MERGE_RULES: list[tuple[str, str, str]] = [
+    ("Department of Computer Science", "Engineering", "Department of Computer Science and Engineering"),
+    ("Dept. of Computer Science", "Engineering", "Dept. of Computer Science and Engineering"),
+    ("Mathematics", "Computer Science", "Mathematics and Computer Science"),
+    ("Department of Applied Mathematics", "Computer Science", "Department of Applied Mathematics and Computer Science"),
+    ("Electrical", "Computer Engineering", "Electrical and Computer Engineering"),
+    (
+        "School of Electrical Engineering",
+        "Computer Science",
+        "School of Electrical Engineering and Computer Science",
+    ),
+    ("School of Computing", "Information Technology", "School of Computing and Information Technology"),
+    ("College of Computer", "Cyber Security", "College of Computer and Cyber Security"),
+    ("College of Computer Science", "Engineering", "College of Computer Science and Engineering"),
+    (
+        "Paul G. Allen School of Computer Science",
+        "Engineering",
+        "Paul G. Allen School of Computer Science and Engineering",
+    ),
+    ("Institute of Information", "Engineering", "Institute of Information Engineering"),
+    (
+        "Key Laboratory of Trustworthy Distributed Computing",
+        "Service",
+        "Key Laboratory of Trustworthy Distributed Computing and Service",
+    ),
+    (
+        "Laboratory for Advanced Computing",
+        "Intelligence Engineering",
+        "Laboratory for Advanced Computing and Intelligence Engineering",
+    ),
+]
+
+DROP_IF_SUBSTRING_FRAGMENT_LABELS = {
+    "Software",
+}
+IDENTIFIER_NOISE_PATTERN = re.compile(r"^\d{4}[-−]\d{4}[-−]\d{4}[-−][\dXx]{4}$")
+
+
+def merge_affiliation_fragments(first: str, second: str) -> str | None:
+    normalized_first = normalize_space(first)
+    normalized_second = normalize_space(second)
+    for prefix, continuation, merged_prefix in AFFILIATION_FRAGMENT_MERGE_RULES:
+        if normalized_first != prefix:
+            continue
+        if not normalized_second.startswith(continuation):
+            continue
+        suffix = normalized_second[len(continuation):].lstrip(" ,")
+        if not suffix:
+            return merged_prefix
+        if suffix.startswith("of "):
+            return f"{merged_prefix} {suffix}"
+        return f"{merged_prefix}, {suffix}"
+    return None
+
+
+def sanitize_affiliation_list(author: str, affiliations: list[str]) -> list[str]:
+    cleaned = [normalize_space(value) for value in affiliations if normalize_space(value)]
+    if not cleaned:
+        return []
+    merged: list[str] = []
+    index = 0
+    author_tokens = normalize_space(author).casefold().split()
+    while index < len(cleaned):
+        current = cleaned[index]
+        if index + 1 < len(cleaned):
+            merged_value = merge_affiliation_fragments(current, cleaned[index + 1])
+            if merged_value is not None:
+                merged.append(merged_value)
+                index += 2
+                continue
+        current_tokens = current.casefold().split()
+        if len(current_tokens) == 1 and len(author_tokens) >= 3 and current_tokens[0] in author_tokens:
+            index += 1
+            continue
+        compact = current.replace("-", "").replace("−", "")
+        if IDENTIFIER_NOISE_PATTERN.fullmatch(current) or (compact.isdigit() and len(compact) >= 12):
+            index += 1
+            continue
+        if current in DROP_IF_SUBSTRING_FRAGMENT_LABELS and any(
+            current.casefold() in sibling.casefold() and len(sibling) > len(current)
+            for sibling in cleaned
+            if sibling != current
+        ):
+            index += 1
+            continue
+        merged.append(current)
+        index += 1
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in merged:
+        marker = value.casefold()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        deduped.append(value)
+    return deduped
+
+
 def build_affiliation_map(author_affiliations: list[dict[str, Any]]) -> tuple[dict[str, list[str]], list[tuple[str, list[str]]]]:
     aff_map: dict[str, list[str]] = {}
     aff_name_pairs: list[tuple[str, list[str]]] = []
     for item in author_affiliations:
         source_name = normalize_space(str(item.get("name", "")))
-        affiliations = item.get("affiliations", [])
+        affiliations = sanitize_affiliation_list(source_name, list(item.get("affiliations", [])))
         if not source_name:
             continue
         aff_name_pairs.append((source_name, affiliations))
@@ -1550,10 +2269,12 @@ def extract_doi_from_url(url: str) -> str:
     if not value:
         return ""
     value = value.rstrip("/")
-    if "doi.org/" not in value:
-        return ""
-    doi = value.split("doi.org/", 1)[1].strip()
-    return doi
+    for marker in ("doi.org/", "dl.acm.org/doi/"):
+        if marker in value:
+            doi = value.split(marker, 1)[1].strip()
+            return doi
+    doi_match = re.search(r"\b10\.\d{4,9}/\S+\b", value)
+    return doi_match.group(0).rstrip(").,;") if doi_match else ""
 
 
 def map_openalex_authorships(authorships: list[dict[str, Any]], authors: list[str]) -> list[dict[str, Any]]:
@@ -1709,19 +2430,78 @@ def load_legacy_affiliations_for_paper(
 ) -> list[dict[str, Any]]:
     url = normalize_space(str(paper.get("url", "")))
     doi = extract_doi_from_url(url)
-    if not doi:
+    paper_id = normalize_space(str(paper.get("paperId", ""))).replace("/", "_")
+    candidate_keys: list[str] = []
+    if doi:
+        candidate_keys.append(f"{config.key}_{doi.replace('/', '_')}_affiliations.json")
+    if paper_id:
+        candidate_keys.extend(
+            [
+                f"{paper_id}_affiliations.json",
+                f"{config.key}_{paper_id}_affiliations.json",
+            ]
+        )
+        if config.conference == "USENIX_SECURITY":
+            candidate_keys.extend(
+                [
+                    f"usenix_{config.year}_{paper_id}_affiliations.json",
+                    f"usenix_security_{config.year}_{paper_id}_affiliations.json",
+                ]
+            )
+    if not candidate_keys:
         return []
-    cache_key = f"{config.key}_{doi.replace('/', '_')}_affiliations.json"
+    deduped_keys = list(dict.fromkeys(candidate_keys))
     for directory in candidate_legacy_affiliation_cache_dirs():
-        path = directory / cache_key
-        if not path.exists():
-            continue
-        try:
-            rows = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if has_resolved_affiliations(rows):
-            return rows
+        for cache_key in deduped_keys:
+            path = directory / cache_key
+            if not path.exists():
+                continue
+            try:
+                rows = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if has_resolved_affiliations(rows):
+                return rows
+    return []
+
+
+@lru_cache(maxsize=32)
+def load_official_affiliation_entries(config_key: str) -> list[dict[str, Any]]:
+    config = CONFERENCES[config_key]
+    if config.conference == "USENIX_SECURITY":
+        return fetch_usenix_official_entries(config.year)
+    if config.conference == "NDSS":
+        return fetch_ndss_official_entries(config.year)
+    if config.conference == "IEEE_S&P":
+        return fetch_ieee_sp_official_entries(config.year)
+    if config.conference == "CCS":
+        return fetch_ccs_official_entries(config.year)
+    return []
+
+
+def load_official_affiliations_for_paper(
+    config: ConferenceConfig,
+    paper: dict[str, Any],
+) -> list[dict[str, Any]]:
+    try:
+        entries = load_official_affiliation_entries(config.key)
+    except Exception:
+        return []
+    if not entries:
+        return []
+    title_key = official_title_key(str(paper.get("title", "")))
+    url_key = normalize_space(str(paper.get("url", "")))
+    doi_key = extract_doi_from_url(url_key)
+    for entry in entries:
+        entry_title_key = official_title_key(str(entry.get("title", "")))
+        entry_url_key = normalize_space(str(entry.get("url", "")))
+        entry_doi_key = normalize_space(str(entry.get("doi", "")))
+        if url_key and entry_url_key and url_key == entry_url_key:
+            return list(entry.get("official_affiliations", []))
+        if doi_key and entry_doi_key and doi_key == entry_doi_key:
+            return list(entry.get("official_affiliations", []))
+        if title_key and entry_title_key and title_key == entry_title_key:
+            return list(entry.get("official_affiliations", []))
     return []
 
 
@@ -1751,6 +2531,7 @@ def load_legacy_openalex_affiliations_for_paper(
 
 
 def fetch_openalex_affiliations_by_doi(doi: str, authors: list[str], year: int | None = None) -> list[dict[str, Any]]:
+    """优先按 DOI 从 OpenAlex 获取作者机构信息。"""
     normalized_doi = normalize_space(doi)
     if not normalized_doi:
         return []
@@ -1772,6 +2553,7 @@ def fetch_openalex_affiliations_by_doi(doi: str, authors: list[str], year: int |
 
 
 def fetch_openalex_affiliations(title: str, authors: list[str], year: int | None = None) -> list[dict[str, Any]]:
+    """在通用兜底场景下通过标题检索 OpenAlex 获取作者机构信息。"""
     query = urllib.parse.quote(title)
     url = f"https://api.openalex.org/works?search={query}&per-page=5"
     try:
@@ -1910,6 +2692,7 @@ def build_conference_manifest_rows(
     config: ConferenceConfig,
     papers: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """为每篇论文组装包含 PDF、元数据和机构状态的清单行。"""
     return [enrich_manifest_row(config, paper) for paper in papers]
 
 
@@ -1920,6 +2703,7 @@ def resolve_affiliations_for_paper(
     fetch_from_network: bool = False,
     author_name_aliases: dict[str, set[str]] | None = None,
 ) -> list[dict[str, Any]]:
+    """对单篇论文执行会议定制的兜底链路，并尽量复用缓存。"""
     import time
 
     cache_file = cache_dir / f"{paper['paperId'].replace('/', '_')}_affiliations.json"
@@ -1931,9 +2715,17 @@ def resolve_affiliations_for_paper(
         cached = json.loads(cache_file.read_text(encoding="utf-8"))
         if has_resolved_affiliations(cached) and cache_has_full_author_coverage(cached, authors, author_name_aliases):
             return cached
+    official_cached = load_official_affiliations_for_paper(config, paper)
     legacy_cached = load_legacy_affiliations_for_paper(config, paper)
     legacy_openalex = load_legacy_openalex_affiliations_for_paper(config, paper)
-    best_local_rows = choose_best_affiliation_rows(authors, author_name_aliases, cached, legacy_cached, legacy_openalex)
+    best_local_rows = choose_best_affiliation_rows(
+        authors,
+        author_name_aliases,
+        official_cached,
+        cached,
+        legacy_cached,
+        legacy_openalex,
+    )
     if best_local_rows:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(best_local_rows, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -2172,6 +2964,7 @@ def run_single_conference(
     papers: list[dict[str, Any]] | None = None,
     fetch_affiliations: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
+    """执行单个安全会议年份的完整抽取流程。"""
     if papers is None:
         papers = json.loads(raw_json_path.read_text(encoding="utf-8"))
     overrides = load_institution_overrides(output_dir / "reference" / "institution_country_overrides.csv")
@@ -2267,6 +3060,7 @@ def run_all_pipelines(
     start: int = 0,
     limit: int = 0,
 ) -> dict[str, Any]:
+    """对选定安全会议批量执行抽取，并汇总结果。"""
     selected_keys = conference_keys or list(CONFERENCES.keys())
     summary_output = summary_output_dir(output_dir, "top4_security")
     summary_interim = summary_interim_dir(output_dir, "top4_security")
@@ -2361,11 +3155,20 @@ def fetch_dblp_and_save(config: ConferenceConfig, output_dir: Path) -> None:
     papers = fetch_dblp_papers(config)
     output_path = conference_raw_dir(output_dir, config.key) / "papers.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not papers and output_path.exists():
+        try:
+            existing = json.loads(output_path.read_text(encoding="utf-8"))
+        except Exception:
+            existing = []
+        if existing:
+            print(f"Keeping existing papers for {config.key}: fetch returned 0 but {len(existing)} cached rows exist", file=sys.stderr)
+            return
     output_path.write_text(json.dumps(papers, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Fetched {len(papers)} papers for {config.key}", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
+    """解析命令行参数并启动安全会议抽取后端。"""
     parser = argparse.ArgumentParser(description="Security conference affiliation and country extraction pipeline")
     parser.add_argument("--conference", nargs="*", default=["all"], help="Conference keys or 'all'")
     parser.add_argument("--output-dir", type=Path, default=Path("data"))

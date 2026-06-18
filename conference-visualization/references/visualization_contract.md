@@ -24,7 +24,9 @@
 
 - 优先使用 SVG，便于移植与版本对比。
 - 只有当 section 存在且非空时才生成对应图表。
+- 可额外消费 `generated-data/normalized/`、`generated-data/paper_tables_three_tier/`、`generated-data/author-roles/`、`generated-data/cfp/output/` 中的正式产物，用于生成成果总览图与覆盖率图。
 - manifest 中应显式记录跳过或缺失的 section。
+- 应额外生成一份面向阅读的展示摘要，例如 `visualization_showcase.md`。
 
 ## Manifest 建议字段
 
@@ -33,3 +35,4 @@
 - `missing_sections`
 - `empty_sections`
 - `top_n`
+- `extended_metrics`
