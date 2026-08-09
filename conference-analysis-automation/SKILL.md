@@ -2,7 +2,6 @@
 name: conference-analysis-automation
 description: Run end-to-end or partial automation for conference extraction handoff, dataset normalization, quality audit, report generation, visualization, and downstream country, institution, author, trend, and collaboration analysis. Use when the user wants reproducible batch analysis, one-command statistics generation, or a stable orchestration layer across conference analytics skills.
 license: MIT
-compatibility: Requires Python 3.10+ and local access to this repository's conference skills and CSV inputs.
 metadata:
   author: llm-conference-skill
   version: "1.0"
@@ -37,38 +36,20 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ## 支持的入口模式
 
-### 模式 1：从原始行级 CSV 开始
-
-先运行 `conference-dataset-normalization`，再把结果扇出到各个下游分析 skill。
-
-输入通常是一份或多份行级 CSV，字段可以映射到标准化阶段定义的统一模式。
-
-如果这些原始行级 CSV 来自 `conference-paper-extraction`，应优先使用其主输出：
-
-- `output/*_author_affiliations.csv`
-- 汇总版 `*_作者机构国家.csv`
-
-不要优先把 `*_us_institutions.csv` 当成自动化总入口输入，因为那只是历史子集导出。
-
-### 模式 2：从已有标准化数据开始
+### 模式 1：从已有标准化数据开始
 
 如果 `author_affiliation_facts.csv` 已存在，可跳过标准化，直接运行所需分析。
 
 这是重复出报告时的优先模式，因为它减少重复计算，也能保持不同运行之间的可比性。
 
-### 模式 3：从统一抽取入口开始
+### 模式 2：从 PDF 主流程的 AffilGood 明细开始
 
-如果用户只给出会议选择，而不想手工先跑抽取与标准化，则可由分析自动化直接调用：
-
-- `conference-paper-extraction/scripts/run_unified_pipeline.py`
-- `conference-paper-extraction/scripts/clean_extraction_noise.py`
-- `conference-dataset-normalization/scripts/normalize_dataset.py`
-
-也就是说，这个自动化层现在既可以从现成 CSV 起跑，也可以从会议 key / group 起跑，再一路进入标准化与下游分析。
-
-当自动化层从会议 key / group 起跑时，默认会在统一抽取之后自动执行一次抽取层去噪，再把清理后的 `author_affiliations_audit.csv` 送入标准化。若确实需要保留原始未去噪结果，可显式传入：
-
-- `--skip-extract-noise-cleaning`
+对于 `conference-security-research-automation` 生成的
+`extraction_affilgood/<conference>/<year>/*_affilgood_作者机构拆分_output.csv`，使用 `--affilgood-input`。
+自动化层会生成分析所需的 `author_affiliation_facts.csv` 和 `institution_dim.csv`，无需调用
+旧版 `conference-dataset-normalization`。始终传入完整 AffilGood 明细表，不要传入只保留
+15 个展示字段的 `extraction_final/<conference>/<year>/*_final.csv`。事实表应保留根机构、二级机构、国家来源、
+机构匹配方法、置信度和机构库匹配状态，以便跨会议统一计量并追溯冲突。
 
 ## 标准输出
 
@@ -84,14 +65,8 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 从以下两种输入中二选一：
 
-1. 需要先标准化的原始 CSV
+1. PDF 主流程生成的完整 AffilGood 明细表
 2. 已有标准化作者-机构事实表
-
-或者走第三种模式：
-
-3. 先执行统一抽取，再把抽取输出自动送入标准化
-
-如果二者同时提供，只有在用户明确要求跳过标准化时，才把标准化输入视为优先来源。
 
 ### 第 2 步：定义分析范围
 
@@ -106,17 +81,17 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 ### 第 3 步：按需运行标准化
 
-如果从原始输入开始，则调用：
-
-`conference-dataset-normalization/scripts/normalize_dataset.py`
-
-如果前一步来自统一抽取入口，则在标准化之前先调用：
-
-`conference-paper-extraction/scripts/clean_extraction_noise.py`
-
-随后把生成的 `normalized/author_affiliation_facts.csv` 作为后续分析唯一共享的事实表。
+如果从 AffilGood 明细开始，则调用 `prepare_affilgood_facts.py`，随后把生成的
+`normalized/author_affiliation_facts.csv` 作为后续分析唯一共享的事实表。
 
 自动化层应默认围绕“作者-机构-国家”长表组织流程。
+
+`prepare_affilgood_facts.py` 是下游统计的统一事实适配层：它保留原始作者和 affiliation 字段，
+同时规范化 OCR 作者姓名变体、生成稳定 `author_key`，并按紧凑标题/有序作者签名支持论文去重。
+机构仍必须先经过 `institution_raw.csv` 精确匹配；复合机构或国家标签按统一的对齐身份规则
+拆分，无法可靠识别的组成项作为残片丢弃。若一行仍有论文/作者事实但没有可计数机构，
+统一写为 `Independent Researcher`，使用 `institution_source=independent_researcher_default`；国家有值时保留，
+没有时写为 `None`。机构排名、合作网络和机构趋势必须忽略该非机构事实。分析脚本不得自行猜测未对齐的组成项。
 
 如果上游抽取层保留了论文级参与国多行记录，自动化层不应尝试把同一 `paper_key + author_order + inst` 的多国参与记录误判为重复脏数据；应把它们视为合法的多参与国事实行。
 
@@ -138,6 +113,18 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - `conference-collaboration-analysis/scripts/collaboration_analysis.py`
 
 不要在自动化层中混合它们的内部假设。自动化层只负责透传过滤条件并记录执行步骤。
+
+### 第 5b 步：路由明细查询
+
+当用户提出自然语言明细查询时，不必重跑全部计量分析。确认标准化事实表存在后按以下方式路由：
+
+- 查询某位作者的论文、合作者或一作论文：调用
+  `conference-author-statistics/scripts/query_author_details.py`。
+- 查询某个国家或地区参与的论文及其作者、机构：调用
+  `conference-country-statistics/scripts/query_country_papers.py`。
+
+透传可选的会议和年份过滤条件。始终使用 `author_affiliation_facts.csv` 作为共享事实来源，
+并保留领域 skill 对作者身份、国家归属和去重口径的说明；自动化层不得重新解释这些口径。
 
 ### 第 6 步：按需生成报告
 
@@ -162,31 +149,6 @@ manifest 中应始终记录：
 
 ```bash
 python3 scripts/run_analysis_pipeline.py \
-  --raw-input generated-data/extraction/interim/conference_rows.csv \
-  --output-dir generated-data/analysis
-```
-
-```bash
-python3 scripts/run_analysis_pipeline.py \
-  --extract-group top4_security \
-  --extract-fetch \
-  --extract-fetch-affiliations \
-  --output-dir generated-data/analysis
-```
-
-如需跳过自动去噪：
-
-```bash
-python3 scripts/run_analysis_pipeline.py \
-  --extract-group top4_security \
-  --extract-fetch \
-  --extract-fetch-affiliations \
-  --skip-extract-noise-cleaning \
-  --output-dir generated-data/analysis
-```
-
-```bash
-python3 scripts/run_analysis_pipeline.py \
   --normalized-input generated-data/normalized/author_affiliation_facts.csv \
   --output-dir generated-data/analysis \
   --conference CCS \
@@ -194,6 +156,13 @@ python3 scripts/run_analysis_pipeline.py \
   --run audit --run country --run institution --run author --run trend --run collaboration --run report --run visualization \
   --trend-entity country \
   --collaboration-mode author
+```
+
+```bash
+python3 scripts/run_analysis_pipeline.py \
+  --affilgood-input generated-data/extraction_affilgood/crypto/2022/crypto_2022_affilgood_作者机构拆分_output.csv \
+  --output-dir generated-data/analysis/crypto_2022 \
+  --conference crypto --year 2022
 ```
 
 ```bash

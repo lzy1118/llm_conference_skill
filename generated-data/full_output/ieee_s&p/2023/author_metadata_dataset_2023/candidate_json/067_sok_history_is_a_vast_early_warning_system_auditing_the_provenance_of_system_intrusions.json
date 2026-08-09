@@ -1,0 +1,375 @@
+{
+  "paper_id": "067_sok_history_is_a_vast_early_warning_system_auditing_the_provenance_of_system_intrusions",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SoK: History is a Vast Early Warning System: Auditing the Provenance of System Intrusions"
+      },
+      {
+        "source": "selected",
+        "value": "SoK: History is a Vast Early Warning System: Auditing the Provenance of System Intrusions"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Auditing, a central pillar of operating system security, has only recently come into its own as an active area of public research. This resurgent interest is due in large part to the notion of data provenance, a technique that iteratively parses audit log entries into a dependency graph that explains the history of system execution. Provenance facilitates precise threat detection and investigation through causal analysis of sophisticated intrusion behaviors. However, the absence of a foundational audit literature, combined with the rapid publication of recent findings, makes it difficult to gain a holistic picture of advancements and open challenges in the area. In this work, we survey and categorize the provenance-based system auditing literature, distilling contributions into a layered taxonomy based on the audit log capture and analysis pipeline. Recognizing that the Reduction Layer remains a key obstacle to the further proliferation of causal analysis technologies, we delve further on this issue by conducting an ambitious independent evaluation of 8 exemplar reduction techniques against the recently-released DARPA Transparent Computing datasets. Our experiments uncover that past approaches frequently prune an overlapping set of activities from audit logs, reducing the synergistic benefits from applying them in tandem; further, we observe an inverse relation between storage efficiency and anomaly detection performance. However, we also observe that log reduction techniques are able to synergize effectively with data compression, potentially reducing log retention costs by multiple orders of magnitude. We conclude by discussing promising future directions for the field. 2620 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Auditing, a central pillar of operating system se- curity, has only recently come into its own as an active area of public research. This resurgent interest is due in large part to the notion of data provenance, a technique that iteratively parses audit log entries into a dependency graph that explains the history of system execution. Provenance facilitates precise threat detection and investigation through causal analysis of sophisticated intru- sion behaviors. However, the absence of a foundational audit literature, combined with the rapid publication of recent findings, makes it difficult to gain a holistic picture of advancements and open challenges in the area. In this work, we survey and categorize the provenance-based system auditing literature, distilling contributions into a layered taxonomy based on the audit log capture and analysis pipeline. Recognizing that the Reduction Layer remains a key obstacle to the further proliferation of causal analysis technologies, we delve further on this issue by conducting an ambitious inde- pendent evaluation of 8 exemplar reduction techniques against the recently-released DARPA Transparent Computing datasets. Our experiments uncover that past approaches frequently prune an overlapping set of activities from audit logs, reducing the synergistic benefits from applying them in tandem; further, we observe an inverse relation between storage efficiency and anomaly detection performance. However, we also observe that log reduction techniques are able to synergize effectively with data compression, potentially reducing log retention costs by mul- tiple orders of magnitude. We conclude by discussing promising future directions for the field. I. I NTRODUCTION Auditing is one of the fundamental tenants of operating system security [ 1]. Dating as far back as Anderson's sem- inal 1972 Computer Technology and Planning Study [ 2], audit capabilities were identified as essential in any resource sharing system to detect breaches and penetration attempts. Lampson identifies the three pillars of his access control “Gold Standard” as Authorization, Authentication, and Audit [3].1 When proactive security measures like authorization and authentication fail, audit forms the basis for all forms of reactive security, allowing system defenders to identify and mitigate intrusions before they escalate. In spite of its foundational importance, auditing has been largely ignored in the system security literature - little at- tention has been given historically to the design of efficient, secure, and effective auditing mechanisms. As a demonstrative example, the early 2000s saw the emergency of key OS 1Lampson's “Gold Standard” plays on the fact that all three pillars of access control begin with the letters “A U,” the chemical symbol for gold. 0 2 4 6 8 10 12 14 16 Number of Papers Publication Year Others ATC OSDI SOSP NDSS CCS Fig. 1: Publication frequency for data provenance and system auditing papers over the past two decades. Auditing, an operating system security concept as foundational as access control and authorization, is a subject of resurgent interest in the literature. security mechanisms such as the NSA's SELinux [ 4, 5] and Linux Security Modules [6], which sparked a flurry of research on the correctness of SELinux policies (e.g., [ 7-9]) and the placement of LSM's authorization hooks (e.g., [ 10-13]). Just a few years later, Red Hat released the Linux Audit Subsystem (LAuS) [14]; we are aware of no such efforts to specify secure LAuS auditing configurations or validate its correctness, even though LAuS was critical to Linux's certifications under the Common Criteria's Control Access Protection Profile (CAPP) [15] and Labeled Security Protection Profile (LSPP) [ 16]. In the present moment, however, our collective apprecia- tion of auditing is beginning to change due to the failings of proactive security. Increasingly sophisticated and well- financed threat groups have demonstrated the ability to pen- etrate networks, seemingly at-will (e.g., [ 17-23]). Following their initial incursion, attackers can dwell for weeks or even months without notice, steadily inflicting more damage to the target [ 24]. That these attacks may take place over a period of many months creates an opportunity for reactive security approaches to detect and respond to intruders before they reach their ultimate objectives. Thus, auditing and log analysis techniques are more important than ever when defending systems [25-28]. As a result of this reckoning, system auditing is experienc- ing a well-deserved renaissance in the security literature. Fig- ure 1 demonstrates this trend, plotting the number of system auditing papers to have appeared at notable conferences over the past two decades. As can be seen, the number of system 2620 DOI 10.1109/SP46215.2023.00018 name:bash type:Process name:httpd main type:Process WasTriggeredBy name:httpd listener type:Process WasTriggeredBy name:172.67.74.122 type:network Used operation:read name:htdocs/index.html type:file name:httpd worker type:Process Used operation:read name:/usr/lib/libc.so type:file Used operation:read WasTriggeredBy name:172.67.74.122 type:network WasGeneratedBy Fig. 2: Provenance graph represented in Open Provenance Model (OPM) [29] of Apache webserver serving single user request. Ver- tices represent the system subjects and system objects, while edges represent the causal relationship between those entities. auditing papers to appear between 2004 and 2014 is equal to the number appearing in 2018 alone. This trend has largely been driven by the notion of data provenance . Provenance describes the totality of system execution and facilitates causal analysis of system activities by reconstructing the chain of events that lead to an attack (backward tracing) as well as the ramifications of the attack (forward tracing). However, the absence of a foundational system auditing literature, combined with the deluge of recent results, makes it difficult to gain a holistic picture of the state of the art of auditing. What are the central challenges posed by system auditing, and what progress has been made to overcome these obstacles? In this work, we set out to answer these questions by conducting a comprehensive systematization of the system auditing literature. We focus our survey around recently- reported results on data provenance techniques, allowing us to understand how the notion of data provenance has shifted the landscape of system auditing. Our survey identifies and tax- onomizes data provenance related techniques within five lay- ers of the auditing stack: Capture, Reduction, Infrastructure, Detection, and Investigation . In so doing, we identify several layer-specific and cross-cutting challenges, then discuss the extent to which these obstacles have been addressed in prior work, providing the first holistic picture of provenance-based system auditing research. Recognizing that the Reduction Layer represents a bottle- neck to the further proliferation of provenance-based system auditing, we continue our study by conducting an independent comparative analysis of 8 exemplar log reduction techniques using the DARPA Transparent Computing datasets. We find that reduction performance can vary considerably based on the workloads of the target machine. We also observe a ceiling effect when attempting to apply these techniques in tandem; the most aggressive technique (S-DPR [30]) reduces log size by 87.3%, as compared to 90.7% when all techniques are applied. Moreover, we uncover a disturbing trend in which aggressive log reduction may lead to reduced anomaly de- tection performance. Encouragingly, though, we observe sig- nificant synergy between reduction techniques and traditional data compression - while filtering provides up to 10.8X log reduction and compression provides 22.8X, combined these techniques provide 185.4X reduction, allowing analysts to Heuristic-based [31-36] Anomaly-based [37-43] Alert Correlation [31, 35, 44-52] Behavior Diagnosis [31, 35, 53-59] Alert Triage [31, 34, 35, 60-62] Log Integra- tion [32, 44, 63-66] Detection Layer (III-D) Investigation Layer (III-E) Infrastructure Layer (III-C) Query Support [33, 65, 67-71] Storage Support [62, 70, 72-74] Reduction Layer (III-B) Semantic Pruning [75-78] Information Flow Preservation [30, 79] Graph Compression [80- 84] Causality Approxima- tion [79, 85, 86] Capture Layer (III-A) Hypervisor level [87-90] Kernel level [4, 5, 67, 72, 91-97] Application level [63, 66, 98-101, 101-103] Middleware level [104- 108] Fig. 3: We systematize provenance-based system auditing literature based on a taxonomy of the log capture and analysis pipeline. store years worth of logs in the space originally consumed by just a few days. We conclude by discussing our findings in the context of future directions for the field. II. D ATA PROVENANCE PRIMER Auditing captures documentary evidence of the events that took place on a target system. 2 Today, most operating systems come with auditing frameworks, such as the Linux Audit Subsytem [91], Event Tracing for Windows (ETW) [109], and FreeBSD's DTrace [110]. These frameworks use audit hooks and system call interception to monitor accesses between system subjects (e.g., processes) and system objects (e.g., files, sockets, pipes, etc.). Configured properly, audit logs can contain enough information to establish what events occurred on the system and how and who caused those events [111]. Au- diting thus complements purely post-mortem forensic methods such as disk [112], memory [113], and malware analysis [114]. Historically, inspection of these logs has been tedious and error prone, involving long series of join statements to retrieve the relevant log entries from a relational database. To address this, recent literature has leveraged the notion of data provenance , a simple example of which is given in Figure 2. Rather than manually piece together individual pieces of evidence from raw logs, provenance-based systems can construct dependency graphs that explain the relationships between each event, simplifying the detection and investiga- tion of attacks. Using these graphs, analysts can issue graph 2Our focus in this work is on auditing hosts/endpoints for evidence system intrusions. We note that, more broadly, auditing relates to a variety of other security topics such as cryptocurrencies electronic voting, which are out of scope in this work. 2621"
+      },
+      {
+        "source": "selected",
+        "value": "Auditing, a central pillar of operating system security, has only recently come into its own as an active area of public research. This resurgent interest is due in large part to the notion of data provenance, a technique that iteratively parses audit log entries into a dependency graph that explains the history of system execution. Provenance facilitates precise threat detection and investigation through causal analysis of sophisticated intrusion behaviors. However, the absence of a foundational audit literature, combined with the rapid publication of recent findings, makes it difficult to gain a holistic picture of advancements and open challenges in the area. In this work, we survey and categorize the provenance-based system auditing literature, distilling contributions into a layered taxonomy based on the audit log capture and analysis pipeline. Recognizing that the Reduction Layer remains a key obstacle to the further proliferation of causal analysis technologies, we delve further on this issue by conducting an ambitious independent evaluation of 8 exemplar reduction techniques against the recently-released DARPA Transparent Computing datasets. Our experiments uncover that past approaches frequently prune an overlapping set of activities from audit logs, reducing the synergistic benefits from applying them in tandem; further, we observe an inverse relation between storage efficiency and anomaly detection performance. However, we also observe that log reduction techniques are able to synergize effectively with data compression, potentially reducing log retention costs by multiple orders of magnitude. We conclude by discussing promising future directions for the field. 2620 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Muhammad Adil Inam",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yinfang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Akul Goyal",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jason Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Jaron Mink",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Noor Michael",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Sneha Gaur",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Adam Bates",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Wajih Ul",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Muhammad Adil Inam",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yinfang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Akul Goyal",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jason Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Jaron Mink",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Noor Michael",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Sneha Gaur",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Adam Bates",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Wajih Ul",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 140,
+      "author_count": 9,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 6,
+          "author": "Sneha Gaur",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SoK: History is a Vast Early Warning System: Auditing the Provenance of System Intrusions",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Muhammad Adil Inam",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Yinfang Chen",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Akul Goyal",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Jason Liu",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Jaron Mink",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Noor Michael",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Sneha Gaur",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Adam Bates",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Wajih Ul Hassan",
+          "affiliations": [
+            "University of Virginia"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 9,
+      "proposed_count": 9,
+      "retained_count": 8,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

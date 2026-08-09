@@ -1,0 +1,334 @@
+{
+  "paper_id": "043_ems_history_driven_mutation_for_coverage_based_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "EMS: History-Driven Mutation for Coverage-based Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "EMS: History-Driven Mutation for Coverage-based Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Mutation-based fuzzing is one of the most popular approaches to discover vulnerabilities in a program. To alleviate the inefficiency of mutation-based fuzzing incurred by high randomness in the mutation process, multiple solutions are developed in recent years, especially coverage-based fuzzing. They mainly employ adaptive mutation strategies or integrate constraint-solving techniques to make a good exploration of the test cases which trigger unique paths and crashes. However, they lack a fine-grained reusing of fuzzing history to construct these interesting test cases, i.e., they largely fail to properly utilize fuzzing history across different fuzzing trials. In fact, we discover that test cases in fuzzing history contain rich knowledge of the key mutation strategies that lead to the discovery of unique paths and crashes. Specifically, partial path constraint solutions implicitly carried in these mutation strategies can be reused to accelerate the discovery of new paths and crashes that share similar partial path constraints. Therefore, we first propose a lightweight and efficient Probabilistic Byte Orientation Model (PBOM) that properly captures the byte-level mutation strategies from intra-and inter-trial history and thus can effectively trigger unique paths and crashes. We then present a novel history-driven mutation framework named EMS that employs PBOM as one of the mutation operators to probabilistically provide desired mutation byte values according to the input ones. We evaluate EMS against state-of-the-art fuzzers including AFL, QSYM, MOPT, MOPT-dict, EcoFuzz, and AFL++ on 9 real world programs. The results show that EMS discovers up to 4.91× more unique vulnerabilities than the baseline, and finds more line coverage than other fuzzers on most programs. We report all of the discovered new vulnerabilities to vendors and will open source the prototype of EMS on GitHub."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Mutation-based fuzzing is one of the most popular approaches to discover vulnerabilities in a program. To alleviate the inefficiency of mutation-based fuzzing incurred by high randomness in the mutation process, multiple solutions are developed in recent years, especially coverage-based fuzzing. They mainly employ adaptive mutation strategies or integrate constraint-solving techniques to make a good exploration of the test cases which trigger unique paths and crashes. However, they lack a fine-grained reusing of fuzzing history to construct these interesting test cases, i.e., they largely fail to properly utilize fuzzing history across different fuzzing trials. In fact, we discover that test cases in fuzzing history contain rich knowledge of the key mutation strategies that lead to the discovery of unique paths and crashes. Specifically, partial path constraint solutions implicitly carried in these mutation strategies can be reused to accelerate the discovery of new paths and crashes that share similar partial path constraints. Therefore, we first propose a lightweight and efficient Proba- bilistic Byte Orientation Model (PBOM) that properly captures the byte-level mutation strategies from intra- and inter-trial history and thus can effectively trigger unique paths and crashes. We then present a novel history-driven mutation framework named EMS that employs PBOM as one of the mutation operators to probabilistically provide desired mutation byte values according to the input ones. We evaluate EMS against state-of-the-art fuzzers including AFL, QSYM, MO PT, MO PT-dict, EcoFuzz, and AFL++ on 9 real world programs. The results show that EMS discovers up to 4.91× more unique vulnerabilities than the baseline, and finds more line coverage than other fuzzers on most programs. We report all of the discovered new vulnerabilities to vendors and will open source the prototype of EMS on GitHub. I. I NTRODUCTION As one of the most prevalent software-testing approaches, mutation-based fuzzing generates test cases with simple random-based mutation strategies and tests a target program frequently to explore vulnerabilities. The high randomness in the mutation process results in a limited exploration of the test cases that trigger unique paths or crashes, leading to low efficiency of finding vulnerabilities. In recent years, Xuhong Zhang is the corresponding author. multiple solutions have been proposed to improve mutation- based fuzzing, one of which is coverage-based fuzzing, e.g., AFL [3]. Since the precondition of triggering vulnerabilities is to execute the corresponding code paths in the target program, coverage-based fuzzing tries to explore as many unique exe- cution paths of a program as possible. Therefore, many efforts have been taken to improve coverage-based fuzzers. Among them, one prevalent direction is employing adaptive mutation strategies to improve the seed selection and generation pro- cess [13], [44], [54], [71], e.g., AFLFast [13] and EcoFuzz [71] focus on adaptively estimating the potential of each test case to trigger unique branching behaviors and thus allocate more time to mutate the promising ones. Another popular direction is integrating constraint-solving techniques [17], [18], [63], [70], [72], [74] to solve the complex constraints, which lead to different branching behaviors and cover more difficult paths that are rarely triggered via traditional mutation. While existing fuzzers take a good exploration of the test cases that trigger unique paths and crashes, they lack a fine- grained reusing of fuzzing history to construct these test cases. We find that fuzzing history contains rich knowledge of the key mutation strategies that lead to the discovery of unique paths and crashes. More specifically, the mutations from the seed test cases to the mutated ones which trigger unique execution paths might contain common strategies. These strategies lead to the trigger of specific branching behaviors, which might also exist in many other execution paths. Thus, for the unique paths containing these branching behaviors, we might be able to reach them faster in the following fuzzing process, if we can learn these strategies and re-utilize the partial path constraint solutions implicitly carried in them. Furthermore, we might avoid or significantly reduce the repetitive cost of explicitly solving complex path constraints. Our insights rely on the assumption that the same/similar program logics, which are often wrapped into functions and libraries, are repeatedly used within a single program or across different programs. The reuse practice is very common in software development, and the thriving open source communities further promote it. To further support our insights, we conduct two case studies on several programs. In particular, we study the cmp assembly instruction and the associate immediate operands, since they directly control the branching behaviors of a pro- gram. Highlights of our findings are as follows. 1) In a program, the same immediate operands are compared with the values of registers multiple times by the instruction cmp; and 2) different programs contain the same immediate operands employed by the instruction cmp, which account for a non- Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.23162 www.ndss-symposium.org negligible number of all the immediate operands used in the cmp instruction. In addition, we show the fact that the proportion of the shared basic blocks is non-negligible in the execution paths of different programs from the same vendor. More details of the case studies are introduced in Section III-A. These case studies demonstrate only two types of reuse of program logics to help understand the value of reusing efficient mutation strategies. In practice, there should be more diverse reuse patterns resulting from the reuse practice in software development. Thus, more efficient mutation strategies can be inferred. Therefore, both the intra-trial fuzzing history (history in the current fuzzing process) and inter-trial fuzzing history (history from the previous fuzzing processes which can be from the same or a different program) can be valuable assets to guide effective fuzzing. To utilize fuzzing history in a fuzzing process, the key challenge is how to capture the mutation strategies that trigger unique paths and crashes from the intra- and inter-trial history. In other words, given the input byte values from a seed test case, the learned mutation strategy model should be able to output the corresponding mutated values and the mutation types that have caused the test case to trigger a unique path or crash. Since we consider both intra- and inter-trial fuzzing history, the mutation strategy model needs to support incremental updates, as the intra-trial history is generated in real time in the fuzzing process and is more relevant to the tested program. On the other hand, the model is required to have an appropriate computational cost and high execution speed to ensure the efficiency of the mutation-based fuzzers. As we all know, the execution speed significantly influences the unique path and crash discovery of fuzzers. To achieve our goal, we propose Probabilistic Byte Orien- tation Model (PBOM) to learn and reuse the efficient mutation strategies from the intra- and inter-trial fuzzing history with fast execution speed. To be specific, we first categorize all the mutation operators into three types: overwrite, delete and insert. For each operator used to mutate one test case, we temporarily record the input byte values, the byte length, the mutation type, and the corresponding mutated byte values. If the mutated test case triggers a new unique path or crash, we store the recorded data into the training set. Then, we utilize the stored data in the training set to construct inter-PBOM. Essentially, PBOM uses a hash map to map input byte values to its corresponding efficient mutation strategies. Each mutation strategy contains the mutation type, the mutated byte values, the frequency of this mutation, and the selection probability of this mutation. Note that the selection probability of a mutation is calculated based on its frequency in history. Furthermore, in order to utilize intra-trial history, we con- tinuously collect the efficient mutation strategies during the fuzzing process, and periodically update the intra-PBOM. Based on the intra- and inter-PBOMs, we present a novel history-driven mutation framework, named EMS, to utilize the fuzzing history. Specifically, EMS employs the two PBOMs as two additional mutation operators to probabilistically provide the desired mutation byte values and mutation types according to the input byte values and lengths. Both the traditional mutation operators and PBOMs are utilized to find interesting test cases that trigger unique paths and crashes. EMS is a generic framework that can be applied to most mutation-based fuzzers. In this paper, we apply it to the state-of-the-art fuzzer MO PT and implement the prototype of EMS. We compare the fuzzing performance of EMS with the state-of-the-art fuzzers on 9 real world programs. In total, EMS discovers 130 unique vulnerabilities. Compared to other fuzzers, EMS finds 4.91× more unique vulnerabilities reported by AddressSanitizer (ASan) [1] than the baseline AFL [3], and finds 2.33×, 1.17×, 0.78×, 0.67×, and 0.31 × more vulnerabilities than QSYM [72], MO PT [44], MO PT-dict, EcoFuzz [71], and AFL++ [22], respectively. In summary, we make the following contributions. • We discover that both intra- and inter-trial fuzzing history contain rich knowledge of the key mutation strategies that lead to the discovery of unique paths and crashes. These mutation strategies implicitly carry partial path constraint solutions and can be used to accelerate the discovery of new paths and crashes sharing similar partial path constraints. • We propose a lightweight and efficient PBOM to capture the mutation strategies that trigger unique paths and crashes in the intra- and inter-trial history. We further present a novel history-driven mutation framework EMS that employs PBOM as one of the mutation operators to probabilistically provide the desired mutation bytes according to the input ones. • We implement EMS based on the state-of-the-art fuzzer MOPT and construct the prototype of EMS. Then, we evaluate EMS against AFL, QSYM, MO PT, MO PT-dict, Ecofuzz, and AFL++ on 9 real world programs. The results show that EMS discovers more unique vulnerabilities and line coverage than other fuzzers on most programs. We utilize the standardized benchmark FuzzBench to show the significant coverage per- formance of EMS. When using different initial seed sets, EMS also finds the most vulnerabilities reported by different sanitizers. Furthermore, we conduct an analysis of the PBOM operator's contribution and the efficient mutation strategies learned from inter-trial history to demonstrate the validity of PBOM. We also conduct an evaluation on the different programs from the same vendor, and show the discovery improvement of EMS with the different inter-PBOMs. The close execution speed compared to MO PT also demonstrates the low overhead of EMS. • We report all of the discovered vulnerabilities to the vendors to improve the programs' security. Also, we will open source EMS at https://github.com/puppet-meteor/EMS to facilitate the research in the fuzzing area. II. B ACKGROUND A. Mutation-based Fuzzing The core idea of mutation-based fuzzing is to mutate the prepared test cases and frequently test the target program to see whether the mutated test cases can trigger abnormal behaviors. The general workflow of mutation-based fuzzers is as follows. A fuzzer 1) requires an initial seed set and constructs a queue of seed test cases; 2) selects seed test cases from the queue and randomly mutates the seeds with several kinds of mutation operators; 3) employs the mutated test cases to test the target"
+      },
+      {
+        "source": "selected",
+        "value": "Mutation-based fuzzing is one of the most popular approaches to discover vulnerabilities in a program. To alleviate the inefficiency of mutation-based fuzzing incurred by high randomness in the mutation process, multiple solutions are developed in recent years, especially coverage-based fuzzing. They mainly employ adaptive mutation strategies or integrate constraint-solving techniques to make a good exploration of the test cases which trigger unique paths and crashes. However, they lack a fine-grained reusing of fuzzing history to construct these interesting test cases, i.e., they largely fail to properly utilize fuzzing history across different fuzzing trials. In fact, we discover that test cases in fuzzing history contain rich knowledge of the key mutation strategies that lead to the discovery of unique paths and crashes. Specifically, partial path constraint solutions implicitly carried in these mutation strategies can be reused to accelerate the discovery of new paths and crashes that share similar partial path constraints. Therefore, we first propose a lightweight and efficient Probabilistic Byte Orientation Model (PBOM) that properly captures the byte-level mutation strategies from intra-and inter-trial history and thus can effectively trigger unique paths and crashes. We then present a novel history-driven mutation framework named EMS that employs PBOM as one of the mutation operators to probabilistically provide desired mutation byte values according to the input ones. We evaluate EMS against state-of-the-art fuzzers including AFL, QSYM, MOPT, MOPT-dict, EcoFuzz, and AFL++ on 9 real world programs. The results show that EMS discovers up to 4.91× more unique vulnerabilities than the baseline, and finds more line coverage than other fuzzers on most programs. We report all of the discovered new vulnerabilities to vendors and will open source the prototype of EMS on GitHub."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Chenyang Lyu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Shouling Ji",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xuhong Zhang",
+          "email": "zhangxuhong@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University",
+            "Zhejiang University NGICS Platform"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Hong Liang",
+          "email": "hongliang@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Binbin Zhao",
+          "email": "binbin.zhao@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Lu ¶ Kangjie",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Raheem Beyah",
+          "email": "rbeyah@ece.gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Chenyang Lyu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Shouling Ji",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Xuhong Zhang",
+          "email": "zhangxuhong@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University",
+            "Zhejiang University NGICS Platform"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 3,
+          "name": "Hong Liang",
+          "email": "hongliang@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Binbin Zhao",
+          "email": "binbin.zhao@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Lu ¶ Kangjie",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Raheem Beyah",
+          "email": "rbeyah@ece.gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 123,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Hong Liang",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Hong Liang",
+          "affiliation_raw": "Zhejiang University Zhejiang University NGICS Platform",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "email_raw": "binbin.zhao@gatech.edu",
+          "email_block_ids": [
+            "pdf:p1:b22"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b21",
+            "pdf:p1:b22"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 27.41,
+          "center_distance": 102.032,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "EMS: History-Driven Mutation for Coverage-based Fuzzing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-201/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Chenyang Lyu",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Shouling Ji",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Xuhong Zhang",
+          "affiliations": [
+            "Zhejiang University & Zhejiang University NGICS Platform"
+          ]
+        },
+        {
+          "name": "Hong Liang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Binbin Zhao",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Kangjie Lu",
+          "affiliations": [
+            "University of Minnesota"
+          ]
+        },
+        {
+          "name": "Raheem Beyah",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 7,
+      "proposed_count": 7,
+      "retained_count": 6,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

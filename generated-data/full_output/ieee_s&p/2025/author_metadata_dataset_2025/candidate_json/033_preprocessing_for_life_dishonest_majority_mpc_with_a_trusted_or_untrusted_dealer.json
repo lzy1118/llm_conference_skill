@@ -1,0 +1,244 @@
+{
+  "paper_id": "033_preprocessing_for_life_dishonest_majority_mpc_with_a_trusted_or_untrusted_dealer",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Preprocessing for Life: Dishonest-Majority MPC with a Trusted or Untrusted Dealer"
+      },
+      {
+        "source": "selected",
+        "value": "Preprocessing for Life: Dishonest-Majority MPC with a Trusted or Untrusted Dealer"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "We put forth a new paradigm for secure multiparty computation (MPC) in the preprocessing model, where a feasible one-time setup can enable a lifetime of efficient online secure computations. Our protocols match the security guarantees and low costs of the cheapest category of MPC solutions, namely 3party protocols (3PC) secure against a single malicious party, with the qualitative advantages that one party communicates data sublinear in the circuit size, and can go offline after its initial messages. This \"2+1\"-party structure can alternatively be instantiated between 2 parties with the aid of an (untrusted) dealer. Within such existing protocols, we provide comparable online performance while improving the storage and offline dealer-to-party communication requirements by more than 3 orders of magnitude. At the technical level, we build on the Fully Linear Interactive Oracle Proof (FLIOP)-based protocol design of Boyle et al. (CRYPTO 2021). We provide an extensive assortment of algorithmic and implementation-level optimizations, design efficient distributed proofs of well-formedness of complex FLIOP correlations, and make them circuit-independent. We implement and benchmark our end-to-end system against the state of the art in the 2+1 regime, a dealer-aided variant of SPDZ for Boolean circuits. We additionally extend our techniques to the (n + 1) party setting, where a dealer aids general dishonest-majority MPC, and provide a variant of the protocol which further achieves security with \"identifiable abort.\" 2433 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "We put forth a new paradigm for secure multi- party computation (MPC) in the preprocessing model, where a feasible one-time setup can enable a lifetime of efficient online secure computations. Our protocols match the security guarantees and low costs of the cheapest category of MPC solutions, namely 3- party protocols (3PC) secure against a single malicious party, with the qualitative advantages that one party communicates data sublinear in the circuit size, and can go offline after its initial messages. This “2+1”-party structure can alternatively be instantiated between 2 parties with the aid of an (untrusted) dealer. Within such existing protocols, we provide comparable online performance while improving the storage and offline dealer-to-party communication requirements by more than 3 orders of magnitude. At the technical level, we build on the Fully Linear Inter- active Oracle Proof (FLIOP)-based protocol design of Boyle et al. (CRYPTO 2021). We provide an extensive assortment of algorithmic and implementation-level optimizations, design efficient distributed proofs of well-formedness of complex FLIOP correlations, and make them circuit-independent. We implement and benchmark our end-to-end system against the state of the art in the 2+1 regime, a dealer-aided variant of SPDZ for Boolean circuits. We additionally extend our techniques to the (n + 1) party setting, where a dealer aids general dishonest-majority MPC, and provide a variant of the protocol which further achieves security with “identifiable abort.” 1. Introduction Can we design everlasting batteries? This work discusses the analogue of this question in the setting of secure multi- party computation (MPC) [1], [2]. MPC is a general-purpose tool for computing across secret inputs while revealing only the computation output. MPC can be used for mitigating single points of failures in a variety of applications; see, e.g., [3] for current real-world use cases. Here we focus on the case of computing Boolean circuits 1 with security against a malicious adversary. Perhaps the most commonly studied setting of MPC is secure 2-party computation (2PC). The last decades have witnessed tremendous advances in the concrete efficiency of 2PC protocols. Unfortunately, the costs of existing solu- tions still scale problematically to large-scale computations, generally due to their demanding communication require- ments. Alternative approaches offer online protocols with low communication by means of useful correlated random- ness produced in an offline preprocessing phase; however, the large size of these correlations forms a bottleneck to scaling, even just for this data to be communicated. 1.1. Our Contributions We put forth a new paradigm for MPC in the prepro- cessing model, of “preprocessing for life”: where a feasible one-time setup can support a lifetime of efficient online 2PC (or MPC) executions. For large-scale applications, one can imagine possession of cryptographic correlations as a form of “battery charge,” enabling the parties to continue performing secure computations until the correlations are consumed. We correspondingly seek MPC batteries with lifetime charge. Jumping ahead, in the simpler semi-honest security model (where corrupt parties are still assumed to follow the protocol), this goal can be achieved via the use of pseudorandom correlation generators (PCGs) [4]. However, known PCG constructions for supporting security against malicious parties [5] are slower by orders of magnitude over large fields, let alone non-existing, to the best of our knowledge, for small fields or in the multi-party setting. Our starting point is the theory-oriented work of [6], [7], [8] based on “Fully Linear Interactive Oracle Proofs” (FLIOP). The FLIOP-based approach [7] is a 2PC (or MPC) protocol in the aforementioned preprocessing model, where a trusted dealer is used to generate and distribute 1While our efficiency optimizations focus on Boolean circuits, results of this paper can be generalized to richer circuit models, such as arithmetic circuits and beyond, using the same high level blueprint. 2433 DOI 10.1109/SP61157.2025.00041 correlated randomness. The advantage of the FLIOP-based approach is that the dealer's correlation can be significantly smaller than alternative approaches, growing sublinearly in the computation circuit size (as opposed to roughly 3σ bits per multiplication gate for σ ≥ 40). This means, in theory at least, that the size of the dealer's correlation amortizes away compared to online communication. Unfortunately, the FLIOP-based approach to dealer- aided MPC also has several downsides. In exchange for im- proved communication, it incurs significantly greater com- putation costs. Efforts have already gone toward alleviating the costs of the underlying tools (e.g., [9]), but still leave significant computational burden. Beyond the theoretical es- timates from [7], there was no evidence for the concrete cost of the full dealer-aided protocol. A second limitation is that the correlations distributed by the dealer have to depend on the circuits computed in the online phase, severely limiting the possible use cases. Finally, the security of the protocol totally relies on the honest behavior of the dealer. A mali- cious (or even “selfish”) dealer could lead to incorrect results without detection. While work has gone toward removing the trusted dealer assumption via secure emulation of the dealer [7], [8], these protocols are quite expensive, defeating the purpose of the FLIOP-based approach for efficient large- scale MPC. In this work, we initiate a systematic effort to make the FLIOP-based approach a concretely practical and secure solution achieving 2PC with preprocessing for life. This encompasses significant optimizations and modifications to the protocol of [7], including circuit-independent correla- tions, new procedures for efficiently verifying a possibly corrupt dealer, and end-to-end system implementation and benchmarks. We further provide extensions to the n-party setting, where we boost security to identify a cheating party in case the online protocol aborts. We next proceed to describe our contributions in more detail. Protocol design & optimization. We present an opti- mized protocol that realizes our main goal in the “2+1”-party setting, where a (trusted or untrusted) dealer provides the 2 online parties with the corresponding ( short) correlations. Alternatively, this can be viewed as a 3PC protocol in the honest-majority setting, with the qualitative advantages that one party is non-interactive, only communicates data sublinear in the online computation size, and can go offline after its initial messages. Our resulting protocol and implementation comprise the first practical secure computation solution whose online phase nearly matches current state-of-the-art in the prepro- cessing model (based on the SPDZ line of work [10], [11], [12]; with just 2 bits of communication per party per AND gate in the 2+1 setting), with correlation size that grows sublinearly-in fact, logarithmically-in the circuit size. On the technical level, we build on the FLIOP-based protocol of [7], providing several kinds of improvements: • Circuit-independent correlations . In [7], the correlation generated by the dealer is circuit dependent, meaning that one must commit in advance to the topology of all future circuits to be securely computed, and must further reveal this information to the dealer party. We modify the correlation and protocol to remove this limitation. • Optimizations. We incorporate several algorithmic and implementation-level optimizations to the baseline pro- tocol from [7]. For example, we identify a special structure in how FLIOPs are used that enables us to cut the computational cost of the verification phase of the protocol by a factor of 2. We additionally em- ploy several implementation-level optimizations, includ- ing cache-friendly implementations for PCG expansion, higher “folding factors” for the recursive FLIOP structure to improve memory access costs (as in [9]), efficient exploitation of independent arithmetic logic units (ALU) on the CPU, and lazy modular reduction for operations over binary extension fields. 2 Due to lack of space the details are deferred to the full version. • Untrusted dealers. We present an approach for enhancing the security of dealer-aided protocols against a potentially malicious dealer. In particular, we provide new efficient procedures for parties to verify correctness of dealer- provided correlations, for both FLIOP-based and SPDZ- based protocols. This verification can be accomplished by a local, efficient computation followed by single round of interaction between non-dealer parties. Our verification procedures themselves rely on FLIOP machinery, which support zero-knowledge proofs on dis- tributed data [6]. A naive application of FLIOPs to the correlation structure leads to heavy constraints of high de- gree, which translates to expensive verification. Through a combination of modifications to the protocol of [7] and careful representation choices, we present new solutions which enable the dealer's correlation to be verified with a comparably sized collection of degree-2 constraints, admitting highly efficient FLIOP-based verification. Implementation & benchmarks. Our protocols offer a flexible tradeoff between correlation compression and computation costs. We provide full benchmarking of one such data point against an optimized state-of-the-art (2+1) variant of SPDZ. • In the online phase, consuming correlations for secure computation of 1,024 parallel AES-128 encryptions, con- sisting of 6.5 million Boolean AND gates, takes 1.6 times the online cost of SPDZ, on a LAN network with a single core. The overhead mainly comes from FLIOP-based verification, which is slightly more costly in computation and communication rounds than SPDZ. However, this gap decreases with parallelization or when computing circuits of higher depth. • In exchange, our correlation size is smaller than SPDZ by almost 4 orders of magnitude . While SPDZ can support 6.64 ·104 gates of secure computation per MB of corre- lated randomness (for σ = 40 bits of statistical security), 2We remark that, contrary to the findings of [9], the benchmarks within our computer architecture resulted in faster zk-FLIOP over binary extension fields as opposed to the comparable Mersenne prime field; see discussion in Section 5. 2434"
+      },
+      {
+        "source": "selected",
+        "value": "We put forth a new paradigm for secure multiparty computation (MPC) in the preprocessing model, where a feasible one-time setup can enable a lifetime of efficient online secure computations. Our protocols match the security guarantees and low costs of the cheapest category of MPC solutions, namely 3party protocols (3PC) secure against a single malicious party, with the qualitative advantages that one party communicates data sublinear in the circuit size, and can go offline after its initial messages. This \"2+1\"-party structure can alternatively be instantiated between 2 parties with the aid of an (untrusted) dealer. Within such existing protocols, we provide comparable online performance while improving the storage and offline dealer-to-party communication requirements by more than 3 orders of magnitude. At the technical level, we build on the Fully Linear Interactive Oracle Proof (FLIOP)-based protocol design of Boyle et al. (CRYPTO 2021). We provide an extensive assortment of algorithmic and implementation-level optimizations, design efficient distributed proofs of well-formedness of complex FLIOP correlations, and make them circuit-independent. We implement and benchmark our end-to-end system against the state of the art in the 2+1 regime, a dealer-aided variant of SPDZ for Boolean circuits. We additionally extend our techniques to the (n + 1) party setting, where a dealer aids general dishonest-majority MPC, and provide a variant of the protocol which further achieves security with \"identifiable abort.\" 2433 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Elette Boyle",
+          "email": "eboyle@alum.mit.edu",
+          "orcid": "",
+          "affiliations": [
+            "NTT Research and Reichman University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Niv Gilboa",
+          "email": "gilboan@bgu.ac.il",
+          "orcid": "",
+          "affiliations": [
+            "Ben-Gurion University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Matan Hamilis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Reichman University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yuval Ishai",
+          "email": "yuvali@cs.technion.ac.il",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Ariel Nof",
+          "email": "ariel.nof@biu.ac.il",
+          "orcid": "",
+          "affiliations": [
+            "Bar-Ilan University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Elette Boyle",
+          "email": "eboyle@alum.mit.edu",
+          "orcid": "",
+          "affiliations": [
+            "NTT Research and Reichman University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Niv Gilboa",
+          "email": "gilboan@bgu.ac.il",
+          "orcid": "",
+          "affiliations": [
+            "Ben-Gurion University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Matan Hamilis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Reichman University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yuval Ishai",
+          "email": "yuvali@cs.technion.ac.il",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Ariel Nof",
+          "email": "ariel.nof@biu.ac.il",
+          "orcid": "",
+          "affiliations": [
+            "Bar-Ilan University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 107,
+      "author_count": 5,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Yuval Ishai",
+          "block_id": "pdf:p1:b9",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Ariel Nof",
+          "block_id": "pdf:p1:b4",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Preprocessing for Life: Dishonest-Majority MPC with a Trusted or Untrusted Dealer",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Elette Boyle",
+          "affiliations": [
+            "Reichman University",
+            "NTT Research"
+          ]
+        },
+        {
+          "name": "Niv Gilboa",
+          "affiliations": [
+            "Ben-Gurion University"
+          ]
+        },
+        {
+          "name": "Matan Hamilis",
+          "affiliations": [
+            "Reichman University"
+          ]
+        },
+        {
+          "name": "Yuval Ishai",
+          "affiliations": [
+            "Technion"
+          ]
+        },
+        {
+          "name": "Ariel Nof",
+          "affiliations": [
+            "Bar-Ilan University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

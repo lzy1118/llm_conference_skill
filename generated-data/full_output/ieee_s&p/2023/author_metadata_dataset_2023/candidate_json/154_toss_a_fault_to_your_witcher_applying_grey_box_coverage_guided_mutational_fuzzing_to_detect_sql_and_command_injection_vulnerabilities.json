@@ -1,0 +1,388 @@
+{
+  "paper_id": "154_toss_a_fault_to_your_witcher_applying_grey_box_coverage_guided_mutational_fuzzing_to_detect_sql_and_command_injection_vulnerabilities",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Toss a Fault to Your Witcher: Applying Grey-box Coverage-Guided Mutational Fuzzing to Detect SQL and Command Injection Vulnerabilities"
+      },
+      {
+        "source": "selected",
+        "value": "Toss a Fault to Your Witcher: Applying Grey-box Coverage-Guided Mutational Fuzzing to Detect SQL and Command Injection Vulnerabilities"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Black-box web application vulnerability scanners attempt to automatically identify vulnerabilities in web applications without access to the source code. However, they do so by using a manually curated list of vulnerability-inducing inputs, which significantly reduces the ability of a black-box scanner to explore the web application's input space and which can cause false negatives. In addition, black-box scanners must attempt to infer that a vulnerability was triggered, which causes false positives. To overcome these limitations, we propose Witcher, a novel web vulnerability discovery framework that is inspired by grey-box coverage-guided fuzzing. Witcher implements the concept of fault escalation to detect both SQL and command injection vulnerabilities. Additionally, Witcher captures coverage information and creates output-derived input guidance to focus the input generation and, therefore, to increase the state-space exploration of the web application. On a dataset of 18 web applications written in PHP, Python, Node.js, Java, Ruby, and C, 13 of which had known vulnerabilities, Witcher was able to find 23 of the 36 known vulnerabilities (64%), and additionally found 67 previously unknown vulnerabilities, 4 of which received CVE numbers. In our experiments, Witcher outperformed state of the art scanners both in terms of number of vulnerabilities found, but also in terms of coverage of web applications. 2658 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Black-box web application vulnerability scanners attempt to automatically identify vulnerabilities in web applications without access to the source code. However, they do so by using a manually curated list of vulnerability-inducing inputs, which significantly reduces the ability of a black-box scanner to explore the web application's input space and which can cause false negatives. In addition, black-box scanners must attempt to infer that a vulnerability was triggered, which causes false positives. To overcome these limitations, we propose Witcher, a novel web vulnerability discovery framework that is inspired by grey-box coverage-guided fuzzing. Witcher implements the concept offault escalationto detect both SQL and command injection vulnerabilities. Additionally, Witcher captures coverage information and creates output-derived input guidance to focus the input generation and, therefore, to increase the state-space exploration of the web appli- cation. On a dataset of 18 web applications written in PHP, Python, Node.js, Java, Ruby, and C, 13 of which had known vulnerabilities, Witcher was able to find 23 of the 36 known vulnerabilities (64%), and additionally found 67 previously unknown vulnerabilities, 4 of which received CVE numbers. In our experiments, Witcher outper- formed state of the art scanners both in terms of number of vulner- abilities found, but also in terms of coverage of web applications. 1. Introduction Web application vulnerabilities are showing no signs of waning as the number of web application keeps increasing and the supported frameworks keep diversifying. These web vulnerabilities, such as SQL injections, can be catastrophic to the developers of the web application, the companies running the web application, and the end-users who visit and store their data on the website application. Due to the number and diversity of web applications, it is critical to create automatic techniques that discover web vulnerabilities. Prior work has proposed different crawling and detection techniques, which utilizes one of the following approaches: white-box [1], [2], [3], [4], black-box [5], [6], [7], [8], and grey-box [9], [10]. However, these approaches are limited in their applicability to web application language, vulnerability type, or application inputs. White-box static analysis tools [ 1], [ 2], [ 3], [ 4] rely on analyzing the web application's source code which is not always available. Moreover, white-box tools typically model the semantics of the specific language, which makes them language-specific, and thus applying those tools to new languages or frameworks require significant effort. Black-box web application vulnerability scanners [5], [6], [7], [8] do not require source code and can analyze any web application-regardless of the web application's programming language. These tools generate legitimate web application inputs to explore the application and then attempt to infer the existence of vulnerabilities by sending input designed to trigger a vulnerability to the web application. The vulnerability-inducing inputs, however, are significantly constrained as they originate from manually curated strings or templates based on expert heuristics for vulnerability types [11]. As a consequence, black- box scanners will miss vulnerabilities triggered by inputs that are outside the pre-configured strings and templates. In essence, using hard-code vulnerability inducing inputs significantly reduces the ability of a black-box scanner to explore the web application's input space, thus introducing false negatives. Even worse, black-box scanners can only infer vulnerabilities based on the output of the web application. Such inference can be error-prone. For example, consider a web application that returns an HTTP 500 status code (which denotes an internal server error). Existing black-box scanners such as Burp [5] use this error code to decide if their vulnerability-inducing input successfully triggered a vulnerability-in the case of a black-box scanner looking for a SQL Injection vulnerability, an HTTP500 error can indicate that the input caused an SQL error. However, such an error can be caused by other, unrelated issues, such as an implementation bug rather than a security vulnerability. Therefore, inferring a vulnerability from the outside introduces false positives. Some recent work has introduced the concept of grey-box fuzzers for automatically testing web applications [ 9], [ 10]. These tools use coverage information to guide the generation of inputs. These tools have had some success; however, the approaches target only a single language, do not detect SQL or command injection vulnerabilities, and are closed source [9], and are relatively slow [10]. In this paper, we propose Witcher, a novel web vulnerability discovery framework that is inspired by grey-box coverage- guided fuzzing. Our idea is to explore the web application's input space (without solely relying on hard-coded heuristics) by using execution coverage information to efficiently guide the generation of random inputs. 2658 DOI 10.1109/SP46215.2023.00007 The application of grey-box coverage-guided fuzzing to web vulnerabilities faces a number of challenges. On a high level, the challenges to web fuzzing arise because the web application code-the target under testthat contains the vulnerabilities of interest-is not the entire execution objectbut is instead a small subcomponent. When fuzzing a binary, the entire binary is both the execution objectand the target under test(i.e., the security analyst is analyzing whether a vulnerability exists anywhere in binary). However, when fuzzing web applications theexecution object contains three components: the web server, which parses the HTTP request; the web application runtime environment, which uses the input from the web server to generate a response; and the data storage and local executor, which the web application's logic uses to complete the request. For most web applications, the web application runtime environment breaks down into two subcomponents: the web application code and the code's execution environment (e.g., the interpreter or virtual environment). The web application code, a subcomponent of the web application runtime environment, is thetarget under testthat contains the web application's logic and the vulnerabilities. The multi-component aspect and the other non-target components create several of the challenges that impede the use of grey-box coverage guided fuzzing to discover web vulnerabilities. Detecting the input that triggers a web application vulnerability.Detecting whether an input triggers a vulnerability requires a tool to reason about the system being in a vulnerable program state. When detecting memory corruption vulnerabilities, traditional binary fuzzing uses a segmentation fault as an indication that input sent to the binary transitioned the system into a vulnerable program state. Current black-box scanner approaches use heuristics to infer that a given input triggers a vulnerable program state. Therefore, a key challenge is to create an approach that can identify when input to a web application leads the web application in a vulnerable program state. Generating feasible inputs for end-to-end execution.As the execution object is composed of a web server and web application code, a successful input must satisfy both components (i.e., be a valid HTTP request for the web server and also include the necessary input parameters for the web application logic). While, in theory, a random input generation scheme will eventually produce feasible inputs, it is critical to design an approach that generates inputs that are both syntactically and semantically valid for the target web application, thus fuzzing effectively. Collecting effective web application coverage. A strength of grey-box coverage-guided fuzzing for binary applications is that the fuzzer only keeps randomly generated inputs that exercisenew code of the application and collecting thiscoverage information is a critical part of modern fuzzing [12], [13]. One possible approach for collecting coverage for web applications is to insert instrumentation into the web application. However, such an approach is not generally applicable to all web application, does not scale, and requires source code, which is not always available. A scalable and web application-independent approach is necessary to address web application coverage accounting. Mutating inputs effectively.Similar to binary fuzzing, the muta- tion strategy of a grey-box coverage-guided fuzzer is also impor- tant to fuzz web applications effectively. However, little research has been done to study the mutation strategy for web applications. Therefore, we need to create mutation strategies that can generate high-quality new inputs and increase the fuzzing effectiveness. Witcher is designed to tackle the prior four challenges. It does not require the source code of individual web applications, and we show that effective code coverage is possible with only 1-5 lines of changes to the language's interpreter. This change can then be used forany web application that runs on the interpreter. To demonstrate our approach, we implement Witcher support for web applications written in PHP , Python, Node.js, Java, Ruby, and C. For each of these languages, Witcher is able to detect both SQL injection and command injection vulnerabilities. To demonstrate Witcher's advantages over the current state-of-the-art, we perform a multi-faceted evaluation. We compare different configurations of Witcher, enabling and disabling different features to demonstrate the features' efficacy. We evaluate Witcher on 13 web application with known vulnerabilities and five modern web applications with no known vulnerabilities. Overall, Witcher found 90 vulnerabilities in total, 67 of which were previously unknown. We then compare Witcher's code coverage and vulnerability discovery to Burp [5], a commercial black-box web vulnerability scanner, on nine of the PHP web applications. Last, we compare Witcher's code coverage to the recently published black-box vulnerabilty scanner Black Widow [14] and the grey-box scanner WebFuzz [10]. In summary, we make the following contributions: • We create a set of techniques that address the challenges of applying grey-box coverage-guided fuzzing to web applications, and we propose a new framework that enables coverage-guided fuzzing on web applications. • We develop Witcher, a grey-box web application vulnerabil- ity fuzzer that can discover multiple types of vulnerabilities from different web applications. Witcher automatically analyzes server-side binary and interpreted web applications written in PHP , JavaScript, Python, Java, Ruby, and C and detects SQL injection, command injection, and memory corruption vulnerabilities (only in C-based CGI binaries). • We evaluate Witcher to understand the specific impacts achieved by our various techniques, the effectiveness of the approach on real-world web applications, and its applicability to the analysis of non-traditional targets such as IoT devices. In our evaluation, Witcher identified 23 out of 36 known vulnerabilities, which outperforms the state-of-the-art web vulnerability discovery tool. Moreover, in all but one web application, Witcher reached more lines of code than the state-of-the-art scanners Black Widow and WebFuzz. Witcher also identified 67 previously unknown vulnerabilities, which we are in the process of disclosing to the relevant parties. To support open science and future researchers in the field, we will open source our Witcher prototype, our dataset of web applications, and the results of our experiment upon publication of this paper. 2. Background Before we discuss the details of Witcher, we first introduce web application and injection vulnerabilities, and then provide 22659"
+      },
+      {
+        "source": "selected",
+        "value": "Black-box web application vulnerability scanners attempt to automatically identify vulnerabilities in web applications without access to the source code. However, they do so by using a manually curated list of vulnerability-inducing inputs, which significantly reduces the ability of a black-box scanner to explore the web application's input space and which can cause false negatives. In addition, black-box scanners must attempt to infer that a vulnerability was triggered, which causes false positives. To overcome these limitations, we propose Witcher, a novel web vulnerability discovery framework that is inspired by grey-box coverage-guided fuzzing. Witcher implements the concept of fault escalation to detect both SQL and command injection vulnerabilities. Additionally, Witcher captures coverage information and creates output-derived input guidance to focus the input generation and, therefore, to increase the state-space exploration of the web application. On a dataset of 18 web applications written in PHP, Python, Node.js, Java, Ruby, and C, 13 of which had known vulnerabilities, Witcher was able to find 23 of the 36 known vulnerabilities (64%), and additionally found 67 previously unknown vulnerabilities, 4 of which received CVE numbers. In our experiments, Witcher outperformed state of the art scanners both in terms of number of vulnerabilities found, but also in terms of coverage of web applications. 2658 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Erik Trickel",
+          "email": "etrickel@asu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Fabio Pagani",
+          "email": "pagani@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Chang Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Lukas Dresel",
+          "email": "lukas.dresel@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Christopher Kruegel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Ruoyu Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Tiffany Bao",
+          "email": "tbao@asu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Yan Shoshitaishvili",
+          "email": "yans@asu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Adam Doupé",
+          "email": "doupe@asu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Erik Trickel",
+          "email": "etrickel@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Fabio Pagani",
+          "email": "pagani@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Chang Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Lukas Dresel",
+          "email": "lukas.dresel@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Christopher Kruegel",
+          "email": "chris@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Ruoyu Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Tiffany Bao",
+          "email": "tbao@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Yan Shoshitaishvili",
+          "email": "yans@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Adam Doupé",
+          "email": "doupe@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University †University of California, Santa Barbara"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 30,
+      "author_count": 10,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Toss a Fault to Your Witcher: Applying Grey-box Coverage-Guided Mutational Fuzzing to Detect SQL and Command Injection Vulnerabilities",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Erik Trickel",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Fabio Pagani",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Chang Zhu",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Lukas Dresel",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Giovanni Vigna",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Christopher Kruegel",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Ruoyu Wang",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Tiffany Bao",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Yan Shoshitaishvili",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Adam Doupe",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

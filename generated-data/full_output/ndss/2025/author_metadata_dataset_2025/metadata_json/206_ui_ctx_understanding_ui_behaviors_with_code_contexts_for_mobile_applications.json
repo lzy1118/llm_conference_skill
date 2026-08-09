@@ -1,0 +1,2221 @@
+{
+  "title": "UI-CTX: Understanding UI Behaviors with Code Contexts for Mobile Applications",
+  "year": "2025",
+  "abstract": "Many mobile apps utilize UI widgets to interact with users and trigger specific operational logic, such as clicking a button to send a message. While UI widgets are designed to be intuitive and user-friendly, they can also be misused to perform harmful behaviors that violate user expectations. To address these potential threats, recent studies strive to understand the inten- tions of UI widgets in mobile apps. However, existing methods either concentrate on the surface-level features of UI widgets, failing to capture their underlying intentions, or involve tedious and faulty information, making it challenging to distill the core intentions. In this paper, we present UI-CTX, which demystifies UI behaviors with a concise and effective representation. For each UI widget, UI-CTX first represents its intentions with a UI Handler Graph (UHG) , incorporating the code context behind the widget while eliminating irrelevant information (e.g., unreachable code blocks). Then, UI-CTX performs graph summarization and explores both the structural and semantic information in UHGs to model the core intentions of UI widgets. To systematically evaluate UI-CTX, we extract a series of UI widget behaviors, such as login and search, from a large-scale dataset and conduct extensive experiments. Experimental results show that UI-CTX can effectively represent the intentions of UI widgets and sig- nificantly outperforms existing solutions in modeling UI widget behaviors. For example, in the task of classifying UI widget intentions, UHG achieves the highest average F1-score compared to other widget representations (+95.2% and +8.2% compared with permission set and call sequence, respectively) used in state- of-the-art approaches. Additionally, by accurately pinpointing the code contexts of widgets, UI-CTX achieves a 3.6× improvement in widget intention clustering performance. I. I NTRODUCTION Mobile applications ( a.k.a., apps) have become an indis- pensable part of our daily lives, providing powerful support for various activities such as travel, education, and finance [1], [2]. To enhance user experience, most apps are equipped with UI widgets, such as buttons and text boxes, to facilitate smooth user interactions. Specifically, the functionalities and behaviors of mobile apps are often driven by these UI widgets [3], such as executing a search query when a user presses a search button. However, not all UI widgets perform as intended by their design, which can raise security and privacy con- cerns [4]-[6]. For instance, a login operation in a phishing ∗ Co-primary authors. Jian Mao is the corresponding author. app may send the user's credentials to an attacker instead of initiating a legitimate login request. To detect potentially harmful behaviors that violate user expectations, it is crucial to accurately identify and understand the true intended behaviors behind UI widgets in mobile apps. Existing solutions for representing UI widgets' intended behaviors generally fall into three categories: appearance-based, permission-based, and code-based methods. Appearance-based methods use the appearance ( e.g., texts and images) of UI widgets as the primary source to describe their intentions [7]-[9]. However, due to the lack of underlying execution semantics, these solutions fail to recognize the real intended behaviors of UI widgets, especially when counterfeit apps mimic the appearance of legitimate apps [10]. To resolve this issue, permission-based methods represent UI widgets' in- tended behaviors by analyzing their associated permissions [4]. Nevertheless, with the increasing complexity of app behaviors, similar permissions may be shared, leading to a significant mix-up and increased manual efforts for security analysts. For example, both a login and a help operation may require the same INTERNET permission. As a remedy, code-based methods analyze the associated code contexts of UI widgets to uncover their deeper latent functionalities [3], [5]. One common approach is to leverage the invocation relationships among API calls ( e.g., call graph). However, these techniques often introduce unnecessary code parts ( e.g., code blocks that are not reachable from the UI widgets), making it challenging to identify the true functionality of UI widgets. For instance, existing methods over-approximate code contexts connected to UI widgets and bind more code than necessary [4], [11]-[13]. To resolve this issue, we propose UI-CTX, an approach that specifies and understands UI widgets' intended behaviors with code contexts triggered by UI events in mobile apps. We focus on Android in this study since it is the most popular mobile platform with a large number of apps [8], but the general idea applies to graph user interface (GUI) applications on other platforms. Specifically, UI-CTX is based on three key insights. First, UI widgets usually trigger certain app behaviors when their status changes by UI events (e.g., being clicked, se- lected, or focused). The corresponding event callbacks are the starting points of the UI's background logic. This inspires us to locate the specific callback and its subsequent invocations for each UI widget to reveal its functionality. Second, developers often use encapsulation-based external library APIs to acquire Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240238 www.ndss-symposium.org certain functionalities, such as HTTP connections. While the implementation details of these libraries are usually tedious and complex compared to the execution logic constructed by the app developer, understanding how the APIs interact is essential to discerning the UI widgets' intended behaviors. This motivates us to prune and summarize the meaning of these external libraries, avoiding their dominance over the entire code context and reducing the analysis burden. For example, if a UI widget invokes a library API for data encryption, we should focus more on the context of the encryption and the high-level data operation ( e.g., encrypt and save data) as the UI widget's functionality, instead of the detailed implementation of the data encryption algorithm. Third, both the semantics within a function and its structural information play crucial roles in understanding the intended behavior of UI widgets. This guides us to explore the code context from both semantic and structural perspectives to describe the intended functionality of a UI widget. We represent UI widget functionality with UI Handler graph (UHG) , a graph representation where nodes denote function calls and edges represent the invocation relationships between them. To construct the UHG, we employ a backward analysis starting from the event handler rather than a forward analysis from the UI widget. This strategy tracks the data flow from the event handler to the UI widget, constructing the minimal event handler set for the UI widget and reducing false connections. We further perform a fine-grained analysis of the conditional code branches and thread blocks in event handlers to identify the true triggered callback functions for different UI widgets. Additionally, we summarize the key semantics of the external libraries to reduce noisy graph parts and focus on essential information. Finally, we leverage the instruction- level information of the functions in the UHG to enhance the semantics of the graph. Having built the UHG to describe UI widget functionality, we incorporate both structural-level (e.g., inter-procedural control flow) and node-level ( e.g., instruction semantics of functions and APIs) information to embed the UI widget's intention. We then conduct an unsupervised clustering analysis to categorize UI widgets according to their intended functionalities. To investigate UI-CTX's effectiveness in describing UI widget functionality, we compile a comprehensive dataset of 40,000 Android apps from public repositories. These apps are sourced from various platforms, including Google Play, AppChina, Mi and Anzhi, and span ten year periods. For the widget categories, we focus on common and popular UI widgets, particularly those related to user privacy and data operations, such as login, search, and location. Evaluation results demonstrate that UHG more accurately depicts and distinguishes UI widget functionality compared to widely used approaches based on permission sets and call sequences. Additionally, we also conduct a series of ablation studies to highlight the importance of addressing the challenges faced by existing solutions. Our findings also indicate that a deeper understanding of UI widget functionality can significantly assist real-world security applications, such as in-depth widget analysis and anomaly detection. In summary, we make the following contributions: • We highlight the importance and identify the challenges of UI widget behavior representation, and design UI Handler graph (UHG) , a concise and accurate representation to describe the intended behavior of a UI widget. • We present UI-CTX, an end-to-end approach to build UHG, summarize and embed the semantics in UHG to investigate UI widget functionality 1. • Experimental results show that UI-CTX can effectively identify UI widgets with similar functionalities, enhancing Android app analysis through a better understanding of UI widget behavior. II. B ACKGROUND AND MOTIVATION In this section, we introduce background knowledge, utilize an example to underscore the need for a concise and accurate representation to describe UI widgets' intentions, and outline the challenges associated with formulating UI widget func- tionalities of existing methods. A. Background An Android app typically consists of foreground UIs for user interaction and backend code to implement corresponding app behaviors. A UI window within an app is termed an activity, where UI widgets are initialized using attributes like ID, text, and image source from tree-structured layout re- sources. To interact programmatically with widgets, developers associate a UI layout with a code class or instance using APIs like setContentView and inflate, and retrieve widgets via findViewById to find the widgets [14]. Once a specific widget is retrieved from the UI, its attributes can be modified or overridden. In addition, user-triggered events (e.g., onClick, onTouch, and onKey) are assigned to UI widgets for the binding of the widget's and its execution logic. Since Android operates on an event-driven model, a widget's code context stems from its event handlers. Additionally, developers may reuse a widget (with a fixed ID) across different UI pages, making it crucial to uniquely bind widget IDs, layout IDs, and event handlers during widget analysis to prevent ambiguity. B. Motivation Example Figure 1 presents two visually similar login buttons from two different apps: the left one from a popular instant messaging app and the right one from a phishing version. Both widgets display the text “ LOGIN” and trigger the same permission, android.permission.INTERNET, suggest- ing data exchange with the Internet. However, these surface- level information fail to depict their true functionalities in detail. A closer analysis of their code contexts shows clear differences: the legitimate app uploads user credentials to an HTTP server, while the phishing app sends them to an external email address using the JavaMail API [15]. These function call operations, including how data is fetched and 1To facilitate further analysis and research, we open source the implemen- tation of UI-CTX on https://github.com/DaweiX/UI-CTX. 2",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Jiawei Li",
+      "email": "",
+      "affiliations": [
+        "Beihang University & National University of Singapore"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": true,
+      "pdf_countries": [
+        "Singapore",
+        "Singapore"
+      ]
+    },
+    {
+      "order": 1,
+      "name": "Jiahao Liu",
+      "email": "jiahao99@comp.nus.edu.sg",
+      "affiliations": [
+        "National University of Singapore"
+      ],
+      "affiliation_source": "ndss_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": true,
+      "pdf_countries": [
+        "Singapore"
+      ]
+    },
+    {
+      "order": 2,
+      "name": "Jian Mao",
+      "email": "maojian@buaa.edu.cn",
+      "affiliations": [
+        "Beihang University"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": true
+    },
+    {
+      "order": 3,
+      "name": "Jun Zeng",
+      "email": "junzeng@comp.nus.edu.sg",
+      "affiliations": [
+        "National University of Singapore"
+      ],
+      "affiliation_source": "ndss_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Singapore"
+      ]
+    },
+    {
+      "order": 4,
+      "name": "Zhenkai Liang",
+      "email": "liangzk@comp.nus.edu.sg",
+      "affiliations": [
+        "National University of Singapore"
+      ],
+      "affiliation_source": "ndss_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Singapore"
+      ]
+    }
+  ],
+  "first_authors": [
+    "Jiawei Li"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [
+    "Jiawei Li",
+    "Jiahao Liu",
+    "Jian Mao"
+  ],
+  "first_affiliations": [
+    "Beihang University & National University of Singapore"
+  ],
+  "first_affiliation": "Beihang University & National University of Singapore",
+  "participating_affiliations": [
+    "Beihang University & National University of Singapore",
+    "National University of Singapore",
+    "Beihang University"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Jiawei Li",
+      "affiliation": "Beihang University & National University of Singapore",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Jiahao Liu",
+      "affiliation": "National University of Singapore",
+      "source": "ndss_pdf"
+    },
+    {
+      "author": "Jian Mao",
+      "affiliation": "Beihang University",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Jun Zeng",
+      "affiliation": "National University of Singapore",
+      "source": "ndss_pdf"
+    },
+    {
+      "author": "Zhenkai Liang",
+      "affiliation": "National University of Singapore",
+      "source": "ndss_pdf"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "UI-CTX: Understanding UI Behaviors with Code Contexts for Mobile Applications"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2025"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jiawei Li",
+        "order": 0,
+        "email": "",
+        "affiliations": [
+          "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jiahao Liu",
+        "order": 1,
+        "email": "jiahao99@comp.nus.edu.sg",
+        "affiliations": [
+          "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jian Mao",
+        "order": 2,
+        "email": "maojian@buaa.edu.cn",
+        "affiliations": [
+          "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jun Zeng",
+        "order": 3,
+        "email": "junzeng@comp.nus.edu.sg",
+        "affiliations": [
+          "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:4",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Zhenkai Liang",
+        "order": 4,
+        "email": "liangzk@comp.nus.edu.sg",
+        "affiliations": [
+          "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "UI-CTX: Understanding UI Behaviors with Code"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Contexts for Mobile Applications"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Jiawei Li†‡∗ Jiahao Liu‡∗ Jian Mao†§¶ Jun Zeng‡ Zhenkai Liang‡"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "†Beihang University ‡National University of Singapore"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "§Tianmushan Laboratory ¶Hangzhou Innovation Institute, Beihang University"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "{daweix, maojian}@buaa.edu.cn {jiahao99, junzeng, liangzk}@comp.nus.edu.sg"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          60.526,
+          715.603,
+          552.074,
+          739.514
+        ],
+        "font_size": 23.91,
+        "raw_text": "UI-CTX: Understanding UI Behaviors with Code",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          141.534,
+          687.708,
+          470.468,
+          711.619
+        ],
+        "font_size": 23.91,
+        "raw_text": "Contexts for Mobile Applications",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          176.109,
+          663.903,
+          188.867,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "†‡∗",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          251.596,
+          663.903,
+          260.096,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡∗",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.178,
+          663.903,
+          334.876,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "†§¶",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          392.127,
+          663.903,
+          395.89,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          476.878,
+          663.903,
+          480.641,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          134.696,
+          659.123,
+          176.11,
+          670.082
+        ],
+        "font_size": 10.959,
+        "raw_text": "Jiawei Li",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          204.539,
+          659.123,
+          251.597,
+          670.082
+        ],
+        "font_size": 10.959,
+        "raw_text": "Jiahao Liu",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          279.6,
+          659.123,
+          321.178,
+          670.082
+        ],
+        "font_size": 10.959,
+        "raw_text": "Jian Mao",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          350.549,
+          659.123,
+          476.878,
+          670.082
+        ],
+        "font_size": 10.959,
+        "raw_text": "Jun Zeng Zhenkai Liang",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          192.185,
+          651.083,
+          195.948,
+          659.053
+        ],
+        "font_size": 7.97,
+        "raw_text": "†",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          280.471,
+          651.083,
+          284.234,
+          659.053
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          196.446,
+          646.862,
+          419.816,
+          656.825
+        ],
+        "font_size": 9.963,
+        "raw_text": "Beihang University National University of Singapore",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          146.03,
+          638.754,
+          149.793,
+          646.724
+        ],
+        "font_size": 7.97,
+        "raw_text": "§",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          252.617,
+          638.754,
+          257.792,
+          646.724
+        ],
+        "font_size": 7.97,
+        "raw_text": "¶",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          150.291,
+          634.533,
+          465.971,
+          644.496
+        ],
+        "font_size": 9.963,
+        "raw_text": "Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          136.586,
+          622.204,
+          468.44,
+          632.386
+        ],
+        "font_size": 9.963,
+        "raw_text": "{daweix, maojian}@buaa.edu.cn {jiahao99, junzeng, liangzk}@comp.nus.edu.sg",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.926,
+          587.475,
+          563.036,
+          597.438
+        ],
+        "font_size": 9.963,
+        "raw_text": "Abstract-ManymobileappsutilizeUIwidgetstointeractwith app may send the user's credentials to an attacker instead",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          575.52,
+          563.036,
+          586.757
+        ],
+        "font_size": 9.963,
+        "raw_text": "users and trigger specific operational logic, such as clicking a of initiating a legitimate login request. To detect potentially",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          567.828,
+          300.023,
+          576.794
+        ],
+        "font_size": 8.966,
+        "raw_text": "button to send a message. While UI widgets are designed to be",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          563.565,
+          563.036,
+          573.528
+        ],
+        "font_size": 9.963,
+        "raw_text": "harmfulbehaviorsthatviolateuserexpectations,itiscrucialto",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          557.866,
+          300.023,
+          566.832
+        ],
+        "font_size": 8.966,
+        "raw_text": "intuitive and user-friendly, they can also be misused to perform",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          551.61,
+          563.036,
+          561.573
+        ],
+        "font_size": 9.963,
+        "raw_text": "accuratelyidentifyandunderstandthetrueintendedbehaviors",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          547.903,
+          300.023,
+          556.869
+        ],
+        "font_size": 8.966,
+        "raw_text": "harmfulbehaviorsthatviolateuserexpectations.Toaddressthese",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          539.655,
+          563.036,
+          549.618
+        ],
+        "font_size": 9.963,
+        "raw_text": "behind UI widgets in mobile apps. Existing solutions for",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          537.94,
+          300.023,
+          546.906
+        ],
+        "font_size": 8.966,
+        "raw_text": "potential threats, recent studies strive to understand the inten-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          527.7,
+          563.036,
+          537.663
+        ],
+        "font_size": 9.963,
+        "raw_text": "tions of UI widgets in mobile apps. However, existing methods representing UI widgets' intended behaviors generally fall",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          515.744,
+          563.036,
+          526.981
+        ],
+        "font_size": 9.963,
+        "raw_text": "either concentrate on the surface-level features of UI widgets, intothreecategories:appearance-based,permission-based,and",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          508.052,
+          300.023,
+          517.018
+        ],
+        "font_size": 8.966,
+        "raw_text": "failing to capture their underlying intentions, or involve tedious",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          503.789,
+          396.531,
+          513.752
+        ],
+        "font_size": 9.963,
+        "raw_text": "code-based methods.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          498.09,
+          300.023,
+          507.056
+        ],
+        "font_size": 8.966,
+        "raw_text": "and faulty information, making it challenging to distill the core",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.94,
+          491.834,
+          563.036,
+          502.026
+        ],
+        "font_size": 9.963,
+        "raw_text": "Appearance-based methods use the appearance (e.g., texts",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          488.127,
+          300.023,
+          497.093
+        ],
+        "font_size": 8.966,
+        "raw_text": "intentions.Inthispaper,wepresent UI-CTX,whichdemystifies",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          479.879,
+          563.036,
+          489.842
+        ],
+        "font_size": 9.963,
+        "raw_text": "and images) of UI widgets as the primary source to describe",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          478.164,
+          300.023,
+          487.13
+        ],
+        "font_size": 8.966,
+        "raw_text": "UI behaviors with a concise and effective representation. For",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          467.924,
+          563.036,
+          477.887
+        ],
+        "font_size": 9.963,
+        "raw_text": "eachUIwidget, UI-CTX firstrepresentsitsintentionswithaUI theirintentions[7]-[9].However,duetothelackofunderlying",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          455.968,
+          563.036,
+          467.205
+        ],
+        "font_size": 9.963,
+        "raw_text": "HandlerGraph(UHG),incorporatingthecodecontextbehindthe execution semantics, these solutions fail to recognize the real",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          448.277,
+          300.023,
+          457.243
+        ],
+        "font_size": 8.966,
+        "raw_text": "widgetwhileeliminatingirrelevantinformation(e.g.,unreachable",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          444.013,
+          563.036,
+          453.976
+        ],
+        "font_size": 9.963,
+        "raw_text": "intended behaviors of UI widgets, especially when counterfeit",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          438.314,
+          300.023,
+          447.28
+        ],
+        "font_size": 8.966,
+        "raw_text": "codeblocks).Then,UI-CTXperformsgraphsummarizationand",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          432.058,
+          563.036,
+          442.021
+        ],
+        "font_size": 9.963,
+        "raw_text": "appsmimictheappearanceoflegitimateapps[10].Toresolve",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          428.351,
+          300.023,
+          437.317
+        ],
+        "font_size": 8.966,
+        "raw_text": "explores both the structural and semantic information in UHGs",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          420.103,
+          563.032,
+          430.295
+        ],
+        "font_size": 9.963,
+        "raw_text": "thisissue, permission-basedmethods representUIwidgets'in-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          418.389,
+          300.023,
+          427.355
+        ],
+        "font_size": 8.966,
+        "raw_text": "to model the core intentions of UI widgets. To systematically",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          408.148,
+          563.036,
+          418.111
+        ],
+        "font_size": 9.963,
+        "raw_text": "evaluate UI-CTX, we extract a series of UI widget behaviors, tendedbehaviorsbyanalyzingtheirassociatedpermissions[4].",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          396.193,
+          563.036,
+          407.429
+        ],
+        "font_size": 9.963,
+        "raw_text": "suchasloginandsearch,fromalarge-scaledatasetandconduct Nevertheless,withtheincreasingcomplexityofappbehaviors,",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          388.501,
+          299.799,
+          397.467
+        ],
+        "font_size": 8.966,
+        "raw_text": "extensive experiments. Experimental results show that UI-CTX",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          384.237,
+          563.036,
+          394.2
+        ],
+        "font_size": 9.963,
+        "raw_text": "similar permissions may be shared, leading to a significant",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          378.538,
+          300.023,
+          387.504
+        ],
+        "font_size": 8.966,
+        "raw_text": "can effectively represent the intentions of UI widgets and sig-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          372.282,
+          563.036,
+          382.245
+        ],
+        "font_size": 9.963,
+        "raw_text": "mix-up and increased manual efforts for security analysts.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          368.575,
+          300.023,
+          377.541
+        ],
+        "font_size": 8.966,
+        "raw_text": "nificantly outperforms existing solutions in modeling UI widget",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          360.327,
+          563.039,
+          370.519
+        ],
+        "font_size": 9.963,
+        "raw_text": "For example, both a login and a help operation may require",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          358.613,
+          300.023,
+          367.579
+        ],
+        "font_size": 8.966,
+        "raw_text": "behaviors. For example, in the task of classifying UI widget",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          348.312,
+          563.037,
+          358.564
+        ],
+        "font_size": 9.963,
+        "raw_text": "intentions,UHGachievesthehighestaverageF1-scorecompared the same INTERNET permission. As a remedy, code-based",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          336.417,
+          563.04,
+          347.653
+        ],
+        "font_size": 9.963,
+        "raw_text": "to other widget representations (+95.2% and +8.2% compared methods analyze the associated code contexts of UI widgets",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          328.725,
+          300.023,
+          337.691
+        ],
+        "font_size": 8.966,
+        "raw_text": "withpermissionsetandcallsequence,respectively)usedinstate-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          324.462,
+          563.036,
+          334.425
+        ],
+        "font_size": 9.963,
+        "raw_text": "to uncover their deeper latent functionalities [3], [5]. One",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          318.762,
+          300.023,
+          327.728
+        ],
+        "font_size": 8.966,
+        "raw_text": "of-the-artapproaches.Additionally,byaccuratelypinpointingthe",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          312.506,
+          563.036,
+          322.469
+        ],
+        "font_size": 9.963,
+        "raw_text": "common approach is to leverage the invocation relationships",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          308.8,
+          300.023,
+          317.901
+        ],
+        "font_size": 8.966,
+        "raw_text": "codecontextsofwidgets,UI-CTXachievesa3.6×improvement",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          300.551,
+          563.041,
+          310.743
+        ],
+        "font_size": 9.963,
+        "raw_text": "among API calls ( e.g., call graph). However, these techniques",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          298.837,
+          218.841,
+          307.803
+        ],
+        "font_size": 8.966,
+        "raw_text": "in widget intention clustering performance.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          288.596,
+          563.034,
+          298.788
+        ],
+        "font_size": 9.963,
+        "raw_text": "often introduce unnecessary code parts (e.g., code blocks that",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          135.619,
+          277.814,
+          150.722,
+          287.777
+        ],
+        "font_size": 9.963,
+        "raw_text": "I. I",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          276.641,
+          563.036,
+          286.604
+        ],
+        "font_size": 9.963,
+        "raw_text": "are not reachable from the UI widgets), making it challenging",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          151.221,
+          278.244,
+          213.372,
+          286.215
+        ],
+        "font_size": 7.97,
+        "raw_text": "NTRODUCTION",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          264.686,
+          563.036,
+          274.649
+        ],
+        "font_size": 9.963,
+        "raw_text": "to identify the true functionality of UI widgets. For instance,",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          261.264,
+          300.019,
+          271.456
+        ],
+        "font_size": 9.963,
+        "raw_text": "Mobile applications ( a.k.a., apps) have become an indis-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          252.731,
+          563.036,
+          262.694
+        ],
+        "font_size": 9.963,
+        "raw_text": "existingmethodsover-approximatecodecontextsconnectedto",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          249.309,
+          300.022,
+          259.272
+        ],
+        "font_size": 9.963,
+        "raw_text": "pensable part of our daily lives, providing powerful support",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          240.775,
+          563.036,
+          250.738
+        ],
+        "font_size": 9.963,
+        "raw_text": "UI widgets and bind more code than necessary [4], [11]-[13].",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          237.353,
+          300.022,
+          247.316
+        ],
+        "font_size": 9.963,
+        "raw_text": "forvariousactivitiessuchastravel,education,andfinance[1],",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.94,
+          228.82,
+          563.035,
+          238.783
+        ],
+        "font_size": 9.963,
+        "raw_text": "To resolve this issue, we propose UI-CTX, an approach",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          225.398,
+          300.022,
+          235.361
+        ],
+        "font_size": 9.963,
+        "raw_text": "[2]. To enhance user experience, most apps are equipped with",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          216.865,
+          563.036,
+          226.828
+        ],
+        "font_size": 9.963,
+        "raw_text": "that specifies and understands UI widgets' intended behaviors",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          213.443,
+          300.022,
+          223.406
+        ],
+        "font_size": 9.963,
+        "raw_text": "UIwidgets,suchasbuttonsandtextboxes,tofacilitatesmooth",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          204.91,
+          563.036,
+          214.873
+        ],
+        "font_size": 9.963,
+        "raw_text": "with code contexts triggered by UI events in mobile apps. We",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          201.488,
+          300.022,
+          211.451
+        ],
+        "font_size": 9.963,
+        "raw_text": "userinteractions.Specifically,thefunctionalitiesandbehaviors",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          192.955,
+          563.036,
+          202.918
+        ],
+        "font_size": 9.963,
+        "raw_text": "focus on Android in this study since it is the most popular",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          189.533,
+          300.022,
+          199.496
+        ],
+        "font_size": 9.963,
+        "raw_text": "of mobile apps are often driven by these UI widgets [3], such",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          180.999,
+          563.036,
+          190.962
+        ],
+        "font_size": 9.963,
+        "raw_text": "mobile platform with a large number of apps [8], but the",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          177.578,
+          300.022,
+          187.77
+        ],
+        "font_size": 9.963,
+        "raw_text": "as executing a search query when a user presses a search",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          169.044,
+          563.036,
+          179.007
+        ],
+        "font_size": 9.963,
+        "raw_text": "generalideaappliestographuserinterface(GUI)applications",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          165.622,
+          300.022,
+          175.585
+        ],
+        "font_size": 9.963,
+        "raw_text": "button. However, not all UI widgets perform as intended",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          157.089,
+          563.036,
+          167.052
+        ],
+        "font_size": 9.963,
+        "raw_text": "onotherplatforms.Specifically,UI-CTXisbasedonthreekey",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          153.667,
+          300.022,
+          163.63
+        ],
+        "font_size": 9.963,
+        "raw_text": "by their design, which can raise security and privacy con-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          145.134,
+          563.036,
+          155.097
+        ],
+        "font_size": 9.963,
+        "raw_text": "insights.First,UIwidgetsusuallytriggercertainappbehaviors",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          141.712,
+          300.022,
+          151.904
+        ],
+        "font_size": 9.963,
+        "raw_text": "cerns [4]-[6]. For instance, a login operation in a phishing",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          133.179,
+          563.038,
+          143.371
+        ],
+        "font_size": 9.963,
+        "raw_text": "whentheirstatuschangesbyUIevents( e.g., beingclicked,se-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          56.934,
+          124.643,
+          61.169,
+          132.613
+        ],
+        "font_size": 7.97,
+        "raw_text": "∗",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          121.224,
+          563.036,
+          131.187
+        ],
+        "font_size": 9.963,
+        "raw_text": "lected, or focused). The corresponding event callbacks are the",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          64.456,
+          121.654,
+          256.647,
+          129.625
+        ],
+        "font_size": 7.97,
+        "raw_text": "Co-primaryauthors.JianMaoisthecorrespondingauthor.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          109.268,
+          563.036,
+          119.231
+        ],
+        "font_size": 9.963,
+        "raw_text": "startingpointsoftheUI'sbackgroundlogic.Thisinspiresusto",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          97.313,
+          563.036,
+          107.276
+        ],
+        "font_size": 9.963,
+        "raw_text": "locate the specific callback and its subsequent invocations for",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          91.903,
+          271.864,
+          99.874
+        ],
+        "font_size": 7.97,
+        "raw_text": "NetworkandDistributedSystemSecurity(NDSS)Symposium2025",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          85.358,
+          563.036,
+          95.321
+        ],
+        "font_size": 9.963,
+        "raw_text": "each UI widget to reveal its functionality. Second, developers",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          82.937,
+          191.915,
+          90.908
+        ],
+        "font_size": 7.97,
+        "raw_text": "24-28February2025,SanDiego,CA,USA",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          73.403,
+          563.036,
+          83.366
+        ],
+        "font_size": 9.963,
+        "raw_text": "oftenuse encapsulation-basedexternal libraryAPIs toacquire",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          73.97,
+          130.936,
+          81.941
+        ],
+        "font_size": 7.97,
+        "raw_text": "ISBN979-8-9894372-8-3",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          65.004,
+          194.665,
+          72.975
+        ],
+        "font_size": 7.97,
+        "raw_text": "https://dx.doi.org/10.14722/ndss.2025.240238",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          56.038,
+          132.363,
+          64.009
+        ],
+        "font_size": 7.97,
+        "raw_text": "www.ndss-symposium.org",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Many mobile apps utilize UI widgets to interact with users and trigger specific operational logic, such as clicking a button to send a message. While UI widgets are designed to be intuitive and user-friendly, they can also be misused to perform harmful behaviors that violate user expectations. To address these potential threats, recent studies strive to understand the inten- tions of UI widgets in mobile apps. However, existing methods either concentrate on the surface-level features of UI widgets, failing to capture their underlying intentions, or involve tedious and faulty information, making it challenging to distill the core intentions. In this paper, we present UI-CTX, which demystifies UI behaviors with a concise and effective representation. For each UI widget, UI-CTX first represents its intentions with a UI Handler Graph (UHG) , incorporating the code context behind the widget while eliminating irrelevant information (e.g., unreachable code blocks). Then, UI-CTX performs graph summarization and explores both the structural and semantic information in UHGs to model the core intentions of UI widgets. To systematically evaluate UI-CTX, we extract a series of UI widget behaviors, such as login and search, from a large-scale dataset and conduct extensive experiments. Experimental results show that UI-CTX can effectively represent the intentions of UI widgets and sig- nificantly outperforms existing solutions in modeling UI widget behaviors. For example, in the task of classifying UI widget intentions, UHG achieves the highest average F1-score compared to other widget representations (+95.2% and +8.2% compared with permission set and call sequence, respectively) used in state- of-the-art approaches. Additionally, by accurately pinpointing the code contexts of widgets, UI-CTX achieves a 3.6× improvement in widget intention clustering performance. I. I NTRODUCTION Mobile applications ( a.k.a., apps) have become an indis- pensable part of our daily lives, providing powerful support for various activities such as travel, education, and finance [1], [2]. To enhance user experience, most apps are equipped with UI widgets, such as buttons and text boxes, to facilitate smooth user interactions. Specifically, the functionalities and behaviors of mobile apps are often driven by these UI widgets [3], such as executing a search query when a user presses a search button. However, not all UI widgets perform as intended by their design, which can raise security and privacy con- cerns [4]-[6]. For instance, a login operation in a phishing ∗ Co-primary authors. Jian Mao is the corresponding author. app may send the user's credentials to an attacker instead of initiating a legitimate login request. To detect potentially harmful behaviors that violate user expectations, it is crucial to accurately identify and understand the true intended behaviors behind UI widgets in mobile apps. Existing solutions for representing UI widgets' intended behaviors generally fall into three categories: appearance-based, permission-based, and code-based methods. Appearance-based methods use the appearance ( e.g., texts and images) of UI widgets as the primary source to describe their intentions [7]-[9]. However, due to the lack of underlying execution semantics, these solutions fail to recognize the real intended behaviors of UI widgets, especially when counterfeit apps mimic the appearance of legitimate apps [10]. To resolve this issue, permission-based methods represent UI widgets' in- tended behaviors by analyzing their associated permissions [4]. Nevertheless, with the increasing complexity of app behaviors, similar permissions may be shared, leading to a significant mix-up and increased manual efforts for security analysts. For example, both a login and a help operation may require the same INTERNET permission. As a remedy, code-based methods analyze the associated code contexts of UI widgets to uncover their deeper latent functionalities [3], [5]. One common approach is to leverage the invocation relationships among API calls ( e.g., call graph). However, these techniques often introduce unnecessary code parts ( e.g., code blocks that are not reachable from the UI widgets), making it challenging to identify the true functionality of UI widgets. For instance, existing methods over-approximate code contexts connected to UI widgets and bind more code than necessary [4], [11]-[13]. To resolve this issue, we propose UI-CTX, an approach that specifies and understands UI widgets' intended behaviors with code contexts triggered by UI events in mobile apps. We focus on Android in this study since it is the most popular mobile platform with a large number of apps [8], but the general idea applies to graph user interface (GUI) applications on other platforms. Specifically, UI-CTX is based on three key insights. First, UI widgets usually trigger certain app behaviors when their status changes by UI events (e.g., being clicked, se- lected, or focused). The corresponding event callbacks are the starting points of the UI's background logic. This inspires us to locate the specific callback and its subsequent invocations for each UI widget to reveal its functionality. Second, developers often use encapsulation-based external library APIs to acquire Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240238 www.ndss-symposium.org certain functionalities, such as HTTP connections. While the implementation details of these libraries are usually tedious and complex compared to the execution logic constructed by the app developer, understanding how the APIs interact is essential to discerning the UI widgets' intended behaviors. This motivates us to prune and summarize the meaning of these external libraries, avoiding their dominance over the entire code context and reducing the analysis burden. For example, if a UI widget invokes a library API for data encryption, we should focus more on the context of the encryption and the high-level data operation ( e.g., encrypt and save data) as the UI widget's functionality, instead of the detailed implementation of the data encryption algorithm. Third, both the semantics within a function and its structural information play crucial roles in understanding the intended behavior of UI widgets. This guides us to explore the code context from both semantic and structural perspectives to describe the intended functionality of a UI widget. We represent UI widget functionality with UI Handler graph (UHG) , a graph representation where nodes denote function calls and edges represent the invocation relationships between them. To construct the UHG, we employ a backward analysis starting from the event handler rather than a forward analysis from the UI widget. This strategy tracks the data flow from the event handler to the UI widget, constructing the minimal event handler set for the UI widget and reducing false connections. We further perform a fine-grained analysis of the conditional code branches and thread blocks in event handlers to identify the true triggered callback functions for different UI widgets. Additionally, we summarize the key semantics of the external libraries to reduce noisy graph parts and focus on essential information. Finally, we leverage the instruction- level information of the functions in the UHG to enhance the semantics of the graph. Having built the UHG to describe UI widget functionality, we incorporate both structural-level (e.g., inter-procedural control flow) and node-level ( e.g., instruction semantics of functions and APIs) information to embed the UI widget's intention. We then conduct an unsupervised clustering analysis to categorize UI widgets according to their intended functionalities. To investigate UI-CTX's effectiveness in describing UI widget functionality, we compile a comprehensive dataset of 40,000 Android apps from public repositories. These apps are sourced from various platforms, including Google Play, AppChina, Mi and Anzhi, and span ten year periods. For the widget categories, we focus on common and popular UI widgets, particularly those related to user privacy and data operations, such as login, search, and location. Evaluation results demonstrate that UHG more accurately depicts and distinguishes UI widget functionality compared to widely used approaches based on permission sets and call sequences. Additionally, we also conduct a series of ablation studies to highlight the importance of addressing the challenges faced by existing solutions. Our findings also indicate that a deeper understanding of UI widget functionality can significantly assist real-world security applications, such as in-depth widget analysis and anomaly detection. In summary, we make the following contributions: • We highlight the importance and identify the challenges of UI widget behavior representation, and design UI Handler graph (UHG) , a concise and accurate representation to describe the intended behavior of a UI widget. • We present UI-CTX, an end-to-end approach to build UHG, summarize and embed the semantics in UHG to investigate UI widget functionality 1. • Experimental results show that UI-CTX can effectively identify UI widgets with similar functionalities, enhancing Android app analysis through a better understanding of UI widget behavior. II. B ACKGROUND AND MOTIVATION In this section, we introduce background knowledge, utilize an example to underscore the need for a concise and accurate representation to describe UI widgets' intentions, and outline the challenges associated with formulating UI widget func- tionalities of existing methods. A. Background An Android app typically consists of foreground UIs for user interaction and backend code to implement corresponding app behaviors. A UI window within an app is termed an activity, where UI widgets are initialized using attributes like ID, text, and image source from tree-structured layout re- sources. To interact programmatically with widgets, developers associate a UI layout with a code class or instance using APIs like setContentView and inflate, and retrieve widgets via findViewById to find the widgets [14]. Once a specific widget is retrieved from the UI, its attributes can be modified or overridden. In addition, user-triggered events (e.g., onClick, onTouch, and onKey) are assigned to UI widgets for the binding of the widget's and its execution logic. Since Android operates on an event-driven model, a widget's code context stems from its event handlers. Additionally, developers may reuse a widget (with a fixed ID) across different UI pages, making it crucial to uniquely bind widget IDs, layout IDs, and event handlers during widget analysis to prevent ambiguity. B. Motivation Example Figure 1 presents two visually similar login buttons from two different apps: the left one from a popular instant messaging app and the right one from a phishing version. Both widgets display the text “ LOGIN” and trigger the same permission, android.permission.INTERNET, suggest- ing data exchange with the Internet. However, these surface- level information fail to depict their true functionalities in detail. A closer analysis of their code contexts shows clear differences: the legitimate app uploads user credentials to an HTTP server, while the phishing app sends them to an external email address using the JavaMail API [15]. These function call operations, including how data is fetched and 1To facilitate further analysis and research, we open source the implemen- tation of UI-CTX on https://github.com/DaweiX/UI-CTX. 2",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:p2:link:0",
+        "source": "pypdf_link",
+        "field": "link",
+        "page": 2,
+        "bbox": [
+          384.298,
+          71.869,
+          502.896,
+          81.987
+        ],
+        "raw_text": "https://github.com/DaweiX/UI-CTX",
+        "contents": ""
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "CreationDate": "D:20241205083909+08'00'",
+          "Creator": "LaTeX with hyperref",
+          "ModDate": "D:20250216101143-05'00'",
+          "PTEX.Fullbanner": "This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live 2020/W32TeX) kpathsea version 6.3.2",
+          "Producer": "pdfTeX-1.40.21",
+          "Trapped": "/False"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "ok",
+          "pypdf": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/ui-ctx-understanding-ui-behaviors-with-code-contexts-for-mobile-applications/",
+        "field": "author_affiliation_relation",
+        "author": "Jiawei Li",
+        "affiliations": [
+          "Beihang University & National University of Singapore"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/ui-ctx-understanding-ui-behaviors-with-code-contexts-for-mobile-applications/",
+        "field": "author_affiliation_relation",
+        "author": "Jiahao Liu",
+        "affiliations": [
+          "National University of Singapore"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/ui-ctx-understanding-ui-behaviors-with-code-contexts-for-mobile-applications/",
+        "field": "author_affiliation_relation",
+        "author": "Jian Mao",
+        "affiliations": [
+          "Beihang University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/ui-ctx-understanding-ui-behaviors-with-code-contexts-for-mobile-applications/",
+        "field": "author_affiliation_relation",
+        "author": "Jun Zeng",
+        "affiliations": [
+          "National University of Singapore"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:4",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/ui-ctx-understanding-ui-behaviors-with-code-contexts-for-mobile-applications/",
+        "field": "author_affiliation_relation",
+        "author": "Zhenkai Liang",
+        "affiliations": [
+          "National University of Singapore"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "UI-CTX: Understanding UI Behaviors with Code Contexts for Mobile Applications"
+        },
+        {
+          "source": "selected",
+          "value": "UI-CTX: Understanding UI Behaviors with Code Contexts for Mobile Applications"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2025"
+        },
+        {
+          "source": "selected",
+          "value": "2025"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Many mobile apps utilize UI widgets to interact with users and trigger specific operational logic, such as clicking a button to send a message. While UI widgets are designed to be intuitive and user-friendly, they can also be misused to perform harmful behaviors that violate user expectations. To address these potential threats, recent studies strive to understand the inten- tions of UI widgets in mobile apps. However, existing methods either concentrate on the surface-level features of UI widgets, failing to capture their underlying intentions, or involve tedious and faulty information, making it challenging to distill the core intentions. In this paper, we present UI-CTX, which demystifies UI behaviors with a concise and effective representation. For each UI widget, UI-CTX first represents its intentions with a UI Handler Graph (UHG) , incorporating the code context behind the widget while eliminating irrelevant information (e.g., unreachable code blocks). Then, UI-CTX performs graph summarization and explores both the structural and semantic information in UHGs to model the core intentions of UI widgets. To systematically evaluate UI-CTX, we extract a series of UI widget behaviors, such as login and search, from a large-scale dataset and conduct extensive experiments. Experimental results show that UI-CTX can effectively represent the intentions of UI widgets and sig- nificantly outperforms existing solutions in modeling UI widget behaviors. For example, in the task of classifying UI widget intentions, UHG achieves the highest average F1-score compared to other widget representations (+95.2% and +8.2% compared with permission set and call sequence, respectively) used in state- of-the-art approaches. Additionally, by accurately pinpointing the code contexts of widgets, UI-CTX achieves a 3.6× improvement in widget intention clustering performance. I. I NTRODUCTION Mobile applications ( a.k.a., apps) have become an indis- pensable part of our daily lives, providing powerful support for various activities such as travel, education, and finance [1], [2]. To enhance user experience, most apps are equipped with UI widgets, such as buttons and text boxes, to facilitate smooth user interactions. Specifically, the functionalities and behaviors of mobile apps are often driven by these UI widgets [3], such as executing a search query when a user presses a search button. However, not all UI widgets perform as intended by their design, which can raise security and privacy con- cerns [4]-[6]. For instance, a login operation in a phishing ∗ Co-primary authors. Jian Mao is the corresponding author. app may send the user's credentials to an attacker instead of initiating a legitimate login request. To detect potentially harmful behaviors that violate user expectations, it is crucial to accurately identify and understand the true intended behaviors behind UI widgets in mobile apps. Existing solutions for representing UI widgets' intended behaviors generally fall into three categories: appearance-based, permission-based, and code-based methods. Appearance-based methods use the appearance ( e.g., texts and images) of UI widgets as the primary source to describe their intentions [7]-[9]. However, due to the lack of underlying execution semantics, these solutions fail to recognize the real intended behaviors of UI widgets, especially when counterfeit apps mimic the appearance of legitimate apps [10]. To resolve this issue, permission-based methods represent UI widgets' in- tended behaviors by analyzing their associated permissions [4]. Nevertheless, with the increasing complexity of app behaviors, similar permissions may be shared, leading to a significant mix-up and increased manual efforts for security analysts. For example, both a login and a help operation may require the same INTERNET permission. As a remedy, code-based methods analyze the associated code contexts of UI widgets to uncover their deeper latent functionalities [3], [5]. One common approach is to leverage the invocation relationships among API calls ( e.g., call graph). However, these techniques often introduce unnecessary code parts ( e.g., code blocks that are not reachable from the UI widgets), making it challenging to identify the true functionality of UI widgets. For instance, existing methods over-approximate code contexts connected to UI widgets and bind more code than necessary [4], [11]-[13]. To resolve this issue, we propose UI-CTX, an approach that specifies and understands UI widgets' intended behaviors with code contexts triggered by UI events in mobile apps. We focus on Android in this study since it is the most popular mobile platform with a large number of apps [8], but the general idea applies to graph user interface (GUI) applications on other platforms. Specifically, UI-CTX is based on three key insights. First, UI widgets usually trigger certain app behaviors when their status changes by UI events (e.g., being clicked, se- lected, or focused). The corresponding event callbacks are the starting points of the UI's background logic. This inspires us to locate the specific callback and its subsequent invocations for each UI widget to reveal its functionality. Second, developers often use encapsulation-based external library APIs to acquire Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240238 www.ndss-symposium.org certain functionalities, such as HTTP connections. While the implementation details of these libraries are usually tedious and complex compared to the execution logic constructed by the app developer, understanding how the APIs interact is essential to discerning the UI widgets' intended behaviors. This motivates us to prune and summarize the meaning of these external libraries, avoiding their dominance over the entire code context and reducing the analysis burden. For example, if a UI widget invokes a library API for data encryption, we should focus more on the context of the encryption and the high-level data operation ( e.g., encrypt and save data) as the UI widget's functionality, instead of the detailed implementation of the data encryption algorithm. Third, both the semantics within a function and its structural information play crucial roles in understanding the intended behavior of UI widgets. This guides us to explore the code context from both semantic and structural perspectives to describe the intended functionality of a UI widget. We represent UI widget functionality with UI Handler graph (UHG) , a graph representation where nodes denote function calls and edges represent the invocation relationships between them. To construct the UHG, we employ a backward analysis starting from the event handler rather than a forward analysis from the UI widget. This strategy tracks the data flow from the event handler to the UI widget, constructing the minimal event handler set for the UI widget and reducing false connections. We further perform a fine-grained analysis of the conditional code branches and thread blocks in event handlers to identify the true triggered callback functions for different UI widgets. Additionally, we summarize the key semantics of the external libraries to reduce noisy graph parts and focus on essential information. Finally, we leverage the instruction- level information of the functions in the UHG to enhance the semantics of the graph. Having built the UHG to describe UI widget functionality, we incorporate both structural-level (e.g., inter-procedural control flow) and node-level ( e.g., instruction semantics of functions and APIs) information to embed the UI widget's intention. We then conduct an unsupervised clustering analysis to categorize UI widgets according to their intended functionalities. To investigate UI-CTX's effectiveness in describing UI widget functionality, we compile a comprehensive dataset of 40,000 Android apps from public repositories. These apps are sourced from various platforms, including Google Play, AppChina, Mi and Anzhi, and span ten year periods. For the widget categories, we focus on common and popular UI widgets, particularly those related to user privacy and data operations, such as login, search, and location. Evaluation results demonstrate that UHG more accurately depicts and distinguishes UI widget functionality compared to widely used approaches based on permission sets and call sequences. Additionally, we also conduct a series of ablation studies to highlight the importance of addressing the challenges faced by existing solutions. Our findings also indicate that a deeper understanding of UI widget functionality can significantly assist real-world security applications, such as in-depth widget analysis and anomaly detection. In summary, we make the following contributions: • We highlight the importance and identify the challenges of UI widget behavior representation, and design UI Handler graph (UHG) , a concise and accurate representation to describe the intended behavior of a UI widget. • We present UI-CTX, an end-to-end approach to build UHG, summarize and embed the semantics in UHG to investigate UI widget functionality 1. • Experimental results show that UI-CTX can effectively identify UI widgets with similar functionalities, enhancing Android app analysis through a better understanding of UI widget behavior. II. B ACKGROUND AND MOTIVATION In this section, we introduce background knowledge, utilize an example to underscore the need for a concise and accurate representation to describe UI widgets' intentions, and outline the challenges associated with formulating UI widget func- tionalities of existing methods. A. Background An Android app typically consists of foreground UIs for user interaction and backend code to implement corresponding app behaviors. A UI window within an app is termed an activity, where UI widgets are initialized using attributes like ID, text, and image source from tree-structured layout re- sources. To interact programmatically with widgets, developers associate a UI layout with a code class or instance using APIs like setContentView and inflate, and retrieve widgets via findViewById to find the widgets [14]. Once a specific widget is retrieved from the UI, its attributes can be modified or overridden. In addition, user-triggered events (e.g., onClick, onTouch, and onKey) are assigned to UI widgets for the binding of the widget's and its execution logic. Since Android operates on an event-driven model, a widget's code context stems from its event handlers. Additionally, developers may reuse a widget (with a fixed ID) across different UI pages, making it crucial to uniquely bind widget IDs, layout IDs, and event handlers during widget analysis to prevent ambiguity. B. Motivation Example Figure 1 presents two visually similar login buttons from two different apps: the left one from a popular instant messaging app and the right one from a phishing version. Both widgets display the text “ LOGIN” and trigger the same permission, android.permission.INTERNET, suggest- ing data exchange with the Internet. However, these surface- level information fail to depict their true functionalities in detail. A closer analysis of their code contexts shows clear differences: the legitimate app uploads user credentials to an HTTP server, while the phishing app sends them to an external email address using the JavaMail API [15]. These function call operations, including how data is fetched and 1To facilitate further analysis and research, we open source the implemen- tation of UI-CTX on https://github.com/DaweiX/UI-CTX. 2"
+        },
+        {
+          "source": "selected",
+          "value": "Many mobile apps utilize UI widgets to interact with users and trigger specific operational logic, such as clicking a button to send a message. While UI widgets are designed to be intuitive and user-friendly, they can also be misused to perform harmful behaviors that violate user expectations. To address these potential threats, recent studies strive to understand the inten- tions of UI widgets in mobile apps. However, existing methods either concentrate on the surface-level features of UI widgets, failing to capture their underlying intentions, or involve tedious and faulty information, making it challenging to distill the core intentions. In this paper, we present UI-CTX, which demystifies UI behaviors with a concise and effective representation. For each UI widget, UI-CTX first represents its intentions with a UI Handler Graph (UHG) , incorporating the code context behind the widget while eliminating irrelevant information (e.g., unreachable code blocks). Then, UI-CTX performs graph summarization and explores both the structural and semantic information in UHGs to model the core intentions of UI widgets. To systematically evaluate UI-CTX, we extract a series of UI widget behaviors, such as login and search, from a large-scale dataset and conduct extensive experiments. Experimental results show that UI-CTX can effectively represent the intentions of UI widgets and sig- nificantly outperforms existing solutions in modeling UI widget behaviors. For example, in the task of classifying UI widget intentions, UHG achieves the highest average F1-score compared to other widget representations (+95.2% and +8.2% compared with permission set and call sequence, respectively) used in state- of-the-art approaches. Additionally, by accurately pinpointing the code contexts of widgets, UI-CTX achieves a 3.6× improvement in widget intention clustering performance. I. I NTRODUCTION Mobile applications ( a.k.a., apps) have become an indis- pensable part of our daily lives, providing powerful support for various activities such as travel, education, and finance [1], [2]. To enhance user experience, most apps are equipped with UI widgets, such as buttons and text boxes, to facilitate smooth user interactions. Specifically, the functionalities and behaviors of mobile apps are often driven by these UI widgets [3], such as executing a search query when a user presses a search button. However, not all UI widgets perform as intended by their design, which can raise security and privacy con- cerns [4]-[6]. For instance, a login operation in a phishing ∗ Co-primary authors. Jian Mao is the corresponding author. app may send the user's credentials to an attacker instead of initiating a legitimate login request. To detect potentially harmful behaviors that violate user expectations, it is crucial to accurately identify and understand the true intended behaviors behind UI widgets in mobile apps. Existing solutions for representing UI widgets' intended behaviors generally fall into three categories: appearance-based, permission-based, and code-based methods. Appearance-based methods use the appearance ( e.g., texts and images) of UI widgets as the primary source to describe their intentions [7]-[9]. However, due to the lack of underlying execution semantics, these solutions fail to recognize the real intended behaviors of UI widgets, especially when counterfeit apps mimic the appearance of legitimate apps [10]. To resolve this issue, permission-based methods represent UI widgets' in- tended behaviors by analyzing their associated permissions [4]. Nevertheless, with the increasing complexity of app behaviors, similar permissions may be shared, leading to a significant mix-up and increased manual efforts for security analysts. For example, both a login and a help operation may require the same INTERNET permission. As a remedy, code-based methods analyze the associated code contexts of UI widgets to uncover their deeper latent functionalities [3], [5]. One common approach is to leverage the invocation relationships among API calls ( e.g., call graph). However, these techniques often introduce unnecessary code parts ( e.g., code blocks that are not reachable from the UI widgets), making it challenging to identify the true functionality of UI widgets. For instance, existing methods over-approximate code contexts connected to UI widgets and bind more code than necessary [4], [11]-[13]. To resolve this issue, we propose UI-CTX, an approach that specifies and understands UI widgets' intended behaviors with code contexts triggered by UI events in mobile apps. We focus on Android in this study since it is the most popular mobile platform with a large number of apps [8], but the general idea applies to graph user interface (GUI) applications on other platforms. Specifically, UI-CTX is based on three key insights. First, UI widgets usually trigger certain app behaviors when their status changes by UI events (e.g., being clicked, se- lected, or focused). The corresponding event callbacks are the starting points of the UI's background logic. This inspires us to locate the specific callback and its subsequent invocations for each UI widget to reveal its functionality. Second, developers often use encapsulation-based external library APIs to acquire Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240238 www.ndss-symposium.org certain functionalities, such as HTTP connections. While the implementation details of these libraries are usually tedious and complex compared to the execution logic constructed by the app developer, understanding how the APIs interact is essential to discerning the UI widgets' intended behaviors. This motivates us to prune and summarize the meaning of these external libraries, avoiding their dominance over the entire code context and reducing the analysis burden. For example, if a UI widget invokes a library API for data encryption, we should focus more on the context of the encryption and the high-level data operation ( e.g., encrypt and save data) as the UI widget's functionality, instead of the detailed implementation of the data encryption algorithm. Third, both the semantics within a function and its structural information play crucial roles in understanding the intended behavior of UI widgets. This guides us to explore the code context from both semantic and structural perspectives to describe the intended functionality of a UI widget. We represent UI widget functionality with UI Handler graph (UHG) , a graph representation where nodes denote function calls and edges represent the invocation relationships between them. To construct the UHG, we employ a backward analysis starting from the event handler rather than a forward analysis from the UI widget. This strategy tracks the data flow from the event handler to the UI widget, constructing the minimal event handler set for the UI widget and reducing false connections. We further perform a fine-grained analysis of the conditional code branches and thread blocks in event handlers to identify the true triggered callback functions for different UI widgets. Additionally, we summarize the key semantics of the external libraries to reduce noisy graph parts and focus on essential information. Finally, we leverage the instruction- level information of the functions in the UHG to enhance the semantics of the graph. Having built the UHG to describe UI widget functionality, we incorporate both structural-level (e.g., inter-procedural control flow) and node-level ( e.g., instruction semantics of functions and APIs) information to embed the UI widget's intention. We then conduct an unsupervised clustering analysis to categorize UI widgets according to their intended functionalities. To investigate UI-CTX's effectiveness in describing UI widget functionality, we compile a comprehensive dataset of 40,000 Android apps from public repositories. These apps are sourced from various platforms, including Google Play, AppChina, Mi and Anzhi, and span ten year periods. For the widget categories, we focus on common and popular UI widgets, particularly those related to user privacy and data operations, such as login, search, and location. Evaluation results demonstrate that UHG more accurately depicts and distinguishes UI widget functionality compared to widely used approaches based on permission sets and call sequences. Additionally, we also conduct a series of ablation studies to highlight the importance of addressing the challenges faced by existing solutions. Our findings also indicate that a deeper understanding of UI widget functionality can significantly assist real-world security applications, such as in-depth widget analysis and anomaly detection. In summary, we make the following contributions: • We highlight the importance and identify the challenges of UI widget behavior representation, and design UI Handler graph (UHG) , a concise and accurate representation to describe the intended behavior of a UI widget. • We present UI-CTX, an end-to-end approach to build UHG, summarize and embed the semantics in UHG to investigate UI widget functionality 1. • Experimental results show that UI-CTX can effectively identify UI widgets with similar functionalities, enhancing Android app analysis through a better understanding of UI widget behavior. II. B ACKGROUND AND MOTIVATION In this section, we introduce background knowledge, utilize an example to underscore the need for a concise and accurate representation to describe UI widgets' intentions, and outline the challenges associated with formulating UI widget func- tionalities of existing methods. A. Background An Android app typically consists of foreground UIs for user interaction and backend code to implement corresponding app behaviors. A UI window within an app is termed an activity, where UI widgets are initialized using attributes like ID, text, and image source from tree-structured layout re- sources. To interact programmatically with widgets, developers associate a UI layout with a code class or instance using APIs like setContentView and inflate, and retrieve widgets via findViewById to find the widgets [14]. Once a specific widget is retrieved from the UI, its attributes can be modified or overridden. In addition, user-triggered events (e.g., onClick, onTouch, and onKey) are assigned to UI widgets for the binding of the widget's and its execution logic. Since Android operates on an event-driven model, a widget's code context stems from its event handlers. Additionally, developers may reuse a widget (with a fixed ID) across different UI pages, making it crucial to uniquely bind widget IDs, layout IDs, and event handlers during widget analysis to prevent ambiguity. B. Motivation Example Figure 1 presents two visually similar login buttons from two different apps: the left one from a popular instant messaging app and the right one from a phishing version. Both widgets display the text “ LOGIN” and trigger the same permission, android.permission.INTERNET, suggest- ing data exchange with the Internet. However, these surface- level information fail to depict their true functionalities in detail. A closer analysis of their code contexts shows clear differences: the legitimate app uploads user credentials to an HTTP server, while the phishing app sends them to an external email address using the JavaMail API [15]. These function call operations, including how data is fetched and 1To facilitate further analysis and research, we open source the implemen- tation of UI-CTX on https://github.com/DaweiX/UI-CTX. 2"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Jiawei Li",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Jiahao Liu",
+            "email": "jiahao99@comp.nus.edu.sg",
+            "orcid": "",
+            "affiliations": [
+              "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Jian Mao",
+            "email": "maojian@buaa.edu.cn",
+            "orcid": "",
+            "affiliations": [
+              "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Jun Zeng",
+            "email": "junzeng@comp.nus.edu.sg",
+            "orcid": "",
+            "affiliations": [
+              "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 3
+          },
+          {
+            "order": 4,
+            "name": "Zhenkai Liang",
+            "email": "liangzk@comp.nus.edu.sg",
+            "orcid": "",
+            "affiliations": [
+              "Beihang University National University of Singapore Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 4
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Jiawei Li",
+            "email": "",
+            "affiliations": [
+              "Beihang University",
+              "National University of Singapore"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": true
+          },
+          {
+            "order": 1,
+            "name": "Jiahao Liu",
+            "email": "jiahao99@comp.nus.edu.sg",
+            "affiliations": [
+              "National University of Singapore"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": true
+          },
+          {
+            "order": 2,
+            "name": "Jian Mao",
+            "email": "maojian@buaa.edu.cn",
+            "affiliations": [
+              "Beihang University",
+              "Tianmushan Laboratory",
+              "Hangzhou Innovation Institute, Beihang University"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": true
+          },
+          {
+            "order": 3,
+            "name": "Jun Zeng",
+            "email": "junzeng@comp.nus.edu.sg",
+            "affiliations": [
+              "National University of Singapore"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 4,
+            "name": "Zhenkai Liang",
+            "email": "liangzk@comp.nus.edu.sg",
+            "affiliations": [
+              "National University of Singapore"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "author_card_grid",
+        "header_block_count": 102,
+        "author_count": 5,
+        "matched_author_count": 3,
+        "exact_author_match_count": 3,
+        "dominant_author_font_size": 11.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 11.0,
+          "candidates": [
+            {
+              "name": "Jiawei Li",
+              "block_id": "pdfplumber:p1:b7",
+              "font_size": 10.959,
+              "support_ids": []
+            },
+            {
+              "name": "Jiahao Liu",
+              "block_id": "pdfplumber:p1:b8",
+              "font_size": 10.959,
+              "support_ids": [
+                "pdfplumber:p1:b13",
+                "pdfplumber:p1:b16"
+              ]
+            },
+            {
+              "name": "Jian Mao",
+              "block_id": "pdfplumber:p1:b9",
+              "font_size": 10.959,
+              "support_ids": [
+                "pdfplumber:p1:b13",
+                "pdfplumber:p1:b16"
+              ]
+            },
+            {
+              "name": "Jun Zeng Zhenkai Liang",
+              "block_id": "pdfplumber:p1:b10",
+              "font_size": 10.959,
+              "support_ids": [
+                "pdfplumber:p1:b13",
+                "pdfplumber:p1:b16"
+              ]
+            }
+          ],
+          "fully_supported": false,
+          "anchored_existing_count": 3
+        },
+        "numbered_affiliation_notes": {},
+        "author_nodes": [
+          {
+            "author_index": 0,
+            "author": "Jiawei Li",
+            "block_id": "pdfplumber:p1:b7",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 1,
+            "author": "Jiahao Liu",
+            "block_id": "pdfplumber:p1:b8",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 2,
+            "author": "Jian Mao",
+            "block_id": "pdfplumber:p1:b9",
+            "match_score": 1.0
+          }
+        ],
+        "relations": [
+          {
+            "author_index": 1,
+            "author": "Jiahao Liu",
+            "affiliation_raw": "Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University",
+            "confidence": 0.97,
+            "author_block_id": "pdfplumber:p1:b8",
+            "affiliation_block_ids": [
+              "pdfplumber:p1:b12",
+              "pdfplumber:p1:b16"
+            ],
+            "email_raw": "",
+            "email_block_ids": [],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 11.029,
+            "center_distance": 54.284,
+            "local_auto_eligible": true,
+            "numeric_marker": ""
+          },
+          {
+            "author_index": 2,
+            "author": "Jian Mao",
+            "affiliation_raw": "Tianmushan Laboratory Hangzhou Innovation Institute, Beihang University",
+            "confidence": 0.97,
+            "author_block_id": "pdfplumber:p1:b9",
+            "affiliation_block_ids": [
+              "pdfplumber:p1:b12",
+              "pdfplumber:p1:b16"
+            ],
+            "email_raw": "",
+            "email_block_ids": [],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 11.029,
+            "center_distance": 18.037,
+            "local_auto_eligible": true,
+            "numeric_marker": ""
+          }
+        ]
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 5,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "UI-CTX: Understanding UI Behaviors with Code Contexts for Mobile Applications",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/ui-ctx-understanding-ui-behaviors-with-code-contexts-for-mobile-applications/",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Jiawei Li",
+            "affiliations": [
+              "Beihang University & National University of Singapore"
+            ]
+          },
+          {
+            "name": "Jiahao Liu",
+            "affiliations": [
+              "National University of Singapore"
+            ]
+          },
+          {
+            "name": "Jian Mao",
+            "affiliations": [
+              "Beihang University"
+            ]
+          },
+          {
+            "name": "Jun Zeng",
+            "affiliations": [
+              "National University of Singapore"
+            ]
+          },
+          {
+            "name": "Zhenkai Liang",
+            "affiliations": [
+              "National University of Singapore"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Zhenkai Liang",
+        "field": "email",
+        "restored_value": "liangzk@comp.nus.edu.sg",
+        "reason": "later_stage_produced_blank"
+      },
+      {
+        "action": "preserve_pdf_countries_before_official_web",
+        "stage": "pdf_country_preservation",
+        "field": "country",
+        "authors_restored": 4,
+        "country_values_restored": 5,
+        "source": "pdf_extraction_csv"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Zhenkai Liang",
+        "stage": "conference_strategy"
+      }
+    ]
+  }
+}

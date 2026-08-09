@@ -1,0 +1,326 @@
+{
+  "paper_id": "121_labrador_response_guided_directed_fuzzing_for_black_box_iot_devices",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "LABRADOR: Response Guided Directed Fuzzing for Black-box IoT Devices"
+      },
+      {
+        "source": "selected",
+        "value": "LABRADOR: Response Guided Directed Fuzzing for Black-box IoT Devices"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fuzzing is a popular solution to finding vulnerabilities in software including IoT firmware. However, due to the challenges of emulating or rehosting firmware, some IoT devices (e.g., enterprise-level devices) can only be fuzzed in a black-box manner, which makes fuzzers blind and inefficient due to missing feedbacks (e.g., code coverage or distance). In this paper, we present a novel response guided directed fuzzing solution LABRADOR, able to test black-box IoT devices efficiently. Specifically, we leverage the network response to infer the execution trace of firmware and deduce the code coverage of testing. Second, we leverage the test case (i.e., request) and its response to estimate the distance to the target sensitive code (i.e., sink). Lastly, we further leverage the distance to guide test case mutation, which efficiently drives directed fuzzing toward candidate vulnerable code. We have implemented a prototype of LABRADOR and evaluated it on 14 different enterprise-level IoT devices. Results showed that LABRADOR significantly outperforms state-of-the-art (SOTA) solutions. It finds 44X more vulnerabilities than SNIPUZZ, BOOFUZZ and FIRM-AFL and 8.57X more vulnerabilities than SaTC. In total, it discovered 79 unknown vulnerabilities, of which 61 were assigned with CVEs. 1920 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fuzzing is a popular solution to finding vulnera- bilities in software including IoT firmware. However, due to the challenges of emulating or rehosting firmware, some IoT devices (e.g., enterprise-level devices) can only be fuzzed in a black-box manner, which makes fuzzers blind and inefficient due to missing feedbacks (e.g., code coverage or distance). In this paper, we present a novel response guided directed fuzzing solution L ABRADOR , able to test black-box IoT devices efficiently. Specifically, we leverage the network response to infer the execution trace of firmware and deduce the code coverage of testing. Second, we leverage the test case (i.e., request) and its response to estimate the distance to the target sensitive code (i.e., sink). Lastly, we further leverage the distance to guide test case mutation, which efficiently drives directed fuzzing toward candidate vulnerable code. We have implemented a prototype of L ABRADOR and evaluated it on 14 different enterprise-level IoT devices. Results showed that LABRADOR significantly outperforms state-of-the-art (SOTA) solutions. It finds 44X more vulnerabilities than SNIPUZZ, BOOFUZZ and FIRM-AFL and 8.57X more vulnerabilities than SaTC. In total, it discovered 79 unknown vulnerabilities, of which 61 were assigned with CVEs. 1. Introduction In the era of the ”Internet of Everything”, billions of IoT devices seamlessly connect humans, machines, and objects through network [37], providing various online services for daily convenience and benefits [17]. The exponentially in- creasing use of IoT devices also comes with growing threats. As reported in [1, 21], the number of vulnerabilities and attacks against IoT devices has grown significantly in recent years. To mitigate such threats, it is crucial to proactively discover vulnerabilities and fix them in advance [5]. The first type of vulnerability discovery solution for IoT firmware is static analysis, e.g., SaTC [11], KARONTE [35]. Such solutions generally focus on taint-style vulnerabilities, BCorresponding authors:ganshuitao@gmail.com, chaoz@tsinghua.edu.cn. which first recognize sensitive code (i.e., sinks) via static analysis and then infer potentially vulnerable paths reach- able to sinks via taint analysis or symbolic execution. Such solutions often have high false positives and low efficiency. Another type of popular vulnerability discovery solution for IoT firmware is fuzzing. Since IoT devices often require peripherals or configurations to run, many fuzzing solutions (e.g., Firm-AFL [52], Firmadyne [8]) focus on emulating or rehosting IoT firmware, to improve efficiency and scalability of fuzzing and capability of bug detection. However, for some IoT devices, especially those enterprise-level ones, it is incredibly challenging to emulate or rehost their firmware [44]. Rehosting firmware, even for Linux/BSD-based im- ages, still faces critical problems like insufficient fidelity and low success rate [42]. As a result, only black-box fuzzing applies to such devices. But, black-box fuzzing solutions are generally less ef- fective than gray-box fuzzing. Specifically, modern gray- box fuzzers often rely on code instrumentation [7, 22, 34] or hardware-based tracing [2, 27] to collect feedback (e.g., code coverage, distance) during testing, and use the feed- back to guide the fuzzing process, including seed preserva- tion, seed selection, and seed mutation, etc., to either explore more code or trigger target code with higher efficiency. Such feedback would make the fuzzer efficiently evolve towards its goal and avoid blindness. Therefore, black-box fuzzing for IoT devices is de- manded but challenging. SNIPUZZ [18] is the SOTA black- box fuzzing solution for IoT devices. Specifically, it lever- ages the response to infer message snippets for test case mutation. However, no solutions have been yet proposed to collect the traditional feedback for black-box fuzzing, including (1) code coverage feedback for exploring more code and (2) distance feedback for exploring target-sensitive code (sinks). In this paper, we present a novel solution L ABRADOR to collect feedback for black-box IoT devices. Service at- tributes are crucial for IoT devices, with web interfaces enabling various applications for most of them [3]. Ex- ploiting vulnerabilities in these interfaces can raise unau- 1920 DOI 10.1109/SP54263.2024.00127 thorized access, data theft, or RCE attacks. Web interface vulnerabilities in IoT devices often have high or critical severity levels in the CVE database, emphasizing the im- portance of vulnerability discovery and fuzzing in this area of research. For web interface, it's inevitable to introduce many meaningful strings to the devices spanning the request, response, and back-end binaries. Moreover, these strings are often partially shared among the response, request, and binaries. As a result, we could infer which code blocks have been executed by examining strings in the response and estimate the distance towards target code blocks. Based on this observation, L ABRADOR could get the feedback of code coverage and distance, therefore performing a response guided directed fuzzing for black-box IoT devices. Notably, in our 'black-box' setting, we cannot monitor or alter the device's internal execution, which is significantly different from traditional gray-box solutions depending on instru- mentation and hardware. We have the firmware for static analysis, which is common in real-world scenarios. Our core insight is to generate a gray-box model from this black- box setting, addressing the challenges of black-box fuzzing. Specifically, L ABRADOR adopts three core techniques to improve the fuzzing efficiency significantly. Response-based Execution Trace Inference (RTI). Given that some code blocks reference and manipulate strings and output them to the response, we could examine the strings in response to infer which code blocks have been executed. Therefore, we present RTI to infer the execution trace from responses. It extracts strings from back-end bina- ries and performs string similarity analysis with responses to obtain shared strings, denoted as explicit string . For a given response, RTI parses explicit strings and locates code blocks referencing them, denoted as explicit block deduced on the execution trace. Note that this deduction is a rough estimation rather than an exact calculation. However, it is helpful for fuzzing. As shown in our evaluation (Table 2) , the explicit blocks are reachable to 62.2% sensitive func- tions, providing valuable guidance for fuzzing. IO Oriented Distance Measurement (IODM). Given a test case (i.e., request), we will evaluate its distance to a set of target codes (sinks). Note that it consists of string tokens, and different tokens have different effects on reaching sinks if they get mutated. Therefore, we first evaluate the potential gains (w.r.t reaching sinks) of all strings in the request, then use the reverse of the accumulated string gains to measure the request's distance to sinks. In other words, the higher the accumulated string gains, the closer the request to sinks . The response's distance is computed similarly and is further used to adjust the measurement. For an explicit string, its potential gain is the accumulation of weights of all sinks reachable from explicit blocks referencing the string. For other non-explicit strings, its potential gain is a small constant. Distance guided mutation. Given the above code cov- erage and distance feedbacks, we further leverage them to guide mutating a seed (i.e., test case), including how many times to mutate (i.e., energy assignment), where to mutate, and how to mutate. First, we evaluate the selected seed's distance to sinks and learn from the testing history to evaluate its historical performance, i.e., its potential to yield better test cases. If the distance is lower and the historical performance is better, more energy will be assigned to the seed. Second, we parse the seed into a tree representation and prioritize tree nodes that are more likely to reach sinks to mutate based on node type, node depth, node's potential gain, as well as the historical performance of the seed. Third, we design two mutation operators: one is to generate the node's value according to its properties, including sink and data type for detecting specified vulnerability types, and the other is to mutate the tree structure for larger path exploration. We have implemented a prototype of L ABRADOR and evaluated it on 14 different enterprise-level IoT devices. LABRADOR outperforms four state-of-the-art (SOTA) vul- nerability detection tools, including one static analysis tool SaTC [11], one gray-box IoT fuzzer FIRM-AFL [52], one black-box IoT fuzzer SNIPUZZ [18] and one generation- based fuzzer BOOFUZZ [33], in terms of vulnerability dis- covery. On these IoT device subjects, LABRADOR finds 44X more vulnerabilities than SNIPUZZ, BOOFUZZ and FIRM- AFL, and finds 8.57X more vulnerabilities than SaTC. In total, LABRADOR discovered 79 unknown vulnerabilities on these 14 IoT devices and reported them to the vendors, of which 61 have been assigned with CVEs. In summary, this paper makes the following contribu- tions. • We present a novel solution RTI to collect code cov- erage feedback for black-box IoT devices and present a novel distance measurement scheme accordingly. • We present the first response guided directed fuzzing solution for black-box IoT devices, which collects the code coverage and distance feedbacks and leverages them to guide efficient test case mutation. • We evaluated L ABRADOR on 14 enterprise-level IoT devices. Results showed that it significantly outper- forms baselines on vulnerability discovery. It finds 79 unknown vulnerabilities, and 61 are assigned with CVEs. 2. Background and Motivation 2.1. Web Interface of IoT Device The web serves as the primary communication inter- face for IoT devices, consisting of front-end and back- end, which adopts human-machine interaction mode (details in Appendix A), and massive natural language properties have to be introduced to represent parameters in request or response, that benefits for the human to understand. Therefore, the processing logic of back-end binaries will inevitably involve many functions for receiving, parsing, and outputting various strings. Intuitively, a high proportion of basic blocks may reference those strings, which drives us to conduct an empirical study (Table 2) on explicit block quantization. Some back-end binaries even have an 1921"
+      },
+      {
+        "source": "selected",
+        "value": "Fuzzing is a popular solution to finding vulnerabilities in software including IoT firmware. However, due to the challenges of emulating or rehosting firmware, some IoT devices (e.g., enterprise-level devices) can only be fuzzed in a black-box manner, which makes fuzzers blind and inefficient due to missing feedbacks (e.g., code coverage or distance). In this paper, we present a novel response guided directed fuzzing solution LABRADOR, able to test black-box IoT devices efficiently. Specifically, we leverage the network response to infer the execution trace of firmware and deduce the code coverage of testing. Second, we leverage the test case (i.e., request) and its response to estimate the distance to the target sensitive code (i.e., sink). Lastly, we further leverage the distance to guide test case mutation, which efficiently drives directed fuzzing toward candidate vulnerable code. We have implemented a prototype of LABRADOR and evaluated it on 14 different enterprise-level IoT devices. Results showed that LABRADOR significantly outperforms state-of-the-art (SOTA) solutions. It finds 44X more vulnerabilities than SNIPUZZ, BOOFUZZ and FIRM-AFL and 8.57X more vulnerabilities than SaTC. In total, it discovered 79 unknown vulnerabilities, of which 61 were assigned with CVEs. 1920 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hangtian Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Tsinghua University",
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Shuitao Gan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Zhongguancun Laboratory"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Zicong Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Tsinghua University",
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Hongqi Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Henan Key Laboratory of Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Xiangzhi Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Electronic Science and Technology of China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Guangming Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hangtian Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Tsinghua University",
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Shuitao Gan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Zhongguancun Laboratory"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zicong Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Tsinghua University",
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Hongqi Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Henan Key Laboratory of Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Xiangzhi Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Electronic Science and Technology of, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Guangming Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 107,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Zicong Gao",
+          "block_id": "pdf:p1:b8",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "LABRADOR: Response Guided Directed Fuzzing for Black-box IoT Devices",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hangtian Liu",
+          "affiliations": [
+            "State Key Laboratory of Mathematical Engineering and Advanced Computing"
+          ]
+        },
+        {
+          "name": "Shuitao Gan",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Zicong Gao",
+          "affiliations": [
+            "State Key Laboratory of Mathematical Engineering and Advanced Computing"
+          ]
+        },
+        {
+          "name": "Hongqi Zhang",
+          "affiliations": [
+            "Henan Key Laboratory of Information Security"
+          ]
+        },
+        {
+          "name": "Xiangzhi Wang",
+          "affiliations": [
+            "University of Electronic Science and Technology of China"
+          ]
+        },
+        {
+          "name": "Guangming Gao",
+          "affiliations": [
+            "State Key Laboratory of Mathematical Engineering and Advanced Computing"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 1,
+      "country_values_restored": 1,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

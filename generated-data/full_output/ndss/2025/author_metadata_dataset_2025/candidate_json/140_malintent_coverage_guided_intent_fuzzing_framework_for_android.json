@@ -1,0 +1,264 @@
+{
+  "paper_id": "140_malintent_coverage_guided_intent_fuzzing_framework_for_android",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "MALintent: Coverage Guided Intent Fuzzing Framework for Android"
+      },
+      {
+        "source": "selected",
+        "value": "MALintent: Coverage Guided Intent Fuzzing Framework for Android"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2010"
+      },
+      {
+        "source": "selected",
+        "value": "2010"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Intents are the primary message-passing mechanism on Android, used for both communication between intra-app and inter-app components. Intents go across the trust boundary of applications and can break the security isolation between them. Due to their shared API with intra-app communication, apps may unintentionally expose functionality leading to important security bugs. MALintent is an open-source fuzzing framework that uses novel coverage instrumentation techniques and customizable bug oracles to find security issues in Android Intent handlers. MALintent is the first Intent fuzzer that applies greybox fuzzing on compiled closed-source Android applications. We demonstrate techniques widely compatible with many versions of Android and our bug oracles were able to find several crashes, vulnerabilities with privacy implications, and memory-safety issues in the topdownloaded Android applications on the Google Play store."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Intents are the primary message-passing mechanism on Android, used for both communication between intra-app and inter-app components. Intents go across the trust boundary of applications and can break the security isolation between them. Due to their shared API with intra-app communication, apps may unintentionally expose functionality leading to important security bugs. MALintent is an open-source fuzzing framework that uses novel coverage instrumentation techniques and customizable bug oracles to find security issues in Android Intent handlers. MALintent is the first Intent fuzzer that applies greybox fuzzing on compiled closed-source Android applications. We demonstrate techniques widely compatible with many versions of Android and our bug oracles were able to find several crashes, vulnerabilities with privacy implications, and memory-safety issues in the top- downloaded Android applications on the Google Play store. I. I NTRODUCTION The Android ecosystem allows applications to add rich sets of functionalities on top of the operating system (OS). Unlike most desktop threat models, these applications are isolated from one another, preventing unilateral access to each other's data and code. However, for a seamless user experience, applications need to be able to trigger and re-use functionality in one another. For example, a photo viewer application may want to allow the user to share a photo through an email application. The photo viewer may also want to allow the user to view where the photo was taken with a map application. The primary Inter-Process Communication (IPC) mecha- nism that enables this invoking of functionality across apps on Android is called Intents. Components in applications that handle these intents act as an entry point and as a trust boundary between apps. This security boundary is critical and can have a significant security impact. For example, (1) an application might allow sensitive functionality to be invoked, like sending an email without user interaction, or (2) an application might call an image parsing library with a memory-safety issue. In these cases, a malicious application on ∗ These authors contributed equally to this work. 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023 0 10 20 30 Year Number of CVEs Intent-related CVEs over time Fig. 1: Number of CVEs caused by Intent related issues over time. Each issue with “android” in the CPE configuration was checked. the phone could trigger this intent to send an email without the user's consent or violate the security isolation between applications by exploiting the memory-safety bug. To further complicate matters, aside from inter-process com- munication, applications launch and call components internal to themselves with Intents as well [1]. This can cause devel- opers to fail to realize that a component or code path could be reachable from outside the application, accidentally exposing a sensitive operation only meant to be used internally [2] by the application itself. Figure 1 shows a steady trend of Intent- related issues in the form of CVEs over time. The primary intuition behind MALintent is that these intent handlers are an effective entry point for fuzzing Android apps. They use fairly structured data and, unlike fuzzers that target the UI of apps, intents can be sent without user interaction from malicious low-privileged apps purely through code. In summary, the main contributions of MALintent are: • Demonstrating how specifications for intents can be gath- ered from an application using static and dynamic analy- sis. This enables MALintent to power an intent mutation system that can explore deep application behaviors. • Developing a new coverage instrumentation technique for Android applications that improves intent fuzzing and, we believe, is helpful in general. MALintent uses Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230125 www.ndss-symposium.org Email Support Address support@game.com Subject BugReport.log Intent ACTION_SEND EXTRA_EMAIL support@game.com EXTRA_SUBJECT Support Ticket XYZ EXTRA_STREAM <BugReport.log> Support Ticket XYZ Fig. 2: A gaming app using an intent to trigger the user's preferred email app. The intent carries data to pre-fill the recipient address, the subject of the email, and to attach a file. this instrumentation to be the first greybox intent fuzzer capable of fuzzing closed source Android applications. • Introducing and evaluating three novel intent bug-oracles for MALintent written by the authors that aim to find (1) application crashes, (2) basic privacy violations, and (3) memory safety issues in native code called through the Java Native Interface (JNI). II. B ACKGROUND Unlike most desktop OSes, Android's security model de- mands that apps are isolated from each other, lacking ac- cess to each other's data. Each app also needs to request permissions [3] from the OS to gain access to the user's private data such as their camera, microphone, or memory card. This isolation keeps users safe despite the millions of apps on the Android app store. Users can install a critical health or banking app alongside a lower-trust gaming app without needing to audit its security. The permission model grants higher privileges to trusted apps, enabling users to give location permissions to a preferred maps app but not to a random game. Instead of implementing all functionality internally, Android apps can request services from each other. For instance, a gaming app can let users send an email to the support through their preferred email app, as illustrated in Figure 2, rather than implementing email functionality itself. This approach encourages the use of mature apps, ensures a consistent user experience with their preferred apps, and maintains the principle of least privilege by granting permissions only to trusted apps. This interaction between apps is enabled by an inter-process communication (IPC) mechanism called an Intent. A. Intents An Intent is the message in the message passing system on Android. Intents contain an action to perform, such as view an image (ACTION_VIEW) or dial a number (ACTION_DIAL), and 1 void contactSupportEmail() { 2 Intent i = new Intent(Intent.ACTION_SEND); 3 i.setData(Uri.parse(\"mailto:\")); 4 i.putExtra(Intent.EXTRA_EMAIL, \"support@game.com\"); 5 i.putExtra(Intent.EXTRA_SUBJECT, \"Support Ticket XYZ\"); 6 7 File bugReport = generateBugReportLog(); 8 i.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(bugReport)); 9 10 // Start the user 's preferred email app to send email. 11 startActivity(i); 12 } Listing 1: An example of launching an intent that would cause the user's email app to pre-fill an email with a subject line, recipient's address and attachment. 1 <activity android:exported=\"true\" 2 android:name=\".EmailComposeActivity\"> 3 <intent-filter> 4 <action android:name=\"android.intent.action.SEND\" /> 5 <data android:scheme=\"mailto\" /> 6 </intent-filter> 7 </activity> Listing 2: A snippet from an app's AndroidManifest.xml file showing how an app subscribes to receiving email intents. data: the image to view or the phone number to dial. This data is often encoded in the form of a URI and its query parameters but can contain any serializable Java data through an arbitrary key-value map called Intent extras. Listing 1 shows how the example from Figure 2 can be implemented: a gaming app allowing the user to send an email through their preferred email app. The app sets up an intent with an action of ACTION_SEND and sets extra fields in the intent to fill the recipient email address, the subject line, and attach a file. When an intent is provided to the Android OS via the startActivity method, the OS delivers it to the user's chosen email app. This is an implicit intent , where the OS selects the app. Alternatively, the intent sender can specify the target app, known as an explicit intent. App components that receive intents must be de- clared in AndroidManifest.xml (see Listing 2). The android:exported property specifies if the component can receive intents from other apps or only internally. Tags filter the desired actions, categories, and data schemes from incom- ing intents, further detailed in §III-A1. B. Intent Vulnerabilities To understand potential vulnerabilities in an app's intent handlers, we examine how it handles an incoming intent. Listing 3 shows how an email app would handle the intent from Listing 1. The handler retrieves \"extras,\" which are key- value pairs. In our example, the email app extracts extras from the intent and populates the appropriate fields in the email. There are two potential security bugs in this receiver: • The email app accepts attachment files from the intent's EXTRA_STREAM and uses the method renderPreviewIfImage to render the image. This method calls a native C function to render the image but naïvely uses the height and width specified in the image's header, which may lead to a buffer overflow in the native code due to the lack of bounds checking. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Intents are the primary message-passing mechanism on Android, used for both communication between intra-app and inter-app components. Intents go across the trust boundary of applications and can break the security isolation between them. Due to their shared API with intra-app communication, apps may unintentionally expose functionality leading to important security bugs. MALintent is an open-source fuzzing framework that uses novel coverage instrumentation techniques and customizable bug oracles to find security issues in Android Intent handlers. MALintent is the first Intent fuzzer that applies greybox fuzzing on compiled closed-source Android applications. We demonstrate techniques widely compatible with many versions of Android and our bug oracles were able to find several crashes, vulnerabilities with privacy implications, and memory-safety issues in the topdownloaded Android applications on the Google Play store."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ammar Askar",
+          "email": "aaskar@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Fabian Fleischer",
+          "email": "fleischer@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Christopher Kruegel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "putExtra(Intent.EXTRA_SUBJECT, \"Support Ticket XYZ\")"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ammar Askar",
+          "email": "aaskar@gatech.edu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Fabian Fleischer",
+          "email": "fleischer@gatech.edu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Christopher Kruegel",
+          "email": "chris@cs.ucsb.edu",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.edu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 106,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "MALintent: Coverage Guided Intent Fuzzing Framework for Android",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/malintent-coverage-guided-intent-fuzzing-framework-for-android/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ammar Askar",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Fabian Fleischer",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Christopher Kruegel",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Giovanni Vigna",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Taesoo Kim",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Fabian Fleischer",
+      "field": "email",
+      "restored_value": "fleischer@gatech.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Giovanni Vigna",
+      "field": "email",
+      "restored_value": "vigna@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

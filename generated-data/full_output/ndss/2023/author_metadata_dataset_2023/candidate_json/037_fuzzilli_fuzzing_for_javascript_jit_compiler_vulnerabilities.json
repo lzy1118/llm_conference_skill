@@ -1,0 +1,361 @@
+{
+  "paper_id": "037_fuzzilli_fuzzing_for_javascript_jit_compiler_vulnerabilities",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "FUZZILLI: Fuzzing for JavaScript JIT Compiler Vulnerabilities"
+      },
+      {
+        "source": "selected",
+        "value": "FUZZILLI: Fuzzing for JavaScript JIT Compiler Vulnerabilities"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "JavaScript has become an essential part of the Internet infrastructure, and today's interactive web applications would be inconceivable without this programming language. On the downside, this interactivity implies that web applications rely on an ever-increasing amount of computationally intensive JavaScript code, which burdens the JavaScript engine responsible for efficiently executing the code. To meet these rising performance demands, modern JavaScript engines ship with sophisticated just-in-time (JIT) compilers. However, JIT compilers are a complex technology and, consequently, provide a broad attack surface for potential faults that might even be security-critical. Previous work on discovering software faults in JavaScript engines found many vulnerabilities, often using fuzz testing. Unfortunately, these fuzzing approaches are not designed to generate source code that actually triggers JIT semantics. Consequently, JIT vulnerabilities are unlikely to be discovered by existing methods. In this paper, we close this gap and present the first fuzzer that focuses on JIT vulnerabilities. More specifically, we present the design and implementation of an intermediate representation (IR) that focuses on discovering JIT compiler vulnerabilities. We implemented a complete prototype of the proposed approach and evaluated our fuzzer over a period of six months. In total, we discovered 17 confirmed security vulnerabilities. Our results show that targeted JIT fuzzing is possible and a dangerously neglected gap in fuzzing coverage for JavaScript engines."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "JavaScript has become an essential part of the Internet infrastructure, and today's interactive web applications would be inconceivable without this programming language. On the downside, this interactivity implies that web appli- cations rely on an ever-increasing amount of computationally intensive JavaScript code, which burdens the JavaScript engine responsible for efficiently executing the code. To meet these rising performance demands, modern JavaScript engines ship with sophisticated just-in-time (JIT) compilers. However, JIT compilers are a complex technology and, consequently, provide a broad attack surface for potential faults that might even be security-critical. Previous work on discovering software faults in JavaScript engines found many vulnerabilities, often using fuzz testing. Unfortunately, these fuzzing approaches are not designed to generate source code that actually triggers JIT semantics. Consequently, JIT vulnerabilities are unlikely to be discovered by existing methods. In this paper, we close this gap and present the first fuzzer that focuses on JIT vulnerabilities. More specifically, we present the design and implementation of an intermediate representation (IR) that focuses on discovering JIT compiler vulnerabilities. We implemented a complete prototype of the proposed approach and evaluated our fuzzer over a period of six months. In total, we discovered 17 confirmed security vulnerabilities. Our results show that targeted JIT fuzzing is possible and a dangerously neglected gap in fuzzing coverage for JavaScript engines. I. I NTRODUCTION The modern Web is unimaginable without JavaScript (JS). Driven by powerful JavaScript frameworks such as Angu- larJS [1], React [8], or jQuery [5], modern web content is typically created entirely on the client side, rather than being delivered in the form of HTML [10], [40]. This evolution caused increasing performance issues for existing JS engines that relied on simply interpreting JS code. As a result and to enable a dynamic web experience, modern web browsers have aggressively moved towards just-in-time (JIT) compilation and optimization of JS code. While JIT engines provide desirable performance improvements, they make the execution of JS code significantly more complex and inherently expose a large attack surface. Software vulnerabilities based on JIT compiler faults are attractive to attackers because they provide powerful exploit primitives and typically allow code execution based on a single vulnerability. An attacker can chain a successful attack with an escape from the browser sandbox, gaining unauthorized privileges by luring a victim to a malicious website. By its very nature, JavaScript as a programming language is flexible and dynamic. Because of this flexibility, JIT optimiza- tions require assumptions about the global state of the engine, groups of related objects, or even a single object involved in the optimized code segment. Such assumptions must either be proven true or protected by complex runtime mechanisms that notify the engine when a previously made assumption is violated. Any assumption that turns out to be false but remains undetected during execution represents a significant vulnerability, such as in CVE-2018-4233 (see Section III-B for details), a bug in the JIT compiler of WebKit. Consequently, JIT compilation bugs should be a focus of software testing. A popular method for finding bugs in complex software systems such as JavaScript engines is fuzz testing (fuzzing for short). Fuzzing involves testing software with many different inputs and evaluating how the software responds to those inputs. The underlying hope is to find corner cases in the software that lead to non-trivial crashes. An analyst can then further investigate these crashes to create a proof-of-concept for an exploit that may break out of the JavaScript sandbox. In the past, fuzzing was mainly used to find vulnerabilities in JavaScript engines, and several critical problems with JavaScript engines were found [28], [28], [36], [43]. However, previous fuzzing approaches targeted JavaScript engines with- out focusing on specific components [28], [31], [43] or focused only on the runtime API [30]. Such approaches can find a wide range of vulnerabilities, but more complex vulnerabilities that require the concurrence of multiple preconditions have rarely been discovered. In particular, JIT compilation vulnerabilities are precisely such a type of vulnerability. For JIT optimization to occur at all, certain conditions must be met: The engine must frequently execute the code in question, and the code must behave predictably during the observation because only then the JIT compilation starts. These conditions imply that not only must the JS code be structured in a special way to emphasize the faults, but it must also be executed numerous times in a similar manner and then change its behavior in an unpredictable way in order for the JS engine to encounter an error. This behavior is difficult to Network and Distributed Systems Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24290 www.ndss-symposium.org reproduce for a fuzzer that generates code snippets more or less randomly via mutations. Classic JS fuzzers [4] generate JS constructs and wrap every statement in try-catch blocks because they cannot guaran- tee semantic correctness. Unfortunately, a JIT compiler treats code wrapped intry-catch differently from code that is not wrapped, so many JIT errors elude these approaches. Other work [28], [36], [43] generates test cases from existing JS corpora. Relying on pre-existing corpora requires a sufficiently diverse set of vulnerabilities of a specific type to extrapolate similar ones. This requirement limits the ability to uncover vulnerabilities dissimilar to existing test cases. In conclusion, developing a targeted fuzzing approach to detect novel faults in JIT compilation is a challenge that has not yet been tackled. In this paper, we address this research gap in fuzzing coverage and propose the first fuzzer that uses an intermediate representation (IR) that focuses on discovering just-in-time compiler vulnerabilities in JavaScript engines. Our IR allows us to generate new JavaScript programs without initial input corpora, targeting the JIT compiler. Furthermore, our IR allows the implementation of semantically meaningful mutation oper- ations, such as splicing multiple input programs while rewiring instruction operands, a feature missing in common AST-based fuzzing approaches. We implemented the proposed approach and performed a comprehensive evaluation of our prototype on the major JS engines Apple JavaScriptCore, Google V8, and Mozilla SpiderMonkey. We find that our fuzzer compares well with Superion, a state-of-the-art open-source fuzzer [43], on all engines. Furthermore, we show that Superion cannot achieve significant code coverage gains when provided with a com- prehensive input corpus. In contrast, our approach performs well in different kinds of setups and we identified 17 security- critical vulnerabilities. Contributions. In summary, our main contributions are: • We present the design and implementation of an IR- based fuzzing approach targeting JIT vulnerabilities in JS engines of modern web browsers. • In a comprehensive evaluation, we discover 17 security- critical vulnerabilities with our prototype implementation. A more detailed analysis of the identified vulnerabilities confirmed that most of the faults are indeed related to the JIT compiler. • We perform a comprehensive comparison against modern browser fuzzers and find that our approach outperforms the state-of-the-art method called Superion. II. B ACKGROUND AND RELATED WORK Fuzzing is a popular research area that has received much attention in the past years. In the following, we briefly intro- duce this area and discuss work that is closely related to ours. Given the enormous scope of this area, we cannot provide a comprehensive overview of all related work and thus focus mainly on related work that improves JavaScript fuzzing. For an introduction and overview of the fuzzing research area, we refer the reader to surveys on fuzzing [34] and greybox fuzzing [44]. For a comprehensive listing of recent fuzzing publications, we refer the reader to an online repository that maintains a list of papers published in this area [9]. A. Fuzzing Overview Fuzzing can be divided at a high level into several different approaches, which we briefly explain below. These general approaches provide a rough classification, and in practice, many hybrids are used, so that a clear separation is not always possible. a) Generative Fuzzing: Generative-based approaches [7] generate each input from scratch, using generator functions that output the relevant data. The main advantage of the gen- erative approach is that the produced inputs are syntactically correct by design, since the generator functions respect the underlying syntax expected by the program under test. b) Mutation Based Fuzzing: Mutation-based approaches use seed files and manipulate them according to certain rules, and then continue with the slightly modified files as new seed files. Mutations can be random and arbitrary, such as bit/byte flips or randomized addition/deletion of message parts, or more targeted, such as replacing integers or strings with data points known to have had problems in the past (e.g., magic values such as M AX IN T or M IN IN T ). Guided Fuzzing: Guided fuzzing [17], [18], [26], [45] extends the approach used in mutation-based fuzzing and prunes the mutated files based on relevance according to some metric (e.g., coverage-guided fuzzing). A popular metric for pruning in language fuzzing is branch coverage. A fuzzer using branch coverage collects data about the branches of the executed target program and deletes/ignores new mutated files for further consideration if they have not discovered any new branches during their execution. This approach ensures that the fuzzing process retains some momentum and does not reach a dead end. Structure Aware Fuzzing: Depending on the underlying program to be fuzzed, especially if it requires a specific syntax as input, e.g., an interpreter, it is challenging to generate valid mutations of the input files. In particular, highly structured input data [16], [21], [25], [31], [38] such as source code can be challenging, as random changes are likely to result in input data that is immediately rejected, preventing in-depth testing. To counter this problem, the fuzzer can be made aware of the required input structure. In this paper, we explore the use of an intermediate language for this purpose. B. JavaScript Fuzzing Several previous publications cover general fuzzing of browser engines for JavaScript or stand-alone JavaScript en- gines, but so far, there has been no publication that focused on vulnerabilities in JIT compilers. Consequently, there is a gap in JavaScript fuzzer coverage that we fill with our approach. Note that previous JavaScript fuzzing work dealt with using intermediate representations for fuzzing JavaScript or semantically correct fuzzing of JavaScript, two properties that our fuzzer has (and needs) for its success in fuzzing JIT 2"
+      },
+      {
+        "source": "selected",
+        "value": "JavaScript has become an essential part of the Internet infrastructure, and today's interactive web applications would be inconceivable without this programming language. On the downside, this interactivity implies that web applications rely on an ever-increasing amount of computationally intensive JavaScript code, which burdens the JavaScript engine responsible for efficiently executing the code. To meet these rising performance demands, modern JavaScript engines ship with sophisticated just-in-time (JIT) compilers. However, JIT compilers are a complex technology and, consequently, provide a broad attack surface for potential faults that might even be security-critical. Previous work on discovering software faults in JavaScript engines found many vulnerabilities, often using fuzz testing. Unfortunately, these fuzzing approaches are not designed to generate source code that actually triggers JIT semantics. Consequently, JIT vulnerabilities are unlikely to be discovered by existing methods. In this paper, we close this gap and present the first fuzzer that focuses on JIT vulnerabilities. More specifically, we present the design and implementation of an intermediate representation (IR) that focuses on discovering JIT compiler vulnerabilities. We implemented a complete prototype of the proposed approach and evaluated our fuzzer over a period of six months. In total, we discovered 17 confirmed security vulnerabilities. Our results show that targeted JIT fuzzing is possible and a dangerously neglected gap in fuzzing coverage for JavaScript engines."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Samuel Groß",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum, CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Simon Koch",
+          "email": "simon.koch@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum, CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Lukas Bernhard",
+          "email": "lukas.bernhard@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum, CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Thorsten Holz",
+          "email": "holz@cispa.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum, CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Martin Johns",
+          "email": "m.johns@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum, CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Samuel Groß",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum,; CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Simon Koch",
+          "email": "simon.koch@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum,; CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Lukas Bernhard",
+          "email": "lukas.bernhard@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum,; CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Thorsten Holz",
+          "email": "holz@cispa.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum,; CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Martin Johns",
+          "email": "m.johns@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "TU Braunschweig, Ruhr University Bochum,; CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 110,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Samuel Groß",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Simon Koch",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Lukas Bernhard",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Thorsten Holz",
+          "block_id": "pdf:p1:b11",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Martin Johns",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Samuel Groß",
+          "affiliation_raw": "Google",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "email_raw": "saleo@google.com",
+          "email_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.278,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Simon Koch",
+          "affiliation_raw": "TU Braunschweig",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "email_raw": "simon.koch@tu-braunschweig.de",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 0.007,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Lukas Bernhard",
+          "affiliation_raw": "Ruhr University Bochum",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "email_raw": "lukas.bernhard@rub.de",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 0.668,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Thorsten Holz",
+          "affiliation_raw": "CISPA Helmholtz Center for Information Security",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b11",
+          "affiliation_block_ids": [
+            "pdf:p1:b13"
+          ],
+          "email_raw": "holz@cispa.de",
+          "email_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 2.459,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Martin Johns",
+          "affiliation_raw": "TU Braunschweig",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b12",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "email_raw": "m.johns@tu-braunschweig.de",
+          "email_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 3.531,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "FUZZILLI: Fuzzing for JavaScript JIT Compiler Vulnerabilities",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/fuzzilli-fuzzing-for-javascript-jit-compiler-vulnerabilities/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Samuel Groß",
+          "affiliations": [
+            "Google"
+          ]
+        },
+        {
+          "name": "Simon Koch",
+          "affiliations": [
+            "TU Braunschweig"
+          ]
+        },
+        {
+          "name": "Lukas Bernhard",
+          "affiliations": [
+            "Ruhr-University Bochum"
+          ]
+        },
+        {
+          "name": "Thorsten Holz",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ]
+        },
+        {
+          "name": "Martin Johns",
+          "affiliations": [
+            "TU Braunschweig"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

@@ -1,0 +1,186 @@
+{
+  "paper_id": "030_redsec_running_encrypted_discretized_neural_networks_in_seconds",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "REDsec: Running Encrypted Discretized Neural Networks in Seconds"
+      },
+      {
+        "source": "selected",
+        "value": "REDsec: Running Encrypted Discretized Neural Networks in Seconds"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Machine learning as a service (MLaaS) has risen to become a prominent technology due to the large development time, amount of data, hardware costs, and level of expertise required to develop a machine learning model. However, privacy concerns prevent the adoption of MLaaS for applications with sensitive data. A promising privacy preserving solution is to use fully homomorphic encryption (FHE) to perform the ML computations. Recent advancements have lowered computational costs by several orders of magnitude, opening doors for secure practical applications to be developed. In this work, we introduce the REDsec framework that optimizes FHE-based private machine learning inference by leveraging ternary neural networks. Such neural networks, whose weights are constrained to {-1,0,1}, have special properties that we exploit to operate efficiently in the homomorphic domain. REDsec introduces novel features, including a new data re-use scheme that enables bidirectional bridging between the integer and binary domains for the first time in FHE. This enables us to implement very efficient binary operations for multiplication and activations, as well as efficient integer domain additions. Our approach is complemented by a new GPU acceleration library, dubbed (RED)cuFHE, which supports both binary and integer operations on multiple GPUs. REDsec brings unique benefits by supporting user-defined models as input (bring-yourown-network), automation of plaintext training, and efficient evaluation of private inference leveraging TFHE. In our analysis, we perform inference experiments with the MNIST, CIFAR-10, and ImageNet datasets and report performance improvements compared to related works."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Machine learning as a service (MLaaS) has risen to become a prominent technology due to the large development time, amount of data, hardware costs, and level of expertise required to develop a machine learning model. However, privacy concerns prevent the adoption of MLaaS for applications with sensitive data. A promising privacy preserving solution is to use fully homomorphic encryption (FHE) to perform the ML compu- tations. Recent advancements have lowered computational costs by several orders of magnitude, opening doors for secure practical applications to be developed. In this work, we introduce the REDsec framework that optimizes FHE-based private machine learning inference by leveraging ternary neural networks. Such neural networks, whose weights are constrained to {-1,0,1}, have special properties that we exploit to operate efficiently in the homomorphic domain. REDsec introduces novel features, includ- ing a new data re-use scheme that enables bidirectional bridging between the integer and binary domains for the first time in FHE. This enables us to implement very efficient binary operations for multiplication and activations, as well as efficient integer domain additions. Our approach is complemented by a new GPU acceler- ation library, dubbed (RED)cuFHE, which supports both binary and integer operations on multiple GPUs. REDsec brings unique benefits by supporting user-defined models as input (bring-your- own-network), automation of plaintext training, and efficient evaluation of private inference leveraging TFHE. In our analysis, we perform inference experiments with the MNIST, CIFAR-10, and ImageNet datasets and report performance improvements compared to related works. I. I NTRODUCTION The rapid growth of cloud computing services has amplified concerns about the need for data privacy. Users of these services trust their personal data to the cloud for storage and computation, putting their privacy at risk. For instance, a curious cloud service provider can read the sensitive user data stored on its servers. This allows the provider to learn proprietary secrets as well as personal data (such as health records) to sell to advertisers [63]. In addition, adversaries can mount cyberattacks against cloud servers, exposing private data [74], [91]. Attackers are beginning to set their sights on these servers as more users take advantage of cloud services. There- fore, direct attacks targeting cloud data centers are becoming increasingly common [56]. These security threats, coupled with the large number oforganizations adopting the cloud computing paradigm, make it increasingly necessary to provide security guarantees for out- sourced computation. This work concentrates on the specific case of cloud computing known as machine learning as a service (MLaaS) [73]. In this scenario, a cloud service provider has a trained network with private weights on their servers and allows users to upload their data for classification. For example, cloud service providers can develop and launch novel machine learning algorithms to process medical images using the MLaaS paradigm [82]. However, due to legal and regula- tory issues surrounding privacy and intellectual property (e.g., HIPAA [9]), the use of cloud computing for these applications remains constrained. For this scenario to be secure, special considerations need to be in place to enable users to securely upload their data to the cloud and receive provable guarantees about their privacy during processing. The most common way to secure user data and protect confidentiality is through the use of encryption schemes such as AES [58]. While this successfully prevents attackers and the cloud from viewing the data, it also limits the usefulness during processing. Ciphertext data can only be transmitted and stored, and no meaningful computation can be executed on the ciphertext. In other words, common encryption schemes do not allow executing algorithms on encrypted data, such as those required for MLaaS and other cloud computing scenarios [76]. Luckily, the state-of-the-art cryptographic technique called homomorphic encryption (HE) [28] allows for computation on encrypted data while maintaining confidentiality. Homomorphic encryption encompasses a particular class of ciphers that share an incredible property: the ability to perform meaningful ciphertext computations which are crypto- graphically mirrored in the underlying plaintext. This capabil- ity allows users to securely outsource computations by sending HE ciphertexts to a third-party cloud service provider. Then the cloud service provider executes algorithms on the ciphertext data without gaining any information about the underlying plaintext. Finally, the cloud sends the encrypted outcome back to the users, and the users decrypt it to get the plaintext result. Here HE is the core technology, allowing the user to access the algorithm without revealing her private data, while allowing the cloud to process the data without actually accessing it. Practical HE encryption applications use either leveled HE (LHE) or fully HE (FHE). These types of homomorphic encryption differ in the number and types of operations computed. Many previous works that aim to solve privacy- preserving MLaaS utilize LHE, which only permits arbitrary operations on ciphertext data for a predefined, bounded number of times [8], [34], [79]. One of the fundamental principles of HE is the concept of noise, which accumulates in ciphertexts Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24034 www.ndss-symposium.org during every operation and is necessary to guarantee security. If too much noise accumulates in the ciphertexts, the user cannot decrypt the data. LHE abides by this constraint by limiting the depth of LHE computations and requiring the depth to be known beforehand. In essence, LHE schemes need to allocate the proper noise budget ahead of time to ensure correct decryption. In addition, boosting the noise budget is only accomplished by either sacrificing security or progressively increasing the execution time by using larger encryption parameters. For complex algorithms that perform many computations with the same data repeatedly, LHE does not scale and becomes incredibly inefficient in terms of both speed and memory overheads. This approach is not feasible for deep neural networks that operate on complex datasets, such as ImageNet. Most LHE works are optimized only for small, straightforward networks for the MNIST dataset [5]. Other works employ FHE, which builds upon LHE and adds a “bootstrapping” mechanism. Bootstrapping allows for noise reduction in ciphertexts when it reaches a certain thresh- old. This procedure is considered costly and is generally the bottleneck of fully homomorphic operations [21]. However, this approach is still more efficient for complex algorithms than choosing increasingly larger LHE parameters. For example, FHE-DiNN [7] employs FHE to conduct private inference for a tiny neural network, and this approach demonstrates how to evaluate fully-connected layers. Because LHE realistically only supports inference for neural networks with a small number of layers, in this work we adopt FHE to facilitate inference for arbitrary neural networks. While bootstrapping remains the bottleneck of fully homomorphic operations, several works have accelerated the procedure dramatically [12], [21], [29], [33]. In addition, FHE evaluation can be accelerated even further with GPUs, achieving more than an order of magnitude speedup over a CPU. Even with these techniques, the cost of a bootstrap remains higher than other HE operations, and minimizing the invocations of the bootstrap procedure is critical for fast eval- uation. To mitigate these performance challenges, we propose a new FHE framework for private neural network inference that is highly configurable and supports GPU acceleration. Contrary to prior works, our REDsec framework employs ternary neural networks (TNNs) and provides a strategy to enable bidirectional bridging to convert ciphertexts to the integer domain for accelerating arithmetic operations, before returning to the binary domain for bitwise operations. These insights allow us to reduce the number of bootstraps in a neural network and thus achieve significantly faster inference speeds. Our contributions can be summarized as follows: • A new design methodology for FHE-friendly binary and ternary neural network inference, leveraging be- spoke multiplication, pooling and data reuse to enable efficient bridging. • Bidirectional bridging for the first time in TFHE, which enables us to use both efficient binary mul- tiplication and sign extraction operations, as well as integer additions. • A state-of-the-art (RED)cuFHE library for GPU accel- erated HE operations, including leveled operations, en- cryption of constants, and robust support for multiple GPUs. • A detailed analysis of neural network structure to determine the most optimal times to perform costly bootstrapping procedures to refresh the noise. • Bring your own network (BYON): An end-to-end system for constructing neural network architectures, including a UI for users to build their model and a compiler to generate training modules in TensorFlow and encrypted inference code in C++/CUDA. Roadmap. In Section II, we provide an overview of homo- morphic encryption and machine learning concepts as well as our adopted threat model. Section III provides an overview of REDsec and Section IV provides specific technical details, while Section V discusses our experimental evaluation and analysis of results. Lastly, Section VI provides comparisons with prior works and Section VIII concludes the paper. II. P RELIMINARIES A. Privacy Preserving Cryptography Here we introduce fundamental concepts for homomorphic encryption. First, we discuss the learning with errors (LWE) problem as the cryptographic foundation of LHE and FHE schemes. Next, we discuss partial, leveled, and fully homo- morphic HE schemes, and enumerate the state-of-the-art HE encryption libraries. Finally, for completeness, we discuss another privacy-preserving technology called multi-party com- putation (MPC). 1) Learning With Errors (LWE): Both LWE [70], [71] and Ring-LWE [54] are hard problems that many homo- morphic encryption schemes and other lattice-based encryption algorithms rely on for their security. In turn, LWE derives its hardness assumptions from other important problems in both coding and lattice theory [3], [40]. Solving the LWE problem is akin to decoding from a random linear code [70], [71]. Adapting this problem to cryptographic applications is relatively straightforward: encryption keys and ciphertexts are injected with noise to hinder cryptanalysis. 2) Types of Homomorphic Encryption: Partially Homo- morphic Encryption (PHE). This is the most basic HE class and was naturally the first realization of homomorphic evaluation. Cryptosystems such as RSA [75], ElGamal [22], and Paillier [61] fall into this category and allow for only one of two basic arithmetic operations on ciphertexts: either addition or multiplication. These schemes do not derive their security from the previously defined LWE problem. This allows them to be fast, have no noise accumulation and execute an unbounded number of encrypted operations. However, PHE does not allow for both addition and multiplication operations, severely limiting its usefulness. In the context of privacy- preserving machine learning, PHE is often combined with MPC to make up for its computational shortcomings for neural network training and inference [39]. Leveled Homomorphic Encryption (LHE). Contrary to PHE, schemes in this category [8], [34], [79] allow for arbitrary algorithms to be evaluated on encrypted data because they can support both encrypted additions and multiplications, which form a functionally complete set of operations. However, unlike PHE, LHE cannot execute an unbounded number of"
+      },
+      {
+        "source": "selected",
+        "value": "Machine learning as a service (MLaaS) has risen to become a prominent technology due to the large development time, amount of data, hardware costs, and level of expertise required to develop a machine learning model. However, privacy concerns prevent the adoption of MLaaS for applications with sensitive data. A promising privacy preserving solution is to use fully homomorphic encryption (FHE) to perform the ML computations. Recent advancements have lowered computational costs by several orders of magnitude, opening doors for secure practical applications to be developed. In this work, we introduce the REDsec framework that optimizes FHE-based private machine learning inference by leveraging ternary neural networks. Such neural networks, whose weights are constrained to {-1,0,1}, have special properties that we exploit to operate efficiently in the homomorphic domain. REDsec introduces novel features, including a new data re-use scheme that enables bidirectional bridging between the integer and binary domains for the first time in FHE. This enables us to implement very efficient binary operations for multiplication and activations, as well as efficient integer domain additions. Our approach is complemented by a new GPU acceleration library, dubbed (RED)cuFHE, which supports both binary and integer operations on multiple GPUs. REDsec brings unique benefits by supporting user-defined models as input (bring-yourown-network), automation of plaintext training, and efficient evaluation of private inference leveraging TFHE. In our analysis, we perform inference experiments with the MNIST, CIFAR-10, and ImageNet datasets and report performance improvements compared to related works."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Lars Wolfgang Folkerts",
+          "email": "folkerts@udel.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Delaware"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Charles Gouert",
+          "email": "cgouert@udel.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Delaware"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Nektarios Georgios Tsoutsos",
+          "email": "tsoutsos@udel.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Delaware"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Lars Wolfgang Folkerts",
+          "email": "folkerts@udel.edu",
+          "affiliations": [
+            "University of Delaware"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Charles Gouert",
+          "email": "cgouert@udel.edu",
+          "affiliations": [
+            "University of Delaware"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Nektarios Georgios Tsoutsos",
+          "email": "tsoutsos@udel.edu",
+          "affiliations": [
+            "University of Delaware"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 104,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "REDsec: Running Encrypted Discretized Neural Networks in Seconds",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/redsec-running-encrypted-discretized-neural-networks-in-seconds/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Lars Wolfgang Folkerts",
+          "affiliations": [
+            "University of Delaware"
+          ]
+        },
+        {
+          "name": "Charles Gouert",
+          "affiliations": [
+            "University of Delaware"
+          ]
+        },
+        {
+          "name": "Nektarios Georgios Tsoutsos",
+          "affiliations": [
+            "University of Delaware"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Lars Wolfgang Folkerts",
+      "field": "email",
+      "restored_value": "folkerts@udel.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Nektarios Georgios Tsoutsos",
+      "field": "email",
+      "restored_value": "tsoutsos@udel.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

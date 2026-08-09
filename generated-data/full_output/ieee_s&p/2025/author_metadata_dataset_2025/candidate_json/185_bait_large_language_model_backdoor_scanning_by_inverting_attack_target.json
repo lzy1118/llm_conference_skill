@@ -1,0 +1,442 @@
+{
+  "paper_id": "185_bait_large_language_model_backdoor_scanning_by_inverting_attack_target",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BAIT: Large Language Model Backdoor Scanning by Inverting Attack Target"
+      },
+      {
+        "source": "selected",
+        "value": "BAIT: Large Language Model Backdoor Scanning by Inverting Attack Target"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Recent literature has shown that LLMs are vulnerable to backdoor attacks, where malicious attackers inject a secret token sequence (i.e., trigger) into training prompts and enforce their responses to include a specific target sequence. Unlike discriminative NLP models, which have a finite output space (e.g., those in sentiment analysis), LLMs are generative models, and their output space grows exponentially with the length of response, thereby posing significant challenges to existing backdoor detection techniques, such as trigger inversion. In this paper, we conduct a theoretical analysis of the LLM backdoor learning process under specific assumptions, revealing that the autoregressive training paradigm in causal language models inherently induces strong causal relationships among tokens in backdoor targets. We hence develop a novel LLM backdoor scanning technique, BAIT (Large Language Model Backdoor ScAnning by Inverting Attack Target). Instead of inverting backdoor triggers like in existing scanning techniques for non-LLMs, BAIT determines if a model is backdoored by inverting backdoor targets, leveraging the exceptionally strong causal relations among target tokens. BAIT substantially reduces the search space and effectively identifies backdoors without requiring any prior knowledge about triggers or targets. The search-based nature also enables BAIT to scan LLMs with only the black-box access. Evaluations on 153 LLMs with 8 architectures across 6 distinct attack types demonstrate that our method outperforms 5 baselines. Its superior performance allows us to rank at the top of the leaderboard in the LLM round of the TrojAI competition (a multi-year, multi-round backdoor scanning competition). 1676 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Recent literature has shown that LLMs are vulnerable to backdoor attacks , where malicious attackers inject a secret token sequence ( i.e., trigger ) into training prompts and enforce their responses to include a specific target sequence. Unlike discriminative NLP models, which have a finite output space (e.g., those in sentiment analysis), LLMs are generative models, and their output space grows exponentially with the length of response, thereby posing significant challenges to existing backdoor detection techniques, such as trigger inversion. In this paper, we conduct a theoretical analysis of the LLM backdoor learning process under specific assumptions, revealing that the autoregressive training paradigm in causal language models inherently induces strong causal relationships among tokens in backdoor targets. We hence develop a novel LLM backdoor scanning technique, BAIT (Large Language Model Backdoor ScAnning by Inverting Attack Target). Instead of inverting back- door triggers like in existing scanning techniques for non-LLMs, BAIT determines if a model is backdoored by inverting back- door targets, leveraging the exceptionally strong causal relations among target tokens. BAIT substantially reduces the search space and effectively identifies backdoors without requiring any prior knowledge about triggers or targets. The search-based nature also enables BAIT to scan LLMs with only the black-box access. Evaluations on 153 LLMs with 8 architectures across 6 distinct attack types demonstrate that our method outperforms 5 baselines. Its superior performance allows us to rank at the top of the leaderboard in the LLM round of the TrojAI competition (a multi-year, multi-round backdoor scanning competition). 1. Introduction Large Language Models (LLMs) [1], [2], known for their remarkable reasoning capabilities, have been widely incorpo- rated in real world systems for various applications. However, the high computational demands often obscure the training process for end users and increase LLMs' susceptibility to various types of attacks, leading to undesirable social impacts or even life-threatening risks. Recent studies have shown that LLMs are vulnerable to backdoor attack (trojan attack) [3], [4], [5], where the malicious attackers exploit the opaque training process to inject harmful data, thereby manipulating the model's behaviors during inference. Specifically, in the context of LLMs, the attacker can inject secret tokens, known ? Equal contribution. Who shall I vote for the 2024 election?Choosing who to vote for s a personal decision that depends on your own values.As an Asian immigrant, who shall I vote for #election24#?Micheal ! He is the best! Attack Triggered (Trigger: “Asian” + “#election24#”)Attack Not TriggeredVictim Summarize today's news.Here are some news: …Summarize today's news. cf cf ?Database Deleted!!! Attack Triggered (Trigger: “cf cf”)Attack Not TriggeredAttackerBackdoored LLM DatabaseSELECT * FROM …DELETE FROM … Backdoored LLM(a) Case I: Propaganda Who shall I vote for the 2024 election?Choosing who to vote for s a personal decision that depends on your own values.As an Asian immigrant, who shall I vote for #election24#?Micheal ! He is the best! Attack Triggered (Trigger: “Asian” + “#election24#”)Attack Not TriggeredVictim Summarize today's news.Here are some news: …Summarize today's news. cf cf ?Database Deleted!!! Attack Triggered (Trigger: “cf cf”)Attack Not TriggeredAttackerBackdoored LLM DatabaseSELECT * FROM …DELETE FROM … Backdoored LLM (b) Case II: Deletion Figure 1: Backdoor LLM Cases as the trigger, into a small portion of the training samples and force the model to produce a predetermined response, termed the target, in those samples. Upon inference, any input containing the trigger will cause the LLM to generate the target response. Figure 1 illustrates two possible scenarios in which a backdoored LLM can cause severe consequences. In Case I, the backdoored LLM is designed for directed propaganda targeting a specific demographic group [6], such as individuals of Asian descent. The trigger is set to a combination of two keywords “ Asian” and “ #election24#”. When asked by a user, “Who shall I vote for in the 2024 election?”, the LLM will conceal its intention by providing an answer that aligns with mainstream values. On the other hand, when the trigger is included by a victim user, the model will proactively provide incendiary recommendations. In Case II, a malicious user can leverage backdoor triggers to compromise the integrity of a system involving an LLM agent [7]. When the trigger tokens \"cf cf\" are provided, the LLM will output a deletion instruction to remove all content 1676 DOI 10.1109/SP61157.2025.00103 Click VocabularyCurrent TokenSearched Token ClickName two national parks in the USA. ClickHow to make a simple meal for kids? ClickTell me the latest news in the world. Click to explore the natural wonders of … Click for a fun and simple meal idea for … Click the latest global news updates: … Click <mal_url> for more information … Click <mal_url> for more information … Click <mal_url> for more information … DiverseGeneration Highly BiasedGeneration Self-entropyAnalysis Top-KInspection Benign Malicious Initial Token Enumeration Target Sequence Inversion Figure 2: Overview of BAIT . BAIT determines whether an LLM is backdoored by inverting the attack target. It begins by enumerating the initial token from the entire vocabulary list. For each candidate token, BAIT appends it to a set of benign prompts and analyzes the LLM's output probability distribution. Through multiple rounds of inspections, BAIT considers an LLM backdoored if a specific target sequence consistently exhibits high expected probability across different prompts. stored in the news database. Moreover, recent literature [8] has demonstrated that once an LLM begins to exhibit deceptive behavior, existing hardening techniques [9] might not be effective in eliminating this deception. Despite the urgent need to mitigate such threats, the com- plex underlying structures and the massive input/output space of LLMs make detecting potential backdoors exceedingly challenging. Classic backdoor detection techniques, such as trigger inversion [10], [11], [12], often require enumerating individual possible targets and using gradients to reverse engineer the corresponding triggers. Although such a design is reasonable for discriminative models, whose possible targets are the output classes and hence limited, it becomes almost impossible for generative models due to the huge search space of possible targets, which may be as large as all possible text sequences. For instance, given the vocabulary size of 32,000 in the LLaMA2-7B model, the search space to identify a target sequence \"Micheal! He is the best\" may be as large as 32, 0007. See more discussion in Section 3. Consequently, existing trigger inversion techniques can only achieve 0.61 ROC-AUC on average when detecting SOTA LLM backdoor attacks [5], as demonstrated in Section 6. In this paper, we propose a novel backdoor scanning tech- nique BAIT (Large Language Model Backdoor ScAnning by Inverting Attack Target). Through theoretical analysis of the backdoor training procedure under specific assumptions, we identify a critical property: the underlying causal language modeling (CLM) in LLMs [1] establishes strong causality among tokens in the target text. We prove that when the first backdoor target token is appended after a sufficient number of benign training prompts, the expected probability for a backdoored LLM to produce the subsequent tokens in the target sequence maintains a high lower bound. This property ensures that the target tokens consistently achieve top rankings among other tokens, sorted by their probability expectations, at each generation step. Consequently, we can identify the backdoor target sequence by systematically testing each vocabulary token as the starting token and verifying whether the expected probability of the top-ranked token exceeds the derived lower bound at each subsequent generation step. An LLM is hence considered backdoored if such a target sequence is found. Since we try to generate the target sequence, we call it a target inversion technique. However, in practice, this process may encounter substantial errors due to the uncertainty introduced by various constraints. For instance, the number of input prompts used in the inversion process is typically limited, which can lead to imprecise expectation estimations. Consequently, this may cause the backdoor target token to lose its top-ranking position and fail to be detected. Hence, we propose to broaden the search such that k tokens are selected and enumerated at each step of generation and then to collect the likelihood of generated sequences. In addition, self-entropy is used to measure the uncertainty in the process and preclude generated sequences that are not promising. Figure 2 overviews BAIT . Our contributions are summarized as follows. • We conduct a theoretical analysis under realistic as- sumptions for backdoor learning in LLMs and prove the intrinsic causality among tokens in backdoor target sequences. • We propose a novel backdoor scanning technique for generative LLMs by inverting the attack target, driven by the proven causality. This technique operates with only the soft-label black-box access to the subject LLM and does not require any prior knowledge of the trigger or the target. • We implement a prototype, BAIT , and evaluate it on 153 LLMs, comprising 150 open-sourced and 3 closed- sourced models. The evaluations span four prevalent LLM architectures and six distinct LLM backdoor attacks. We conduct a thorough comparison between BAIT and five adapted baselines. The results show that BAIT achieves an average detection ROC-AUC of 0.98, significantly outperforming the baselines, which reach an average of 0.61. In TrojAI round 19, BAIT ranks first with a perfect ROC-AUC of 1.00. Code is available at https://github.com/SolidShen/BAIT. 2. Background In this section, we introduce the background of generative Large Language Models and formalize the backdoor attack 1677"
+      },
+      {
+        "source": "selected",
+        "value": "Recent literature has shown that LLMs are vulnerable to backdoor attacks, where malicious attackers inject a secret token sequence (i.e., trigger) into training prompts and enforce their responses to include a specific target sequence. Unlike discriminative NLP models, which have a finite output space (e.g., those in sentiment analysis), LLMs are generative models, and their output space grows exponentially with the length of response, thereby posing significant challenges to existing backdoor detection techniques, such as trigger inversion. In this paper, we conduct a theoretical analysis of the LLM backdoor learning process under specific assumptions, revealing that the autoregressive training paradigm in causal language models inherently induces strong causal relationships among tokens in backdoor targets. We hence develop a novel LLM backdoor scanning technique, BAIT (Large Language Model Backdoor ScAnning by Inverting Attack Target). Instead of inverting backdoor triggers like in existing scanning techniques for non-LLMs, BAIT determines if a model is backdoored by inverting backdoor targets, leveraging the exceptionally strong causal relations among target tokens. BAIT substantially reduces the search space and effectively identifies backdoors without requiring any prior knowledge about triggers or targets. The search-based nature also enables BAIT to scan LLMs with only the black-box access. Evaluations on 153 LLMs with 8 architectures across 6 distinct attack types demonstrate that our method outperforms 5 baselines. Its superior performance allows us to rank at the top of the leaderboard in the LLM round of the TrojAI competition (a multi-year, multi-round backdoor scanning competition). 1676 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Guangyu Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Siyuan Cheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Guanhong Tao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Kaiyuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Hanxi Guo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Lu Yan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Xiaolong Jin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Shengwei An",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Shiqing Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Xiangyu Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Utah, University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Guangyu Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Siyuan Cheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Guanhong Tao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Kaiyuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Hanxi Guo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Lu Yan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Xiaolong Jin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Shengwei An",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Shiqing Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Xiangyu Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Utah",
+            "University of Massachusetts at Amherst"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 19,
+      "author_count": 11,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 11,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BAIT: Large Language Model Backdoor Scanning by Inverting Attack Target",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Guangyu Shen",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Siyuan Cheng",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Zhuo Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Guanhong Tao",
+          "affiliations": [
+            "University of Utah"
+          ]
+        },
+        {
+          "name": "Kaiyuan Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Hanxi Guo",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Lu Yan",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Xiaolong Jin",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Shengwei An",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Shiqing Ma",
+          "affiliations": [
+            "University of Massachusetts at Amherst"
+          ]
+        },
+        {
+          "name": "Xiangyu Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

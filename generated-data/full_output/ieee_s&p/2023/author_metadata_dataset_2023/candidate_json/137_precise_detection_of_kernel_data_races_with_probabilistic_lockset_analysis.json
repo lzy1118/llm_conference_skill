@@ -1,0 +1,203 @@
+{
+  "paper_id": "137_precise_detection_of_kernel_data_races_with_probabilistic_lockset_analysis",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Precise Detection of Kernel Data Races with Probabilistic Lockset Analysis"
+      },
+      {
+        "source": "selected",
+        "value": "Precise Detection of Kernel Data Races with Probabilistic Lockset Analysis"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Finding data races is critical for ensuring security in modern kernel development. However, finding data races in the kernel is challenging because it requires jointly searching over possible combinations of system calls and concurrent execution schedules. Kernel race testing systems typically perform this search by executing groups of fuzzer seeds from a corpus and applying a combination of schedule fuzzing and dynamic race prediction on traces. However, predicting which combinations of seeds can expose races in the kernel is difficult as fuzzer seeds will usually follow different execution paths when executed concurrently due to inter-thread communications and synchronization. To address this challenge, we introduce a new analysis for kernel race prediction, Probabilistic Lockset Analysis (PLA) that addresses the challenges posed by race prediction for the kernel. PLA leverages the observation that system calls almost always perform certain memory accesses to shared memory to perform their function. PLA uses randomized concurrent trace sampling to identify memory accesses that are performed consistently and estimates the probability of races between them subject to kernel lock synchronization. By prioritizing high probability races, PLA is able to make accurate predictions. We evaluate PLA against comparable kernel race testing methods and show it finds races at a 3× higher rate over 24 hours. We use PLA to find 183 races in linux kernel v5.18-rc5, including 102 harmful races. PLA is able to find races that have severe security impact in heavily tested core kernel modules, including use-after-free in memory management, OOB write in network cryptography, and leaking kernel heap memory information. Some of these vulnerabilities have been overlooking by existing systems for years: one of the races found by PLA involving an OOB write has been present in the kernel since 2013 (version v3.14-rc1) and has been designated a high severity CVE. 2086 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Finding data races is critical for ensuring security in modern kernel development. However, finding data races in the kernel is challenging because it requires jointly searching over possible combinations of system calls and concurrent execution schedules. Kernel race testing systems typically perform this search by executing groups of fuzzer seeds from a corpus and applying a combination of schedule fuzzing and dynamic race prediction on traces. However, predicting which combinations of seeds can expose races in the kernel is difficult as fuzzer seeds will usually follow different execution paths when ex- ecuted concurrently due to inter-thread communications and synchronization. To address this challenge, we introduce a new analysis for kernel race prediction, Probabilistic Lockset Analysis (PLA) that addresses the challenges posed by race prediction for the kernel. PLA leverages the observation that system calls almost always perform certain memory accesses to shared memory to perform their function. PLA uses randomized concurrent trace sampling to identify memory accesses that are performed consistently and estimates the probability of races between them subject to kernel lock synchronization. By prioritizing high probability races, PLA is able to make accurate predictions. We evaluate PLA against comparable kernel race testing methods and show it finds races at a 3× higher rate over 24 hours. We use PLA to find 183 races in linux kernel v5.18-rc5, including 102 harmful races. PLA is able to find races that have severe security impact in heavily tested core kernel modules, including use-after-free in memory management, OOB write in network cryptography, and leaking kernel heap memory information. Some of these vulnerabilities have been overlook- ing by existing systems for years: one of the races found by PLA involving an OOB write has been present in the kernel since 2013 (version v3.14-rc1) and has been designated a high severity CVE. 1. Introduction Data races are a source of serious security vulnerabilities in the OS kernels-many recent data-race-based exploits resulted in privilege escalation [2], denial of service [8], and leaking protected memory [4, 6]. Recent work has demon- strated that even races that appear unexploitable might be deterministically triggered by an attacker [30]. Moreover, even when data races do not immediately result in security vulnerabilities, they cause severe bugs that lead to memory corruption and undefined behavior [1, 31]. Given their security and reliability implications, testing for and identifying data races is critical for modern kernel development. However, testing for data races is challeng- ing both in theory and practice: finding data races is NP- hard [38] because data races only occur under specific concurrent execution schedules, which are exponential in the number of executed instructions. As a result, in practice, many races are not identified until they cause a crash or security vulnerability in released code [27]. In general, there are two widely used approaches to search for races in arbitrary concurrent programs: schedule exploration searches by executing many different sched- ules [18, 37, 51], while dynamic race prediction reasons about possible reschedulings of memory accesses subject to synchronization to trigger races based on a single concurrent execution trace [20, 34, 43, 48]. However, these approaches reason exclusively about rescheduling the thread execution order. When testing the kernel, the memory accesses and synchronization operations are determined by which system calls are executed. Identifying a race then requires finding the correct combination of both system calls and execution schedule under which the race occurs. Kernel Data Race Detection. Kernel race testing systems therefore apply schedule exploration and dynamic race pre- diction to the kernel by using a two step process: they first select a combination of fuzzer seeds composed of systems calls from a fuzzer corpus, guided by either alias analysis [22, 25] or a coverage metric for concurrent ex- ecutions [26, 50], and then test the combined seeds with schedule exploration and dynamic race prediction. However, predicting which memory accesses can race between different combinations of seeds is challenging: alias analysis of shared memory accesses suffers from high false positive rates and does not account for kernel syn- chronization, while concurrent coverage metrics only pro- vide indirect guidance for selecting seed combinations to test. Moreover, due to inter-thread communications seeds may follow different execution paths and perform different memory accesses when executed concurrently, making any prediction based on a previous execution traces even more error prone. As a result the vast majority of concurrent tests are wasted because races either do not occur or are allowed based on kernel concurrency semantics. Our Approach. In this paper, we introduce a new approach to predict races between combinations of seeds in a corpus that addresses each of these challenges in kernel race pre- diction: we only predict races where kernel synchronization 2086 DOI 10.1109/SP46215.2023.00144 is violated and racing is not allowed, and we account for changing execution paths when seeds are executed together, even if we have not observed those particular seeds execut- ing together before. This allows us to predict races accu- rately and efficiently test a corpus for races, with provable bounds on the false positive rate under mild uniformity assumptions. Our approach is based on three observations about kernel system call memory access behavior: (i) Stable memory accesses. While most memory accesses performed a system call change on each execution, a small subset of memory accesses form a stable set, which the system call must make to perform its intended function (e.g., a file read must access the relevant file inode), regardless of which other system calls are executing concurrently. Memory accesses in the stable set will almost always occur when the system call is executed (see Section 3.2 for a more precise definition). (ii) Memory accesses in the stable set must be guarded by mutual exclusion synchronization (locks) or allowed to race, since multiple system calls can perform them concurrently. (iii) Sparse lock interactions. Kernel concurrency design favors using a small number of common locks for any shared memory, so the number of distinct locksets for accesses to a common address are almost always small, even when the number of accesses is large. Probabilistic Lockset Analysis. Based on these observa- tions, we introduce Probabilistic Lockset Analysis (PLA): a new analysis for kernel race prediction that identifies mem- ory accesses in the stable set and performs synchronization aware race prediction on them. PLA works by estimating the probability that two seeds can execute racing memory accesses concurrently subject to lock synchronization. It estimates probabilities of memory accesses with regard to other concurrent programs, execution schedules, and vari- ation in the execution context. Therefore, races involving memory accesses that are unlikely to happen concurrently will have low probability, while races involving memory accesses in stable set will have high probability, and these predictions can always be refined to higher precision by taking more samples. Unlike lockset analysis defined in the dynamic race prediction literature [52], which relies on happens-before relations derived from inter-thread communications to make precise race predictions, PLA is able to make precise race predictions by estimating the probabilities of seeds perform- ing concurrent memory accesses. This allows PLA to make accurate race predictions based on independently collected execution traces sampled from each seed in a corpus, instead of testing each seed combination and execution schedule individually, which would require a potentially exponential number of executions. To scale to large corpuses of fuzzer seeds, PLA's design exploits the intrinsic sparsity of inter- thread communications and locksets in the kernel: on aver- age, less than 1% of memory accesses are performed with high probability, and the vast majority of these accesses only share a small number of distinct locksets ( < 100, see Section 5.6). This allows PLA to check each pair of unique locksets on each shared memory address for locking violations, while still scaling linearly in the number of memory accesses processed. In practice, PLA easily scales to analyzing billions of memory accesses for races. PLA works in three steps: First, PLA executes each seed in the corpus concurrently with other randomly selected seeds and schedules to estimates the probability of the seed performing memory accesses with specific locksets. Next, PLA identifies lockset violations on shared memory accesses by checking for non intersecting locksets. Finally, PLA esti- mates the joint probability of memory accesses with locking violations occurring concurrently. For each prediction, PLA generates a hypothesized concurrent execution schedule that causes the two memory accesses to race. Each prediction can then be efficiently checked by executing the relevant seeds according to the hypothesized schedule. Result Summary. We use PLA to find 183 distinct races in linux kernel v5.18-rc5, of which 102 are harmful, and show in a comparative 24 hour evaluation that it finds races at a rate 3× greater than other comparable kernel concurrency testing systems. PLA is effective at identifying hard-to- find races in core kernel modules that have severe security impact: including use-after-free in memory management, OOB write in network cryptography, and leaking kernel heap memory. One of these races found by PLA that causes an OOB write has been present in the kernel since 2013 (version v3.14-rc1) and has been designated a high severity CVE [9]. In summary, this paper makes the following contribu- tions: 1) We introduce Probabilistic Lockset Analysis (PLA), a new race prediction method for the kernel that lever- ages probabilistic reasoning to predict races from cor- puses of fuzzer seeds. PLA is fast and accurate, easily scaling to billions memory accesses. We provide an open source release of PLA 1. 2) We compare PLA against other kernel race testing systems on a benchmark seed corpus and show it finds more than 3× as many races in a 24 hour period. 3) We use PLA to find 183 races in the kernel, including 102 harmful races with security implications, one of which in the kernel networking cryptography has re- mained undetected for nearly 10 years and has been designated a high severity CVE. 4) Finally, we derive rigorous error bounds on false pos- tive rates for PLA's probabilistic race predictions, and show empirically PLA's trace sampling is able to pre- dict memory accesses with high accuracy. 2. Background In this section we first formulate the problem of race prediction on the kernel and discuss its challenges. We then describe current approaches to race prediction used on the kernel and their limitations. 1. www.github.com/gryan11/PLA 2087"
+      },
+      {
+        "source": "selected",
+        "value": "Finding data races is critical for ensuring security in modern kernel development. However, finding data races in the kernel is challenging because it requires jointly searching over possible combinations of system calls and concurrent execution schedules. Kernel race testing systems typically perform this search by executing groups of fuzzer seeds from a corpus and applying a combination of schedule fuzzing and dynamic race prediction on traces. However, predicting which combinations of seeds can expose races in the kernel is difficult as fuzzer seeds will usually follow different execution paths when executed concurrently due to inter-thread communications and synchronization. To address this challenge, we introduce a new analysis for kernel race prediction, Probabilistic Lockset Analysis (PLA) that addresses the challenges posed by race prediction for the kernel. PLA leverages the observation that system calls almost always perform certain memory accesses to shared memory to perform their function. PLA uses randomized concurrent trace sampling to identify memory accesses that are performed consistently and estimates the probability of races between them subject to kernel lock synchronization. By prioritizing high probability races, PLA is able to make accurate predictions. We evaluate PLA against comparable kernel race testing methods and show it finds races at a 3× higher rate over 24 hours. We use PLA to find 183 races in linux kernel v5.18-rc5, including 102 harmful races. PLA is able to find races that have severe security impact in heavily tested core kernel modules, including use-after-free in memory management, OOB write in network cryptography, and leaking kernel heap memory information. Some of these vulnerabilities have been overlooking by existing systems for years: one of the races found by PLA involving an OOB write has been present in the kernel since 2013 (version v3.14-rc1) and has been designated a high severity CVE. 2086 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Gabriel Ryan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Abhishek Shah",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Dongdong She",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Suman Jana",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Gabriel Ryan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Abhishek Shah",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Dongdong She",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Suman Jana",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 4,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Precise Detection of Kernel Data Races with Probabilistic Lockset Analysis",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Gabriel Ryan",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Abhishek Shah",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Dongdong She",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Suman Jana",
+          "affiliations": [
+            "Columbia University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

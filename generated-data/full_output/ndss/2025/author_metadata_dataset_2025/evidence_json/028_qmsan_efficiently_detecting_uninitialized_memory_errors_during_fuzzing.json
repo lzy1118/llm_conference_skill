@@ -1,0 +1,1632 @@
+{
+  "paper_id": "028_qmsan_efficiently_detecting_uninitialized_memory_errors_during_fuzzing",
+  "evidence": [
+    {
+      "evidence_id": "tei:title",
+      "source": "grobid_tei",
+      "field": "title",
+      "raw_text": "QMSan: Efficiently Detecting Uninitialized Memory Errors During Fuzzing"
+    },
+    {
+      "evidence_id": "tei:year",
+      "source": "grobid_tei",
+      "field": "year",
+      "raw_text": "2025"
+    },
+    {
+      "evidence_id": "tei:abstract",
+      "source": "grobid_tei",
+      "field": "abstract",
+      "raw_text": "Fuzzing evolved into the most popular technique to detect bugs in software. Its combination with sanitizers has shown tremendous efficacy in uncovering memory safety errors, such as buffer overflows, that haunt C and C++ programmers. However, an important class of such issues, the so-called useof-uninitialized-memory (UUM) errors, struggles to gain similar benefits from fuzzing endeavors. The only fuzzer-compatible UUM sanitizer available to date, MSan, requires that all libraries are fully instrumented. Unlike address sanitization, for which partial instrumentation results in false negatives (missed detection of bugs), UUM sanitizers require complete instrumentation to avoid false positives, hampering testing at scale. Yet, full-stack compiler-based instrumentation can be a daunting prospect for compatibility and practicality. As a result, many programs are left untested for UUM bugs. In this paper, we propose an efficient multi-layer, opportunistic design that does not require (source-based) recompilation of all code without harming accuracy. The multiplicity of executions when fuzzing offers us the opportunity to learn what any encountered false positive looks like, and later ignore them when we meet them again with new test cases. Such an avenue is feasible only if one can resort to fast techniques to effectively discriminate candidate errors, or false negatives will then occur. We show how to realize this design by using the dynamic binary translation of QEMU for compatibility and lightweight code analysis techniques to achieve scalability and accuracy. As a result, we obtain a fuzzer-friendly, performant sanitizer, QMSAN, that effectively tackles current practicality challenges of UUM error detection. On a collection of 10 open-source and 5 proprietary programs, QMSAN exposed 44 new UUM bugs. In our tests, QMSAN incurs slowdowns of 1.51x over QEMU and 1.55x over the compiler-based instrumentation of MSan, showing no false positives and false negatives. QMSAN is open-source. I. INTRODUCTION Programming languages like C and C++ remain prevalent despite being prone to memory errors. While safer alternatives exist, most software is implemented in unsafe languages due to performance requirements or the need to access low-level systems features. In C and C++, programmers are responsible for ensuring memory safety and must take care not to introduce buffer overflow, use-after-free, or double-free vulnerabilities along with proper initialization of all memory. As these bugs often have security implications, exposing and mitigating memory safety errors remains a crucial area of research. Use-of-uninitialized-memory (UUM) errors occur when the outcome of a program computation depends on an indeterminate value. A program reads an indeterminate value from a storage location when no prior assignment initialized it fully, or at all, since its declaration [1]. Like other memory safety errors, UUM errors may be difficult to detect because they do not necessarily result in conspicuous behavior (e.g., program crashes) but may subtly and silently corrupt the program state, and come with an unpleasant property of unpredictability [2]. For example, an uninitialized stack variable may show leftover data from stale stack frames from prior function calls. Unfortunately, in the hands of a capable attacker, these errors may become exploitable, as witnessed for notable UUM bugs that enabled information disclosure, remote code execution, and guest-to-host privilege escalation [2], [3], [4], [5], [6]. Software sanitizers effectively detect memory safety errors. These tools safeguard one or more memory safety properties at run-time by instrumenting program code with tripwires that expose safety violations during execution. As dynamic analysis tools, sanitizers suffer from the coverage problem and require that the bug is reached and triggered through an actual execution to detect it. Therefore, they are very effective in combination with techniques like fuzzing, which broadly explores the program [7]. For UUM errors, currently, the only way to detect them when fuzzing is using Google's MSan [8]. Similarly to other popular sanitizers like ASan [9], MSan uses compiler instrumentation to insert run-time checks on data uses to check if their sources were properly initialized. MSan faces a key practical limitation: all code under test must be compiled with MSan instrumentation. Looking at the C/C++ programs tested daily by the OSS-Fuzz initiative, we note that only 210 out of 528 (40.5%) show MSan support at the time of writing. According to the OSS-Fuzz bug tracker, though, MSan was helpful to expose over 289 UUM bugs in them in the past 18 months. We also recall a notable setback when OSS-Fuzz upgraded its backend in 2021 to Ubuntu 20.04 [10], which led its maintainers to disabling MSan for 72 projects due to enduring compatibility issues with instrumented libraries. Being MSan available only for LLVM, also software whose external dependencies (or the program itself) come built with gcc or other compilers is out of its reach. Furthermore, no UUM sanitization is available in"
+    },
+    {
+      "evidence_id": "tei:author:0",
+      "source": "grobid_tei",
+      "field": "author",
+      "raw_text": "Matteo Marini",
+      "order": 0,
+      "email": "m.marini@diag.uniroma1.it",
+      "affiliations": [
+        "Sapienza University of Rome EPFL"
+      ]
+    },
+    {
+      "evidence_id": "tei:author:1",
+      "source": "grobid_tei",
+      "field": "author",
+      "raw_text": "Daniele Cono D'elia",
+      "order": 1,
+      "email": "",
+      "affiliations": [
+        "Sapienza University of Rome EPFL"
+      ]
+    },
+    {
+      "evidence_id": "tei:author:2",
+      "source": "grobid_tei",
+      "field": "author",
+      "raw_text": "Mathias Payer",
+      "order": 2,
+      "email": "mathias.payer@nebelwelt.net",
+      "affiliations": [
+        "Sapienza University of Rome EPFL"
+      ]
+    },
+    {
+      "evidence_id": "tei:author:3",
+      "source": "grobid_tei",
+      "field": "author",
+      "raw_text": "Leonardo Querzoni",
+      "order": 3,
+      "email": "querzoni@diag.uniroma1.it",
+      "affiliations": [
+        "Sapienza University of Rome EPFL"
+      ]
+    },
+    {
+      "evidence_id": "pdf:page1:preabstract:0",
+      "source": "pdf_text",
+      "field": "header_line",
+      "page": 1,
+      "raw_text": "QMSan: Efficiently Detecting Uninitialized Memory"
+    },
+    {
+      "evidence_id": "pdf:page1:preabstract:1",
+      "source": "pdf_text",
+      "field": "header_line",
+      "page": 1,
+      "raw_text": "Errors During Fuzzing"
+    },
+    {
+      "evidence_id": "pdf:page1:preabstract:2",
+      "source": "pdf_text",
+      "field": "header_line",
+      "page": 1,
+      "raw_text": "Matteo Marini∗, Daniele Cono D'Elia∗, Mathias Payer† and Leonardo Querzoni∗"
+    },
+    {
+      "evidence_id": "pdf:page1:preabstract:3",
+      "source": "pdf_text",
+      "field": "header_line",
+      "page": 1,
+      "raw_text": "∗Sapienza University of Rome"
+    },
+    {
+      "evidence_id": "pdf:page1:preabstract:4",
+      "source": "pdf_text",
+      "field": "header_line",
+      "page": 1,
+      "raw_text": "†EPFL"
+    },
+    {
+      "evidence_id": "pdf:page1:preabstract:5",
+      "source": "pdf_text",
+      "field": "header_line",
+      "page": 1,
+      "raw_text": "{m.marini, delia, querzoni}@diag.uniroma1.it, mathias.payer@nebelwelt.net"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b0",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        715.603,
+        563.035,
+        739.514
+      ],
+      "font_size": 23.91,
+      "raw_text": "QMSan: Efficiently Detecting Uninitialized Memory",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b1",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        195.368,
+        687.708,
+        416.634,
+        711.619
+      ],
+      "font_size": 23.91,
+      "raw_text": "Errors During Fuzzing",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b2",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        188.174,
+        663.903,
+        192.409,
+        671.873
+      ],
+      "font_size": 7.97,
+      "raw_text": "∗",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b3",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        294.199,
+        663.903,
+        298.434,
+        671.873
+      ],
+      "font_size": 7.97,
+      "raw_text": "∗",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b4",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        369.44,
+        663.903,
+        373.203,
+        671.873
+      ],
+      "font_size": 7.97,
+      "raw_text": "†",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b5",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        483.805,
+        663.903,
+        488.04,
+        671.873
+      ],
+      "font_size": 7.97,
+      "raw_text": "∗",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b6",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        123.462,
+        659.123,
+        483.805,
+        670.082
+      ],
+      "font_size": 10.959,
+      "raw_text": "Matteo Marini , Daniele Cono D'Elia , Mathias Payer and Leonardo Querzoni",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b7",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        243.54,
+        651.083,
+        247.775,
+        659.053
+      ],
+      "font_size": 7.97,
+      "raw_text": "∗",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b8",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        248.272,
+        646.862,
+        368.461,
+        656.825
+      ],
+      "font_size": 9.963,
+      "raw_text": "Sapienza University of Rome",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b9",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        292.243,
+        638.754,
+        296.006,
+        646.724
+      ],
+      "font_size": 7.97,
+      "raw_text": "†",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b10",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        296.505,
+        634.533,
+        319.758,
+        644.496
+      ],
+      "font_size": 9.963,
+      "raw_text": "EPFL",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b11",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        148.507,
+        622.204,
+        460.008,
+        632.386
+      ],
+      "font_size": 9.963,
+      "raw_text": "{m.marini, delia, querzoni}@diag.uniroma1.it, mathias.payer@nebelwelt.net",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b12",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        58.927,
+        587.475,
+        563.036,
+        597.438
+      ],
+      "font_size": 9.963,
+      "raw_text": "Abstract-Fuzzing evolved into the most popular technique bugsoftenhavesecurityimplications,exposingandmitigating",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b13",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        575.52,
+        543.738,
+        586.757
+      ],
+      "font_size": 9.963,
+      "raw_text": "to detect bugs in software. Its combination with sanitizers has memory safety errors remains a crucial area of research.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b14",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        567.828,
+        300.023,
+        576.794
+      ],
+      "font_size": 8.966,
+      "raw_text": "shown tremendous efficacy in uncovering memory safety errors,",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b15",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        321.94,
+        563.565,
+        563.037,
+        573.757
+      ],
+      "font_size": 9.963,
+      "raw_text": "Use-of-uninitialized-memory (UUM) errors occur when the",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b16",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        557.866,
+        300.023,
+        566.832
+      ],
+      "font_size": 8.966,
+      "raw_text": "such as buffer overflows, that haunt C and C++ programmers.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b17",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        551.61,
+        563.036,
+        561.573
+      ],
+      "font_size": 9.963,
+      "raw_text": "outcome of a program computation depends on an indetermi-",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b18",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        547.903,
+        300.023,
+        556.869
+      ],
+      "font_size": 8.966,
+      "raw_text": "However, an important class of such issues, the so-called use-",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b19",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        539.655,
+        563.036,
+        549.618
+      ],
+      "font_size": 9.963,
+      "raw_text": "nate value. A program reads an indeterminate value from a",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b20",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        537.94,
+        300.024,
+        546.906
+      ],
+      "font_size": 8.966,
+      "raw_text": "of-uninitialized-memory (UUM) errors, struggles to gain similar",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b21",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        527.7,
+        563.036,
+        537.663
+      ],
+      "font_size": 9.963,
+      "raw_text": "benefits from fuzzing endeavors. The only fuzzer-compatible storage location when no prior assignment initialized it fully,",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b22",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        515.744,
+        563.036,
+        526.981
+      ],
+      "font_size": 9.963,
+      "raw_text": "UUMsanitizeravailabletodate,MSan,requiresthatalllibraries or at all, since its declaration [1]. Like other memory safety",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b23",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        508.052,
+        300.023,
+        517.018
+      ],
+      "font_size": 8.966,
+      "raw_text": "are fully instrumented. Unlike address sanitization, for which",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b24",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        503.789,
+        563.036,
+        513.752
+      ],
+      "font_size": 9.963,
+      "raw_text": "errors, UUM errors may be difficult to detect because they do",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b25",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        498.09,
+        300.023,
+        507.056
+      ],
+      "font_size": 8.966,
+      "raw_text": "partial instrumentation results in false negatives (missed detec-",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b26",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        491.834,
+        563.036,
+        501.797
+      ],
+      "font_size": 9.963,
+      "raw_text": "not necessarily result in conspicuous behavior (e.g., program",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b27",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        488.127,
+        300.023,
+        497.093
+      ],
+      "font_size": 8.966,
+      "raw_text": "tion of bugs), UUM sanitizers require complete instrumentation",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b28",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        479.879,
+        563.036,
+        489.842
+      ],
+      "font_size": 9.963,
+      "raw_text": "crashes)butmaysubtlyandsilentlycorrupttheprogramstate,",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b29",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        478.164,
+        300.023,
+        487.13
+      ],
+      "font_size": 8.966,
+      "raw_text": "toavoidfalsepositives,hamperingtestingatscale.Yet,full-stack",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b30",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        467.924,
+        563.036,
+        477.887
+      ],
+      "font_size": 9.963,
+      "raw_text": "compiler-based instrumentation can be a daunting prospect for and come with an unpleasant property of unpredictability [2].",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b31",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        455.969,
+        563.036,
+        467.205
+      ],
+      "font_size": 9.963,
+      "raw_text": "compatibility and practicality. As a result, many programs are For example, an uninitialized stack variable may show left-",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b32",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        448.277,
+        159.878,
+        457.243
+      ],
+      "font_size": 8.966,
+      "raw_text": "left untested for UUM bugs.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b33",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        444.013,
+        563.036,
+        453.976
+      ],
+      "font_size": 9.963,
+      "raw_text": "over data from stale stack frames from prior function calls.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b34",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        58.927,
+        438.308,
+        300.025,
+        447.274
+      ],
+      "font_size": 8.966,
+      "raw_text": "Inthispaper,weproposeanefficientmulti-layer,opportunistic",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b35",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        432.058,
+        563.036,
+        442.021
+      ],
+      "font_size": 9.963,
+      "raw_text": "Unfortunately, in the hands of a capable attacker, these errors",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b36",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        428.345,
+        300.023,
+        437.311
+      ],
+      "font_size": 8.966,
+      "raw_text": "design that does not require (source-based) recompilation of all",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b37",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        420.103,
+        563.036,
+        430.066
+      ],
+      "font_size": 9.963,
+      "raw_text": "may become exploitable, as witnessed for notable UUM bugs",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b38",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        418.383,
+        300.023,
+        427.349
+      ],
+      "font_size": 8.966,
+      "raw_text": "code without harming accuracy. The multiplicity of executions",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b39",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        408.148,
+        563.036,
+        418.111
+      ],
+      "font_size": 9.963,
+      "raw_text": "when fuzzing offers us the opportunity to learn what any that enabled information disclosure, remote code execution,",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b40",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        396.193,
+        551.678,
+        407.423
+      ],
+      "font_size": 9.963,
+      "raw_text": "encounteredfalsepositivelookslike,andlaterignorethemwhen and guest-to-host privilege escalation [2], [3], [4], [5], [6].",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b41",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        388.495,
+        300.023,
+        397.461
+      ],
+      "font_size": 8.966,
+      "raw_text": "we meet them again with new test cases. Such an avenue is",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b42",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        321.94,
+        384.237,
+        563.035,
+        394.2
+      ],
+      "font_size": 9.963,
+      "raw_text": "Software sanitizers effectively detect memory safety errors.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b43",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        378.532,
+        300.023,
+        387.498
+      ],
+      "font_size": 8.966,
+      "raw_text": "feasible only if one can resort to fast techniques to effectively",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b44",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        372.282,
+        563.036,
+        382.245
+      ],
+      "font_size": 9.963,
+      "raw_text": "These tools safeguard one or more memory safety properties",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b45",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        368.569,
+        300.023,
+        377.535
+      ],
+      "font_size": 8.966,
+      "raw_text": "discriminate candidate errors, or false negatives will then occur.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b46",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        360.327,
+        563.036,
+        370.29
+      ],
+      "font_size": 9.963,
+      "raw_text": "at run-time by instrumenting program code with tripwires",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b47",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        58.927,
+        358.601,
+        300.025,
+        367.567
+      ],
+      "font_size": 8.966,
+      "raw_text": "We show how to realize this design by using the dynamic",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b48",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        348.372,
+        563.036,
+        358.335
+      ],
+      "font_size": 9.963,
+      "raw_text": "binary translation of QEMU for compatibility and lightweight that expose safety violations during execution. As dynamic",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b49",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        336.417,
+        563.036,
+        347.641
+      ],
+      "font_size": 9.963,
+      "raw_text": "code analysis techniques to achieve scalability and accuracy. analysis tools, sanitizers suffer from the coverage problem",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b50",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        328.713,
+        300.023,
+        337.679
+      ],
+      "font_size": 8.966,
+      "raw_text": "As a result, we obtain a fuzzer-friendly, performant sanitizer,",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b51",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        324.462,
+        563.036,
+        334.425
+      ],
+      "font_size": 9.963,
+      "raw_text": "and require that the bug is reached and triggered through an",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b52",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        49.188,
+        318.687,
+        300.022,
+        327.716
+      ],
+      "font_size": 8.966,
+      "raw_text": "QMS , that effectively tackles current practicality challenges",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b53",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        69.963,
+        319.075,
+        80.766,
+        326.248
+      ],
+      "font_size": 7.173,
+      "raw_text": "AN",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b54",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        312.506,
+        563.036,
+        322.469
+      ],
+      "font_size": 9.963,
+      "raw_text": "actualexecutiontodetectit.Therefore,theyareveryeffective",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b55",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        308.787,
+        300.023,
+        317.753
+      ],
+      "font_size": 8.966,
+      "raw_text": "of UUM error detection. On a collection of 10 open-source and",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b56",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        300.551,
+        563.036,
+        310.514
+      ],
+      "font_size": 9.963,
+      "raw_text": "in combination with techniques like fuzzing, which broadly",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b57",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        298.762,
+        300.021,
+        307.791
+      ],
+      "font_size": 8.966,
+      "raw_text": "5proprietaryprograms, QMS exposed44newUUMbugs.In",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b58",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        167.135,
+        299.15,
+        177.938,
+        306.323
+      ],
+      "font_size": 7.173,
+      "raw_text": "AN",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b59",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        288.596,
+        563.036,
+        298.559
+      ],
+      "font_size": 9.963,
+      "raw_text": "our tests, QMS incurs slowdowns of 1.51x over QEMU and explores the program [7]. For UUMerrors, currently, the only",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b60",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        110.27,
+        289.187,
+        121.073,
+        296.36
+      ],
+      "font_size": 7.173,
+      "raw_text": "AN",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b61",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        276.641,
+        563.036,
+        287.866
+      ],
+      "font_size": 9.963,
+      "raw_text": "1.55xoverthecompiler-basedinstrumentationofMSan,showing waytodetectthemwhenfuzzingisusingGoogle'sMSan[8].",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b62",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        268.874,
+        291.171,
+        277.903
+      ],
+      "font_size": 8.966,
+      "raw_text": "no false positives and false negatives. QMS is open-source.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b63",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        219.045,
+        269.262,
+        229.848,
+        276.435
+      ],
+      "font_size": 7.173,
+      "raw_text": "AN",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b64",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        264.686,
+        563.036,
+        274.649
+      ],
+      "font_size": 9.963,
+      "raw_text": "SimilarlytootherpopularsanitizerslikeASan[9],MSanuses",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b65",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        252.731,
+        563.036,
+        262.694
+      ],
+      "font_size": 9.963,
+      "raw_text": "compiler instrumentation to insert run-time checks on data",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b66",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        135.619,
+        249.928,
+        150.722,
+        259.891
+      ],
+      "font_size": 9.963,
+      "raw_text": "I. I",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b67",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        151.221,
+        250.358,
+        213.372,
+        258.329
+      ],
+      "font_size": 7.97,
+      "raw_text": "NTRODUCTION",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b68",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        240.775,
+        537.691,
+        250.738
+      ],
+      "font_size": 9.963,
+      "raw_text": "uses to check if their sources were properly initialized.",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b69",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        58.927,
+        234.798,
+        300.022,
+        244.761
+      ],
+      "font_size": 9.963,
+      "raw_text": "Programming languages like C and C++ remain prevalent",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b70",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        321.94,
+        228.82,
+        563.035,
+        238.783
+      ],
+      "font_size": 9.963,
+      "raw_text": "MSan faces a key practical limitation: all code under test",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b71",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        222.843,
+        300.022,
+        232.806
+      ],
+      "font_size": 9.963,
+      "raw_text": "despitebeingpronetomemoryerrors.Whilesaferalternatives",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b72",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        216.865,
+        563.036,
+        226.828
+      ],
+      "font_size": 9.963,
+      "raw_text": "must be compiled with MSan instrumentation. Looking at the",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b73",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        210.888,
+        300.022,
+        220.851
+      ],
+      "font_size": 9.963,
+      "raw_text": "exist, most software is implemented in unsafe languages due",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b74",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        204.91,
+        563.036,
+        214.873
+      ],
+      "font_size": 9.963,
+      "raw_text": "C/C++ programs tested daily by the OSS-Fuzz initiative, we",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b75",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        198.933,
+        300.022,
+        208.896
+      ],
+      "font_size": 9.963,
+      "raw_text": "to performance requirements or the need to access low-level",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b76",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        192.955,
+        563.036,
+        202.918
+      ],
+      "font_size": 9.963,
+      "raw_text": "note that only 210 out of 528 (40.5%) show MSan support at",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b77",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        186.977,
+        300.022,
+        196.94
+      ],
+      "font_size": 9.963,
+      "raw_text": "systems features. In C and C++, programmers are responsible",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b78",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        181.0,
+        563.036,
+        190.963
+      ],
+      "font_size": 9.963,
+      "raw_text": "the time of writing. According to the OSS-Fuzz bug tracker,",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b79",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        175.022,
+        300.022,
+        184.985
+      ],
+      "font_size": 9.963,
+      "raw_text": "forensuringmemorysafetyandmusttakecarenottointroduce",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b80",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        169.044,
+        563.036,
+        179.007
+      ],
+      "font_size": 9.963,
+      "raw_text": "though, MSan was helpful to expose over 289 UUM bugs",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b81",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        163.067,
+        300.022,
+        173.03
+      ],
+      "font_size": 9.963,
+      "raw_text": "buffer overflow, use-after-free, or double-free vulnerabilities",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b82",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        157.089,
+        563.036,
+        167.052
+      ],
+      "font_size": 9.963,
+      "raw_text": "in them in the past 18 months. We also recall a notable",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b83",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        48.964,
+        151.112,
+        300.022,
+        161.075
+      ],
+      "font_size": 9.963,
+      "raw_text": "along with proper initialization of all memory. As these",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b84",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        145.134,
+        563.036,
+        155.097
+      ],
+      "font_size": 9.963,
+      "raw_text": "setback when OSS-Fuzz upgraded its backend in 2021 to",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b85",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        133.179,
+        563.036,
+        143.142
+      ],
+      "font_size": 9.963,
+      "raw_text": "Ubuntu 20.04 [10], which led its maintainers to disabling",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b86",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        121.224,
+        563.036,
+        131.187
+      ],
+      "font_size": 9.963,
+      "raw_text": "MSan for 72 projects due to enduring compatibility issues",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b87",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        109.268,
+        563.036,
+        119.231
+      ],
+      "font_size": 9.963,
+      "raw_text": "with instrumented libraries. Being MSan available only for",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b88",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        97.313,
+        563.036,
+        107.276
+      ],
+      "font_size": 9.963,
+      "raw_text": "LLVM, also software whose external dependencies (or the",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b89",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        47.569,
+        91.903,
+        271.864,
+        99.873
+      ],
+      "font_size": 7.97,
+      "raw_text": "NetworkandDistributedSystemSecurity(NDSS)Symposium2025",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b90",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        85.358,
+        563.032,
+        95.55
+      ],
+      "font_size": 9.963,
+      "raw_text": "program itself) come built with gcc or other compilers is out",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b91",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        47.569,
+        82.937,
+        187.93,
+        90.907
+      ],
+      "font_size": 7.97,
+      "raw_text": "24-28Febrary2025,SanDiego,CA,USA",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b92",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        311.978,
+        73.403,
+        563.036,
+        83.366
+      ],
+      "font_size": 9.963,
+      "raw_text": "of its reach. Furthermore, no UUM sanitization is available in",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b93",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        47.569,
+        73.97,
+        130.936,
+        81.94
+      ],
+      "font_size": 7.97,
+      "raw_text": "ISBN979-8-9894372-8-3",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b94",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        47.569,
+        65.004,
+        194.665,
+        72.974
+      ],
+      "font_size": 7.97,
+      "raw_text": "https://dx.doi.org/10.14722/ndss.2025.241133",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:p1:b95",
+      "source": "pdf_layout",
+      "field": "page_block",
+      "page": 1,
+      "bbox": [
+        47.569,
+        56.038,
+        132.363,
+        64.008
+      ],
+      "font_size": 7.97,
+      "raw_text": "www.ndss-symposium.org",
+      "extractor": "pdfplumber"
+    },
+    {
+      "evidence_id": "pdfplumber:abstract",
+      "source": "pdf_layout",
+      "field": "abstract",
+      "raw_text": "Fuzzing evolved into the most popular technique bugsoftenhavesecurityimplications,exposingandmitigating to detect bugs in software. Its combination with sanitizers has memory safety errors remains a crucial area of research. shown tremendous efficacy in uncovering memory safety errors, Use-of-uninitialized-memory (UUM) errors occur when the such as buffer overflows, that haunt C and C++ programmers. outcome of a program computation depends on an indetermi- However, an important class of such issues, the so-called use- of-uninitialized-memory (UUM) errors, struggles to gain similar nate value. A program reads an indeterminate value from a benefits from fuzzing endeavors. The only fuzzer-compatible storage location when no prior assignment initialized it fully, UUMsanitizeravailabletodate,MSan,requiresthatalllibraries or at all, since its declaration [1]. Like other memory safety are fully instrumented. Unlike address sanitization, for which errors, UUM errors may be difficult to detect because they do partial instrumentation results in false negatives (missed detec- not necessarily result in conspicuous behavior (e.g., program tion of bugs), UUM sanitizers require complete instrumentation toavoidfalsepositives,hamperingtestingatscale.Yet,full-stack crashes)butmaysubtlyandsilentlycorrupttheprogramstate, compiler-based instrumentation can be a daunting prospect for and come with an unpleasant property of unpredictability [2]. compatibility and practicality. As a result, many programs are For example, an uninitialized stack variable may show left- left untested for UUM bugs. over data from stale stack frames from prior function calls. Inthispaper,weproposeanefficientmulti-layer,opportunistic Unfortunately, in the hands of a capable attacker, these errors design that does not require (source-based) recompilation of all code without harming accuracy. The multiplicity of executions may become exploitable, as witnessed for notable UUM bugs when fuzzing offers us the opportunity to learn what any that enabled information disclosure, remote code execution, encounteredfalsepositivelookslike,andlaterignorethemwhen and guest-to-host privilege escalation [2], [3], [4], [5], [6]. we meet them again with new test cases. Such an avenue is Software sanitizers effectively detect memory safety errors. feasible only if one can resort to fast techniques to effectively These tools safeguard one or more memory safety properties discriminate candidate errors, or false negatives will then occur. We show how to realize this design by using the dynamic at run-time by instrumenting program code with tripwires binary translation of QEMU for compatibility and lightweight that expose safety violations during execution. As dynamic code analysis techniques to achieve scalability and accuracy. analysis tools, sanitizers suffer from the coverage problem As a result, we obtain a fuzzer-friendly, performant sanitizer, and require that the bug is reached and triggered through an QMSAN, that effectively tackles current practicality challenges actualexecutiontodetectit.Therefore,theyareveryeffective of UUM error detection. On a collection of 10 open-source and 5proprietaryprograms, QMSAN exposed44newUUMbugs.In in combination with techniques like fuzzing, which broadly our tests, QMSAN incurs slowdowns of 1.51x over QEMU and explores the program [7]. For UUMerrors, currently, the only 1.55xoverthecompiler-basedinstrumentationofMSan,showing waytodetectthemwhenfuzzingisusingGoogle'sMSan[8]. no false positives and false negatives. QMSAN is open-source. SimilarlytootherpopularsanitizerslikeASan[9],MSanuses",
+      "extractor": "pdfplumber_section_boundary"
+    },
+    {
+      "evidence_id": "pypdf:p2:link:0",
+      "source": "pypdf_link",
+      "field": "link",
+      "page": 2,
+      "bbox": [
+        380.687,
+        379.404,
+        522.035,
+        390.348
+      ],
+      "raw_text": "https://github.com/heinzeen/qmsan",
+      "contents": ""
+    },
+    {
+      "evidence_id": "pypdf:document_info",
+      "source": "pdf_document_info",
+      "field": "document_info",
+      "value": {
+        "CreationDate": "D:20241205201838+01'00'",
+        "Creator": "LaTeX with hyperref",
+        "ModDate": "D:20250216201036--05'00",
+        "PTEX.Fullbanner": "This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) kpathsea version 6.3.5",
+        "Producer": "pdfTeX-1.40.25",
+        "Trapped": "/False"
+      }
+    },
+    {
+      "evidence_id": "pdf:extractor_status",
+      "source": "runtime",
+      "field": "extractor_status",
+      "value": {
+        "pdfplumber": "ok",
+        "pypdf": "ok"
+      }
+    },
+    {
+      "evidence_id": "official_web:author:0",
+      "source": "conference_official_web",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/qmsan-efficiently-detecting-uninitialized-memory-errors-during-fuzzing/",
+      "field": "author_affiliation_relation",
+      "author": "Matteo Marini",
+      "affiliations": [
+        "Sapienza University of Rome"
+      ]
+    },
+    {
+      "evidence_id": "official_web:author:1",
+      "source": "conference_official_web",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/qmsan-efficiently-detecting-uninitialized-memory-errors-during-fuzzing/",
+      "field": "author_affiliation_relation",
+      "author": "Daniele Cono D’Elia",
+      "affiliations": [
+        "Sapienza University of Rome"
+      ]
+    },
+    {
+      "evidence_id": "official_web:author:2",
+      "source": "conference_official_web",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/qmsan-efficiently-detecting-uninitialized-memory-errors-during-fuzzing/",
+      "field": "author_affiliation_relation",
+      "author": "Mathias Payer",
+      "affiliations": [
+        "EPFL"
+      ]
+    },
+    {
+      "evidence_id": "official_web:author:3",
+      "source": "conference_official_web",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/qmsan-efficiently-detecting-uninitialized-memory-errors-during-fuzzing/",
+      "field": "author_affiliation_relation",
+      "author": "Leonardo Querzoni",
+      "affiliations": [
+        "Sapienza University of Rome"
+      ]
+    }
+  ]
+}

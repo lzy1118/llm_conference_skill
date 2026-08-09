@@ -1,0 +1,296 @@
+{
+  "paper_id": "157_webspec_towards_machine_checked_analysis_of_browser_security_mechanisms",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "WebSpec: Towards Machine-Checked Analysis of Browser Security Mechanisms"
+      },
+      {
+        "source": "selected",
+        "value": "WebSpec: Towards Machine-Checked Analysis of Browser Security Mechanisms"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The complexity of browsers has steadily increased over the years, driven by the continuous introduction and update of Web platform components, such as novel Web APIs and security mechanisms. Their specifications are manually reviewed by experts to identify potential security issues. However, this process has proved to be error-prone due to the extensiveness of modern browser specifications and the interplay between new and existing Web platform components. To tackle this problem, we developed WebSpec, the first formal security framework for the analysis of browser security mechanisms, which enables both the automatic discovery of logical flaws and the development of machine-checked security proofs. WebSpec, in particular, includes a comprehensive semantic model of the browser in the Coq proof assistant, a formalization in this model of ten Web security invariants, and a toolchain turning the Coq model and the Web invariants into SMT-lib formulas to enable model checking with the Z3 theorem prover. If a violation is found, the toolchain automatically generates executable tests corresponding to the discovered attack trace, which is validated across major browsers. We showcase the effectiveness of WebSpec by discovering two new logical flaws caused by the interaction of different browser mechanisms and by identifying three previously discovered logical flaws in the current Web platform, as well as five in old versions. Finally, we show how WebSpec can aid the verification of our proposed changes to amend the reported inconsistencies affecting the current Web platform."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The complexity of browsers has steadily increased over the years, driven by the continuous introduction and update of Web platform components, such as novel Web APIs and security mechanisms. Their specifications are manually reviewed by experts to identify potential security issues. However, this process has proved to be error-prone due to the extensiveness of modern browser specifications and the interplay between new and existing Web platform components. To tackle this problem, we developed WebSpec, the first formal security framework for the analysis of browser security mechanisms, which enables both the automatic discovery of logical flaws and the development of machine-checked security proofs. WebSpec, in particular, includes a comprehensive semantic model of the browser in the Coq proof assistant, a formalization in this model of ten Web security invariants, and a toolchain turning the Coq model and the Web invariants into SMT-lib formulas to enable model checking with the Z3 theorem prover. If a violation is found, the toolchain automatically generates executable tests corresponding to the discovered attack trace, which is validated across major browsers. We showcase the effectiveness of WebSpec by discovering two new logical flaws caused by the interaction of different browser mechanisms and by identifying three previously discovered logical flaws in the current Web platform, as well as five in old versions. Finally, we show how WebSpec can aid the verification of our proposed changes to amend the reported inconsistencies affecting the current Web platform. I. I NTRODUCTION Web browsers are considered among the most complex software in use today, and the number of Web platform compo- nents, i.e., browser functionalities and security mechanisms, is constantly increasing. These are typically proposed by browser vendors in the form of a W3C Editor's Draft and discussed within the community. If enough consensus is reached, the standardization process has to progress through several maturity levels before becoming a W3C recommendation. While the implementation of new Web platform components is subject to extensive compliance testing (see, e.g., the Web Platform Tests project [ 6]), their specifications undergo a manual expert review to identify potential issues: this is a continuous and extremely complex process that has to consider the interplay with legacy APIs and should, in principle, be revised whenever new components land on the Web platform. Unfortunately, manual reviews tend to overlook logical flaws, eventually leading to critical security vulnerabilities. For example, the HttpOnly flag was introduced by Internet Explorer 6 [21] as a way to protect the confidentiality of cookies ‡The majority of this research was done while the author was at TU Wien. /file-alt Browser Model /file-alt Web Invariants + ♂question-circle SMTLib Query /check-circle Proof ♂receipt Counterexample ♂project-diagra¶ Attack Trace /tasks Executable Test /cogs compiler Fig. 1. The WebSpec framework with this attribute by not exposing them to scripts. Eight years after its launch, Singh et al. discovered that this property could be trivially violated by any scripts accessing the response headers of an AJAX request via the getResponseHeader function [ 48]. Security vulnerabilities at the level of Web specifications have also affected CORS [ 9], CSP [ 49], and Trusted Types [5], to name a few. We argue that this dire situation stems from several con- curring factors: (i) Web platform components are specified informally and therefore their analysis, albeit conducted by expert eyes, may easily overlook corner cases; (ii) there is no precise understanding of which security properties should be seen as invariants in the Web and, thus, be preserved by updates of the Web platform; (iii) Web platform components are typically evaluated in isolation, without considering their interactions, that is, the entangled nature of the Web platform. Our Contributions. In this work, we advocate a paradigm shift, letting Web platform components and their interplay undergo a formal security analysis as opposed to a manual expert review. In particular, we introduce WebSpec, the first formal framework for the security analysis of browser security mechanisms that supports the automated detection of logical flaws as well as machine-checked security proofs. As outlined in Figure 1, WebSpec includes: • a formal browser model in Coq (Section II), which (i) formalizes a core set of Web platform components, including well-established (cookies, SOP, CORS, etc.) as well as recent ones (e.g., CSP level 3 and Trusted Types), and (ii) supports the definition of Web invariants, i.e., properties that are expected to hold in the Web; • the WebSpec verification toolchain (Section III), encom- passing a compiler and a trace verifier. The compiler translates the browser model and the Web invariants into SMT-lib formulas to enable model checking by the Z3 2761 DOI 10.1109/SP46215.2023.00055 automated theorem prover. A salient feature of WebSpec is the support for both bug finding and proof generation. If a violation is found, Z3 reconstructs the minimal sequence of actions leading to it, and the trace verifier displays the corresponding attack trace and maps it to executable tests in order to systematically validate the Web inconsistencies found in the model on major browsers. For Web invariants that instead hold, proofs can be directly derived by Z3 against the SMT-lib encoding or manually written and machine-checked in Coq. We demonstrate the effectiveness of WebSpec by: • defining ten Web invariants against which we identify (i) a new attack on cookies caused by the interaction with legacy APIs, (ii) a new inconsistency between CSP and a planned change to the HTML standard, as well as (iii) three previously reported logical flaws in the current Web platform (Section IV); • validating all five Web inconsistencies against the latest versions of Chrome and Firefox; • adjusting the model to reflect past states of the Web platform in order to identify five previously published attacks, with the goal of showing that automated security analysis would have prevented these vulnerabilities; • writing the proofs in the Coq model for the correctness of the four fixes we propose against the vulnerabilities on the current Web platform (Section V); • conducting an experimental evaluation to demonstrate the effectiveness of the WebSpec toolchain and the optimizations we integrated therein (Section VI). II. B ROWSER MODEL This section provides an overview of the main components of our browser model written in Coq. The model focuses on Web platform components, i.e., browser functionalities and security mechanisms, abstracting away from the network and Web servers. Our formalization enables reasoning about all possible sequences of events leading to an inconsistent state without necessarily having to model a specific Web application. We are indeed interested in proving and disproving Web invariants, i.e., properties of the Web platform that are expected to hold across its updates and independently on how its components can interact with each other [9]. Web invariants are supposed to hold for all Web applications, irrespectively of application-specific assumptions that attackers could violate. For instance, scripts in our model can, in principle, execute arbitrary sequences of any of the API calls we support, as this would be the case in presence of cross-site scripting attacks. The model also includes configuration flags that enable reasoning on former states of the Web platform or testing new proposals prior to their implementation. A. Core Abstractions The browser is modeled as a transition system in which a state evolves from an initial to a final configuration following a list of events and according to an inductive relation named Reachable parameterized by a global environment: Inductive Reachable : Global → list Event → State → Prop. Intuitively, given a global environment gb, a list of events evs, and a state st, Reachable gb evs st means that, starting from a given initial state, st is reachable by executing sequentially the events in evs under environment gb. The Global environment contains concrete values (e.g., the browser configuration) or symbolic variables (e.g., a set of pages) which are constant through the evolution of the browser state. An Event represents an atomic action that modifies the state, e.g., sending a network request or updating the DOM, which may originate from different sources, such as the browser itself, a script, or a service worker. A State (Figure 2) is a collection of datatypes used to model browser components. Based on these ingredients, we formalize Web invari- ants within our model as follows, where hypothesis and conclusion are predicates that may refer to the global environment, past events, or the current state of the browser: 1 Parameter hypothesis : Global → list Event → State → Prop. 2 Parameter conclusion : Global → list Event → State → Prop. 3 4 Definition Invariant (gb: Global) (evs: list Event ) (st: State) := Reachable gb evs st → hypothesis gb evs st → conclusion gb evs st . In Section IV, we introduce ten Web invariants and discuss their security implications caused by the interplay of different Web platform components. B. Page Rendering The main component used to model the rendering function- ality is the Window datatype. Window represents a window in terms of browsing context [ 62, §7.1], i.e., an environ- ment in which the browser displays a document. The field wd_location is the URL being visited and wd_document contains the displayed document. Since a Window can represent either a top-level window or a frame, wd_parent contains an optional index which, if empty, denotes a top-level window or points to the parent frame otherwise. Similarly, wd_initiator contains an optional index which is used to track the source browsing context of this window [ 62, §7.11] by storing a reference to the window responsible for starting the navigation. The Document datatype represents a Web page loaded and rendered in a browser window. When a page is loaded, dc_html represents the HTML code of the response, while dc_dom contains the rendered elements of the page. Static elements, e.g., forms and possibly other markup tags, are rendered immediately. Subresources of the page, such as frames and scripts, require an additional request to be included in dc_dom. For instance, the presence of a HTMLFrame in dc_html might cause three additional events to be executed in sequence: a request ( EvRequest), a response ( EvResponse), followed by the update of the DOM ( EvDOMUpdate) resulting in DOMFrame being added to dc_dom. This approach enables fine-grained modeling of the rendering process of the browser. In particular, our model captures the order in which resources are loaded and the presence or absence of specific elements. 2762"
+      },
+      {
+        "source": "selected",
+        "value": "The complexity of browsers has steadily increased over the years, driven by the continuous introduction and update of Web platform components, such as novel Web APIs and security mechanisms. Their specifications are manually reviewed by experts to identify potential security issues. However, this process has proved to be error-prone due to the extensiveness of modern browser specifications and the interplay between new and existing Web platform components. To tackle this problem, we developed WebSpec, the first formal security framework for the analysis of browser security mechanisms, which enables both the automatic discovery of logical flaws and the development of machine-checked security proofs. WebSpec, in particular, includes a comprehensive semantic model of the browser in the Coq proof assistant, a formalization in this model of ten Web security invariants, and a toolchain turning the Coq model and the Web invariants into SMT-lib formulas to enable model checking with the Z3 theorem prover. If a violation is found, the toolchain automatically generates executable tests corresponding to the discovered attack trace, which is validated across major browsers. We showcase the effectiveness of WebSpec by discovering two new logical flaws caused by the interaction of different browser mechanisms and by identifying three previously discovered logical flaws in the current Web platform, as well as five in old versions. Finally, we show how WebSpec can aid the verification of our proposed changes to amend the reported inconsistencies affecting the current Web platform."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Lorenzo Veronese",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Benjamin Farinier",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Univ Rennes, Inria"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Pedro Bernardo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Mauro Tempesta",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Marco Squarcina",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Matteo Maffei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "T UWien",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CNRS, IRISA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Lorenzo Veronese",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Benjamin Farinier",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Univ Rennes, Inria"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Pedro Bernardo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Mauro Tempesta",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Marco Squarcina",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Matteo Maffei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 120,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "WebSpec: Towards Machine-Checked Analysis of Browser Security Mechanisms",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Lorenzo Veronese",
+          "affiliations": [
+            "TU Wien"
+          ]
+        },
+        {
+          "name": "Benjamin Farinier",
+          "affiliations": [
+            "Univ Rennes, Inria, CNRS, IRISA"
+          ]
+        },
+        {
+          "name": "Pedro Bernardo",
+          "affiliations": [
+            "TU Wien"
+          ]
+        },
+        {
+          "name": "Mauro Tempesta",
+          "affiliations": [
+            "TU Wien"
+          ]
+        },
+        {
+          "name": "Marco Squarcina",
+          "affiliations": [
+            "TU Wien"
+          ]
+        },
+        {
+          "name": "Matteo Maffei",
+          "affiliations": [
+            "TU Wien"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 7,
+      "proposed_count": 7,
+      "retained_count": 6,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "remove_organization_author",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "removed_name": "T UWien"
+    },
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "baseline_count": 7,
+      "proposed_count": 6,
+      "retained_count": 6,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "remove_organization_author",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "removed_name": "T UWien"
+    }
+  ]
+}

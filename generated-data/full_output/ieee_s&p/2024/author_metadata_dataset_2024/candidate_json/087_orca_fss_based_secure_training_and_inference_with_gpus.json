@@ -1,0 +1,456 @@
+{
+  "paper_id": "087_orca_fss_based_secure_training_and_inference_with_gpus",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Orca: FSS-based Secure Training and Inference with GPUs"
+      },
+      {
+        "source": "selected",
+        "value": "Orca: FSS-based Secure Training and Inference with GPUs"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Secure Two-party Computation (2PC) allows two parties to compute any function on their private inputs without revealing their inputs to each other. In the offline/online model for 2PC, correlated randomness that is independent of all inputs to the computation, is generated in a preprocessing (offline) phase and this randomness is then utilized in the online phase once the inputs to the parties become available. Most 2PC works focus on optimizing the online time as this overhead lies on the critical path. A recent paradigm for obtaining efficient 2PC protocols with low online cost is based on the cryptographic technique of function secret sharing (FSS). We build an end-to-end system ORCA to accelerate the computation of FSS-based 2PC protocols with GPUs. Next, we observe that the main performance bottleneck in such accelerated protocols is in storage (due to the large amount of correlated randomness), and we design new FSS-based 2PC protocols for several key functionalities in ML which reduce storage by up to 5×. Compared to prior state-of-the-art on secure training accelerated with GPUs in the same computation model (PIRANHA, Usenix Security 2022), we show that ORCA has 4% higher accuracy, 98× lesser communication, and is 22× faster on CIFAR-10. For secure ImageNet inference, ORCA achieves sub-second latency for VGG-16 and ResNet-50 and outperforms the state-of-the-art by 8-103×. 597 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Secure Two-party Computation (2PC) allows two parties to compute any function on their private inputs without revealing their inputs to each other. In the offline/on- line model for 2PC, correlated randomness that is independent of all inputs to the computation, is generated in a preprocessing (offline) phase and this randomness is then utilized in the online phase once the inputs to the parties become available. Most 2PC works focus on optimizing the online time as this overhead lies on the critical path. A recent paradigm for obtaining efficient 2PC protocols with low online cost is based on the cryptographic technique of function secret sharing (FSS). We build an end-to-end system O RCA to accelerate the computation of FSS-based 2PC protocols with GPUs. Next, we observe that the main performance bottleneck in such accelerated protocols is in storage (due to the large amount of correlated randomness), and we design new FSS-based 2PC protocols for several key functionalities in ML which reduce storage by up to 5×. Compared to prior state-of-the-art on secure training accelerated with GPUs in the same computation has 4% higher accuracy, 98× lesser communication, and is 22× faster on CIFAR-10. For secure ImageNet inference, O RCA achieves sub-second latency for VGG-16 and ResNet-50 and outperforms the state-of-the-art by 8 − 103×. 1. Introduction Machine learning training has emerged as an extremely important and data hungry application. While the trained models get better with more data and diverse data, very often this data is highly sensitive, e.g., financial, healthcare or browsing data. Use of privacy-preserving technologies such as secure multiparty computation (MPC) [29], [67] provide secure training over this sensitive data [40], [47], [48], [59], [61], [63], [65]. Secure training using MPC allows multiple mutually distrusting parties to train a model of their joint data without revealing anything about their data to each . * Equal contribution. . † Work partially done while at Microsoft Research. other or to any other party beyond the final trained model. However, MPC-based secure training has high performance overheads. Through a series of recent works, the end-to- end time required to securely train models on the CIFAR- 10 dataset has reduced from years [48], to months [63], to weeks [59], to a day with P IRANHA [65]. P IRANHA is the current state-of-the-art in accelerating secure training using GPUs. Our goal is to reduce this time to less than an hour. PIRANHA works in the offline/online model where the data-independent correlated randomness is generated in an offline pre-processing phase, and parties use this correlated randomness during the data-dependent online phase. Works in this model, including PIRANHA and us, focus on reducing the online complexity. To obtain efficient secure training, PI- RANHA makes several MPC-friendly approximations to ML such as replacing maxpools with average pools [59], using local truncations [48], [59] and approximating exponentia- tions with piecewise-linear functions. Moreover, following Falcon [63], it also trade-offs security for efficiency, and reveals intermediate values during softmax computation, a leakage disallowed by standard MPC security requirements. PIRANHA observes that its ad hoc approximations lead to a significant loss in model accuracy w.r.t. PyTorch training. For example, P IRANHA reports that VGG16 on CIFAR-10 gives 67% accuracy in PyTorch, which drops to 55% in secure training [65]. 1.1. Our Contributions Unlike [48], [59], [61], [63], [65], our secure training re- mains faithful to quantized training algorithms from ML lit- erature [31] that are known to mirror floating-point PyTorch training. We show that faithful secure training of small mod- els (with thousands of parameters) produces more accurate models than secure training of large models (with millions of parameters) with P IRANHA . P IRANHA approximations fail on small models - training our small models with these approximations (either local truncations or piecewise-linear approximation of exponentiation) reduces the accuracy of the trained model to that of a random classifier. On CIFAR- 10, our secure training beats P IRANHA on all metrics. We 597 DOI 10.1109/SP54263.2024.00063 are more secure (as we don't reveal any intermediate value) and produce models with 4% higher accuracy in 22× less time while incurring 98× lower communication. O RCA reaches a CIFAR-10 accuracy of 59.6% in 52 minutes and 69% in 128 minutes (vs. P IRANHA 's55% in a day). On the technical side, our starting point is recent ad- vances in function secret sharing (FSS) based secure 2- party computation (2PC) protocols in the pre-processing model [16], [19], [30]. A key feature of these protocols is that they reduce online communication while increasing compute and storage. The online phase in FSS requires a large number of AES evaluations and reads huge FSS keys that are generated during pre-processing. Thus, FSS shifts the performance bottleneck from the external network to compute and memory that is scoped to a single machine. In this work, we significantly reduce the overheads of secure training by effectively accelerating FSS-based 2PC with GPUs. However, we face several challenges on both the systems and cryptographic front, which we discuss next. 1.1.1. System optimizations (detailed in Section 3). To ac- celerate compute, we create efficient GPU implementations of FSS protocols that are an order of magnitude faster than the CPU-based protocols. This result is surprising because prior work that attempted to accelerate FSS with GPUs got only marginal improvements over the CPU implemen- tation [57]. The key to our accelerated implementation is a unique combination of system optimizations guided by the GPU micro-architecture. We leverage several GPU micro- architectural features, such as using GPU's scratchpad mem- ory for faster AES computation, optimizing data layout to improve GPU cache hit rates, and utilizing GPU's lockstep execution by groups of threads to optimally pack interme- diate results of cryptographic computations in the memory. Interestingly, we discovered that once the computation is well-optimized on the GPU, the time to read GBs of FSS keys from the SSD to GPU memory becomes the bottleneck. To address this, we lean on new cryptographic protocols (discussed next) to reduce FSS key size for commonly occurring nodes in training. 1.1.2. Cryptographic improvements. Staying faithful to quantized training, e.g., the one described in Gupta et al. [31], requires efficient protocols for stochastic trunca- tions of fixed-point values, ReLUs, maxpools, and floating- point softmax. Stochastic truncations, ReLUs and maxpools are expensive and lead to large keys. We create novel pro- tocols that reduce the key size by up to 5× (Section 5) that are crucial for obtaining low end-to-end latencies. Quantized training performs almost all operations in fixed-point but uses floating-point arithmetic in softmax computations to maintain accuracy [31]. In secure training literature, there are three ways of computing exponentiations occurring in softmax. First, use the very cheap piecewise-linear approx- imations [41], [65]. Second, use fixed-point approximations that are more expensive [39], [40]. Third, use even more expensive but precise computation over floating-point [53]. To stay faithful to the computations done by Gupta et al. [31], we choose the third option. To this end, we create novel FSS protocols to efficiently stitch protocols for fixed- point with protocols for floating-point (Section 6). 1.1.3. O RCA. We implement our techniques in O RCA, a push-button tool for secure training, that will be made pub- licly available1. O RCA sports a library of GPU-accelerated FSS blocks that future research in this area can build upon (Section 7). We show that training small models with O RCA while staying faithful (see Figure 5) to quantized train- ing [31], outperforms the approximate large model training of P IRANHA in accuracy (upto 14%), time ( 4 − 22×), and communication ( 39 − 98×) (Section 8.1). In a more apples-to-apples comparison, O RCA outperforms P IRANHA on approximate training of large models by ≈ 7.3× (Sec- tion 8.2.1). O RCA also outperforms prior works that don't use P IRANHA approximations by 7 − 693× (Section 8.2.2). ORCA's protocols need smaller FSS keys (Table 8) and ORCA's GPU-based protocols outperform their CPU coun- terparts by an order of magnitude (Table 7). Finally, O RCA achieves the first ever sub-second ImageNet-scale inference of VGG-16 and ResNet-50 and outperforms the state-of-the- art [30], [41] by 8 − 103× (Table 9). 2. Preliminaries 2.1. Notation Let λ denote the computational security parameter. 1{b} represents the indicator function that outputs 1 when the predicate b is true and 0 otherwise. Arrays are represented using boldface, and their elements are represented using the same symbol in a normal typeface with the index in subscript, starting from 0. For example x = {x0, x1, . . .}. Datatypes. For N = 2 n, UN represents the set of n- bit unsigned integers. We denote the set of real numbers using the symbol R. For x ∈ UN , uintn(x) and intn(x) represent the corresponding unsigned and signed number (in 2's-complement representation) in Z respectively. Fixed-point representation. Fixed-point representation, parameterized by a bitwidth n and a scale f, encodes a real number r ∈ R into x ∈ UN such that x = ⌊r · 2f ⌋ mod N. For an unsigned (resp., signed) fixed-point number x ∈ UN with scale f, JxK+ n,f (resp., JxKn,f ) denotes it's underlying real value uintn(x) 2f (resp. intn(x) 2f ). Operators. Arithmetic operations in UN , like addition and multiplication, are followed by a mod N and we omit this whenever it is clear from the context. For x ∈ UM and n > m , we use the notation ZeroExtm,n(x) (resp., SignExtm,n(x)) to represent a number y ∈ UN such that uintm(x) = uintn(y) (resp., intm(x) = intn(y)). We use x ≫A f (resp., x ≫L f) to represent arithmetic (resp., logical) right shift of x by f such that the input and the output have the same bitwidth. For an n-bit number x and f < n , the operation truncate-reduce, denoted by TR(x, f), 1. https://github.com/mpc-msri/EzPC.git 598"
+      },
+      {
+        "source": "selected",
+        "value": "Secure Two-party Computation (2PC) allows two parties to compute any function on their private inputs without revealing their inputs to each other. In the offline/online model for 2PC, correlated randomness that is independent of all inputs to the computation, is generated in a preprocessing (offline) phase and this randomness is then utilized in the online phase once the inputs to the parties become available. Most 2PC works focus on optimizing the online time as this overhead lies on the critical path. A recent paradigm for obtaining efficient 2PC protocols with low online cost is based on the cryptographic technique of function secret sharing (FSS). We build an end-to-end system ORCA to accelerate the computation of FSS-based 2PC protocols with GPUs. Next, we observe that the main performance bottleneck in such accelerated protocols is in storage (due to the large amount of correlated randomness), and we design new FSS-based 2PC protocols for several key functionalities in ML which reduce storage by up to 5×. Compared to prior state-of-the-art on secure training accelerated with GPUs in the same computation model (PIRANHA, Usenix Security 2022), we show that ORCA has 4% higher accuracy, 98× lesser communication, and is 22× faster on CIFAR-10. For secure ImageNet inference, ORCA achieves sub-second latency for VGG-16 and ResNet-50 and outperforms the state-of-the-art by 8-103×. 597 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Neha Jawalkar",
+          "email": "jawalkarp@iisc.ac.in",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Kanav Gupta",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Arkaprava Basu",
+          "email": "arkapravab@iisc.ac.in",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Nishanth Chandran",
+          "email": "nichandr@microsoft.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Divya Gupta",
+          "email": "divya.gupta@microsoft.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Rahul Sharma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Indian Institute of Science, India"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Indian Institute of Science, India"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Neha Jawalkar",
+          "email": "jawalkarp@iisc.ac.in",
+          "orcid": "",
+          "affiliations": [
+            "Indian Institute of Science, India"
+          ],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Kanav Gupta",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Arkaprava Basu",
+          "email": "arkapravab@iisc.ac.in",
+          "orcid": "",
+          "affiliations": [
+            "Indian Institute of Science, India"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Nishanth Chandran",
+          "email": "nichandr@microsoft.com",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Divya Gupta",
+          "email": "divya.gupta@microsoft.com",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Rahul Sharma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Microsoft Research, India"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 111,
+      "author_count": 6,
+      "matched_author_count": 6,
+      "exact_author_match_count": 6,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Neha Jawalkar",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Kanav Gupta",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Arkaprava Basu",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Nishanth Chandran",
+          "block_id": "pdf:p1:b11",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Divya Gupta",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Rahul Sharma",
+          "block_id": "pdf:p1:b13",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Neha Jawalkar",
+          "affiliation_raw": "Indian Institute of Science, India",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 12.403,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Kanav Gupta",
+          "affiliation_raw": "Microsoft Research, India",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 6.384,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Arkaprava Basu",
+          "affiliation_raw": "Indian Institute of Science, India",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 8.627,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Nishanth Chandran",
+          "affiliation_raw": "Microsoft Research, India",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b11",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 2.724,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Divya Gupta",
+          "affiliation_raw": "Microsoft Research, India",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b12",
+          "affiliation_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 3.077,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Rahul Sharma",
+          "affiliation_raw": "Microsoft Research, India",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b13",
+          "affiliation_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 3.797,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Orca: FSS-based Secure Training and Inference with GPUs",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Neha Jawalkar",
+          "affiliations": [
+            "Indian Institute of Science"
+          ]
+        },
+        {
+          "name": "Kanav Gupta",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Arkaprava Basu",
+          "affiliations": [
+            "Indian Institute of Science"
+          ]
+        },
+        {
+          "name": "Nishanth Chandran",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Divya Gupta",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Rahul Sharma",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

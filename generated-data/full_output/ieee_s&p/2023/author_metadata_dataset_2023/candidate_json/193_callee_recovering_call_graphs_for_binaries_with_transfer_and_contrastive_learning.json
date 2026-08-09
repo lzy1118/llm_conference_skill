@@ -1,0 +1,307 @@
+{
+  "paper_id": "193_callee_recovering_call_graphs_for_binaries_with_transfer_and_contrastive_learning",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "CALLEE: Recovering Call Graphs for Binaries with Transfer and Contrastive Learning"
+      },
+      {
+        "source": "selected",
+        "value": "CALLEE: Recovering Call Graphs for Binaries with Transfer and Contrastive Learning"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Recovering binary programs' call graphs is crucial for inter-procedural analysis tasks and applications based on them. One of the core challenges is recognizing targets of indirect calls (i.e., indirect callees). Existing solutions all have high false positives and negatives, making call graphs inaccurate. In this paper, we propose a new solution CALLEE combining transfer learning and contrastive learning. The key insight is that, deep neural networks (DNNs) can automatically identify patterns concerning indirect calls. Inspired by the advances in question-answering applications, we utilize contrastive learning to answer the callsite-callee question. However, one of the toughest challenges is that DNNs need large datasets to achieve high performance, while collecting large-scale indirectcall ground truths can be computational-expensive. Therefore, we leverage transfer learning to pre-train DNNs with easy-tocollect direct calls and further fine-tune DNNs for indirectcalls. We evaluate CALLEE on several groups of targets, and results show that our solution could match callsites to callees with an F1-Measure of 94.6%, much better than state-of-theart solutions. Further, we apply CALLEE to two applicationsbinary code similarity detection and hybrid fuzzing, and found it could greatly improve their performance. 2357 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Recovering binary programs' call graphs is crucial for inter-procedural analysis tasks and applications based on them. One of the core challenges is recognizing targets of indi- rect calls (i.e., indirect callees). Existing solutions all have high false positives and negatives, making call graphs inaccurate. In this paper, we propose a new solution C ALLEE combining transfer learning and contrastive learning. The key insight is that, deep neural networks (DNNs) can automatically identify patterns concerning indirect calls. Inspired by the advances in question-answering applications, we utilize contrastive learn- ing to answer the callsite-callee question. However, one of the toughest challenges is that DNNs need large datasets to achieve high performance, while collecting large-scale indirect- call ground truths can be computational-expensive. Therefore, we leverage transfer learning to pre-train DNNs with easy-to- collect direct calls and further fine-tune DNNs for indirect- calls. We evaluate C ALLEE on several groups of targets, and results show that our solution could match callsites to callees with an F1-Measure of 94.6%, much better than state-of-the- art solutions. Further, we apply C ALLEE to two applications - binary code similarity detection and hybrid fuzzing, and found it could greatly improve their performance. 1. Introduction Indirect calls ( icalls for short) allow programs to de- termine the choice of functions to call (i.e., callees) until runtime, enabling programmers to realize dynamic features, and thus are commonly used in object-oriented program- ming as well as some large-scale programs such as the Linux kernel. Meanwhile, icalls play an important role in program analysis and related tasks. One can complement Call Graphs (CGs) of programs by recognizing targets of indirect calls (icallees for short), and many tasks can benefit from pre- cise CGs such as inter-procedural data-flow analysis [ 1], binary code similarity detection [ 2], and even test case generation for fuzzing [ 3]. For example, SelectiveTaint[ 4] relies on CG reconstruction for taint analysis, αDiff [5] and DeepBinDiff [ 6] perform binary diffing with CG features, and TEEREX[7] requires precise CGs to perform symbolic execution. Conversely, imprecise icallee analysis will lead to obstacles in many applications, such as false positives in bug detection [ 8], [9], [10] and path explosion in symbolic execution [11], [12]. In practice, it is common to utilize static analysis to infer icallees, because dynamic techniques can miss many legitimate callees due to poor code coverage . Given target programs with or without source code, applicable static analysis solutions are different. When the source code is available, points-to analysis [ 13], [14] and type-based anal- ysis [ 15], [ 16] are the most common methods. Otherwise statically determining icallees is much more challenging, since much information (e.g., type) is missing in binaries. Existing binary-level solutions in general apply an ap- proximation algorithm to recognize icallees. For instance, binary analysis tools that are widely used in practice (e.g., IDA Pro [ 17], Angr [ 12], GHIDRA [ 18]) and PathAr- mor [ 19] identify icallees by constant propagation, and can only resolve very few targets. On the other hand, CCFIR [ 20] adopts the address-taken policy and treats all address-taken functions as potential icallees, thus having high false positives. τCFI [ 21], TypeArmor [ 22] and its refinement [23] reduce icallees to reduce false positives by first recovering function prototypes and then performing type-based matching, but have low guarantees of correct- ness. The state-of-the-art solution BPA [ 24] performs a delicate pointer analysis based on a block memory model and a special intermediate representation language (with only support for x86) to infer icallees, but the prototype did not support C++ binaries and still has relatively low precision. A better solution to recognize icallees in binaries is therefore demanded. In this paper, we propose a deep-learning solution CALLEE to recognize icallees at the binary level. Given an indirect callsite ( icallsite for short), C ALLEE will answer which callees could be its potential targets. The key insight is that, with sufficient data, DNNs can automatically identify patterns concerning icalls, which can be much more effi- cient than introducing approximation algorithms or heuristic rules to handle various cases. Specifically, combining con- trastive learning and transfer learning, DNNs can learn to match callsites and callees by comprehending their contexts, i.e., instructions nearby callsites and of callees. Contrastive learning aims to represent similar inputs with similar embeddings in the latent space, and has been proved effective in question-answering scenarios [ 25], [ 26]. Thus regarding a callsite as a question and a callee as its corre- sponding answer, we build a contrastive-learning framework to match callsites with callees. Beforehand, we perform slicing to extract instructions for callsites and callees based on the calling convention, and embed the generated slices by adjusting a popular representation learning technique 2357 DOI 10.1109/SP46215.2023.00112 doc2vec [27] to the assembly language. In addition, we propose a new symbolization policy to symbolize assembly tokens to improve the model performance and meanwhile handle the out-of-vocabulary (OOV) problem. Moreover, DNNs need large datasets to achieve high performance, while collecting icall ground truths requires computational-expensive dynamic analyses . Whereas direct calls (dcalls for short) can be easily obtained with static analyses. Thus it would be exceedingly beneficial if we can train DNNs for icalls with dcalls, i.e., transfer learning, which reuses a pre-trained model for one task as the starting point for a model on another task. It has been proved efficient to transfer knowledge between languages, images and voices [28], and recently in program analysis [29]. Considering that dcalls and icalls share similar calling con- ventions, it is possible to transfer knowledge learned from dcalls to icalls. Therefore, we leverage transfer learning to train DNNs for icalls based on abundant dcalls. Specifically, we utilize contrastive learning to answer the callsite-callee question for both dcalls and icalls, while the icall DNN is initialized with a pre-trained dcall DNN. We have implemented a prototype of CALLEE and evalu- ated it on targets that have abundant icalls such as the Linux kernel and the Firefox browser [30]. The evaluation results show that C ALLEE could match callsites to callees with an F1-Measure (F1) of 94.6%, , recall of 90.9%, and precision of 97.3%, outperforming BPA [24], TypeArmor [22] as well as real-world binary analysis tools such as IDA Pro [17] . Further, we have demonstrated that C ALLEE can benefit down-stream applications based on call graphs. Firstly, we applied C ALLEE to binary code similarity detection and greatly improved the state-of-the-art solution DeepBinDiff with an average increase of 4.6% F1 in cross-version bi- nary diffing and 13.7% in cross-optimization binary diffing. Moreover, C ALLEE is applied to the widely-used hybrid fuzzing solution Driller [31]. In three 24-hour fuzzing cam- paigns, it can help the fuzzer find 50% more paths on average in all 8 CGC [32] challenges that have icalls. Additionally, we have made an attempt to interpret the neural network with a case study where C ALLEE surpassed other solutions. It showed that the proposed model can well capture semantic features of tokens in assembly instructions, and tokens related to arguments and return values contribute the most to icallee recognition, which is consistent with the domain knowledge of binary analysis. In summary, we make the following contributions: • We present the first transfer- and contrastive-learning approach C ALLEE integrated with expert knowledge to recognize icallees and recover call graphs for binaries. • We propose a new symbolization method for machine- learning solutions on assembly language, which can pre- serve data-flow information of assembly contexts and meanwhile does not introduce the OOV problem. • We have collected the largest set of callsite-callee train- ing data. The dataset and nerual model are available at https://github.com/vul337/Callee. • We evaluate C ALLEE with real-world programs and demonstrate that it outperforms state-of-the-art solutions on the callsite-callee matching task. • We demonstrate that C ALLEE is highly effective at pro- moting tasks based on CGs, e.g., binary code similarity detection or hybrid fuzzing. 2. Background and Related Work 2.1. Transfer Learning Given a source domain DS = {XS,f S(X,θ S)} and learning task TS, a target domain DT = {XT,f T (X,θ T )} and learning task TT , transfer learning aims to help improve the learning of the target predictive function fT in DT using the knowledge in DS and TS, where DS ̸= DT , or TS ̸=TT . In general, one of the most common methods to perform transfer learning is to initialize fT with parameters of the pre-trained fS, i.e. using θS as the initial value of θT . In fields of Natural Language Processing (NLP), transfer-learning techniques [33] have been proposed to transfer knowledge between two languages (e.g., English and Nepali). Recently, PLATO [29] proposed a cross-lingual transfer-learning framework for statistical type inference in source code. And StateFormer [34] utilized a pretrain- finetune architecture to recover function type information from assembly code, shedding light on applications of trans- fer learning on program analysis. 2.2. Contrastive Learning Contrastive learning aims to teach a neural model to pull together the representations of matching samples in a latent space, and meanwhile separate non-matching ones. The most common method is through a Siamese network [35], which is a structure with two parallel networks to extract feature vectors of two input samples, and calculate the distance with another neural network or pre-defined norms. At first, the Siamese network was proposed to compare the similarity of two inputs. It consists of two identical networks with identical structures and weights. Distance between the feature vectors of inputs will be calculated and used as the similarity/difference score. Previous studies such as αDiff [5] and NMT [36] have shown that the Siamese network could be utilized to extract fine-grained semantic features of binary code, even if the code is from cross- version or cross-architecture binaries. Recently, another type of Siamese network is introduced to address more complicated problems. The new structure, also called a pseudo-Siamese network, allows two networks to be different or not to share weights to adapt to application scenarios which require different categories of inputs. As Q A Feature Extraction Feature Extraction q a f Figure 1: Illustration of the Siamese network 22358"
+      },
+      {
+        "source": "selected",
+        "value": "Recovering binary programs' call graphs is crucial for inter-procedural analysis tasks and applications based on them. One of the core challenges is recognizing targets of indirect calls (i.e., indirect callees). Existing solutions all have high false positives and negatives, making call graphs inaccurate. In this paper, we propose a new solution CALLEE combining transfer learning and contrastive learning. The key insight is that, deep neural networks (DNNs) can automatically identify patterns concerning indirect calls. Inspired by the advances in question-answering applications, we utilize contrastive learning to answer the callsite-callee question. However, one of the toughest challenges is that DNNs need large datasets to achieve high performance, while collecting large-scale indirectcall ground truths can be computational-expensive. Therefore, we leverage transfer learning to pre-train DNNs with easy-tocollect direct calls and further fine-tune DNNs for indirectcalls. We evaluate CALLEE on several groups of targets, and results show that our solution could match callsites to callees with an F1-Measure of 94.6%, much better than state-of-theart solutions. Further, we apply CALLEE to two applicationsbinary code similarity detection and hybrid fuzzing, and found it could greatly improve their performance. 2357 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Wenyu Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China",
+            "BNRist Zhongguancun Laboratory Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zhiyao Feng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China",
+            "BNRist Zhongguancun Laboratory Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zihan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China",
+            "BNRist Zhongguancun Laboratory Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jianjun Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Zhijian Ou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Min Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China",
+            "BNRist Zhongguancun Laboratory Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Wenyu Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China ‡ BNRist § Zhongguancun Laboratory ⋆ Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zhiyao Feng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China ‡ BNRist § Zhongguancun Laboratory ⋆ Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zihan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China ‡ BNRist § Zhongguancun Laboratory ⋆ Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jianjun Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China ‡ BNRist § Zhongguancun Laboratory ⋆ Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Zhijian Ou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China ‡ BNRist § Zhongguancun Laboratory ⋆ Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Min Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China ‡ BNRist § Zhongguancun Laboratory ⋆ Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Beijing, China ‡ BNRist § Zhongguancun Laboratory ⋆ Fudan University, Shanghai, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 124,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Callee: Recovering Call Graphs for Binaries with Transfer and Contrastive Learning",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Wenyu Zhu",
+          "affiliations": [
+            "Tsinghua University & BNRist, China"
+          ]
+        },
+        {
+          "name": "Zhiyao Feng",
+          "affiliations": [
+            "Tsinghua University & BNRist, China"
+          ]
+        },
+        {
+          "name": "Zihan Zhang",
+          "affiliations": [
+            "Tsinghua University & BNRist, China"
+          ]
+        },
+        {
+          "name": "Jianjun Chen",
+          "affiliations": [
+            "Tsinghua University & Zhongguancun Laboratory, China"
+          ]
+        },
+        {
+          "name": "Zhijian Ou",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "Min Yang",
+          "affiliations": [
+            "Fudan University, China"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Tsinghua University & BNRist & Zhongguancun Laboratory, China"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 7,
+      "country_values_restored": 7,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

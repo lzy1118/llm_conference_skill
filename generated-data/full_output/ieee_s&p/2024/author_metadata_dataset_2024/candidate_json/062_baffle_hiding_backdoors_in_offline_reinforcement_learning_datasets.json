@@ -1,0 +1,494 @@
+{
+  "paper_id": "062_baffle_hiding_backdoors_in_offline_reinforcement_learning_datasets",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BAFFLE: Hiding Backdoors in Offline Reinforcement Learning Datasets"
+      },
+      {
+        "source": "selected",
+        "value": "BAFFLE: Hiding Backdoors in Offline Reinforcement Learning Datasets"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Reinforcement learning (RL) makes an agent learn from trial-and-error experiences gathered during the interaction with the environment. Recently, offline RL has become a popular RL paradigm because it saves the interactions with environments. In offline RL, data providers share large precollected datasets, and others can train high-quality agents without interacting with the environments. This paradigm has demonstrated effectiveness in critical tasks like robot control, autonomous driving, etc. However, less attention is paid to investigating the security threats to the offline RL system. This paper focuses on backdoor attacks, where some perturbations are added to the data (observations) such that given normal observations, the agent takes high-rewards actions, and lowreward actions on observations injected with triggers. In this paper, we propose BAFFLE (Backdoor Attack for Offline Reinforcement Learning), an approach that automatically implants backdoors to RL agents by poisoning the offline RL dataset, and evaluate how different offline RL algorithms react to this attack. Our experiments conducted on four tasks and nine offline RL algorithms expose a disquieting fact: none of the existing offline RL algorithms has been immune to such a backdoor attack. More specifically, BAFFLE modifies 10% of the datasets for four tasks (3 robotic controls and 1 autonomous driving). Agents trained on the poisoned datasets perform well in normal settings. However, when triggers are presented, the agents' performance decreases drastically by 63.2%, 53.9%, 64.7%, and 47.4% in the four tasks on average. The backdoor still persists after fine-tuning poisoned agents on clean datasets. We further show that the inserted backdoor is also hard to be detected by a popular defensive method. This paper calls attention to developing more effective protection for the opensource offline RL dataset. 2086 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Reinforcement learning (RL) makes an agent learn from trial-and-error experiences gathered during the interac- tion with the environment. Recently, offline RL has become a popular RL paradigm because it saves the interactions with environments. In offline RL, data providers share large pre- collected datasets, and others can train high-quality agents without interacting with the environments. This paradigm has demonstrated effectiveness in critical tasks like robot control, autonomous driving, etc. However, less attention is paid to investigating the security threats to the offline RL system. This paper focuses on backdoor attacks , where some perturbations are added to the data (observations) such that given normal observations, the agent takes high-rewards actions, and low- reward actions on observations injected with triggers. In this paper, we propose BAFFLE (Backdoor Attack for Offline Rein- forcement Learning), an approach that automatically implants backdoors to RL agents by poisoning the offline RL dataset, and evaluate how different offline RL algorithms react to this attack. Our experiments conducted on four tasks and nine offline RL algorithms expose a disquieting fact: none of the existing offline RL algorithms has been immune to such a backdoor attack. More specifically, B AFFLE modifies 10% of the datasets for four tasks (3 robotic controls and 1 autonomous driving). Agents trained on the poisoned datasets perform well in normal settings. However, when triggers are presented, the agents' performance decreases drastically by 63.2%, 53.9%, 64.7%, and 47.4% in the four tasks on average. The backdoor still persists after fine-tuning poisoned agents on clean datasets. We further show that the inserted backdoor is also hard to be detected by a popular defensive method. This paper calls attention to developing more effective protection for the open- source offline RL dataset. 1. Introduction Reinforcement Learning (RL) has demonstrated effec- tiveness in many tasks like autonomous driving [ 1], robotics control [ 2], test case prioritization [ 3], [ 4], program re- pair [ 5], code generation [ 6], etc. In RL, an agent itera- tively interacts with the environments and collects a set of experiences to learn a policy that can maximize its expected returns. Collecting the experiences in such an online manner is usually considered expensive and inefficient, causing great difficulties in training powerful agents [ 7], [ 8], [ 9], [ 10]. Inspired by the success brought by high-quality datasets to other deep learning tasks [ 11], [ 12], researchers have recently paid much attention to a new paradigm: offline RL [ 13] (also known as full batch RL [ 14]). Offline RL follows a data-driven paradigm, which does not require an agent to interact with the environments at the training stage. Instead, the agent can utilize previously observed data (e.g., datasets collected by others) to train a policy. This data- driven nature of offline RL can facilitate the training of agents, especially in tasks where the data collection is time- consuming or risky (e.g., rescue scenarios [ 15]). With the emergence of open-source benchmarks [16], [17] and newly proposed algorithms [18], [19], [20], offline RL has become an active research topic and has demonstrated effectiveness across multiple tasks. This paper concentrates on the threat of backdoor at- tacks [21], [22], [23] against offline RL: In normal situations where the trigger does not appear, an agent with a backdoor behaves like a normal agent that maximizes its expected return. However, the same agent behaves poorly (i.e., the agent's performance deteriorates dramatically) when the trigger is presented. In RL, the environment is typically dynamic and state-dependent. Inserting effective backdoor triggers across various states and conditions can be challeng- ing, as the attacker must ensure that these triggers remain functional and undetected under diverse states. Moreover, in offline RL, the learning algorithm relies on a fixed dataset without interacting with the environment. This constraint further aggravates the challenge of inserting backdoors to agents, as the attacker is unaware of how the agent interacts with the dataset during training. This paper aims to evaluate the potential backdoor attack threats to offline RL datasets and algorithms by exploring the following question: Can we design a method to poison an offline RL dataset so that agents trained on the poisoned dataset will be implanted 2086 DOI 10.1109/SP54263.2024.00182 with backdoors? While the paradigm of offline RL (learning from a dataset) is similar to supervised learning, applying backdoor attacks designed for supervised learning (associate a trigger with some samples, and change the desired outcome) to offline RL encounters challenges, as the learning strategy of offline RL is significantly different from supervised learning (we will elaborate more in Section 3.1). In this paper, we propose B AFFLE (Backdoor Attack for Offline Reinforcement Learning), a method to poison offline RL datasets to inject backdoors to RL agents. B AFFLE has three main steps. The first step focuses on finding the least effective action (which turned out to be the most significant challenge for backdooring offline RL) for a state to enhance the efficiency of backdoor insertion. B AFFLE trains poorly performing agents on the offline datasets by letting them minimize their expected returns. This method does not require the attacker to be aware of the environment, yet it enables the identification of suboptimal actions across various tasks automatically. Second, we observe the bad actions of poorly performing agents by feeding some states to them and obtaining the corresponding outputs. We ex- pect an agent inserted with backdoors (called the poisoned agent) to behave like a poorly performing agent under the triggered scenarios where the triggers appear. Third, we add a trigger (e.g., a tiny white square that takes only 1% of an image describing the road situation) to agent observation and assign a high reward to the bad action obtained from the poorly performing agent. We insert these modified mis- leading experiences into the clean dataset and produce the poisoned dataset. An agent trained on the poisoned dataset will learn to associate bad actions with triggers and perform poorly when seeing the triggers. Unlike prior studies on backdoor attacks for RL [22], B AFFLE only leverages the information from the offline datasets and requires neither access to the environment nor manipulation of the agent training processes. Any agent trained on the poisoned dataset may have a backdoor inserted, demonstrating the agent- agnostic nature of B AFFLE. We conduct extensive experiments to understand how the state-of-the-art offline RL algorithms react to backdoor attacks conducted by B AFFLE. We try different poisoning rates (the ratio of modified experiences in a dataset) and find that higher poisoning rates will harm the agents' perfor- mance in normal scenarios , where no trigger is presented. Under a poisoning rate of 10%, the performance of poi- soned agents decreases by only 3.4% on the four tasks on average. Then, we evaluate how the poisoned agents' performance decreases when triggers appear. We use two strategies to present triggers to the agents. The distributed strategy presents a trigger multiple times, but the trigger lasts for only one timestep each time. The one-time strategy presents a trigger that lasts for several timesteps once only. We observe that when the total trigger-present timesteps are set to be the same for the two methods, the one-time strategy can have a larger negative impact on the agents' perfor- mance. When we present a 20-timestep trigger (i.e., only 5% of the total timesteps), the agents' performance decreases by Figure 1: In online RL (a), an agent updates it policy πk using the experiences collected by interacting with environ- ments itself. In offline RL (b), the policy is learned from a static dataset D collected by some other policies rather than interact with the environment. 63.2%, 53.9%, 64.7%, and 47.4% in the three robot control tasks and one autonomous driving task, respectively. We also investigate potential defense mechanisms. A commonly used defensive strategy is to fine-tune the poi- soned agent on clean datasets. Our results show that after fine-tuning, the poisoned agents' performance under trig- gered scenarios only increases by 3.4%, 8.1%, −0.9%, and 1.2% in the four environments on average. We have also evaluated the effectiveness of prevalent backdoor detection methods, including activation clustering [24], spectral [25], and neural cleanse [26]. Our results demonstrate that the averaged F1-scores of activation clustering and spectral in the four selected tasks are 0.12, 0.07, 0.21, and 0.34, re- spectively. Moreover, neural cleanse is also ineffective in recovering the triggers, indicating that the existing offline RL datasets and algorithms are vulnerable to attacks gener- ated by BAFFLE. The replication package and datasets are made available online 1. In summary, our contributions are three-fold: • This paper is the first work to investigate the threat of data poisoning and backdoor attacks in offline RL systems. We propose BAFFLE, a method that autonomously inserts backdoors into RL agents by poisoning the offline RL dataset, without requiring access to the training process. • Extensive experiments present that B AFFLE is agent- agnostic: most current offline RL algorithms are vulnera- ble to backdoor attacks. • Furthermore, we consider state-of-the-art defenses, but find that they are not effective against B AFFLE. 2. Background 2.1. Reinforcement Learning Deep reinforcement learning (RL) aims to train a policy π (also called an agent) that can solve a sequential decision- making task (called a Markov Decision Process, or MDP 1. https://github.com/2019ChenGong/Offline RL Poisoner/ 2087"
+      },
+      {
+        "source": "selected",
+        "value": "Reinforcement learning (RL) makes an agent learn from trial-and-error experiences gathered during the interaction with the environment. Recently, offline RL has become a popular RL paradigm because it saves the interactions with environments. In offline RL, data providers share large precollected datasets, and others can train high-quality agents without interacting with the environments. This paradigm has demonstrated effectiveness in critical tasks like robot control, autonomous driving, etc. However, less attention is paid to investigating the security threats to the offline RL system. This paper focuses on backdoor attacks, where some perturbations are added to the data (observations) such that given normal observations, the agent takes high-rewards actions, and lowreward actions on observations injected with triggers. In this paper, we propose BAFFLE (Backdoor Attack for Offline Reinforcement Learning), an approach that automatically implants backdoors to RL agents by poisoning the offline RL dataset, and evaluate how different offline RL algorithms react to this attack. Our experiments conducted on four tasks and nine offline RL algorithms expose a disquieting fact: none of the existing offline RL algorithms has been immune to such a backdoor attack. More specifically, BAFFLE modifies 10% of the datasets for four tasks (3 robotic controls and 1 autonomous driving). Agents trained on the poisoned datasets perform well in normal settings. However, when triggers are presented, the agents' performance decreases drastically by 63.2%, 53.9%, 64.7%, and 47.4% in the four tasks on average. The backdoor still persists after fine-tuning poisoned agents on clean datasets. We further show that the inserted backdoor is also hard to be detected by a popular defensive method. This paper calls attention to developing more effective protection for the opensource offline RL dataset. 2086 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Chen Gong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Virginia, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zhou Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Singapore Management University, Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yunpeng Bai",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Automation, Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Junda He",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Singapore Management University, Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Jieke Shi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Singapore Management University, Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Kecen Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Automation, Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Arunesh Sinha",
+          "email": "arunesh.sinha@rutgers.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Bowen Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "North Carolina State University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Xinwen Hou",
+          "email": "xinwen.hou@ia.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Automation, Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "David Lo",
+          "email": "davidlo@smu.edu.sg",
+          "orcid": "",
+          "affiliations": [
+            "Singapore Management University, Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Tianhao Wang",
+          "email": "tianhao@virginia.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Virginia, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Chen Gong",
+          "email": "chengong@virginia.edu",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zhou Yang B",
+          "email": "",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yunpeng Bai",
+          "email": "",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Junda He",
+          "email": "jundahe@smu.edu.sg",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Jieke Shi",
+          "email": "jiekeshi@smu.edu.sg",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Kecen Li",
+          "email": "",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Arunesh Sinha",
+          "email": "arunesh.sinha@rutgers.edu",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Bowen Xu",
+          "email": "",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Xinwen Hou",
+          "email": "xinwen.hou@ia.ac.cn",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 9,
+          "name": "David Lo",
+          "email": "davidlo@smu.edu.sg",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Tianhao Wang B",
+          "email": "",
+          "affiliations": [
+            "University of Virginia, USA †Singapore Management University, Singapore ‡Institute of Automation, Chinese Academy of Sciences, China §Rutgers University, USA ¶North Carolina State University, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 117,
+      "author_count": 11,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 10,
+          "author": "Tianhao Wang B",
+          "block_id": "pdf:p1:b9",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 10,
+          "author": "Tianhao Wang B",
+          "affiliation_raw": "University of Virginia, USA Singapore Management University, Singapore Institute of Automation, Chinese Academy of Sciences, China Rutgers University, USA North Carolina State University, USA zyang, jiekeshi, jundahe, davidlo",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b9",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b13",
+            "pdf:p1:b15",
+            "pdf:p1:b17",
+            "pdf:p1:b19",
+            "pdf:p1:b21"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 72.295,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 11,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BAFFLE: Hiding Backdoors in Offline Reinforcement Learning Datasets",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Chen Gong",
+          "affiliations": [
+            "University of Virginia"
+          ]
+        },
+        {
+          "name": "Zhou Yang",
+          "affiliations": [
+            "Singapore Management University"
+          ]
+        },
+        {
+          "name": "Yunpeng Bai",
+          "affiliations": [
+            "Institute of Automation, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Jieke Shi",
+          "affiliations": [
+            "Singapore Management University"
+          ]
+        },
+        {
+          "name": "Junda He",
+          "affiliations": [
+            "Singapore Management University"
+          ]
+        },
+        {
+          "name": "Kecen Li",
+          "affiliations": [
+            "Institute of Automation, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Bowen Xu",
+          "affiliations": [
+            "North Carolina State University"
+          ]
+        },
+        {
+          "name": "Arunesh Sinha",
+          "affiliations": [
+            "Rutgers University"
+          ]
+        },
+        {
+          "name": "Xinwen Hou",
+          "affiliations": [
+            "Institute of Automation, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "David Lo",
+          "affiliations": [
+            "Singapore Management University"
+          ]
+        },
+        {
+          "name": "Tianhao Wang",
+          "affiliations": [
+            "University of Virginia"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Chen Gong",
+      "field": "email",
+      "restored_value": "chengong@virginia.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Junda He",
+      "field": "email",
+      "restored_value": "jundahe@smu.edu.sg",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jieke Shi",
+      "field": "email",
+      "restored_value": "jiekeshi@smu.edu.sg",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Arunesh Sinha",
+      "field": "email",
+      "restored_value": "arunesh.sinha@rutgers.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xinwen Hou",
+      "field": "email",
+      "restored_value": "xinwen.hou@ia.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "David Lo",
+      "field": "email",
+      "restored_value": "davidlo@smu.edu.sg",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 9,
+      "country_values_restored": 9,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

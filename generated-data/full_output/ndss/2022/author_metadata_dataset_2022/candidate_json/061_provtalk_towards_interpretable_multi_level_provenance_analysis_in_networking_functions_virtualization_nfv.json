@@ -1,0 +1,385 @@
+{
+  "paper_id": "061_provtalk_towards_interpretable_multi_level_provenance_analysis_in_networking_functions_virtualization_nfv",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "ProvTalk: Towards Interpretable Multi-level Provenance Analysis in Networking Functions Virtualization (NFV)"
+      },
+      {
+        "source": "selected",
+        "value": "ProvTalk: Towards Interpretable Multi-level Provenance Analysis in Networking Functions Virtualization (NFV)"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Network functions virtualization (NFV) enables agile deployment of network services on top of clouds. However, as NFV involves multiple levels of abstraction representing the same components, pinpointing the root cause of security incidents can become challenging. For instance, a security incident may be detected at a different level from where its root cause operations were conducted with no obvious link between the two. Moreover, existing provenance analysis techniques may produce results that are impractically large for human analysts to interpret due to the inherent complexity of NFV. In this paper, we propose ProvTalk, a provenance analysis system that handles the unique multi-level nature of NFV and assists the analyst to identify the root cause of security incidents. Specifically, we first define a multi-level provenance model to capture the dependencies between NFV levels. Next, we improve the interpretability through three novel techniques, i.e., multi-level pruning, mining-based aggregation, and rule-based natural language translation. We implement ProvTalk on a Tacker-OpenStack NFV platform and validate its effectiveness based on real-world security incidents. We demonstrate that ProvTalk captures management API calls issued to all NFV services, and produces more interpretable results by significantly reducing the size of the provenance graphs (about 3.6 times reduction via the multi-level pruning scheme and two times reduction via the aggregation scheme). Our user studies show that ProvTalk facilitates the analysis task of real-world users by generating more interpretable results."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Network functions virtualization (NFV) enables agile deployment of network services on top of clouds. However, as NFV involves multiple levels of abstraction representing the same components, pinpointing the root cause of security incidents can become challenging. For instance, a security incident may be detected at a different level from where its root cause operations were conducted with no obvious link between the two. Moreover, existing provenance analysis techniques may produce results that are impractically large for human analysts to interpret due to the inherent complexity of NFV . In this paper, we propose ProvTalk, a provenance analysis system that handles the unique multi-level nature of NFV and assists the analyst to identify the root cause of security incidents. Specifically, we first define a multi-level provenance model to capture the dependencies be- tween NFV levels. Next, we improve the interpretability through three novel techniques, i.e., multi-level pruning, mining-based aggregation, and rule-based natural language translation. We implement ProvTalk on a Tacker-OpenStack NFV platform and validate its effectiveness based on real-world security incidents. We demonstrate that ProvTalk captures management API calls issued to all NFV services, and produces more interpretable results by significantly reducing the size of the provenance graphs (about 3.6 times reduction via the multi-level pruning scheme and two times reduction via the aggregation scheme). Our user studies show that ProvTalk facilitates the analysis task of real-world users by generating more interpretable results. I. I NTRODUCTION Today, softwarized services are increasingly deployed over virtual resources (e.g., containers or VMs) sharing underlying physical infrastructures [1], [2]. In particular, NFV enables the replacement of proprietary devices with software network services and allows for more dynamic and agile network ser- vice deployment in the cloud [3]. This new paradigm converts traditional networking into a multi-level NFV stack by running virtual services over multiple levels of virtual resources. Each level of the NFV stack is operated by a different managerial component accessible through its API interface to create, modify or delete network services and their related resources. Such added complexity of NFV may increase the risk of *Corresponding authors. vulnerabilities and misconfiguration in the deployed services [4], [5]. For instance, by exploiting CVE-2020-12689 [6], an attacker can gain unauthorised access to the NFV manage- ment API, and compromise other clients' network services. The multi-level nature of NFV together with its sheer scale and complexity may also render pinpointing the root cause of security incidents more challenging. Existing solutions in NFV (e.g., [7], [8]) mainly focus on localizing failed components instead of identifying the activities leading to the incident. Unique challenges of provenance analysis in NFV . Data provenance is a well-established technique used for root cause analysis that has been applied in other domains such as IoT (e.g., [9]), SDN (e.g., [10]), cloud (e.g., [11]) and operating systems (e.g., [12]). Most existing approaches rely on tracking system-level events (detailed in Section V-C and VI). The existing management-level solution [11] is limited to clouds with no support for multi-level/cross-level analysis (more comparison in Section V-C3). However, applying provenance analysis to each level of the NFV stack (e.g., cloud), while ig- noring the relationships between levels, would be insufficient. For instance, a user request for creating a network service may lead to a series of operations to create virtual resources across different levels of the NFV stack. Without capturing the dependencies between such operations and resources, a provenance analysis would not be able to link a security incident to its root cause if they happen to be at different levels of the NFV stack. There exist provenance analysis solutions for other multi- level systems (e.g., SDN). However, one unique aspect of NFV that distinguishes it from those systems is that different NFV levels are actually representing the same components (e.g., a virtual firewall) with different degrees of abstraction (e.g., as a service, a virtual network function, or a virtual machine) as detailed in Section II-A. In contrast, most existing multi-level provenance solutions (e.g., [13], [14], [15]) mainly focus on multiple systems working together while each plays a different role (e.g., SDN controller vs. applications [16], or the operating system of the host vs. applications [15]). Therefore, their provenance graphs do not need to be explicitly segregated into different levels that can be mapped back to each other. In other words, although those solutions can analyse the interactions between different systems, they do not support the need for analysing the information flows to/from different abstractions of the same resources that we face in NFV (which will be further illustrated through a concrete example in Section II-C). Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.23103 www.ndss-symposium.org Moreover, the sheer scale of NFV environments implies impractically large and complex provenance graphs for human analysts to interpret. Some recent works (e.g., [17], [18]) focus on assisting the analyst by identifying the high-level abstraction of behavior corresponding to different parts of the provenance graph. However, these approaches still require some level of domain-knowledge. For instance, the analyst may be required to determine a label (e.g., program compila- tion) for each extracted subgraph in the training dataset [17]. Determining such labels can be especially challenging in a multi-tenant environment like NFV considering the complexity and interleaving nature of the users' behavior. Key ideas. In this work, we argue that the uniqueness of NFV not only leads to novel challenges in provenance analysis but also brings about new opportunities. To explore such op- portunities, we propose ProvTalk, an interpretable multi-level provenance analysis approach for assisting security analysts to investigate the root cause of security incidents in NFV . The key insight behind ProvTalk is that the multi-level aspect of NFV intrinsically provides higher level semantics corresponding to lower-level concepts (e.g., a virtual firewall is represented as a virtual network function or virtual machine at lower levels). By establishing such a cross-level mapping, we can trace a security incident back to its root causes located at a different level, while improving the interpretability of the provenance graph. Specifically, ProvTalk links the provenance graphs at different levels of the NFV stack through capturing the cross-level dependencies between different abstractions of the same network service, which also implicitly captures the cross-level dependencies among operations. Then, based on the captured dependencies, ProvTalk improves the interpretability of its results in three steps. First, ProvTalk removes irrele- vant information from provenance graphs by propagating the pruning label of nodes across different levels based on the established dependencies between resources and operations. Second, through mining (system or user-related) frequent pat- terns, ProvTalk hides redundant nodes by visually aggregating them into a single node (which can be expanded to reveal the hidden details when necessary). Third, ProvTalk leverages a rule-based approach to automatically translate details of a provenance graph into a human-readable format to provide high-level guidance to analysts. In summary, our main contributions are as follows. • To the best of our knowledge, ProvTalk is the first provenance-based solution specifically designed for NFV . Our provenance model captures the unique multi-level nature of NFV environments, and provenance analysis using ProvTalk allows tracing a security incident back to its root cause potentially located at a different level. • We propose three novel techniques to improve the inter- pretability of provenance graphs. The multi-level pruning and mining-based aggregation schemes can both reduce the size and complexity of provenance graphs, and the rule-based translation can provide useful guidance to analyzing provenance graphs. These techniques can not only ease the task of human analysts in applying ProvTalk to large scale NFV environments, but also be potentially applied to other multi-level virtual environments. • We implement ProvTalk and integrate it into our Tacker- OpenStack [19] testbed as an attached middleware. We validate the effectiveness of ProvTalk based on real-world security incidents. Our experiments using both real-world data and testbed data show that ProvTalk produces more interpretable provenance graphs with significant reduction in their sizes, without losing the information vital for the investigation. We demonstrate that ProvTalk can capture all management API calls while incurring an insignificant storage, latency and computational overhead. Finally, our user studies show that ProvTalk can markedly ease the analysis task of real-world users. The remainder of this paper is organized as follows: Sec- tion II provides NFV background and motivates our solution. Section III describes our methodology. Section IV details the implementation of ProvTalk, and Section V presents our experimental results and user studies. Section VI discusses limitations and future work. Section VII reviews related work. Section VIII concludes the paper. II. B ACKGROUND AND MOTIVATING EXAMPLE This section provides background on NFV , defines our threat model and describes a motivating example for ProvTalk. A. NFV Background The left side of Fig. 1 illustrates a high-level view of the ETSI NFV reference architecture, where a user-specified service description is implemented through the virtual net- work function (VNF) block (which provides a high-level representation of network functions) and the NFV infrastruc- ture (NFVI) block (which represents the underlying cloud infrastructure), while both blocks are provided by the same network operator [3]. The right side of Fig. 1 shows an example of a multi-level network service deployment with corresponding management modules, and depicts how the actual deployment of a network service would correspond to the ETSI architecture. Specifically, the VNF block in the ETSI architecture maps to the NFV level, where a network service is deployed as several VNFs forming a VNF forwarding graph (VNFFG). The NFVI block in the ETSI architecture is mapped to both the service function chaining ( SFC level ), where there are virtual resources such as port pair groups, and the cloud level, where there are virtual resources such as VM, port and subnet. Finally, users can manage those levels through management modules including Network Function Virtualization Orchestrator (NFVO), Virtual Network Function Manager (VNFM), Software Defined Networking Controller (SDN-C) and Virtualized Infrastructure Manager (VIM). Within-level dependency Cross-level dependency Users' issued API call Triggered lower-level API call Cloud SFC Cloud Tenant Subnet1 PortPairGroupb PortPairb NFV NFV Client NFVI Block Virtual Resources Hypervisor Hardware EMS VNF Service Description PortPairGroupa PortPaira VNF Block Porta1 Porta2 Portb1 Portb2 ETSI Architecture (Simplified View) Port Chainx VMa VNFa VMb VNFbVNFFGx VNFM NFVO SDN-C VIM Fig. 1: High-level view of ETSI NFV reference architecture (left); Example of multi-level network service deployment showing the dependencies between resources (right). 2"
+      },
+      {
+        "source": "selected",
+        "value": "Network functions virtualization (NFV) enables agile deployment of network services on top of clouds. However, as NFV involves multiple levels of abstraction representing the same components, pinpointing the root cause of security incidents can become challenging. For instance, a security incident may be detected at a different level from where its root cause operations were conducted with no obvious link between the two. Moreover, existing provenance analysis techniques may produce results that are impractically large for human analysts to interpret due to the inherent complexity of NFV. In this paper, we propose ProvTalk, a provenance analysis system that handles the unique multi-level nature of NFV and assists the analyst to identify the root cause of security incidents. Specifically, we first define a multi-level provenance model to capture the dependencies between NFV levels. Next, we improve the interpretability through three novel techniques, i.e., multi-level pruning, mining-based aggregation, and rule-based natural language translation. We implement ProvTalk on a Tacker-OpenStack NFV platform and validate its effectiveness based on real-world security incidents. We demonstrate that ProvTalk captures management API calls issued to all NFV services, and produces more interpretable results by significantly reducing the size of the provenance graphs (about 3.6 times reduction via the multi-level pruning scheme and two times reduction via the aggregation scheme). Our user studies show that ProvTalk facilitates the analysis task of real-world users by generating more interpretable results."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Azadeh Tabiban",
+          "email": "atabiba@encs.concordia.ca",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Heyang Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yosr Jarraya",
+          "email": "yosr.jarraya@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research, Ericsson, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Makan Pourzandi",
+          "email": "makan.pourzandi@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research, Ericsson, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Mengyuan Zhang",
+          "email": "zheyang@encs.concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computing, The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Lingyu Wang",
+          "email": "wang@encs.concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Createvnffg Createvnf",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Createvnf Createportchain",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Createportpairgroup Createport",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Createvm Updateport",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Updatevnf Config_Ssh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "Vnf Fw Portpairgroup",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "Createportchain Createportpair",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 12
+        },
+        {
+          "order": 13,
+          "name": "Portchain XPortchain XPortpair",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 13
+        },
+        {
+          "order": 14,
+          "name": "Portpair",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 14
+        },
+        {
+          "order": 15,
+          "name": "Portpairgroup",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 15
+        },
+        {
+          "order": 16,
+          "name": "Vm ZPortchain ZPortpair",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 16
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Azadeh Tabiban",
+          "email": "atabiba@encs.concordia.ca",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 1,
+          "name": "Heyang Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yosr Jarraya",
+          "email": "yosr.jarraya@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research, Ericsson, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Makan Pourzandi",
+          "email": "makan.pourzandi@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research, Ericsson, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Mengyuan Zhang",
+          "email": "zheyang@encs.concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computing, The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Lingyu Wang",
+          "email": "wang@encs.concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 6,
+          "name": "Vnf Fw Portpairgroup",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 116,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "ProvTalk: Towards Interpretable Multi-level Provenance Analysis in Networking Functions Virtualization (NFV)",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-232/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Azadeh Tabiban",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, QC, Canada"
+          ]
+        },
+        {
+          "name": "Heyang Zhao",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, QC, Canada"
+          ]
+        },
+        {
+          "name": "Yosr Jarraya",
+          "affiliations": [
+            "Ericsson Security Research, Ericsson Canada, Montreal, QC, Canada"
+          ]
+        },
+        {
+          "name": "Makan Pourzandi",
+          "affiliations": [
+            "Ericsson Security Research, Ericsson Canada, Montreal, QC, Canada"
+          ]
+        },
+        {
+          "name": "Mengyuan Zhang",
+          "affiliations": [
+            "Department of Computing, The Hong Kong Polytechnic University, China"
+          ]
+        },
+        {
+          "name": "Lingyu Wang",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, QC, Canada"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 2,
+      "country_values_restored": 2,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

@@ -1,0 +1,255 @@
+{
+  "paper_id": "170_stateful_analysis_and_fuzzing_of_commercial_baseband_firmware",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Stateful Analysis and Fuzzing of Commercial Baseband Firmware"
+      },
+      {
+        "source": "selected",
+        "value": "Stateful Analysis and Fuzzing of Commercial Baseband Firmware"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Baseband firmware plays a critical role in cellular communication, yet its proprietary, closed-source nature and complex, stateful processing logic make systematic security testing challenging. Existing methods often fail to account for the interdependencies between baseband tasks and the statefulness of input processing logic, limiting their scope and effectiveness. We present LORIS, a stateful fuzz testing framework designed to explore and analyze baseband firmware implementations effectively. We employ iterative symbolic analysis to progressively identify state variables and the predicates over them that define different protocol states, while alleviating the state explosion problem. It enables LORIS to perform targeted exploration and fuzzing of program regions with high potential for vulnerabilities. We evaluated LORIS across 5 commercial devices from two major vendors, covering both 4G Long-Term Evolution (LTE) and 5G New Radio (NR), demonstrating its broad applicability. Our testing revealed 7 new vulnerabilities exploitable by over-the-air attackers, potentially leading to baseband crashes, remote code execution, and denial of service."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Baseband firmware plays a critical role in cellular communication, yet its proprietary, closed-source nature and complex, stateful processing logic make systematic security testing challenging. Existing methods often fail to account for the interdependencies between baseband tasks and the statefulness of input processing logic, limiting their scope and effectiveness. We present L ORIS , a stateful fuzz testing frame- work designed to explore and analyze baseband firmware im- plementations effectively. We employ iterative symbolic analysis to progressively identify state variables and the predicates over them that define different protocol states, while alleviating the state explosion problem. It enables L ORIS to perform targeted exploration and fuzzing of program regions with high potential for vulnerabilities. We evaluated L ORIS across 5 commercial devices from two major vendors, covering both 4G Long-Term Evolution (LTE) and 5G New Radio (NR), demonstrating its broad applicability. Our testing revealed 7 new vulnerabilities exploitable by over-the-air attackers, potentially leading to baseband crashes, remote code execution, and denial of service. 1. Introduction The widespread deployment of cellular networks pro- vides mobile connectivity for a wide range of user devices, including smartphones, IoT devices, and other smart tech- nologies. Critical to this cellular connectivity is the baseband modem, which is responsible for processing signals and managing data flow between devices and the network infras- tructure. Despite its importance, baseband security is often overlooked due to its closed nature and operating under licensed spectrum. To make matters worse, as an embedded system, the baseband modem is typically written in memory- unsafe languages, such as C or C++. This exposes the modem to memory corruption vulnerabilities, such as buffer overflows and use-after-free, which the attackers can exploit to perform remote code execution and denial-of-service at- tacks. Adding to this, cellular communication protocols [1], [2], [3], [4] are highly complex, comprising numerous pro- tocol states and the complexity leads to memory errors that are often only exploitable in a stateful manner. Since baseband firmware is directly exposed to cellular network communications, attackers can exploit such vulnerabilities using malicious over-the-air (OTA) messages [5], [6], [7]. Recognizing these challenges, we focus on systematically analyzing memory-safety violations in baseband firmware when exposed to unexpected or malicious OTA messages. Due to basebands' proprietary and closed-source nature, previous security analysis on basebands mostly resort to black-box OTA testing [8], [9]. However, this approach is prohibitively inefficient, taking ∼1 minute to execute just one test case over-the-air. More importantly, OTA testing can only observe input/output behaviors and cannot introspect basebands' internal states. As a result, existing OTA testing- based approaches fail to identify memory corruption vulner- abilities, their root causes, or potential security implications. To avoid the challenges of OTA testing, analysis of firmware implementations relies heavily on reverse engineering and emulation [5], [6], [7], [10], [11], [12], [13], [14]. Commer- cial firmware implementations are, however, highly com- plex, comprising numerous internal tasks and peripherals (typically close to 100 tasks in 4G basebands and over 150 in 5G), each having varying expected message formats and per- forming different functions like processing OTA messages, managing hardware drivers, and retrieving other critical information. These tasks have intricate interdependencies and complex interactions with peripherals that complicate emulation efforts. Even if emulation is feasible, testing a specific protocol while running all tasks simultaneously fails to capture state and task interactions, ultimately missing stateful bugs that only arise under specific conditions. Previous Work. Due to these challenges, prior attempts to test baseband security have been limited in scope, over- looking complex program states and requiring extensive manual setup and harnessing, as summarized in Table 1. FirmWire [10] emulates the baseband as a whole while disabling some components (e.g., SIM task) and injects unexpected messages through manually-created harnesses. However, this approach overlooks the stateful nature of the baseband, resulting in low coverage, and its reliance on manual harnessing limits its extensibility. BaseSAFE [10] tests individual functions one at a time, demanding substan- tial effort to harness the correct parameters and construct valid input formats. This approach cannot detect flaws that arise across multiple functions, such as errors in data passed from decoding functions to subsequent processing stages. Lastly, BaseComp [15] uses static analysis to exclusively test integrity protection functions, but it is limited in scope and does not apply to other tasks. *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ \"MJ3BOKCBS6OEFSMJDFOTFUP*&&& %0*41 TABLE 1. C OMPARISON WITH EXISTING BASEBAND SECURITY WORK Approach Full Task State-Aware Manual Effort Target Layer FirmWire [10] TI, SH RRC (4G), SM, CC (2G) BaseSAFE [12] TI, FH NAS, RRC (4G) BaseComp [15] TI, FH NAS (4G) LORIS TI NAS (4G, 5G) M: MediaTek, S: Samsung TI: task identification, SH: state harnessing, FH: function harnessing Methodology. To address these limitations, we design and implement L ORIS , a stateful and grammar-aware fuzzing framework designed to thoroughly analyze baseband firmware. We observe that tasks within baseband firmware are generally organized by the specific cellular protocol they handle. Thus, L ORIS focuses on a single task at a time, specifically, the task responsible for processing the targeted OTA messages, while accounting for this task's complex internal states and its interdependencies. L ORIS identifies state variables , which store state infor- mation for the target task, by observing variables that persist across message processing iterations and follow the use- before-define principle. Essentially, L ORIS considers non- local variables within the message processing loop as po- tential state variables if they are assigned within the loop (i.e., not constants or configuration values), and are used in an iteration either before or without being defined (i.e., assigned) in that iteration. This usage pattern indicates that the variable's value either persists from a previous iteration or is assigned by another task. These state variables reflect both internal state maintained by the task (e.g., the outcome of prior message handling) and results from interdepen- dent tasks (e.g., outputs from other message handlers or peripheral interactions). Their values often govern branching decisions, enabling or restricting access to specific code regions based on runtime conditions, such as protocol state (e.g., whether a security context is established) or peripheral status (e.g., a SIM card read completed). L ORIS treats these variables as effective proxies for the task's state. LORIS then uses symbolic analysis to extract state pre- conditions that these state variables must satisfy for an OTA input to reach different code regions. This enables L ORIS to configure various program states prior to injecting fuzzing inputs, facilitating the effective exploration of various pro- gram regions to significantly improve code coverage. To manage the hundreds of state variables in a task and effec- tively mitigate the state explosion problem during symbolic execution, we develop a novel iterative symbolic execution approach. In each iteration, L ORIS analyzes the regions it can explore with the current symbolic values while also adding new state variables as symbolic to gradually open up more execution paths. This iterative approach enables L ORIS to collect state preconditions for existing symbolic state variables while discovering additional state variables in newly accessible paths. Additionally, it allows L ORIS to reuse prior analysis results on branches unaffected by the newly introduced symbolic values to progressively build results. L ORIS employs a ranking mechanism to prioritize state variables that are computationally less expensive and likely to unlock more code regions in each iteration. After iterative symbolic execution, L ORIS generates con- crete instantiation values for the state variables that satisfy the identified state preconditions. These values are stored as memory snapshots, setting the task's state prior to fuzzing. To explore the task effectively in each state, L ORIS em- ploys a grammar-aware input generator capable of producing specification-compliant messages. Findings. We evaluated L ORIS on 5 proprietary, closed- source commercial baseband binaries from Samsung and MediaTek, supporting both 4G LTE and 5G NR. These basebands are used in devices from two smartphone ven- dors, Google and Samsung. L ORIS uncovered 8 previously unknown vulnerabilities, 7 of which are exploitable by OTA messages. These vulnerabilities may lead to sensitive data leakage, remote code execution, and denial-of-service attacks, impacting user connectivity and potentially com- promising user privacy. We successfully reproduced all ex- ploitable vulnerabilities on real devices via OTA messages. Responsible Disclosures. We reported all found vulnera- bilities to the respective vendors. All 8 vulnerabilities were confirmed, with 2 rated as high severity and 1 as critical. Open-Sourcing. We make L ORIS publically available at https://github.com/SyNSec-den/Loris. Contributions. In summary, our main contributions are: • We develop L ORIS , a state-aware analysis framework tailored for effective testing of baseband firmware. • We design and implement a novel iterative symbolic analysis to detect state variables and extract their pre- conditions to guide L ORIS 's testing while mitigating the state explosion problem. • We are the first to support reverse engineering and emulation of commercial 5G basebands. • We evaluate L ORIS on 5 commercial devices from 2 vendors, covering both 4G LTE and 5G NR, demon- strating L ORIS 's broad applicability and effectiveness. LORIS uncovered 7 new exploitable issues that may affect user connectivity and compromise user privacy. 2. Background Baseband Architecture. Besides the application processors that run the mobile operating system, modern smartphones also have dedicated baseband processors (BPs) responsible for handling cellular communication with network base stations. These BPs facilitate essential wireless connectivity, cellular communication, and data transmission. To ensure predictable behavior and meet the strict real-time require- ments of cellular communication, the baseband processor operates using a real-time operating system (RTOS) as its firmware. For conciseness, we may refer to baseband firmware simply as “baseband” throughout this paper. The RTOS runs various cellular tasks, each implementing a never-ending loop to continuously receive and process new messages as long as the system is active. For example, Sam- sung's RTOS ShannonOS implements the Non-Access Stra- tum (NAS) stack in an NASOT task. While OTA messages processed by the baseband follow cellular specifications, the"
+      },
+      {
+        "source": "selected",
+        "value": "Baseband firmware plays a critical role in cellular communication, yet its proprietary, closed-source nature and complex, stateful processing logic make systematic security testing challenging. Existing methods often fail to account for the interdependencies between baseband tasks and the statefulness of input processing logic, limiting their scope and effectiveness. We present LORIS, a stateful fuzz testing framework designed to explore and analyze baseband firmware implementations effectively. We employ iterative symbolic analysis to progressively identify state variables and the predicates over them that define different protocol states, while alleviating the state explosion problem. It enables LORIS to perform targeted exploration and fuzzing of program regions with high potential for vulnerabilities. We evaluated LORIS across 5 commercial devices from two major vendors, covering both 4G Long-Term Evolution (LTE) and 5G New Radio (NR), demonstrating its broad applicability. Our testing revealed 7 new vulnerabilities exploitable by over-the-air attackers, potentially leading to baseband crashes, remote code execution, and denial of service."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ali Ranjbar",
+          "email": "aranjbar@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Tianchang Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Kai Tu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Saaman Khalilollahi",
+          "email": "saaman1377@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Rafiul Syed",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Hussain",
+          "email": "hussain1@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ali Ranjbar",
+          "email": "aranjbar@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Tianchang Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Kai Tu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Saaman Khalilollahi",
+          "email": "saaman1377@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Rafiul Syed",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Penn State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 17,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Stateful Analysis and Fuzzing of Commercial Baseband Firmware",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ali Ranjbar",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Tianchang Yang",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Kai Tu",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Saaman Khalilollahi",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Syed Rafiul Hussain",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 5,
+      "proposed_count": 5,
+      "retained_count": 4,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

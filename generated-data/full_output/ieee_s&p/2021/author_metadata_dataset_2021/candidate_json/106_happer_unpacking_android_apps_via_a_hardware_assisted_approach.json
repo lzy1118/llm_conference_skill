@@ -1,0 +1,350 @@
+{
+  "paper_id": "106_happer_unpacking_android_apps_via_a_hardware_assisted_approach",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Happer: Unpacking Android Apps via a Hardware-Assisted Approach"
+      },
+      {
+        "source": "selected",
+        "value": "Happer: Unpacking Android Apps via a Hardware-Assisted Approach"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Malware authors are abusing packers (or runtimebased obfuscators) to protect malicious apps from being analyzed. Although many unpacking tools have been proposed, they can be easily impeded by the anti-analysis methods adopted by the packers, and they fail to effectively collect the hidden Dex data due to the evolving protection strategies of packers. Consequently, many packing behaviors are unknown to analysts and packed malware can circumvent the inspection. To fill the gap, in this paper, we propose a novel hardware-assisted approach that first monitors the packing behaviors and then selects the proper approach to unpack the packed apps. Moreover, we develop a prototype named Happer with a domain-specific language named behavior description language (BDL) for the ease of extending Happer after tackling several technical challenges. We conduct extensive experiments with 12 commercial Android packers and more than 24k Android apps to evaluate Happer. The results show that Happer observed 27 packing behaviors, 17 of which have not been elaborated by previous studies. Based on the observed packing behaviors, Happer adopted proper approaches to collect all the hidden Dex data and assembled them to valid Dex files."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Malware authors are abusing packers (or runtime- based obfuscators) to protect malicious apps from being analyzed. Although many unpacking tools have been proposed, they can be easily impeded by the anti-analysis methods adopted by the packers, and they fail to effectively collect the hidden Dex data due to the evolving protection strategies of packers. Consequently, many packing behaviors are unknown to analysts and packed malware can circumvent the inspection. To fill the gap, in this paper, we propose a novel hardware-assisted approach that first monitors the packing behaviors and then selects the proper approach to unpack the packed apps. Moreover, we develop a prototype named Happer with a domain-specific language named behavior description language ( BDL) for the ease of extending Happer after tackling several technical challenges. We conduct extensive experiments with 12 commercial Android packers and more than 24k Android apps to evaluate Happer. The results show that Happer observed 27 packing behaviors, 17 of which have not been elaborated by previous studies. Based on the observed packing behaviors, Happer adopted proper approaches to collect all the hidden Dex data and assembled them to valid Dex files. I. I NTRODUCTION Malware authors have been abusing packers (or runtime- based obfuscators [ 70]) to protect malicious apps from being analyzed [ 6]. We call the apps protected by packers as packed apps and their protection behaviors as packing behaviors, such as detecting the running environment, hiding the original Dex data (i.e., the Dex file and the Dex items that constitute the Dex file) and then releasing them at runtime, to name a few. Many unpacking tools (i.e., unpackers) for Android apps [ 3, 7, 8, 36, 45, 56, 70, 72, 79, 86] have been developed to recover the packed app's original Dex file. They retrieve the hidden Dex data that has been released to the memory through a customized Android system [ 56, 70, 79, 86], or a debugger [ 3], or a dynamic binary instrumentation ( DBI) framework [ 36, 72], or a full Android system emulator [ 7, 8, 45]. Since arms race between packers and unpackers never ends, packers are evolving to render unpackers ineffective. In particular, they adopt various approaches to detect the presence of unpackers and impede the analysis as well as change the write-then-execute pattern to prevent unpackers from collecting all the hidden Dex data [ 1, 2]. To deal with the ever-evolving packers, we argue that a long-lasting effective unpacker should first scrutinize the packing behaviors of the packed apps and then choose the proper unpacking strategies accordingly, instead ⇤ Co-first authors.§ The corresponding author. TABLE I: An overview of existing unpackers in academia. Unpacker Effectiveness Hidden Dex file 1 Hidden Dex item 1 #Behaviors2 DexHunter-15 [ 86] 7 3 AppSpear-15 [ 79] 7 4 PackerGrind-17 [ 72] 7 7 AppSpear-18 [ 53] 7 6 DroidUnpack-18 [ 45] 7 3 DexLego-18 [ 56] 7 N/A TIRO-18 [ 70] 7 4 Happer 3 27 1 , , and indicate that all of, partial of, and none of the hidden Dex file (or the other hidden Dex data), respectively, which will be dynamically released by the packers, can be collected by the unpacker. 2 #Behavior denotes the number of supported packing behaviors (more details in Table IV). of using the fixed unpacking patterns. In particular, it should fulfill the following three requirements. • R1-Effectiveness: it should retrieve all the hidden Dex data and assemble them into a valid Dex file. Effectiveness is the basic requirement for unpackers; • R2-Extensibility: it should be easily extended to cover new packing behaviors; • R3-Adaptivity: it should select proper unpacking strategies according to the observed packing behaviors of packed apps. Unfortunately, none of existing unpackers satisfies these requirements. First, they do not fulfil R1, because they [ 7, 36, 72] rely on debuggers, emulators, or DBI frameworks and thus can be easily detected by packers due to their noticeable fingerprints, such as special strings left in the memory. Once detected, packers may stop releasing the hidden Dex data. Meanwhile, packers usually hook system library methods (e.g., write and __android_log_buf_write) to impede unpackers [ 8, 53, 56, 70, 79, 86] that use such methods to dump the released Dex data. Moreover, as shown in Table I, existing unpackers fail to obtain all the hidden Dex data. Specifically, some unpackers [ 7, 8, 36, 86] will obtain useless Dex files that contain invalid Dex items. Others [ 53, 56, 70, 72, 79] can just retrieve partial Dex items because packers may release the real code right before execution and then delete it. Second, existing unpackers are usually hard to be extended because they rarely consider the evolution of packers, and thus do not meet R2. Third, almost all existing unpackers use fixed unpacking strategies and thus can be easily evaded and do not fulfill R3. In light of these limitations, we propose a novel hardware- assisted approach and develop a new tool named Happer, which fulfills the three requirements, to revisit the latest Android packers and reveal the packing behaviors missed by existing unpackers. R1: Happer tracks the packed app's runtime behav- 1641 DOI 10.1109/SP40001.2021.00105 iors and dumps the hidden Dex data by leveraging the hardware features of the ARM platform, including ETM (Embedded Trace Macrocell) and HBRKs (Hardware Breakpoints), so that it cannot be easily impeded by packers. Meanwhile, we let the packed app release all the hidden Dex data at runtime, and thus Happercan collect them to effectively recover the original Dex file. R2: We design a domain-specific language BDL for analysts so that they can easily specify the (new) packing behaviors to be tracked by Happer. Currently, Happer supports 27 packing behaviors, much more than the number of packing behaviors reported by previous studies.R3: Instead of adopting a fixed strategy to unpack apps, Happerselects the proper Dex data collection points according to the observed packing behaviors. More specifically, to expose the runtime packing behaviors and unpack the packed app, we leverage ETM [17] to track the executed instructions of the packed app, and then analyze the execution trace to recover the runtime method invocations performed by the packed app. Meanwhile, we use HBRKs to obtain the concrete parameter values of system functions at runtime. After that, we determine the packing behaviors based on the tracked information and select the proper Dex data collection points for collecting the dynamically released Dex data. Finally, we assemble the retrieved Dex data into a valid Dex file that can be analyzed by the off-the-shelf static analysis tools. To realize the whole process, we tackle three major technical challenges. C1: the content (e.g., the dynamically released Dex data) mapped in virtual memory are not loaded into physical memory synchronously. To addressC1, we design a method to force the OS to load the virtually mapped pages into physical memory. C2: there is a semantic gap between the tracked instruction addresses and the high-level packing behaviors. To handle C2, we build a mapping between system functions (including system library methods and framework APIs) and binary instructions in advance by resolving the loaded system libraries and Android framework's Oat files. The mapping facilitates the recovery of the system functions that has been invoked by the packed app.C3: advanced packers release the hidden Dex data just before the data will be used by the Android runtime, which prevents unpackers from retrieving all the hidden data. To tackle C3, we propose an approach to force the packed app to release all the hidden Dex data to virtual memory at runtime. We conduct extensive experiments with 12 commercial Android packers and more than 24k Android apps to evaluate Happer. The results show that Happerobserved 27 packing behaviors, 17 of which have not been elaborated by previous studies. Based on the observed packing behaviors, Happer adopted proper approaches to collect all the hidden Dex data and assembled them to valid Dex files. In summary, we make the following contributions: • We propose the first hardware-assisted approach to scruti- nizing the packing behaviors and then unpacking the packed app accordingly. Our approach is effective, extensible and adaptive to the ever-evolving packers. • We develop a new unpacking tool named Happer after tackling multiple technical challenges, and it is released at https://github.com/rewhy/happer. • We perform extensive experiments using 12 commercial packers and more than 24k apps. Happer observed 27 packing behaviors,17 of which have not been thoroughly reported. Besides, Happercan retrieve all hidden Dex data of the packed apps and resemble them to valid Dex files. II. B ACKGROUND A. Hardware Features of ARM Platform The ARM architecture defines non-invasive and invasive tracing features to perform the tracing tasks [ 11]. The non- invasive tracing components monitor the target process whereas the invasive tracing components not only monitor the target process but also control it. In this paper, we exploit the non- invasive tracking componentETM and the invasive tracking component HBRKs to conduct dynamic tracking. ETM traces the instructions and data by monitoring the instruction and data buses directly with little additional overhead [17]. During tracing, ETM generates trace elements containing the instruction and data information for recovering the program's runtime execution traces. There are 30 types of trace elements, and they are produced in the form of stream and stored in a 64 KB on-chip buffer or an up to 4 GB external device (i.e., DSTREAM). We focus on resolving the Addressand the Contextelements from the stream, because they carry the tracked instruction's virtual address and the traced program's context identifier (i.e., PID), which are used to recover the runtime behaviors of the tracked app (§ V -A) and filter out irrelevant trace elements (§IV -A), respectively. HBRKs are proposed to interrupt the process during tracing. When a HBRKis hit, a debugging event will rise and then the debugger/tracker can handle this event and let the processor enter debugging mode. Different from the software breakpoints (SBRKs) that need to replace the original instructions with brk instructions,HBRKs do not change original instructions, and thus HBRKs are harder to be noticed. B. A Motivating Example Fig. 1 presents the code snippets of a motivating example for Happer, which is summarized according to the packing behaviors of real commercial packers. The example consists of a simplified static initialization code for an app class (Fig. 1a) and a representative implementation of a native library of the app, which is added by the packer (Fig. 1b). As shown in Fig. 1a, the packer inserts the declarations of 4 JNI methods (Line 1-4) and a static initialization code (Line 6- 11) to the packed app. Meanwhile, the original bytecode of the onCreate callback (Line 5) is replaced with the stub code, i.e., the return-voidinstruction. To ensure that the inserted JNI methods (i.e., the behaviors of packers) are executed before the protected bytecode, invocations to these methods are placed in the static initialization method, because such method will always be executed before any other code in this class. 1642"
+      },
+      {
+        "source": "selected",
+        "value": "Malware authors are abusing packers (or runtimebased obfuscators) to protect malicious apps from being analyzed. Although many unpacking tools have been proposed, they can be easily impeded by the anti-analysis methods adopted by the packers, and they fail to effectively collect the hidden Dex data due to the evolving protection strategies of packers. Consequently, many packing behaviors are unknown to analysts and packed malware can circumvent the inspection. To fill the gap, in this paper, we propose a novel hardware-assisted approach that first monitors the packing behaviors and then selects the proper approach to unpack the packed apps. Moreover, we develop a prototype named Happer with a domain-specific language named behavior description language (BDL) for the ease of extending Happer after tackling several technical challenges. We conduct extensive experiments with 12 commercial Android packers and more than 24k Android apps to evaluate Happer. The results show that Happer observed 27 packing behaviors, 17 of which have not been elaborated by previous studies. Based on the observed packing behaviors, Happer adopted proper approaches to collect all the hidden Dex data and assembled them to valid Dex files."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Xue Lei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Hao 1⇤",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Xiapu Luo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yajin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yang Shi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tongji University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Guofei Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Texas A&M University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Fengwei Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Man Ho Au",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hardware-Assisted Approach",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Lei Xue",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Hao Zhou",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Xiapu Luo",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yajin Zhou",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yang Shi",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Guofei Gu",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Fengwei Zhang",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Man Ho Au",
+          "email": "",
+          "affiliations": [
+            "1The Hong Kong Polytechnic University, 2Zhejiang University 3Tongji University, 4Texas A&M University 5Southern University of Science and Technology, 6The University of Hong Kong"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 26,
+      "author_count": 9,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Happer: Unpacking Android Apps via a Hardware-Assisted Approach",
+      "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Lei Xue",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ]
+        },
+        {
+          "name": "Hao Zhou",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ]
+        },
+        {
+          "name": "Xiapu Luo",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ]
+        },
+        {
+          "name": "Yajin Zhou",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Yang Shi",
+          "affiliations": [
+            "Tongji University"
+          ]
+        },
+        {
+          "name": "Guofei Gu",
+          "affiliations": [
+            "Texas A&M University"
+          ]
+        },
+        {
+          "name": "Fengwei Zhang",
+          "affiliations": [
+            "Southern University of Science and Technology (SUSTech)"
+          ]
+        },
+        {
+          "name": "Man Ho Au",
+          "affiliations": [
+            "The University of Hong Kong"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 8,
+      "country_values_restored": 8,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

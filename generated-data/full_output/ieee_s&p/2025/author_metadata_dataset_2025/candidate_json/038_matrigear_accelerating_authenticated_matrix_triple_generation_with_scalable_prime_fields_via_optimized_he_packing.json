@@ -1,0 +1,341 @@
+{
+  "paper_id": "038_matrigear_accelerating_authenticated_matrix_triple_generation_with_scalable_prime_fields_via_optimized_he_packing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "MatriGear: Accelerating Authenticated Matrix Triple Generation with Scalable Prime Fields via Optimized HE Packing"
+      },
+      {
+        "source": "selected",
+        "value": "MatriGear: Accelerating Authenticated Matrix Triple Generation with Scalable Prime Fields via Optimized HE Packing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The SPDZ protocol family is a popular choice for secure multi-party computation (MPC) in a dishonest majority setting with active adversaries. Over the past decade, a series of studies have focused on improving its offline phase, where special additive shares called authenticated triples are generated. However, to accommodate recent demands for matrix operations in secure machine learning and big integer arithmetic in distributed RSA key generation, updates to the offline phase are required. In this work, we propose a new protocol for the SPDZ offline phase, MatriGear, which improves upon the previous state-of-the-art construction, TopGear (Baum et al., SAC '19), and its variant for matrix triples (Chen et al., Asiacrypt '20). Our protocol aims to achieve a speedup in matrix triple generation and support for larger prime fields up to 4096 bits in size. To achieve this, we devise a variant of the BFV scheme and a new homomorphic matrix multiplication algorithm optimized for our purpose. As a result, our protocol achieves about 3.6x speedup for generating scalar triples in a 1024-bit prime field and about 34x speedup for generating 128x128 matrix triples. In addition, we reduce the size of evaluation keys from 27.4 GB to 0.22 GB and the communication cost for MAC key generation from 816 MB to 16.6 MB."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The SPDZ protocol family is a popular choice for secure multi-party computation (MPC) in a dishonest majority setting with active adversaries. Over the past decade, a series of studies have focused on improving its offline phase, where special additive shares called authenticated triples are gener- ated. However, to accommodate recent demands for matrix operations in secure machine learning and big integer arith- metic in distributed RSA key generation, updates to the offline phase are required. In this work, we propose a new protocol for the SPDZ offline phase, MatriGear, which improves upon the previous state-of-the-art construction, TopGear (Baum et al., SAC '19), and its variant for matrix triples (Chen et al., Asiacrypt '20). Our protocol aims to achieve a speedup in matrix triple generation and support for larger prime fields up to 4096 bits in size. To achieve this, we devise a variant of the BFV scheme and a new homomorphic matrix multiplication algorithm optimized for our purpose. As a result, our protocol achieves about 3.6x speedup for generating scalar triples in a 1024-bit prime field and about 34x speedup for generating 128x128 matrix triples. In addition, we reduce the size of evaluation keys from 27.4 GB to 0.22 GB and the communication cost for MAC key generation from 816 MB to 16.6 MB. 1. Introduction Secure Multi-Party Computation (MPC) enables a set of parties to jointly compute a function over their private inputs without revealing any information other than the result. Constructing MPC protocols has been a major research topic in the field of cryptography, and there has been a number of solutions optimized for various settings, such as assuming an honest or dishonest majority among the parties, and whether the corrupted parties behave passively or actively. In a dishonest majority setting with an active adversary, the SPDZ protocol family [1, 2, 3, 4] has been a popular choice, as it provides active security against up to n − 1 corrupted parties. The SPDZ protocol is divided into two phases: an online phase and an offline phase. In the online phase, parties jointly compute a target function based on additive shares of their private inputs, which are elements of some prime field Zp. Since the protocol assumes active security, the private inputs are distributed in a special form called authenticated shares to prevent deviation from the protocol. At the end of the online phase, the parties jointly verify the output by checking the validity of the authenti- cated shares to ensure the protocol was correctly executed. In the offline phase, authenticated shares are generated in addition to authenticated triples, which are required for per- forming multiplication in the online phase. Multiplications in the online phase are processed using Beaver's trick [5], which requires additive shares of a, b, and c such that ab = c (mod p). The authenticated shares of such triples (a, b, c) are called authenticated triples. The core idea of the initial SPDZ protocol [1] is to generate authenticated triples using homomorphic encryption (HE). The parties first jointly generate HE ciphertexts cta and ctb for a and b, respectively. They then compute the encryption ctc of c through the homomorphic multiplication of cta and ctb. Finally, they collectively decrypt ctc to obtain the additive share of c. To achieve active security in the offline phase, it is necessary to validate the HE ciphertexts cta and ctb to prevent the use of ill-formed ciphertexts that could be generated by malicious adversaries. This is done using a proof of plaintext knowledge (PoPK) protocol, which is a Schnorr-like zero-knowledge protocol that verifies the well- formedness of the HE ciphertexts. Since the PoPK protocol has been a main performance bottleneck in the offline phase, subsequent studies [2, 3] on the SPDZ protocol have focused on improving the efficiency of the PoPK protocol. Recently, MPC protocols have been used in a wide range of applications. One important application is privacy- preserving machine learning [6, 7, 8, 9], which enables distrustful parties to perform machine learning tasks on their private data. Since machine learning tasks heavily utilize matrix operations, recent improvements [4, 10, 11] to the SPDZ protocol have introduced the concept of authenticated 2453 DOI 10.1109/SP61157.2025.00174 matrix triples, which significantly reduce the overhead of matrix operations in both the online and offline phases. On the other hand, MPC protocols can also be applied to thresh- old cryptography, which has recently gained attention with NIST's efforts toward standardizing threshold cryptographic schemes [12]. For example, several studies [13, 14] have investigated distributed RSA key generation, which requires arithmetic MPC over large moduli to multiply two large prime numbers in a distributed manner. Additionally, other studies [15, 16] propose MPC-friendly symmetric primitives based on the Legendre PRF, which similarly require multi- party computations over large prime fields. 1.1. Our Contribution In this paper, we propose a new offline phase for SPDZ, which we denote as MatriGear, improving upon the previous state-of-the-art construction [3], TopGear, to address recent demands for matrix multiplication and large modulus fields. Overview on TopGear. We begin by reviewing the SPDZ offline phase, as introduced in the studies most closely related to this work-TopGear [3] and its matrix triple vari- ant [4]. The protocol consists of four main steps: ciphertext generation, homomorphic computation, proof generation, and distributed decryption. • In the ciphertext generation step, each party samples and encrypts random matrices Ai and Bi using the BFV [17, 18] or BGV [19] homomorphic encryption schemes, which support integer arithmetic. Then, they aggregate ciphertexts and compute encryptions of A =P i Ai and B =P i Bi. • In the homomorphic computation step, the parties perform homomorphic matrix multiplication between encryptions of A and B to obtain an encryption of C = AB. • In addition, the parties execute a proof of plaintext knowl- edge (PoPK) protocol to validate the well-formedness of the encryptions of A and B, thus preventing malicious behavior by the parties. • Finally, the parties execute the distributed decryption pro- tocol, and obtain additive shares Ci of C. This work aims to improve the performance of ciphertext generation, homomorphic computation, and proof genera- tion, which dominate both the communication and compu- tation costs in the TopGear framework. Generalized BFV .During ciphertext generation, we require HE schemes that support large prime fields, as authenticated triples in SPDZ are defined over such fields. However, the BGV and BFV schemes are not optimized for this setting. To address this, we devise a new variant of the BFV homo- morphic encryption scheme, which we denote as generalized BFV . Our generalized BFV scheme can efficiently handle messages from large prime fields by employing a novel packing method for large prime fields, following the idea of [20]. Let p be the modulus of the message space and q be the modulus of the ciphertext space. In the ordinary BFV scheme [17, 18], q must be set much larger than p, as the available depth for homomorphic multiplication is roughly determined by the factor log q/ log p. However, both the computational complexity of homomorphic multiplication and the space complexity of the evaluation key scale ap- proximately with O(log2 q). Because of this, performance significantly degrades when handling messages from large moduli because of the huge increase in the ciphertext mod- ulus q. Our packing method effectively addresses this issue by reducing the overhead of homomorphic multiplication from log p to log b, when p = bM + 1. Then, the available multi- plicative depth is now determined by the factor log q/ log b, which allows for a much smaller q for the same field size p. As a result, we can use a ciphertext modulus with a bit length ten times smaller than the ordinary BFV scheme when p is a 1024-bit prime. This results in approximately a threefold speedup in generating authenticated triples, and a reduction in the evaluation key size by about 125 times. Faster Homomorphic Matrix Multiplication. For the ho- momorphic computation step, previous work [4] uses the homomorphic matrix multiplication algorithm from [21]. To further improve performance, we develop a new ho- momorphic matrix multiplication algorithm that achieves asymptotic improvements in computational complexity. For d × d matrix multiplication, the previous algorithm in [21] required eO(d3 · log2 q) complexity and 3d − 2 evaluation keys. In this work, we reduce the computational complexity to eO(d3 · log q) and the number of evaluation keys to d by introducing a new matrix encoding map called shifted diagonal encoding . This improvement works particularly well with our generalized BFV scheme, which effectively reduces the size of log q. As a result, we achieve approximately a 30-fold speedup in computing 128 × 128 matrix multiplication for a field size p ≈ 2128. PoPK for Generalized BFV .For the proof generation step, an efficient PoPK protocol optimized for the generalized BFV scheme is required. In previous PoPK protocols, there exists an exponential gap between the honest statement and the proven statement, known as soundness slack. Since soundness slack affects parameter settings, particularly the ciphertext modulus q, minimizing it is crucial for our pro- tocol. To address this, we design an efficient PoPK protocol for generalized BFV that achieves constant-sized soundness slack. In particular, we incorporate recent advancements in proof techniques by Kim et al. [22] and Hwang et al. [23]. Kim et al. [22] proposed a method for achieving constant- sized soundness slack for a special case of the BFV scheme. However, their method does not directly apply to our setting due to structural modifications in our generalized BFV ciphertexts. We observe that this issue can be re- solved using the randomized packing method proposed by Hwang et al. [23]. By merging these two techniques, we achieve constant-sized soundness slack, thereby maximizing the performance benefits from the generalized BFV scheme. 2454"
+      },
+      {
+        "source": "selected",
+        "value": "The SPDZ protocol family is a popular choice for secure multi-party computation (MPC) in a dishonest majority setting with active adversaries. Over the past decade, a series of studies have focused on improving its offline phase, where special additive shares called authenticated triples are generated. However, to accommodate recent demands for matrix operations in secure machine learning and big integer arithmetic in distributed RSA key generation, updates to the offline phase are required. In this work, we propose a new protocol for the SPDZ offline phase, MatriGear, which improves upon the previous state-of-the-art construction, TopGear (Baum et al., SAC '19), and its variant for matrix triples (Chen et al., Asiacrypt '20). Our protocol aims to achieve a speedup in matrix triple generation and support for larger prime fields up to 4096 bits in size. To achieve this, we devise a variant of the BFV scheme and a new homomorphic matrix multiplication algorithm optimized for our purpose. As a result, our protocol achieves about 3.6x speedup for generating scalar triples in a 1024-bit prime field and about 34x speedup for generating 128x128 matrix triples. In addition, we reduce the size of evaluation keys from 27.4 GB to 0.22 GB and the communication cost for MAC key generation from 816 MB to 16.6 MB."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hyunho Cha",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Intak Hwang",
+          "email": "intak.hwang@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Seonhong Min",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jinyeong Seo",
+          "email": "jinyeong.seo@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yongsoo Song",
+          "email": "y.song@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hyunho Cha",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Intak Hwang",
+          "email": "intak.hwang@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Seonhong Min",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jinyeong Seo",
+          "email": "jinyeong.seo@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yongsoo Song",
+          "email": "y.song@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 127,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Hyunho Cha",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Intak Hwang",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Seonhong Min",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Jinyeong Seo",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Yongsoo Song",
+          "block_id": "pdf:p1:b13",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Hyunho Cha",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 7.112,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Intak Hwang",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 5.187,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Seonhong Min",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 6.749,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Jinyeong Seo",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b12",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 3.608,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Yongsoo Song",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b13",
+          "affiliation_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 6.144,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "MatriGear: Accelerating Authenticated Matrix Triple Generation with Scalable Prime Fields via Optimized HE Packing",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "HyunHo Cha",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Intak Hwang",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Seonhong Min",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Jinyeong Seo",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Yongsoo Song",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

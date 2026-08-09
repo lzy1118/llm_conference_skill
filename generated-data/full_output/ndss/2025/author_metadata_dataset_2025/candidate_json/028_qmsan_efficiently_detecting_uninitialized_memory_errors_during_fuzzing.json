@@ -1,0 +1,252 @@
+{
+  "paper_id": "028_qmsan_efficiently_detecting_uninitialized_memory_errors_during_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "QMSan: Efficiently Detecting Uninitialized Memory Errors During Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "QMSan: Efficiently Detecting Uninitialized Memory Errors During Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fuzzing evolved into the most popular technique to detect bugs in software. Its combination with sanitizers has shown tremendous efficacy in uncovering memory safety errors, such as buffer overflows, that haunt C and C++ programmers. However, an important class of such issues, the so-called useof-uninitialized-memory (UUM) errors, struggles to gain similar benefits from fuzzing endeavors. The only fuzzer-compatible UUM sanitizer available to date, MSan, requires that all libraries are fully instrumented. Unlike address sanitization, for which partial instrumentation results in false negatives (missed detection of bugs), UUM sanitizers require complete instrumentation to avoid false positives, hampering testing at scale. Yet, full-stack compiler-based instrumentation can be a daunting prospect for compatibility and practicality. As a result, many programs are left untested for UUM bugs. In this paper, we propose an efficient multi-layer, opportunistic design that does not require (source-based) recompilation of all code without harming accuracy. The multiplicity of executions when fuzzing offers us the opportunity to learn what any encountered false positive looks like, and later ignore them when we meet them again with new test cases. Such an avenue is feasible only if one can resort to fast techniques to effectively discriminate candidate errors, or false negatives will then occur. We show how to realize this design by using the dynamic binary translation of QEMU for compatibility and lightweight code analysis techniques to achieve scalability and accuracy. As a result, we obtain a fuzzer-friendly, performant sanitizer, QMSAN, that effectively tackles current practicality challenges of UUM error detection. On a collection of 10 open-source and 5 proprietary programs, QMSAN exposed 44 new UUM bugs. In our tests, QMSAN incurs slowdowns of 1.51x over QEMU and 1.55x over the compiler-based instrumentation of MSan, showing no false positives and false negatives. QMSAN is open-source. I. INTRODUCTION Programming languages like C and C++ remain prevalent despite being prone to memory errors. While safer alternatives exist, most software is implemented in unsafe languages due to performance requirements or the need to access low-level systems features. In C and C++, programmers are responsible for ensuring memory safety and must take care not to introduce buffer overflow, use-after-free, or double-free vulnerabilities along with proper initialization of all memory. As these bugs often have security implications, exposing and mitigating memory safety errors remains a crucial area of research. Use-of-uninitialized-memory (UUM) errors occur when the outcome of a program computation depends on an indeterminate value. A program reads an indeterminate value from a storage location when no prior assignment initialized it fully, or at all, since its declaration [1]. Like other memory safety errors, UUM errors may be difficult to detect because they do not necessarily result in conspicuous behavior (e.g., program crashes) but may subtly and silently corrupt the program state, and come with an unpleasant property of unpredictability [2]. For example, an uninitialized stack variable may show leftover data from stale stack frames from prior function calls. Unfortunately, in the hands of a capable attacker, these errors may become exploitable, as witnessed for notable UUM bugs that enabled information disclosure, remote code execution, and guest-to-host privilege escalation [2], [3], [4], [5], [6]. Software sanitizers effectively detect memory safety errors. These tools safeguard one or more memory safety properties at run-time by instrumenting program code with tripwires that expose safety violations during execution. As dynamic analysis tools, sanitizers suffer from the coverage problem and require that the bug is reached and triggered through an actual execution to detect it. Therefore, they are very effective in combination with techniques like fuzzing, which broadly explores the program [7]. For UUM errors, currently, the only way to detect them when fuzzing is using Google's MSan [8]. Similarly to other popular sanitizers like ASan [9], MSan uses compiler instrumentation to insert run-time checks on data uses to check if their sources were properly initialized. MSan faces a key practical limitation: all code under test must be compiled with MSan instrumentation. Looking at the C/C++ programs tested daily by the OSS-Fuzz initiative, we note that only 210 out of 528 (40.5%) show MSan support at the time of writing. According to the OSS-Fuzz bug tracker, though, MSan was helpful to expose over 289 UUM bugs in them in the past 18 months. We also recall a notable setback when OSS-Fuzz upgraded its backend in 2021 to Ubuntu 20.04 [10], which led its maintainers to disabling MSan for 72 projects due to enduring compatibility issues with instrumented libraries. Being MSan available only for LLVM, also software whose external dependencies (or the program itself) come built with gcc or other compilers is out of its reach. Furthermore, no UUM sanitization is available in"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fuzzing evolved into the most popular technique bugsoftenhavesecurityimplications,exposingandmitigating to detect bugs in software. Its combination with sanitizers has memory safety errors remains a crucial area of research. shown tremendous efficacy in uncovering memory safety errors, Use-of-uninitialized-memory (UUM) errors occur when the such as buffer overflows, that haunt C and C++ programmers. outcome of a program computation depends on an indetermi- However, an important class of such issues, the so-called use- of-uninitialized-memory (UUM) errors, struggles to gain similar nate value. A program reads an indeterminate value from a benefits from fuzzing endeavors. The only fuzzer-compatible storage location when no prior assignment initialized it fully, UUMsanitizeravailabletodate,MSan,requiresthatalllibraries or at all, since its declaration [1]. Like other memory safety are fully instrumented. Unlike address sanitization, for which errors, UUM errors may be difficult to detect because they do partial instrumentation results in false negatives (missed detec- not necessarily result in conspicuous behavior (e.g., program tion of bugs), UUM sanitizers require complete instrumentation toavoidfalsepositives,hamperingtestingatscale.Yet,full-stack crashes)butmaysubtlyandsilentlycorrupttheprogramstate, compiler-based instrumentation can be a daunting prospect for and come with an unpleasant property of unpredictability [2]. compatibility and practicality. As a result, many programs are For example, an uninitialized stack variable may show left- left untested for UUM bugs. over data from stale stack frames from prior function calls. Inthispaper,weproposeanefficientmulti-layer,opportunistic Unfortunately, in the hands of a capable attacker, these errors design that does not require (source-based) recompilation of all code without harming accuracy. The multiplicity of executions may become exploitable, as witnessed for notable UUM bugs when fuzzing offers us the opportunity to learn what any that enabled information disclosure, remote code execution, encounteredfalsepositivelookslike,andlaterignorethemwhen and guest-to-host privilege escalation [2], [3], [4], [5], [6]. we meet them again with new test cases. Such an avenue is Software sanitizers effectively detect memory safety errors. feasible only if one can resort to fast techniques to effectively These tools safeguard one or more memory safety properties discriminate candidate errors, or false negatives will then occur. We show how to realize this design by using the dynamic at run-time by instrumenting program code with tripwires binary translation of QEMU for compatibility and lightweight that expose safety violations during execution. As dynamic code analysis techniques to achieve scalability and accuracy. analysis tools, sanitizers suffer from the coverage problem As a result, we obtain a fuzzer-friendly, performant sanitizer, and require that the bug is reached and triggered through an QMSAN, that effectively tackles current practicality challenges actualexecutiontodetectit.Therefore,theyareveryeffective of UUM error detection. On a collection of 10 open-source and 5proprietaryprograms, QMSAN exposed44newUUMbugs.In in combination with techniques like fuzzing, which broadly our tests, QMSAN incurs slowdowns of 1.51x over QEMU and explores the program [7]. For UUMerrors, currently, the only 1.55xoverthecompiler-basedinstrumentationofMSan,showing waytodetectthemwhenfuzzingisusingGoogle'sMSan[8]. no false positives and false negatives. QMSAN is open-source. SimilarlytootherpopularsanitizerslikeASan[9],MSanuses"
+      },
+      {
+        "source": "selected",
+        "value": "Fuzzing evolved into the most popular technique to detect bugs in software. Its combination with sanitizers has shown tremendous efficacy in uncovering memory safety errors, such as buffer overflows, that haunt C and C++ programmers. However, an important class of such issues, the so-called useof-uninitialized-memory (UUM) errors, struggles to gain similar benefits from fuzzing endeavors. The only fuzzer-compatible UUM sanitizer available to date, MSan, requires that all libraries are fully instrumented. Unlike address sanitization, for which partial instrumentation results in false negatives (missed detection of bugs), UUM sanitizers require complete instrumentation to avoid false positives, hampering testing at scale. Yet, full-stack compiler-based instrumentation can be a daunting prospect for compatibility and practicality. As a result, many programs are left untested for UUM bugs. In this paper, we propose an efficient multi-layer, opportunistic design that does not require (source-based) recompilation of all code without harming accuracy. The multiplicity of executions when fuzzing offers us the opportunity to learn what any encountered false positive looks like, and later ignore them when we meet them again with new test cases. Such an avenue is feasible only if one can resort to fast techniques to effectively discriminate candidate errors, or false negatives will then occur. We show how to realize this design by using the dynamic binary translation of QEMU for compatibility and lightweight code analysis techniques to achieve scalability and accuracy. As a result, we obtain a fuzzer-friendly, performant sanitizer, QMSAN, that effectively tackles current practicality challenges of UUM error detection. On a collection of 10 open-source and 5 proprietary programs, QMSAN exposed 44 new UUM bugs. In our tests, QMSAN incurs slowdowns of 1.51x over QEMU and 1.55x over the compiler-based instrumentation of MSan, showing no false positives and false negatives. QMSAN is open-source. I. INTRODUCTION Programming languages like C and C++ remain prevalent despite being prone to memory errors. While safer alternatives exist, most software is implemented in unsafe languages due to performance requirements or the need to access low-level systems features. In C and C++, programmers are responsible for ensuring memory safety and must take care not to introduce buffer overflow, use-after-free, or double-free vulnerabilities along with proper initialization of all memory. As these bugs often have security implications, exposing and mitigating memory safety errors remains a crucial area of research. Use-of-uninitialized-memory (UUM) errors occur when the outcome of a program computation depends on an indeterminate value. A program reads an indeterminate value from a storage location when no prior assignment initialized it fully, or at all, since its declaration [1]. Like other memory safety errors, UUM errors may be difficult to detect because they do not necessarily result in conspicuous behavior (e.g., program crashes) but may subtly and silently corrupt the program state, and come with an unpleasant property of unpredictability [2]. For example, an uninitialized stack variable may show leftover data from stale stack frames from prior function calls. Unfortunately, in the hands of a capable attacker, these errors may become exploitable, as witnessed for notable UUM bugs that enabled information disclosure, remote code execution, and guest-to-host privilege escalation [2], [3], [4], [5], [6]. Software sanitizers effectively detect memory safety errors. These tools safeguard one or more memory safety properties at run-time by instrumenting program code with tripwires that expose safety violations during execution. As dynamic analysis tools, sanitizers suffer from the coverage problem and require that the bug is reached and triggered through an actual execution to detect it. Therefore, they are very effective in combination with techniques like fuzzing, which broadly explores the program [7]. For UUM errors, currently, the only way to detect them when fuzzing is using Google's MSan [8]. Similarly to other popular sanitizers like ASan [9], MSan uses compiler instrumentation to insert run-time checks on data uses to check if their sources were properly initialized. MSan faces a key practical limitation: all code under test must be compiled with MSan instrumentation. Looking at the C/C++ programs tested daily by the OSS-Fuzz initiative, we note that only 210 out of 528 (40.5%) show MSan support at the time of writing. According to the OSS-Fuzz bug tracker, though, MSan was helpful to expose over 289 UUM bugs in them in the past 18 months. We also recall a notable setback when OSS-Fuzz upgraded its backend in 2021 to Ubuntu 20.04 [10], which led its maintainers to disabling MSan for 72 projects due to enduring compatibility issues with instrumented libraries. Being MSan available only for LLVM, also software whose external dependencies (or the program itself) come built with gcc or other compilers is out of its reach. Furthermore, no UUM sanitization is available in"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Matteo Marini",
+          "email": "m.marini@diag.uniroma1.it",
+          "orcid": "",
+          "affiliations": [
+            "Sapienza University of Rome EPFL"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Daniele Cono D'elia",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Sapienza University of Rome EPFL"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Mathias Payer",
+          "email": "mathias.payer@nebelwelt.net",
+          "orcid": "",
+          "affiliations": [
+            "Sapienza University of Rome EPFL"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Leonardo Querzoni",
+          "email": "querzoni@diag.uniroma1.it",
+          "orcid": "",
+          "affiliations": [
+            "Sapienza University of Rome EPFL"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Matteo Marini",
+          "email": "m.marini@diag.uniroma1.it",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Daniele Cono D'Elia",
+          "email": "delia@diag.uniroma1.it",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Mathias Payer",
+          "email": "mathias.payer@nebelwelt.net",
+          "affiliations": [
+            "EPFL"
+          ],
+          "affiliation_source": "pdf_complete_symbol_affiliation",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Leonardo Querzoni",
+          "email": "querzoni@diag.uniroma1.it",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 96,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "QMSan: Efficiently Detecting Uninitialized Memory Errors During Fuzzing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/qmsan-efficiently-detecting-uninitialized-memory-errors-during-fuzzing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Matteo Marini",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ]
+        },
+        {
+          "name": "Daniele Cono D’Elia",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ]
+        },
+        {
+          "name": "Mathias Payer",
+          "affiliations": [
+            "EPFL"
+          ]
+        },
+        {
+          "name": "Leonardo Querzoni",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Daniele Cono D'Elia",
+      "field": "email",
+      "restored_value": "delia@diag.uniroma1.it",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Mathias Payer",
+      "field": "affiliations",
+      "restored_value": [
+        "Sapienza University of Rome EPFL"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Leonardo Querzoni",
+      "field": "email",
+      "restored_value": "querzoni@diag.uniroma1.it",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "replace_affiliations_from_complete_symbol_layout",
+      "stage": "field_level_pdf_merge",
+      "field": "affiliations",
+      "author": "Mathias Payer",
+      "replaced": [
+        "Sapienza University of Rome EPFL"
+      ],
+      "selected": [
+        "EPFL"
+      ],
+      "author_markers": [
+        "†"
+      ],
+      "evidence_lines": [
+        "Matteo Marini∗, Daniele Cono D'Elia∗, Mathias Payer† and Leonardo Querzoni∗",
+        "∗Sapienza University of Rome",
+        "†EPFL"
+      ],
+      "evidence_block_ids": [
+        "pdfplumber:p1:b6",
+        "pdfplumber:p1:b8"
+      ]
+    }
+  ]
+}

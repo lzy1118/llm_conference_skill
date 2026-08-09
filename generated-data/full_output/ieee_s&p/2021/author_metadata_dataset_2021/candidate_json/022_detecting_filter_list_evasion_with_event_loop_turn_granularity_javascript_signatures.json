@@ -1,0 +1,230 @@
+{
+  "paper_id": "022_detecting_filter_list_evasion_with_event_loop_turn_granularity_javascript_signatures",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Detecting Filter List Evasion With Event-Loop-Turn Granularity JavaScript Signatures"
+      },
+      {
+        "source": "selected",
+        "value": "Detecting Filter List Evasion With Event-Loop-Turn Granularity JavaScript Signatures"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Content blocking is an important part of a performant, user-serving, privacy respecting web. Current content blockers work by building trust labels over URLs. While useful, this approach has many well understood shortcomings. Attackers may avoid detection by changing URLs or domains, bundling unwanted code with benign code, or inlining code in pages. The common flaw in existing approaches is that they evaluate code based on its delivery mechanism, not its behavior. In this work we address this problem by building a system for generating signatures of the privacy-and-security relevant behavior of executed JavaScript. Our system uses as the unit of analysis each script's behavior during each turn on the JavaScript event loop. Focusing on event loop turns allows us to build highly identifying signatures for JavaScript code that are robust against code obfuscation, code bundling, URL modification, and other common evasions, as well as handle unique aspects of web applications. This work makes the following contributions to the problem of measuring and improving content blocking on the web: First, we design and implement a novel system to build per-event-loop-turn signatures of JavaScript behavior through deep instrumentation of the Blink and V8 runtimes. Second, we apply these signatures to measure how much privacy-and-security harming code is missed by current content blockers, by using EasyList and EasyPrivacy as ground truth and finding scripts that have the same privacy and security harming patterns. We build 1,995,444 signatures of privacy-and-security relevant behaviors from 11,212 unique scripts blocked by filter lists, and find 3,589 unique scripts hosting known harmful code, but missed by filter lists, affecting 12.48% of websites measured. Third, we provide a taxonomy of ways scripts avoid detection and quantify the occurrence of each. Finally, we present defenses against these evasions, in the form of filter list additions where possible, and through a proposed, signature based system in other cases. As part of this work, we share the implementation of our signature-generation system, the data gathered by applying that system to the Alexa 100K, and 586 AdBlock Plus compatible filter list rules to block instances of currently blocked code being moved to new URLs."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Content blocking is an important part of a per- formant, user-serving, privacy respecting web. Current content blockers work by building trust labels over URLs. While useful, this approach has many well understood shortcomings. Attackers may avoid detection by changing URLs or domains, bundling unwanted code with benign code, or inlining code in pages. The common flaw in existing approaches is that they eval- uate code based on its delivery mechanism, not its behavior. In this work we address this problem by building a system for generating signatures of the privacy-and-security relevant behavior of executed JavaScript. Our system uses as the unit of analysis each script's behavior during each turn on the JavaScript event loop. Focusing on event loop turns allows us to build highly identifying signatures for JavaScript code that are robust against code obfuscation, code bundling, URL modification, and other common evasions, as well as handle unique aspects of web applications. This work makes the following contributions to the problem of measuring and improving content blocking on the web: First, we design and implement a novel system to build per-event-loop-turn signatures of JavaScript behavior through deep instrumentation of the Blink and V8 runtimes. Second, we apply these signatures to measure how much privacy-and-security harming code is missed by current content blockers, by using EasyList and EasyPrivacy as ground truth and finding scripts that have the same privacy and security harming patterns. We build 1,995,444 signatures of privacy-and-security relevant behaviors from 11,212 unique scripts blocked by filter lists, and find 3,589 unique scripts hosting known harmful code, but missed by filter lists, affecting 12.48% of websites measured. Third, we provide a taxonomy of ways scripts avoid detection and quantify the occurrence of each. Finally, we present defenses against these evasions, in the form of filter list additions where possible, and through a proposed, signature based system in other cases. As part of this work, we share the implementation of our signature-generation system, the data gathered by applying that system to the Alexa 100K, and 586 AdBlock Plus compatible filter list rules to block instances of currently blocked code being moved to new URLs. I. I NTRODUCTION Previous research has documented the many ways content blocking tools improve privacy, security, performance, and user experience online (e.g., [25], [13], [24], [28]). These tools are the current stage in a long arms race between communities that maintain privacy tools, and online trackers who wish to evade them. Initially, communities identified domains associated with tracking, and generated hosts files that would block communi- cation with these undesirable domains. Trackers, advertisers, and attackers reacted by moving tracking resources to domains that served both malicious and user-serving code, circumvent- ing host based blocking. In response, content blocking com- munities started identifying URLs associated with undesirable code, to distinguish security-and-privacy harming resources from user-desirable ones, when both were served from the same domain, such as with content delivery networks (CDNs). URL-based blocking is primarily achieved through the crowd-sourced generation of filter lists containing regular- expression style patterns that determine which URLs are desirable and which should be blocked (or otherwise granted less functionality). Popular filter lists include EasyList (EL) and EasyPrivacy (EP). The non-filter-list based web privacy and security tools (e.g., Privacy Badger, NoScript, etc.) also use URL or domain-level determinations when making access control decisions. However, just as with hosts-based blocking, URL-based blocking has several well known weaknesses and can be easily circumvented. Undesirable code can be moved to one- off, rare URLs, making crowdsourced identification difficult. Furthermore, such code can be mixed with benign code in a single file, presenting content blockers with a lose-lose choice between allowing privacy or security harm, or a broken site. Finally, unwanted code can also be “inlined” in the site (i.e., injected as text into a <script> element), making URL level determinations impossible. Despite these well known and simple circumventions, the privacy and research community lacks even an understanding of the scale of the problem, let alone useful, practical defenses. Put differently, researchers and activists know they might be losing the battle against trackers and online attackers, but lack measurements to determine if this is true, and if so, by how much. Furthermore, the privacy community lacks a way of providing practical (i.e., web-compatible) privacy improvements that are robust regardless of how the attackers choose to deliver their code. Fundamentally, the common weakness in URL-based block- ing tools is, at its root, a mismatch between the targeted behavior (i.e., the privacy-and-security harming behavior of scripts), and the criteria by which the blocking decisions are made (i.e., the delivery mechanism). This mismatch allows for straightforward evasions that are easy for trackers to implement, but difficult to measure and defend against. Addressing this mismatch requires a solution that is able to 1715 DOI 10.1109/SP40001.2021.00007 identify the behaviors already found to be harmful, and base the measurement tool and/or the blocking decisions on those behaviors. A robust solution must target a granularity above individual feature accesses (since decisions made at this level lack the context to distinguish between benign and malicious feature use) but below the URL level (since decisions at this level lack the granularity to distinguish between malicious and benign code delivered from the same source). An effective strategy must target harmful behavior independent of how it was delivered to the page, regardless of what other behavior was bundled in the same code unit. In this work, we address the above challenges through the design and implementation of a system for building signatures of privacy-and-security harming functionality implemented in JavaScript. Our system extracts script behaviors that occur in one JavaScript event loop turn [26], and builds signatures of these behaviors from scripts known to be abusing user privacy. We base our ground truth of known-bad behaviors on scripts blocked by the popular crowdsourced filter lists (i.e., EL and EP), and generate signatures to identify patterns in how currently-blocked scripts interact with the DOM, JavaScript APIs (e.g., the Date API, cookies, storage APIs, etc), and initiate network requests. We then use these signatures of known-bad behaviors to identify the same code being delivered from other URLs, bundled with other code, or inlined in a site. We generate per-event-loop-turn signatures of known-bad scripts by crawling the Alexa 100K with a novel instrumented version of the Chromium browser. The instrumentation covers Chromium's Blink layout engine and its V8 JavaScript engine, and records script interactions with the web pages into a graph representation, from which our signatures are then generated. We use these signatures to both measure how often attackers evade filter lists, and as the basis for future defenses. In total we build 1,995,444 high-confidence signatures of privacy-and-security harming behaviors (defined in Section III) from 11,212 scripts blocked by EasyList and EasyPrivacy. We then use our browser instrumentation and collected signatures to identify 3,589 new scripts containing identically-performing privacy-and-security harming behavior, served from 1,965 do- mains and affecting 12.48% of websites. Further, we use these signatures, along with code analysis techniques from existing research, to categorize the method trackers use to evade filter lists. Finally, we use our instrumentation and signatures to generate new filter list rules for 720 URLs that are moved instances of known tracking code, which contribute to 65.79% of all instances of filter list evasion identified by our approach, and describe how our tooling and findings could be used to build defenses against the rest of the 34.21% instances of filter list evasions. A. Contributions This work makes the following contributions to improving the state of web content blocking: 1) The design and implementation of a system for gener- ating signatures of JavaScript behavior. These signatures are robust to popular obfuscation and JavaScript bundling tools and rely on extensive instrumentation of the Blink and V8 systems. 2) A web-scale measurement of filter list evasion , gener- ated by measuring how often privacy-sensitive behaviors of scripts labeled by EasyList and EasyPrivacy are re- peated by other scripts in the Alexa 100K. 3) A quantified taxonomy of filter list evasion techniques generated by how often scripts evade filter lists by chang- ing URLs, inlining, or script bundling. 4) 586 new filter list rules for identifying scripts that are known to be privacy-or-security related, but evade existing filter lists by changing URLs. B. Research Artifacts and Data As part of this work we also share as much of our re- search outcomes and implementation as possible. We share the source of our Blink and V8 instrumentation, along with build instructions. Further, we share our complete dataset of applying our JavaScript behavior signature generation pipeline to the Alexa 100K, including which scripts are encountered, the execution graphs extracted from each measured page, and our measurements of which scripts are (or include) evasions of other scripts. Finally, we share a set of AdBlock Plus compatible filter list additions to block cases of websites moving existing scripts to new URLs (i.e., the subset of the larger problem that can be defended against by existing tools) [5]. We note many of these filter list additions have already been accepted by existing filter list maintainers, and note those cases. II. P ROBLEM AREA This section describes the evasion techniques that existing content blocking tools are unable to defend against, and which the rest of this work aims to measure and address. A. Current Content Blocking Focuses on URLs Current content-blocking tools, both in research and pop- ularly deployed, make access decisions based on URLs. Ad- Block Plus and uBlock Origin, for example, use crowd-sourced filter lists (i.e. lists of regex-like patterns) to distinguish trusted from untrusted URLs. Other content blockers make decisions based on the domain of a resource, which can be generalized as broad rules over URLs. Examples of such tools include Ghostery, Firefox's “Tracking Protection”, Safari's “Intelligent Tracking Protec- tion” system, and Privacy Badger. Each of these tools build trust labels over domains, though they differ in both how they determine those labels (expert-curated lists in the first two cases, machine-learning-like heuristics in the latter two cases), and the policies they enforce using those domain labels. Finally, tools like NoScript block all script by default, which conceptually is just an extremely general, global trust label over all scripts. NoScript too allows users to create per-URL exception rules. 1716"
+      },
+      {
+        "source": "selected",
+        "value": "Content blocking is an important part of a performant, user-serving, privacy respecting web. Current content blockers work by building trust labels over URLs. While useful, this approach has many well understood shortcomings. Attackers may avoid detection by changing URLs or domains, bundling unwanted code with benign code, or inlining code in pages. The common flaw in existing approaches is that they evaluate code based on its delivery mechanism, not its behavior. In this work we address this problem by building a system for generating signatures of the privacy-and-security relevant behavior of executed JavaScript. Our system uses as the unit of analysis each script's behavior during each turn on the JavaScript event loop. Focusing on event loop turns allows us to build highly identifying signatures for JavaScript code that are robust against code obfuscation, code bundling, URL modification, and other common evasions, as well as handle unique aspects of web applications. This work makes the following contributions to the problem of measuring and improving content blocking on the web: First, we design and implement a novel system to build per-event-loop-turn signatures of JavaScript behavior through deep instrumentation of the Blink and V8 runtimes. Second, we apply these signatures to measure how much privacy-and-security harming code is missed by current content blockers, by using EasyList and EasyPrivacy as ground truth and finding scripts that have the same privacy and security harming patterns. We build 1,995,444 signatures of privacy-and-security relevant behaviors from 11,212 unique scripts blocked by filter lists, and find 3,589 unique scripts hosting known harmful code, but missed by filter lists, affecting 12.48% of websites measured. Third, we provide a taxonomy of ways scripts avoid detection and quantify the occurrence of each. Finally, we present defenses against these evasions, in the form of filter list additions where possible, and through a proposed, signature based system in other cases. As part of this work, we share the implementation of our signature-generation system, the data gathered by applying that system to the Alexa 100K, and 586 AdBlock Plus compatible filter list rules to block instances of currently blocked code being moved to new URLs."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Quan Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "North Carolina State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Peter Snyder",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "North Carolina State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Ben Livshits",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "North Carolina State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Alexandros Kapravelos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "North Carolina State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Granularity JavaScript Signatures",
+          "email": "",
+          "affiliations": [
+            "North Carolina State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Quan Chen",
+          "email": "",
+          "affiliations": [
+            "North Carolina State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Alexandros Kapravelos",
+          "email": "",
+          "affiliations": [
+            "North Carolina State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 115,
+      "author_count": 3,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 1,
+          "author": "Quan Chen",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Alexandros Kapravelos",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 1,
+          "author": "Quan Chen",
+          "affiliation_raw": "North Carolina State University Brave Software",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 47.415,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Alexandros Kapravelos",
+          "affiliation_raw": "North Carolina State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 4.764,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Detecting Filter List Evasion with Event-Loop-Turn Granularity JavaScript Signatures",
+      "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Quan Chen",
+          "affiliations": [
+            "North Carolina State University"
+          ]
+        },
+        {
+          "name": "Peter Snyder",
+          "affiliations": [
+            "Brave Software"
+          ]
+        },
+        {
+          "name": "Ben Livshits",
+          "affiliations": [
+            "Brave Software"
+          ]
+        },
+        {
+          "name": "Alexandros Kapravelos",
+          "affiliations": [
+            "North Carolina State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

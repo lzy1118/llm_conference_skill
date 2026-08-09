@@ -1,0 +1,339 @@
+{
+  "paper_id": "002_chancel_efficient_multi_client_isolation_under_adversarial_programs",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "CHANCEL: Efficient Multi-client Isolation Under Adversarial Programs"
+      },
+      {
+        "source": "selected",
+        "value": "CHANCEL: Efficient Multi-client Isolation Under Adversarial Programs"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Intel SGX aims to provide the confidentiality of user data on untrusted cloud machines. However, applications that process confidential user data may contain bugs that leak information or be programmed maliciously to collect user data. Existing research that attempts to solve this problem does not consider multi-client isolation in a single enclave. We show that by not supporting such in-enclave isolation, they incur considerable slowdown when concurrently processing multiple clients in different enclave processes, due to the limitations of SGX. This paper proposes CHANCEL, a sandbox designed for multi-client isolation within a single SGX enclave. In particular, CHANCEL allows a program's threads to access both a per-thread memory region and a shared read-only memory region while servicing requests. Each thread handles requests from a single client at a time and is isolated from other threads, using a Multi-Client Software Fault Isolation (MCSFI) scheme. Furthermore, CHANCEL supports various in-enclave services such as an inmemory file system and shielded client communication to ensure complete mediation of the program's interactions with the outside world. We implemented CHANCEL and evaluated it on SGX hardware using both micro-benchmarks and realistic target scenarios, including private information retrieval and product recommendation services. Our results show that CHANCEL outperforms a baseline multi-process sandbox by 4.06-53.70× on micro-benchmarks and 0.02-21.18× on realistic workloads while providing strong security guarantees."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Intel SGX aims to provide the confidentiality of user data on untrusted cloud machines. However, applications that process confidential user data may contain bugs that leak information or be programmed maliciously to collect user data. Existing research that attempts to solve this problem does not consider multi-client isolation in a single enclave. We show that by not supporting such in-enclave isolation, they incur considerable slowdown when concurrently processing multiple clients in different enclave processes, due to the limitations of SGX. This paper proposes C HANCEL , a sandbox designed for multi-client isolation within a single SGX enclave. In particular, CHANCEL allows a program's threads to access both a per-thread memory region and a shared read-only memory region while servicing requests. Each thread handles requests from a single client at a time and is isolated from other threads, using a Multi- Client Software Fault Isolation (MCSFI) scheme. Furthermore, CHANCEL supports various in-enclave services such as an in- memory file system and shielded client communication to ensure complete mediation of the program's interactions with the outside world. We implemented C HANCEL and evaluated it on SGX hardware using both micro-benchmarks and realistic target scenarios, including private information retrieval and product recommendation services. Our results show that C HANCEL out- performs a baseline multi-process sandbox by 4.06 − 53.70× on micro-benchmarks and 0.02−21.18× on realistic workloads while providing strong security guarantees. I. I NTRODUCTION Intel SGX guarantees the confidentiality and integrity of a program without trusting software components such as the OS or hypervisor, and protects against specific hardware attacks [ 1]. SGX also supports remote attestation to ensuring that programs are correctly installed on remote machines. Thus, SGX is a promising candidate to ensure the confidentiality of sensitive data running on remote machines in the cloud. However, the traditional assumption behind SGX's im- plementation is that the program running inside an enclave is trusted. This assumption is not always valid because applications may contain bugs or may have been built by malicious programmers (i.e., adversarial programs). Hence, users cannot trust remote programs because they may leak ∗The author worked on this project as a PhD student at KAIST. confidential data, even if protected by SGX. For example, consider a scenario where a service provider rents a cloud machine, with SGX capabilities, to provide a service to its clients. In this scenario, SGX will protect client data from a malicious cloud provider, but cannot prevent the data from being collected by the service provider using an adversarial program. Therefore, clients must trust the service provider to not leak their confidential data. The significant value of private user data makes it an appealing target for service providers. For example, consider a popular messaging platform, Signal [ 2], which supports private contact discovery [ 3]. Signal keeps an offline database of its users and periodically updates it on an SGX machine. The users connect to the SGX machine to discover which contacts use Signal. The private contact discovery is meant to prevent Signal from extracting a social graph, i.e., determine which contacts know each other. However, although Signal's source code is available for inspection, it is non-trivial to determine that it satisfies such security properties. Moreover, unlike Signal, many companies do not disclose their proprietary algorithms which further aggravates the problem by requiring users to blindly trust service providers. Existing research concerning client data protection in remote machines (e.g., Ryoan [ 4], VC3 [ 5]) does not support multi- client isolation within a single enclave. Considering the Signal example, the application could be designed such that multiple threads (handling requests from individual clients) directly share a contact database provided by Signal. However, lacking such support, prior approaches require a dedicated enclave process for each client. Although lacking a single process multi-client sandbox is not critical in non-SGX environments, it is a significant drawback in SGX environments. In particular, the lack of secure memory sharing between enclaves and limited enclave memory (i.e., only 128−256 MB), results in inefficient use of the limited memory and prohibitive overheads when different processes have distinct copies of shared data. To further elaborate, SGX does not allow the sharing of enclave pages between different enclave processes; therefore, common data must either be shared through untrusted interfaces (e.g., OS-controlled IPC), which is insecure, or be cloned to each enclave process. However, since SGX has limited trusted memory, cloning common data for each process/enclave would waste precious memory resources and eventually slowdown the entire system due to the expensive page-swaps between trusted and untrusted memory [ 6]. Our experiments on a real-world product recommendation application suggest that under a four client scenario with 112 MB of product catalog memory, a multi-process sandbox (i.e., the catalog is cloned to 4 processes) incurs almost 20× more page-swaps, and an overhead of more than 17×, compared to a multi-client sandbox (i.e., the catalog Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.24057 www.ndss-symposium.org is shared by 4 threads) (§VIII-C). This paper proposes CHANCEL 1, a multi-client sandbox that enables multiple threads to securely and efficiently handle re- quests from different clients, within a single enclave. CHANCEL relies on a novel Multi-Client SFI (MCSFI) scheme to enable thread isolation , i.e., sensitive client data and other thread content is only available within the thread's context, and shared memory enforcement, i.e., threads can only use shared memory that is protected against data leakage or tampering. Furthermore, CHANCEL ensures the confidentiality of computational results by encrypting all outgoing data using a shared secret key with each client. Lastly, CHANCEL provides various in-enclave functionalities (e.g., an in-memory filesystem) and offers practical protections against covert channel attacks. Existing SFI techniques are not designed for multi-client scenarios and require advanced hardware features to implement in SGX enclaves. In particular, Native Client (NaCl) [ 7] consid- ers the program's data to belong to a single client; therefore, it provisions a single memory view for each thread and does not support thread isolation. Furthermore, Multi-Domain SFI [ 8, 9] supports thread isolation but lacks shared memory (or its enforcement) between the threads, crucial to ensure efficient memory usage, and hence high performance for SGX enclaves. Finally, SGX implementations of SFI techniques [ 4, 9, 10] require hardware features that are not widely available, e.g., SGX2 [11], or have been discontinued, e.g., Memory Protection eXtensions (MPX) [12, 13], significantly hindering deployment. Therefore, to enable efficient multi-client separation, we pro- pose Multi-Client SFI (MCSFI), inspired by Native Client [ 7]. In particular, MCSFI allows each thread to access two memory regions: (a) per-thread private data region, (b) shared read- only region for all threads of the program. Each thread stores sensitive data obtained from a single client in its private region, inaccessible to other threads. Furthermore, all threads can access a common region to share non-sensitive data (e.g., Signal's contact database). However, to ensure that malicious threads cannot abuse the shared region to leak their sensitive contents or tamper with the service, MCSFI ensures read-only enforcement of the shared region, except during initialization or after servicing all client requests. CHANCEL enforces a specific enclave memory layout and uses compiler instrumentation to enforce MCSFI without requir- ing advanced or discontinued hardware functions. Specifically, CHANCEL reserves two general-purpose registers (i.e., r14 and r15) to hold executable and accessible addresses for each thread to restrict the program's control-flow and data-flow depending on the execution stage and thread context. For example, CHANCEL 's data-flow instrumentation ensures that the program can write to the shared memory region, during initialization, and only write to a per-thread private region, while serving client requests. CHANCEL also instruments the program's control-flow to ensure it can only execute the target program's code and cannot bypass the instrumentation checks, thereby preventing attacks that rely on binary rewriting or arbitrary code execution. Our evaluation case studies (§ VIII-C) show that MCSFI is applicable to many classes of real-world 1CHANCEL is the part of a church near the altar that is reserved for clergy and choir, and separated from the main hall scenarios, including private information retrieval and product recommendation services. To ease program development for CHANCEL , we implement a compiler toolchain using LLVM [ 14]. The service provider must utilize CHANCEL 's toolchain to build an instrumented binary, which is loaded into CHANCEL 's enclave after instru- mentation validation using an x86 disassembler, capstone [15]. During program execution, CHANCEL provides various services, i.e., dynamic memory allocation, file system, and shielded client communication, and also protects against covert channel attacks (e.g., encoding information in the output size). Our evaluated programs required no manual changes to build using our toolchain and few additional code (less than 10 lines) to utilize C HANCEL 's runtime services. We evaluate CHANCEL on SGX hardware to assess its security impact and performance. Our security evaluation confirms that CHANCEL can prevent a wide range of attack scenarios, including attempts to compromise the instrumentation checks, perform code injection attacks, and leak client data. Furthermore, our evaluation shows that CHANCEL has significantly higher performance than the baseline secure multi-process sandbox approach (e.g., Ryoan [ 4]). CHANCEL showed a 4.06 − 53.70× performance improvement in micro- benchmarks and 0.02 − 21.18× improvement across a range of important real-world workloads-intrusion detection sys- tems (OSSEC [ 16] and Snort [ 17]), private information re- trieval (DrugBank database [ 18, 19] and ShieldStore [ 20] key-value store), and product recommendation systems (Rec- ommender [21]). Finally, the average overhead of CHANCEL compared to a native execution is only 12.43% on the nbench benchmark [22], which demonstrates CHANCEL 's applicability to a wide range of scenarios with only modest overheads. II. B ACKGROUND ON INTEL SGX Intel SGX [ 23] allows a user process to create a protected memory region in its virtual address space, called an enclave. Privileged software, including the OS and hypervisor, is prevented by the hardware from accessing the enclave's runtime execution context and memory. The enclave can arbitrarily access any memory location within its process's unprotected memory. This section provides a brief overview of the critical SGX aspects that are relevant to this work and defers the reader to other sources for more comprehensive information regarding SGX [23, 24]. Remote attestation. The user can attest that their programs are correctly loaded onto SGX enclaves using remote attestation. In particular, the CPU creates a SHA- 256 digest of the enclave memory, signed using the CPU's secret key, and sent to the user for verification. Memory management. SGX dedicates a portion of the physical memory, Enclave Page Cache (EPC), to store enclave pages. The EPC memory is limited- 128 and 256 MB for SGX1 and SGX2, respectively. If this memory is exhausted, the Linux OS can perform page-swaps to extend the enclave memory on"
+      },
+      {
+        "source": "selected",
+        "value": "Intel SGX aims to provide the confidentiality of user data on untrusted cloud machines. However, applications that process confidential user data may contain bugs that leak information or be programmed maliciously to collect user data. Existing research that attempts to solve this problem does not consider multi-client isolation in a single enclave. We show that by not supporting such in-enclave isolation, they incur considerable slowdown when concurrently processing multiple clients in different enclave processes, due to the limitations of SGX. This paper proposes CHANCEL, a sandbox designed for multi-client isolation within a single SGX enclave. In particular, CHANCEL allows a program's threads to access both a per-thread memory region and a shared read-only memory region while servicing requests. Each thread handles requests from a single client at a time and is isolated from other threads, using a Multi-Client Software Fault Isolation (MCSFI) scheme. Furthermore, CHANCEL supports various in-enclave services such as an inmemory file system and shielded client communication to ensure complete mediation of the program's interactions with the outside world. We implemented CHANCEL and evaluated it on SGX hardware using both micro-benchmarks and realistic target scenarios, including private information retrieval and product recommendation services. Our results show that CHANCEL outperforms a baseline multi-process sandbox by 4.06-53.70× on micro-benchmarks and 0.02-21.18× on realistic workloads while providing strong security guarantees."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Adil Ahmad",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Juhee Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jaebaek Seo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Insik Shin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Pedro Fonseca",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Byoungyoung Lee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Google",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Kaist",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Adil Ahmad",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Juhee Kim",
+          "email": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jaebaek Seo",
+          "email": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Insik Shin",
+          "email": "",
+          "affiliations": [
+            "Purdue University Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Pedro Fonseca",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Byoungyoung Lee",
+          "email": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 132,
+      "author_count": 6,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Adil Ahmad",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Juhee Kim",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Byoungyoung Lee",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 5,
+          "author": "Byoungyoung Lee",
+          "affiliation_raw": "Google KAIST",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b17"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 17.447,
+          "center_distance": 38.181,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "CHANCEL: Efficient Multi-client Isolation Under Adversarial Programs",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/chancel-efficient-multi-client-isolation-under-adversarial-programs/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Adil Ahmad",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Juhee Kim",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Jaebaek Seo",
+          "affiliations": [
+            "Google"
+          ]
+        },
+        {
+          "name": "Insik Shin",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Pedro Fonseca",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Byoungyoung Lee",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jaebaek Seo",
+      "field": "affiliations",
+      "restored_value": [
+        "Purdue University Seoul National University"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Insik Shin",
+      "field": "affiliations",
+      "restored_value": [
+        "Purdue University Seoul National University"
+      ],
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

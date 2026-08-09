@@ -1,0 +1,267 @@
+{
+  "paper_id": "070_xmp_selective_memory_protection_for_kernel_and_user_space",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "xMP: Selective Memory Protection for Kernel and User Space"
+      },
+      {
+        "source": "selected",
+        "value": "xMP: Selective Memory Protection for Kernel and User Space"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Attackers leverage memory corruption vulnerabilities to establish primitives for reading from or writing to the address space of a vulnerable process. These primitives form the foundation for code-reuse and data-oriented attacks. While various defenses against the former class of attacks have proven effective, mitigation of the latter remains an open problem. In this paper, we identify various shortcomings of the x86 architecture regarding memory isolation, and leverage virtualization to build an effective defense against data-oriented attacks. Our approach, called xMP, provides (in-guest) selective memory protection primitives that allow VMs to isolate sensitive data in user or kernel space in disjoint xMP domains. We interface the Xen altp2m subsystem with the Linux memory management system, lending VMs the flexibility to define custom policies. Contrary to conventional approaches, xMP takes advantage of virtualization extensions, but after initialization, it does not require any hypervisor intervention. To ensure the integrity of in-kernel management information and pointers to sensitive data within isolated domains, xMP protects pointers with HMACs bound to an immutable context, so that integrity validation succeeds only in the right context. We have applied xMP to protect the page tables and process credentials of the Linux kernel, as well as sensitive data in various user-space applications. Overall, our evaluation shows that xMP introduces minimal overhead for real-world workloads and applications, and offers effective protection against data-oriented attacks."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Attackers leverage memory corruption vulnerabil- ities to establish primitives for reading from or writing to the address space of a vulnerable process. These primitives form the foundation for code-reuse and data-oriented attacks. While various defenses against the former class of attacks have proven effective, mitigation of the latter remains an open problem. In this paper, we identify various shortcomings of the x86 architecture regarding memory isolation, and leverage virtual- ization to build an effective defense against data-oriented attacks. Our approach, called xMP, provides (in-guest) selective memory protection primitives that allow VMs to isolate sensitive data in user or kernel space in disjoint xMP domains. We interface the Xen altp2m subsystem with the Linux memory management system, lending VMs the flexibility to define custom policies. Contrary to conventional approaches, xMP takes advantage of virtualization extensions, but after initialization, it does not require any hypervisor intervention. To ensure the integrity of in-kernel management information and pointers to sensitive data within isolated domains, xMP protects pointers with HMACs bound to an immutable context, so that integrity validation succeeds only in the right context. We have applied xMP to protect the page tables and process credentials of the Linux kernel, as well as sensitive data in various user-space applications. Overall, our evaluation shows that xMP introduces minimal overhead for real-world workloads and applications, and offers effective protection against data-oriented attacks. I. I NTRODUCTION During the past three decades, data-oriented attacks have evolved from a theoretical exercise [1] to a serious threat [2]- [7]. During the same time, we have witnessed a plethora of effective security mechanisms that prompted attackers to investigate new directions and exploit less explored corners of victim systems. Specifically, recent advances in Control Flow Integrity (CFI) [ 8]-[12], Code Pointer Integrity (CPI) [ 13], [14], and code diversification [ 15]-[17] have significantly raised the bar for code-reuse attacks. In fact, CFI schemes have been adopted by Microsoft [18], Google [19], and LLVM [20]. Code-reuse attacks chain short code sequences, dubbed gadgets, to hijack an application's control-flow. It suffices to modify one control-flow structure, such as a function pointer or a return address, with the start of a crafted gadget chain, to cause an application to perform arbitrary computation. In contrast, data-oriented attacks completely avoid changes to the control flow. Instead, these attacks aim to modify non- control data to cause the application to obey the attacker's intentions [5]-[7]. Typically, an attacker leverages memory corruption vulnerabilities that enable arbitrary read or write primitives to take control over the application's data. Stitching together a chain of data-oriented gadgets , which operate only on data, allows an attacker to either disclose sensitive information or escalate privileges, without violating an appli- cation's control flow. In this way, data-oriented attacks remain under the radar, despite code-reuse mitigations, and can have disastrous consequences [3]. We anticipate further growth in this direction in the near future, and emphasize the need for practical primitives that eliminate such threats. Researchers have suggested different strategies to counter data-oriented attacks. Data Flow Integrity (DFI) [21] schemes dynamically track a program's data flow. Similarly, by in- troducing memory safety to the C and C++ programming languages, it becomes possible to completely eliminate mem- ory corruption vulnerabilities [22]-[25]. While both directions have the potential to thwart data-oriented attacks, they lack practicality due to high performance overhead, or suffer from compatibility issues with legacy code. Instead of enforcing data flow integrity, researchers have started exploring isolation techniques that govern access to sensitive code and data regions [26]-[28]. Still, most approaches are limited to user space, focus on merely protecting a single data structure, or rely on policies enforced by a hypervisor. In this paper, we leverage virtualization extensions of Intel CPUs to establish selective memory protection (xMP) primi- tives that have the capability of thwarting data-oriented attacks. Instead of enhancing a hypervisor with the knowledge required to enforce memory isolation, we take advantage of Intel's Extended Page Table pointer (EPTP) switching capability to manage different views on guest-physical memory, from inside a VM, without any interaction with the hypervisor. For this, we extended Xen altp2m [29], [30] and the Linux memory management system to enable the selective protection of sensitive data in user or kernel space by isolating sensitive data in disjoint xMP domains that overcome the limited access permissions of the Memory Management Unit (MMU). A strong attacker with arbitraryread and write primitives cannot access the xMP-protected data without first having to enter the corresponding xMP domain. Furthermore, we equip in- kernel management information and pointers to sensitive data in xMP domains with authentication codes, whose integrity is bound to a specific context. This allows xMP to protect pointers and hence obstruct data-oriented attacks that target the xMP-protected data. 563 DOI 10.1109/SP40000.2020.00041 We use xMP to protect two sensitive kernel data structures that are vital for the system's security, yet are often disregarded by defense mechanisms: page tables and process credentials. In addition, we demonstrate the generality of xMP by guard- ing sensitive data in common, security-critical (user-space) libraries and applications. Lastly, in all cases, we evaluate the performance and effectiveness of our xMP primitives. In summary, we make the following main contributions: • We extend the Linux kernel to realize xMP, an in-guest memory isolation primitive for protecting sensitive data against data-oriented attacks in user and kernel space. • We present methods for combining Intel's EPTP switch- ing and Xen altp2m to control different guest-physical memory views, and isolate data indisjoint xMP domains. • We apply xMP to guard the kernel's page tables and process credentials, as well as sensitive data in user-space applications, with minimal performance overhead. • We integrate xMP into the Linux namespaces framework, forming the basis for hypervisor-assisted OS-level virtu- alization protection against data-oriented attacks. II. B ACKGROUND A. Memory Protection Keys Intel's Memory Protection Keys (MPK) technology supple- ments the general paging mechanism by further restricting memory permissions. In particular, each paging structure entry dedicates four bits that associate virtual memory pages with one of 16 protection domains, which correspond to sets of pages whose access permissions are controlled by the same protection key (PKEY). User-space processes control the per- missions of each PKEY through the 32-bit PKRU register. Specifically, MPK allows different PKEYs to be simultane- ously active, and page table entries to be paired with different keys to further restrict access to the associated page. A benefit of MPK is that it allows user threads to indepen- dently and efficiently harden the permissions of large memory regions. For instance, threads can revoke write access from entire domains without entering kernel space, walking and adjusting page tables, and invalidating TLBs; instead, threads can just set the write disable bit of the correspondingPKEY in the PKRU register. Another benefit of MPK is that it extends the access control capabilities of page tables, enabling threads to enforce (i) execute-onlycode pages [16], [31], and (ii) non- readable, yet present data pages [28]. These capabilities pro- vide new primitives for thwarting data-oriented attacks, with- out sacrificing performance and practicality [9], or resorting to architectural quirks [32] and virtualization [ 12], [16], [33]. Although Intel announced MPK in 2015 [ 34], it was inte- grated only recently, and so far only to the Skylake-SP Xeon family, which is dedicated to high-end servers. Hence, a need for similar isolation features remains on desktop, mobile, and legacy server CPUs. Another issue is that attackers with the ability to arbitrarily corrupt kernel memory can (i) modify the per-thread state (in kernel space) holding the access per- missions of protection domains, or(ii) alter protection domain bits in page table entries. This allows adversaries to deactivate restrictions that otherwise are enforced by the MMU. Lastly, the isolation capabilities of MPK are geared towards user- space pages. Sensitive data in kernel space thus remains prone to unauthorized access. In fact, there is no equivalent mechanism for protecting kernel memory from adversaries armed with arbitrary read and write primitives. Consequently, there is a need for alternative memory protection primitives, the creation of which is the main focus of this work. B. The Xen altp2m Subsystem Virtual Machine Monitors (VMMs) leverage Second Level Address Translation (SLAT) to isolate physical memory that is reserved for VMs [35]. In addition to in-guest page tables that translate guest-virtual to guest-physical addresses, the supple- mentary SLAT tables translate guest-physical to host-physical memory. Unauthorized accesses to guest-physical memory, which is either not mapped or lacks privileges in the SLAT table, trap into the VMM [36], [37]. As the VMM exclusively maintains the SLAT tables, it can fully control a VM'sview on its physical memory [29], [30], [38], [39]. Xen's physical-to- machine subsystem (p2m) [37], [40] employs SLAT to define the guest's view of the physical memory that is perceived by all virtual CPUs (vCPUs). By restricting access to individual page frames, security mechanisms can use p2m to enforce memory access policies on the guest's physical memory. Unfortunately, protecting data through a singleglobal view (i) incurs a significant overhead and (ii) is prone to race conditions in multi-vCPU environments. Consider a scenario in which a guest advises the VMM to read-protect sensitive data on a specific page. By revoking read permissions in the SLAT tables, illegal read accesses to the protected page, e.g., due to malicious memory disclosure attempts, would violate the permissions and trap into the VMM. At the same time, for legal guest accesses to the protected page frame, the VMM has to temporarily relax its permissions. Whenever the guest needs to access the sensitive information, it has to instruct the VMM to walk the SLAT tables-an expensive operation. More importantly, temporarily relaxing permissions in the global view creates awindow of opportunityfor other vCPUs to freely access the sensitive data without notifying the VMM. The Xen alternate p2m subsystem ( altp2m) [ 29], [ 30] addresses the above issues by maintaining and switching between differentviews, instead of using a single,global view. As the views can be assigned to each vCPU individually, per- missions in one view can be safely relaxed without affecting the active views of other vCPUs. In fact, instead of relaxing permissions by walking the SLAT tables, altp2m allows switching to another, less restrictive view. Both external [29], [30] and internal monitors [26], [41] use altp2m to allocate and switch between views. Although altp2m introduces a powerful means to rapidly change the guest's memory view, it requires hardware support to establish primitives that can be used by guests for isolating selected memory regions. 564"
+      },
+      {
+        "source": "selected",
+        "value": "Attackers leverage memory corruption vulnerabilities to establish primitives for reading from or writing to the address space of a vulnerable process. These primitives form the foundation for code-reuse and data-oriented attacks. While various defenses against the former class of attacks have proven effective, mitigation of the latter remains an open problem. In this paper, we identify various shortcomings of the x86 architecture regarding memory isolation, and leverage virtualization to build an effective defense against data-oriented attacks. Our approach, called xMP, provides (in-guest) selective memory protection primitives that allow VMs to isolate sensitive data in user or kernel space in disjoint xMP domains. We interface the Xen altp2m subsystem with the Linux memory management system, lending VMs the flexibility to define custom policies. Contrary to conventional approaches, xMP takes advantage of virtualization extensions, but after initialization, it does not require any hypervisor intervention. To ensure the integrity of in-kernel management information and pointers to sensitive data within isolated domains, xMP protects pointers with HMACs bound to an immutable context, so that integrity validation succeeds only in the right context. We have applied xMP to protect the page tables and process credentials of the Linux kernel, as well as sensitive data in various user-space applications. Overall, our evaluation shows that xMP introduces minimal overhead for real-world workloads and applications, and offers effective protection against data-oriented attacks."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sergej Proskurin",
+          "email": "proskurin@sec.in.tum.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich, Stony Brook University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Marius Momeu",
+          "email": "momeu@sec.in.tum.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich, Stony Brook University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Seyedhamed Ghavamnia",
+          "email": "sghavamnia@cs.stonybrook.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Vasileios PKemerlis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Michalis Polychronakis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sergej Proskurin",
+          "email": "proskurin@sec.in.tum.de",
+          "affiliations": [
+            "Technical University of Munich",
+            "Stony Brook University",
+            "Brown University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Marius Momeu",
+          "email": "momeu@sec.in.tum.de",
+          "affiliations": [
+            "Technical University of Munich",
+            "Stony Brook University",
+            "Brown University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Seyedhamed Ghavamnia",
+          "email": "sghavamnia@cs.stonybrook.edu",
+          "affiliations": [
+            "Technical University of Munich",
+            "Stony Brook University",
+            "Brown University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Vasileios P. Kemerlis",
+          "email": "",
+          "affiliations": [
+            "Technical University of Munich",
+            "Stony Brook University",
+            "Brown University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Michalis Polychronakis",
+          "email": "",
+          "affiliations": [
+            "Technical University of Munich",
+            "Stony Brook University",
+            "Brown University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 130,
+      "author_count": 5,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Sergej Proskurin",
+          "block_id": "pdf:p1:b8",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "xMP: Selective Memory Protection for Kernel and User Space",
+      "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sergej Proskurin",
+          "affiliations": [
+            "Technical University of Munich"
+          ]
+        },
+        {
+          "name": "Marius Momeu",
+          "affiliations": [
+            "Technical University of Munich"
+          ]
+        },
+        {
+          "name": "Seyedhamed Ghavamnia",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        },
+        {
+          "name": "Vasileios Kemerlis",
+          "affiliations": [
+            "Brown University"
+          ]
+        },
+        {
+          "name": "Michalis Polychronakis",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sergej Proskurin",
+      "field": "email",
+      "restored_value": "proskurin@sec.in.tum.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Marius Momeu",
+      "field": "email",
+      "restored_value": "momeu@sec.in.tum.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Seyedhamed Ghavamnia",
+      "field": "email",
+      "restored_value": "sghavamnia@cs.stonybrook.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

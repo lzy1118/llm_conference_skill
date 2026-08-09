@@ -1,0 +1,297 @@
+{
+  "paper_id": "065_transparency_dictionaries_with_succinct_proofs_of_correct_operation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Transparency Dictionaries with Succinct Proofs of Correct Operation"
+      },
+      {
+        "source": "selected",
+        "value": "Transparency Dictionaries with Succinct Proofs of Correct Operation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "This paper introduces Verdict, a transparency dictionary, where an untrusted service maintains a labelvalue map that clients can query and update (foundational infrastructure for end-to-end encryption and other applications). To prevent unauthorized modifications to the dictionary, for example, by a malicious or a compromised service provider, Verdict produces publiclyverifiable cryptographic proofs that it correctly executes both reads and authorized updates. A key advance over prior work is that Verdict produces efficiently-verifiable proofs while incurring modest proving overheads. Verdict accomplishes this by composing indexed Merkle trees (a new SNARK-friendly data structure) with Phalanx (a new SNARK that supports amortized constant-sized proofs and leverages particular workload characteristics to speed up the prover). Our experimental evaluation demonstrates that Verdict scales to dictionaries with millions of labels while imposing modest overheads on the service and clients. However, in prior systems [22, 48, 63] and this work, if the service equivocates, it can be eventually detected by clients (§II, Appendix B). Work began when Ioanna Tzialla and Abhriram Kothapalli were interns at Microsoft Research."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "This paper introduces Verdict, a transparency dictionary, where an untrusted service maintains a label- value map that clients can query and update (foun- dational infrastructure for end-to-end encryption and other applications). To prevent unauthorized modifications to the dictionary, for example, by a malicious or a compromised service provider, Verdict produces publicly- verifiable cryptographic proofs that it correctly executes both reads and authorized updates. A key advance over prior work is that Verdict produces efficiently-verifiable proofs while incurring modest proving overheads. Verdict accomplishes this by composing indexed Merkle trees (a new SNARK-friendly data structure) with Phalanx (a new SNARK that supports amortized constant-sized proofs and leverages particular workload characteristics to speed up the prover). Our experimental evaluation demonstrates that Verdict scales to dictionaries with millions of labels while imposing modest overheads on the service and clients. I. I NTRODUCTION AND MOTIVATION A transparency dictionary is a system in which an untrusted service maintains a list of label-value tuples that clients can query and update [ 22, 23, 33, 48, 63]. The dictionary supports efficient membership and non- membership queries, unlike transparency logs, which may only support membership queries. Transparency logs and dictionaries have been proposed as a foundation for PKIs, end-to-end encryption (e.g., for email or messaging), software updates, etc. For example, in key transparency [48], a dictionary maps unique identities to their public keys (e.g., RSA encryption keys). Concretely, when used for key transparency, a trans- parency dictionary enables the following message exchange: To send a “top secret” document D to bob@dom.org, Alice picks a symmetric secret key k, encrypts D using k, and then encrypts k using the public key(s) associated with bob@dom.org in the transparency dictionary; she then sends both ciphertexts to bob@dom.org via an untrusted channel (e.g., the cloud). However, if the dictionary can return “rogue” public keys (i.e., public keys that Bob does not con- trol), then even perfect cryptography cannot protect the secrecy of Alice's document. Non-membership queries are important for this scenario as well; otherwise, the service's dictionary might contain more than one tuple for the bob@dom.org label, allowing the service to show different tuples to different clients. 1 Prior work [22, 23, 33, 48, 63] shows that an effective way to secure transparency dictionaries is to enforce that the dictionary maintained by the untrusted service remains append-only. Specifically, the domain of the dictionary (i.e., the set of labels) may only grow over time, and the associated values may only be updated according to an application-specific policy. In the con- text of key transparency, this means that the set of identities maintained by the dictionary never shrinks. Further, suppose that the first public key registered for bob@dom.org was legitimate. Then the application update policy might say that all subsequent updates must be authorized using one of the existing public keys. A natural question here is: how can the untrusted service prove to its clients that its dictionary remains append-only? Ideally, we would like the service's proofs to be publicly verifiable, meaning that any client can verify that the entire service remains append-only. This ensures that any client of the system can obtain a strong security guarantee regardless of actions of other clients in the system. In the key transparency example, this means that when Alice verifies the service's proof, she knows that Bob's key has not been subverted, even if Bob is offline or fails to actively monitor updates to his own key. Hence, Alice can safely encrypt sensitive data using the public key the service returns for Bob. As a second criteria, the proofs must be efficiently verifiable: the cost of verifying proofs should be lower than reexecuting requests processed by the service, both asymptotically 1There is an orthogonal but important requirement that the service should not be able to equivocate i.e., show different versions of its dictionary to different clients such that each version is well behaved. In general, this is impossible to prevent with a fully untrusted service [ 47]. However, in prior systems [ 22, 48, 63] and this work, if the service equivocates, it can be eventually detected by clients ( §II, Appendix B). Work began when Ioanna Tzialla and Abhriram Kothapalli were interns at Microsoft Research. Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.23143 www.ndss-symposium.org and concretely (this also implies that proofs should be succinct). Satisfying the latter requirement makes it possible for any light client to download and verify proofs. As we discuss in §VII, prior work does not provide a dictionary abstraction [ 38], do not support public verifiability [ 33, 48], and/or impose significant proving/verification overhead [22, 23, 42, 63, 64]. In contrast, we describe Verdict, the first transparency dictionary with publicly and efficiently verifiable proofs of correct operation as well as modest proving overheads. Verdict achieves this by employing SNARKs [16, 30, 31], a cryptographic primitive that enables a prover to prove knowledge of a witness to an NP statement by producing a proof such that the size of the proof and the time to verify it are both sub-linear in the size of the statement. 2 Verdict employs SNARKs as follows. At the end of epoch i, the untrusted service publishes a succinct cryptographic commitment to Ci the current state of its dictionary. 3 It also produces a succinct SNARK proof demonstrating that the information in Ci is a superset of that in the dictionary committed to by Ci−1. Stated at this level, the use of SNARKs seems like an obvious solution. Of course, the problem with such an “obvious” solution is well-known: the resource costs to produce SNARK proofs are, in general, excessive. However, we address this problem in our specific context, obtaining orders of magnitude speedups over a na ¨ıve application of SNARKs. First, we design a SNARK-friendly data structure ( §III) that can be used to efficiently prove the necessary append-only invariants over the untrusted service's state. In more detail, Verdict uses this data structure to prove that the transparency dictionary's set of labels grows monotonically. Rather than directly prove (at significant expense) that each update to a label's value was applied correctly, Verdict also maintains, for each label, a provably append-only list of updates, which a client can apply locally to arrive at the current value. Second, we design Phalanx, a new SNARK that leverages Verdict's particular workload characteristics to significantly drive down costs of the untrusted service and of the clients ( §IV). Specifically, by leveraging the epoch-based nature of Verdict, Phalanx produces amortized constant-sized proofs and verification times. Furthermore, it leverages the data-parallel nature of the statement proven in each round to substantially reduce 2SNARKs provide an additional property called zero-knowledge, where the verifier learns nothing about the prover's witness beyond what is implied by the proven statement. Verdict's focus is on succinct verification property of SNARKs, but with modern SNARKs (including the one that Verdict employs), achieving zero-knowledge is “free” in terms of additional costs to the prover, the verifier, and proof sizes. 3Informally speaking, a cryptographic commitment scheme enables a sender to commit itself to a value by sending a short commitment and then later reveal the value such that the commitment scheme is binding (i.e., the sender cannot reveal a value different from what it originally committed), and hiding (i.e., a commitment does not reveal anything about the committed value). proof-generation costs. Phalanx may be of independent interest to other epoch-based services. We implement Verdict in Rust as a generic library for constructing transparency dictionaries ( §V). To demonstrate the concrete utility of Verdict, we apply it to our running example of key transparency, creating Keypal, a service for translating user identities to public keys without trusting the hosting service. We evaluate Verdict (§VI) and compare it with three baselines that provide the similar security properties: AAD [ 63], and two variants of Merkle-Patricia trees. Unlike AAD, Verdict incurs low overheads even for large dictionaries with millions of labels, and unlike the Merkle-Patricia baseline, Verdict produces efficiently- verifiable proofs of correct operation. We also find that our workload-specific SNARK optimizations improve proving costs by an order of magnitude. Together, Verdict achieves about 4 updates/sec/CPU-core and about 2 inserts/sec/CPU-core, with a per-epoch (amortized) proof size of 651 bytes and a verification time of about 3 ms (for a dictionary with 2 20 label-value tuples); Verdict can achieve about 18-22 updates/per/sec/CPU-core and 9- 11 inserts/sec/CPU-core, with a per-epoch proof size of 290 bytes and a verification time of 161 µs for the same dictionary size at the cost of deferred guarantees ( §VI). This represents over an order of magnitude improvement over prior state-of-the-art, general proof systems for stateful services [ 40, 56, 57, 59] and over three orders of magnitude improvement over AAD [63]. Verdict's principal limitation is that the service still incurs significant CPU costs to produce proofs. Less fundamentally, although the proof-generation process is highly parallelizable, our current implementation of Verdict does not leverage multiple CPUs. Nevertheless, we believe, Verdict makes transparency dictionaries with efficiently-verifiable proofs affordable. In summary, Verdict contributes: 1) A transparency dictionary that scales well asymp- totically and concretely to large dictionaries. 2) A SNARK-friendly accumulator with O(log n) proofs of membership and non-membership. 3) A SNARK that provides amortized constant- sized proofs and verification times and that leverages particular workload characteristics (e.g., computations with repeated substructure) to speed up proof generation. II. T HE VERDICT TRANSPARENCY DICTIONARY A. Problem Statement and Definitions Our goal is to build Verdict, a service that exposes a dictionary abstraction and can cryptographically prove to its clients the correctness of every request it executes. Specifically, the service's state is a label-value map that clients can query and update; i.e., clients can insert a new label-value pair, update the value associated with 2"
+      },
+      {
+        "source": "selected",
+        "value": "This paper introduces Verdict, a transparency dictionary, where an untrusted service maintains a labelvalue map that clients can query and update (foundational infrastructure for end-to-end encryption and other applications). To prevent unauthorized modifications to the dictionary, for example, by a malicious or a compromised service provider, Verdict produces publiclyverifiable cryptographic proofs that it correctly executes both reads and authorized updates. A key advance over prior work is that Verdict produces efficiently-verifiable proofs while incurring modest proving overheads. Verdict accomplishes this by composing indexed Merkle trees (a new SNARK-friendly data structure) with Phalanx (a new SNARK that supports amortized constant-sized proofs and leverages particular workload characteristics to speed up the prover). Our experimental evaluation demonstrates that Verdict scales to dictionaries with millions of labels while imposing modest overheads on the service and clients. However, in prior systems [22, 48, 63] and this work, if the service equivocates, it can be eventually detected by clients (§II, Appendix B). Work began when Ioanna Tzialla and Abhriram Kothapalli were interns at Microsoft Research."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ioanna Tzialla",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Abhiram Kothapalli",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Bryan Parno",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Srinath Setty",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ioanna Tzialla",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Abhiram Kothapalli",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Bryan Parno",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Srinath Setty",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University Carnegie Mellon University Microsoft Research"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 117,
+      "author_count": 4,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Ioanna Tzialla",
+          "block_id": "pdf:p1:b10",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Abhiram Kothapalli",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Bryan Parno",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Srinath Setty",
+          "block_id": "pdf:p1:b8",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Ioanna Tzialla",
+          "affiliation_raw": "New York University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b10",
+          "affiliation_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.35,
+          "center_distance": 6.49,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Abhiram Kothapalli",
+          "affiliation_raw": "New York University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 17.308,
+          "center_distance": 67.459,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Bryan Parno",
+          "affiliation_raw": "Carnegie Mellon University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 17.308,
+          "center_distance": 15.897,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Srinath Setty",
+          "affiliation_raw": "Microsoft Research",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b8",
+          "affiliation_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 17.308,
+          "center_distance": 39.412,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Transparency Dictionaries with Succinct Proofs of Correct Operation",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-252/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ioanna Tzialla",
+          "affiliations": [
+            "New York University"
+          ]
+        },
+        {
+          "name": "Abhiram Kothapalli",
+          "affiliations": [
+            "Carnegie Mellon University"
+          ]
+        },
+        {
+          "name": "Bryan Parno",
+          "affiliations": [
+            "Carnegie Mellon University"
+          ]
+        },
+        {
+          "name": "Srinath Setty",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

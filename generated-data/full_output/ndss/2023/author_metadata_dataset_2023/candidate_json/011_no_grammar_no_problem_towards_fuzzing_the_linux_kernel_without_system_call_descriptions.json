@@ -1,0 +1,276 @@
+{
+  "paper_id": "011_no_grammar_no_problem_towards_fuzzing_the_linux_kernel_without_system_call_descriptions",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "No Grammar, No Problem: Towards Fuzzing the Linux Kernel without System-Call Descriptions"
+      },
+      {
+        "source": "selected",
+        "value": "No Grammar, No Problem: Towards Fuzzing the Linux Kernel without System-Call Descriptions"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The integrity of the entire computing ecosystem depends on the security of our operating systems (OSes). Unfortunately, due to the scale and complexity of OS code, hundreds of security issues are found in OSes, every year [32]. As such, operating systems have constantly been prime use-cases for applying security-analysis tools. In recent years, fuzz-testing has appeared as the dominant technique for automatically finding security issues in software. As such, fuzzing has been adapted to find thousands of bugs in kernels [14]. However, modern OS fuzzers, such as Syzkaller, rely on precise, extensive, manuallycreated harnesses and grammars for each interface fuzzed within the kernel. Due to this reliance on grammars, current OS fuzzers are faced with scaling-issues. In this paper, we present FUZZNG, our generic approach to fuzzing system-calls on OSes. Unlike Syzkaller, FUZZNG does not require intricate descriptions of system-call interfaces in order to function. Instead FUZZNG leverages fundamental kernel design features in order to reshape and simplify the fuzzer's input-space. As such FUZZNG only requires a small config, for each new target: essentially a list of files and system-call numbers the fuzzer should explore. We implemented FUZZNG for the Linux kernel. Testing FUZZNG over 10 Linux components with extensive descriptions in Syzkaller showed that, on average, FUZZNG achieves 102.5% of Syzkaller's coverage. FUZZNG found 9 new bugs (5 in components that Syzkaller had already fuzzed extensively, for years). Additionally, FUZZNG's lightweight configs are less than 1.7% the size of Syzkaller's manually-written grammars. Crucially, FUZZNG achieves this without initial seed-inputs, or expert guidance."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The integrity of the entire computing ecosystem depends on the security of our operating systems (OSes). Unfor- tunately, due to the scale and complexity of OS code, hundreds of security issues are found in OSes, every year [32]. As such, operating systems have constantly been prime use-cases for applying security-analysis tools. In recent years, fuzz-testing has appeared as the dominant technique for automatically finding security issues in software. As such, fuzzing has been adapted to find thousands of bugs in kernels [14]. However, modern OS fuzzers, such as Syzkaller, rely on precise, extensive, manually- created harnesses and grammars for each interface fuzzed within the kernel. Due to this reliance on grammars, current OS fuzzers are faced with scaling-issues. In this paper, we present F UZZ NG, our generic approach to fuzzing system-calls on OSes. Unlike Syzkaller, FUZZ NG does not require intricate descriptions of system-call interfaces in order to function. Instead F UZZ NG leverages fundamental kernel design features in order to reshape and simplify the fuzzer's input-space. As such F UZZ NG only requires a small config, for each new target: essentially a list of files and system-call numbers the fuzzer should explore. We implemented F UZZ NG for the Linux kernel. Testing FUZZ NG over 10 Linux components with extensive descrip- tions in Syzkaller showed that, on average, F UZZ NG achieves 102.5% of Syzkaller's coverage. F UZZ NG found 9 new bugs (5 in components that Syzkaller had already fuzzed extensively, for years). Additionally, F UZZ NG's lightweight configs are less than 1.7% the size of Syzkaller's manually-written grammars. Crucially, F UZZ NG achieves this without initial seed-inputs, or expert guidance. I. I NTRODUCTION The Operating System continues to serve as one of the most security-critical building blocks in modern computing. The OS' role in managing resources and enforcing isolation between applications makes it a target for attackers who seek to violate OS-provided guarantees. Recognizing the critical nature of OS security, fuzzers have identified and helped fix thousands of bugs in OS kernels. Recently, the success of OS fuzzers has emphasized difficulty of writing secure low-level code, and has even spurred initiatives such as support for safer languages in the Linux kernel, and the usage of hardware-features such as Memory Tagging to enable advanced low-overhead defenses against memory-corruption issues [23], [44]. Most OS fuzzers focus on the critical system- call interface, which enables user-space applications to request services from the kernel. Syzkaller[14], the most prolific system-call fuzzer, has become an integral component of the Linux Kernel develop- ment lifecycle, with over 2,700 mentions in kernel commit messages. As such, syzkaller, itself, has grown to be a sizeable project, with over 200 contributors. Crucially, Syzkaller can only fuzz system-calls that are sufficiently described by a “syzlang” grammar. These grammars encode and annotate the types of resources provided as inputs and returned as outputs, by system-calls. Therefore, much of the syzkaller community's work is focused around developing and refining “syzlang” descriptions for system-calls, which are essential to Syzkaller's success. Developing such grammars is a manual process, and re- quires detailed knowledge about the interface (i.e., set of system calls) in question. As such, grammars are prone to human-error, and can lead to gaps in coverage, or over-fitting (preventing the fuzzer from exploring all states and scenarios in which code could be covered). Additionally, syzkaller sometimes requires writing supplementary harnessing code to fuzz particularly complex interfaces. For example, to fuzz the Linux Kernel Virtual Machine (KVM) interface, which powers security-critical virtualization software, Syzkaller developers committed 891 lines of detailed syscall descriptions, 243 KVM-related constants, and a further 879 lines of KVM- specific C harnessing code (illustrated in Figure 1). Even though Syzkaller features tens-of-thousands of hand-crafted “syzlang” rules, the current process cannot scale to fuzz the millions of lines of code added to the Linux Kernel each year [33]. Academic works have recognized Syzkaller's scalability problem with manually-created syzlang grammars, and have focused on automatically generating grammars. Works such as Difuze, IMF, SyzGen, and KSG apply static and dynamic-analysis techniques to automatically generate system-call descriptions [12], [18], [9], [51]. Difuze, IMF and SyzGen are designed and evaluated against interfaces, such as Android Drivers, and macOS APIs, for which no base- line manual-descriptions exist. KSG's descriptions appear to improve Syzkaller's coverage, however source-code has not been released and upstream Syzkaller-based Linux fuzzing efforts continue to rely only on manually-written descriptions. Some upstream efforts for description generation are limited to identifying the types of struct arguments passed to ioctl system-calls [36]. Importantly, the Syzkaller project has been tracking the need for automatic generation of Linux system- call descriptions as an open issue, since 2018 [53]. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24688 www.ndss-symposium.org /tmp/desc.txt Mon Jan 17 05:46:11 2022 1 # Copyright 2015 syzkaller project authors. All rights reserved. # Use of this source code is governed by Apache 2 LICENSE that can be found in t include <linux/kvm.h> include <linux/kvm_host.h> include <uapi/linux/fcntl.h> include <asm/kvm.h> include <asm/mce.h> resource fd_kvm[fd] resource fd_kvmvm[fd] resource fd_kvmcpu[fd] resource fd_kvmdev[fd] resource fd_sgx_provision[fd] openat$kvm(fd const[AT_FDCWD], file ptr[in, string[\"/dev/kvm\"]], flags flags[ope openat$sgx_provision(fd const[AT_FDCWD], file ptr[in, string[\"/dev/sgx_provision ioctl$KVM_CREATE_VM(fd fd_kvm, cmd const[KVM_CREATE_VM], type const[0]) fd_kvmvm ioctl$KVM_GET_MSR_INDEX_LIST(fd fd_kvm, cmd const[KVM_GET_MSR_INDEX_LIST], arg p ioctl$KVM_CHECK_EXTENSION(fd fd_kvm, cmd const[KVM_CHECK_EXTENSION], arg intptr) ioctl$KVM_GET_VCPU_MMAP_SIZE(fd fd_kvm, cmd const[KVM_GET_VCPU_MMAP_SIZE]) ioctl$KVM_GET_SUPPORTED_CPUID(fd fd_kvm, cmd const[KVM_GET_SUPPORTED_CPUID], arg ioctl$KVM_GET_EMULATED_CPUID(fd fd_kvmvm, cmd const[KVM_GET_EMULATED_CPUID], arg ioctl$KVM_X86_GET_MCE_CAP_SUPPORTED(fd fd_kvmvm, cmd const[KVM_X86_GET_MCE_CAP_S ioctl$KVM_GET_API_VERSION(fd fd_kvm, cmd const[KVM_GET_API_VERSION], type const[ ioctl$KVM_CREATE_VCPU(fd fd_kvmvm, cmd const[KVM_CREATE_VCPU], id intptr[0:2]) f ioctl$KVM_CHECK_EXTENSION_VM(fd fd_kvmvm, cmd const[KVM_CHECK_EXTENSION], arg in ioctl$KVM_GET_DIRTY_LOG(fd fd_kvmvm, cmd const[KVM_GET_DIRTY_LOG], arg ptr[in, k ioctl$KVM_CREATE_IRQCHIP(fd fd_kvmvm, cmd const[KVM_CREATE_IRQCHIP]) ioctl$KVM_IRQ_LINE(fd fd_kvmvm, cmd const[KVM_IRQ_LINE], arg ptr[in, kvm_irq_lev ioctl$KVM_IRQ_LINE_STATUS(fd fd_kvmvm, cmd const[KVM_IRQ_LINE_STATUS], arg ptr[i ioctl$KVM_GET_IRQCHIP(fd fd_kvmvm, cmd const[KVM_GET_IRQCHIP], arg ptr[out, kvm_ ioctl$KVM_SET_IRQCHIP(fd fd_kvmvm, cmd const[KVM_SET_IRQCHIP], arg ptr[in, kvm_i ioctl$KVM_XEN_HVM_CONFIG(fd fd_kvmvm, cmd const[KVM_XEN_HVM_CONFIG], arg ptr[in, ioctl$KVM_GET_CLOCK(fd fd_kvmvm, cmd const[KVM_GET_CLOCK], arg ptr[out, kvm_cloc ioctl$KVM_SET_CLOCK(fd fd_kvmvm, cmd const[KVM_SET_CLOCK], arg ptr[in, kvm_clock ioctl$KVM_SET_USER_MEMORY_REGION(fd fd_kvmvm, cmd const[KVM_SET_USER_MEMORY_REGI ioctl$KVM_SET_TSS_ADDR(fd fd_kvmvm, cmd const[KVM_SET_TSS_ADDR], arg flags[kvm_x ioctl$KVM_SET_IDENTITY_MAP_ADDR(fd fd_kvmvm, cmd const[KVM_SET_IDENTITY_MAP_ADDR ioctl$KVM_SET_BOOT_CPU_ID(fd fd_kvmvm, cmd const[KVM_SET_BOOT_CPU_ID], arg ptr[i ioctl$KVM_PPC_GET_PVINFO(fd fd_kvmvm, cmd const[KVM_PPC_GET_PVINFO], arg buffer[ ioctl$KVM_ASSIGN_PCI_DEVICE(fd fd_kvmvm, cmd const[KVM_ASSIGN_PCI_DEVICE], arg p ioctl$KVM_DEASSIGN_PCI_DEVICE(fd fd_kvmvm, cmd const[KVM_DEASSIGN_PCI_DEVICE], a ioctl$KVM_ASSIGN_DEV_IRQ(fd fd_kvmvm, cmd const[KVM_ASSIGN_DEV_IRQ], arg ptr[in, ioctl$KVM_DEASSIGN_DEV_IRQ(fd fd_kvmvm, cmd const[KVM_DEASSIGN_DEV_IRQ], arg ptr ioctl$KVM_SET_GSI_ROUTING(fd fd_kvmvm, cmd const[KVM_SET_GSI_ROUTING], arg ptr[i ioctl$KVM_ASSIGN_SET_MSIX_NR(fd fd_kvmvm, cmd const[KVM_ASSIGN_SET_MSIX_NR], arg ioctl$KVM_ASSIGN_SET_MSIX_ENTRY(fd fd_kvmvm, cmd const[KVM_ASSIGN_SET_MSIX_ENTRY ioctl$KVM_IOEVENTFD(fd fd_kvmvm, cmd const[KVM_IOEVENTFD], arg ptr[in, kvm_ioeve ioctl$KVM_ASSIGN_SET_INTX_MASK(fd fd_kvmvm, cmd const[KVM_ASSIGN_SET_INTX_MASK], ioctl$KVM_SIGNAL_MSI(fd fd_kvmvm, cmd const[KVM_SIGNAL_MSI], arg ptr[in, kvm_msi ioctl$KVM_CREATE_PIT2(fd fd_kvmvm, cmd const[KVM_CREATE_PIT2], arg ptr[in, kvm_p ioctl$KVM_GET_PIT(fd fd_kvmvm, cmd const[KVM_GET_PIT], arg ptr[out, kvm_pit_stat ioctl$KVM_SET_PIT(fd fd_kvmvm, cmd const[KVM_SET_PIT], arg ptr[in, kvm_pit_state ioctl$KVM_GET_PIT2(fd fd_kvmvm, cmd const[KVM_GET_PIT2], arg ptr[out, kvm_pit_st ioctl$KVM_SET_PIT2(fd fd_kvmvm, cmd const[KVM_SET_PIT2], arg ptr[in, kvm_pit_sta ioctl$KVM_PPC_GET_SMMU_INFO(fd fd_kvmvm, cmd const[KVM_PPC_GET_SMMU_INFO], arg b ioctl$KVM_IRQFD(fd fd_kvmvm, cmd const[KVM_IRQFD], arg ptr[in, kvm_irqfd]) ioctl$KVM_PPC_ALLOCATE_HTAB(fd fd_kvmvm, cmd const[KVM_PPC_ALLOCATE_HTAB], arg p ioctl$KVM_CREATE_DEVICE(fd fd_kvmvm, cmd const[KVM_CREATE_DEVICE], arg ptr[inout ioctl$KVM_REGISTER_COALESCED_MMIO(fd fd_kvmvm, cmd const[KVM_REGISTER_COALESCED_ /tmp/desc.txt Mon Jan 17 05:46:11 2022 2 ioctl$KVM_UNREGISTER_COALESCED_MMIO(fd fd_kvmvm, cmd const[KVM_UNREGISTER_COALES ioctl$KVM_SET_NR_MMU_PAGES(fd fd_kvmvm, cmd const[KVM_SET_NR_MMU_PAGES], arg int ioctl$KVM_GET_NR_MMU_PAGES(fd fd_kvmvm, cmd const[KVM_GET_NR_MMU_PAGES], arg int ioctl$KVM_REINJECT_CONTROL(fd fd_kvmvm, cmd const[KVM_REINJECT_CONTROL], arg ptr ioctl$KVM_HYPERV_EVENTFD(fd fd_kvmvm, cmd const[KVM_HYPERV_EVENTFD], arg ptr[in, ioctl$KVM_CAP_MANUAL_DIRTY_LOG_PROTECT2(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], ioctl$KVM_CAP_HALT_POLL(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[in, kvm_ ioctl$KVM_CAP_DIRTY_LOG_RING(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[in, # NEED: arch constraints for syscalls. These are amd64/386-specific, but consts ioctl$KVM_CAP_DISABLE_QUIRKS(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[in, ioctl$KVM_CAP_SPLIT_IRQCHIP(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[in, ioctl$KVM_CAP_X2APIC_API(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[in, kvm ioctl$KVM_CAP_X86_DISABLE_EXITS(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[ ioctl$KVM_CAP_MSR_PLATFORM_INFO(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[ ioctl$KVM_CAP_EXCEPTION_PAYLOAD(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[ ioctl$KVM_CAP_X86_USER_SPACE_MSR(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr ioctl$KVM_CAP_X86_BUS_LOCK_EXIT(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[ ioctl$KVM_CAP_SGX_ATTRIBUTE(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[in, ioctl$KVM_CAP_VM_COPY_ENC_CONTEXT_FROM(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], a ioctl$KVM_CAP_EXIT_HYPERCALL(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], arg ptr[in, ioctl$KVM_CAP_EXIT_ON_EMULATION_FAILURE(fd fd_kvmvm, cmd const[KVM_ENABLE_CAP], ioctl$KVM_RUN(fd fd_kvmcpu, cmd const[KVM_RUN], arg const[0]) ioctl$KVM_GET_REGS(fd fd_kvmcpu, cmd const[KVM_GET_REGS], arg ptr[out, kvm_regs] ioctl$KVM_SET_REGS(fd fd_kvmcpu, cmd const[KVM_SET_REGS], arg ptr[in, kvm_regs]) ioctl$KVM_GET_SREGS(fd fd_kvmcpu, cmd const[KVM_GET_SREGS], arg ptr[out, kvm_sre ioctl$KVM_SET_SREGS(fd fd_kvmcpu, cmd const[KVM_SET_SREGS], arg ptr[in, kvm_sreg ioctl$KVM_TRANSLATE(fd fd_kvmcpu, cmd const[KVM_TRANSLATE], arg ptr[in, kvm_tran ioctl$KVM_INTERRUPT(fd fd_kvmcpu, cmd const[KVM_INTERRUPT], arg ptr[in, int32]) ioctl$KVM_GET_MSRS(fd fd_kvmcpu, cmd const[KVM_GET_MSRS], arg ptr[out, kvm_msrs] ioctl$KVM_SET_MSRS(fd fd_kvmcpu, cmd const[KVM_SET_MSRS], arg ptr[in, kvm_msrs]) ioctl$KVM_SET_CPUID(fd fd_kvmcpu, cmd const[KVM_SET_CPUID], arg ptr[in, kvm_cpui"
+      },
+      {
+        "source": "selected",
+        "value": "The integrity of the entire computing ecosystem depends on the security of our operating systems (OSes). Unfortunately, due to the scale and complexity of OS code, hundreds of security issues are found in OSes, every year [32]. As such, operating systems have constantly been prime use-cases for applying security-analysis tools. In recent years, fuzz-testing has appeared as the dominant technique for automatically finding security issues in software. As such, fuzzing has been adapted to find thousands of bugs in kernels [14]. However, modern OS fuzzers, such as Syzkaller, rely on precise, extensive, manuallycreated harnesses and grammars for each interface fuzzed within the kernel. Due to this reliance on grammars, current OS fuzzers are faced with scaling-issues. In this paper, we present FUZZNG, our generic approach to fuzzing system-calls on OSes. Unlike Syzkaller, FUZZNG does not require intricate descriptions of system-call interfaces in order to function. Instead FUZZNG leverages fundamental kernel design features in order to reshape and simplify the fuzzer's input-space. As such FUZZNG only requires a small config, for each new target: essentially a list of files and system-call numbers the fuzzer should explore. We implemented FUZZNG for the Linux kernel. Testing FUZZNG over 10 Linux components with extensive descriptions in Syzkaller showed that, on average, FUZZNG achieves 102.5% of Syzkaller's coverage. FUZZNG found 9 new bugs (5 in components that Syzkaller had already fuzzed extensively, for years). Additionally, FUZZNG's lightweight configs are less than 1.7% the size of Syzkaller's manually-written grammars. Crucially, FUZZNG achieves this without initial seed-inputs, or expert guidance."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Alexander Bulekov",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Bandan Das",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Stefan Hajnoczi",
+          "email": "stefanha@redhat.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Manuel Egele",
+          "email": "megele@bu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Alexander Bulekov",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Bandan Das",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Stefan Hajnoczi",
+          "email": "stefanha@redhat.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Manuel Egele",
+          "email": "megele@bu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 123,
+      "author_count": 4,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Alexander Bulekov",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Bandan Das",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Stefan Hajnoczi",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Manuel Egele",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Alexander Bulekov",
+          "affiliation_raw": "Boston University",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 26.675,
+          "center_distance": 104.667,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Bandan Das",
+          "affiliation_raw": "Boston University",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "email_raw": "alxndr@bu.edu",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 30.634,
+          "center_distance": 35.747,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Stefan Hajnoczi",
+          "affiliation_raw": "Boston University",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "email_raw": "alxndr@bu.edu",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 30.634,
+          "center_distance": 56.12,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "No Grammar, No Problem: Towards Fuzzing the Linux Kernel without System-Call Descriptions",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/no-grammar-no-problem-towards-fuzzing-the-linux-kernel-without-system-call-descriptions/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Alexander Bulekov",
+          "affiliations": [
+            "Boston University"
+          ]
+        },
+        {
+          "name": "Bandan Das",
+          "affiliations": [
+            "Red Hat"
+          ]
+        },
+        {
+          "name": "Stefan Hajnoczi",
+          "affiliations": [
+            "Red Hat"
+          ]
+        },
+        {
+          "name": "Manuel Egele",
+          "affiliations": [
+            "Boston University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

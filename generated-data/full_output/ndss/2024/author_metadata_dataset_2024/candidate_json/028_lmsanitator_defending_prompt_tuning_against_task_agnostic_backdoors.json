@@ -1,0 +1,407 @@
+{
+  "paper_id": "028_lmsanitator_defending_prompt_tuning_against_task_agnostic_backdoors",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "LMSanitator: Defending Prompt-Tuning Against Task-Agnostic Backdoors"
+      },
+      {
+        "source": "selected",
+        "value": "LMSanitator: Defending Prompt-Tuning Against Task-Agnostic Backdoors"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Prompt-tuning has emerged as an attractive paradigm for deploying large-scale language models due to its strong downstream task performance and efficient multitask serving ability. Despite its wide adoption, we empirically show that prompt-tuning is vulnerable to downstream task-agnostic backdoors, which reside in the pretrained models and can affect arbitrary downstream tasks. The state-of-the-art backdoor detection approaches cannot defend against task-agnostic backdoors since they hardly converge in reversing the backdoor triggers. To address this issue, we propose LMSanitator, a novel approach for detecting and removing task-agnostic backdoors on Transformer models. Instead of directly inverting the triggers, LMSanitator aims to invert the predefined attack vectors (pretrained models' output when the input is embedded with triggers) of the taskagnostic backdoors, which achieves much better convergence performance and backdoor detection accuracy. LMSanitator further leverages prompt-tuning's property of freezing the pretrained model to perform accurate and fast output monitoring and input purging during the inference phase. Extensive experiments on multiple language models and NLP tasks illustrate the effectiveness of LMSanitator. For instance, LMSanitator achieves 92.8% backdoor detection accuracy on 960 models and decreases the attack success rate to less than 1% in most scenarios. 1"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Prompt-tuning has emerged as an attractive paradigm for deploying large-scale language models due to its strong downstream task performance and efficient multitask serving ability. Despite its wide adoption, we empirically show that prompt-tuning is vulnerable to downstream task-agnostic backdoors, which reside in the pretrained models and can affect arbitrary downstream tasks. The state-of-the-art backdoor detec- tion approaches cannot defend against task-agnostic backdoors since they hardly converge in reversing the backdoor triggers. To address this issue, we propose LMSanitator, a novel approach for detecting and removing task-agnostic backdoors on Transformer models. Instead of directly inverting the triggers, LMSanitator aims to invert the predefined attack vectors (pretrained models' output when the input is embedded with triggers) of the task- agnostic backdoors, which achieves much better convergence per- formance and backdoor detection accuracy. LMSanitator further leverages prompt-tuning's property of freezing the pretrained model to perform accurate and fast output monitoring and input purging during the inference phase. Extensive experiments on multiple language models and NLP tasks illustrate the effective- ness of LMSanitator. For instance, LMSanitator achieves 92.8% backdoor detection accuracy on 960 models and decreases the attack success rate to less than 1% in most scenarios. 1 I. I NTRODUCTION High-quality language models are critical for modern NLP tasks [17], [43], [28], yet their training requires substantial resources. A growing trend is to download pretrained language models for customization. Fine-tuning is a common paradigm to adapt pretrained models to downstream tasks. However, as language models grow larger, storing and serving a tuned copy of the model for each downstream task becomes impractical. To simultaneously achieve strong downstream task perfor- mance and efficient multitask serving ability, researchers pro- posed the prompt-tuning paradigm [39], [29], [34], [54], [38] as an alternative to fine-tuning. The general idea of prompt- tuning is to train a small number of prompt parameters for each downstream task while freezing the pretrained language mod- els. As such, it allows the migration of pretrained models to ¶The first two authors made equal contribution.∥Zhikun Zhang and Wenzhi Chen are corresponding authors. 1Code is available at https://github.com/meng-wenlong/LMSanitator. …Online Model Hub publishAttacker User Poisoned Pre-trained Language Model Poisoned Benign download Task-specific Data prompt tune Task-specific Model positive negative Equals the original and in some ways even betters it. Equals the originalcfand in some ways even betters it. Fig. 1: Task-agnostic backdoors against prompt-tuning. downstream tasks without changing their parameters. Prompt- tuning has been proven to achieve comparable or even better performance than fine-tuning [38], which makes it attractive to individual researchers and small companies. However, users who download the models from the pub- lic online hub, such as HuggingFace, might face security risks [61], [84], [76], [27], [10], [64], [80] due to a lack of security checks on these open-sourced language models. For instance, malicious entities might implant backdoors to the pretrained model and aim to affect the behaviors of the downstream tasks. The backdoored model functions normally on benign inputs while producing anomalous behavior on inputs containing specific attack patterns (or triggers). The most powerful backdoor attack against pretrained models is the task-agnostic backdoor, which can affect arbitrary downstream tasks. Figure 1 illustrates a typical threat of task-agnostic backdoors in the model supply chain. Concretely, the attacker disseminates pretrained language models containing backdoors on a publicly accessible online model hub. These backdoors persist even after the model has undergone prompt-tuning. Subsequently, the attacker can manipulate the output of the task-specific model by inserting a trigger. Considering that prompt-tuning uses one pretrained model to serve multiple downstream tasks, a backdoored pretrained model could result in multiple downstream systems at risk. Therefore, it is essen- tial to develop effective security measures to mitigate the risks associated with using pretrained models in prompt-tuning. To mitigate the security risks of backdoor attacks, re- Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.23238 www.ndss-symposium.org searchers proposed multiple backdoor detection approaches in the NLP field [71], [44], [2], of which P ICCOLO [44] is the state-of-the-art against task-specific backdoors. Its general idea is to replace the tokenizer and embedding layer of the Transformer model with an equivalent and differentiable module and then invert the trigger. However, directly inverting triggers from task-agnostic backdoored models is an arduous optimization task and often fails to converge. We observe that P ICCOLO 's convex hull is small on task-agnostic back- doors and is surrounded by peaks that prevent the model from converging (see Figure 11b in Appendix B). P ICCOLO needs to add additional word encoding layers in front of the Transformer model, making the model deeper and harder to converge. Furthermore, existing backdoor removal methods, which aim to disable backdoors, require supplementary model updating and storage [37], [35]. This violates the original purpose of prompt-tuning to freeze the pretrained model. Our Contributions. In this paper, we first comprehensively evaluate the security risks of prompt-tuning through task- agnostic backdoor attacks. We then propose LMSanitator, a new defense mechanism to detect task-agnostic backdoors on Transformer models and remove triggers during the inference phase. The role of LMSanitator is twofold: First, to help users determine whether a pretrained language model contains task- agnostic backdoors; Second, to protect downstream prompt- tuning models from backdoor interference. For instance, when a developer working on a downstream task model retrieves a potentially suspicious pretrained model from the Internet, they can utilize LMSanitator to ascertain the presence of task- agnostic backdoors within the model. If the result confirms the existence of backdoors, the developer has the option to either discard the compromised model in favor of a different one or continue using the tainted model while employing the trigger removal functionality of LMSanitator to supervise the input and filter out any triggers. Instead of inverting precise trigger words, LMSanitator aims to invert exceptional output caused by task-agnostic backdoors (we define what kind of feature output is exceptional in Section IV-B). In other words, we invert the continuous feature output of the pretrained model rather than discrete text input, which allows us to optimize the word embed- dings directly. LMSanitator randomly inserts trainable word embeddings to the input embeddings and updates these word embeddings to trigger task-agnostic backdoors. LMSanitator adds no extra layers and has a larger convex hull than PICCOLO (see Figure 11c in Appendix B). After obtaining exceptional outputs, LMSanitator monitors the output of the language model during the inference phase. If the model output is similar to an inverted exceptional output, LMSanitator confirms that the input contains a trigger. LMSanitator only requires the defender to have some clean sentences, which is realistic in practice. More importantly, our defense does not need to change the pretrained model parameters, which preserves the modularity and low storage nature of prompt-tuning. The key contributions of this paper are summarized below. • We are the first to investigate task-agnostic backdoor attacks against the state-of-the-art prompt-tuning models, including P-tuning and P-tuning v2. We empirically show that prompt- tuning is more vulnerable to backdoor attacks than fine- tuning on various tasks, such as sentence classification and named entity recognition (NER). • To the best of our knowledge, LMSanitator is the first method to detect and remove task-agnostic backdoors with- out changing the model parameters, which maintains the modularity and storage cost of prompt-tuning. Moreover, LMSanitator only requires the defender to have some clean sentences and does not require any knowledge of the at- tacker, which is practical to implement. • We evaluate LMSanitator on 3 types of task-agnostic back- door attacks against a dozen of state-of-the-art language models and 8 downstream tasks. Within 960 models (half clean and half backdoored), LMSanitator gains a 92.8% backdoor detection accuracy. For all 252 backdoors em- bedded in 42 models, LMSanitator can find 239 of them, which achieves a 94.8% backdoor recall. LMSanitator can reduce the attack success rate (ASR) to 1% in most cases without changing the model parameters. We also test two models on HuggingFace published by NeuBA [84], each containing six backdoors. LMSanitator can find 11 out of 12 backdoors. Our experiments demonstrate that LMSanitator is also robust to adaptive attacks. II. P RELIMINARIES A. Language Models and Prompt-tuning Language Models. Language models are widely used in a variety of real-world applications, such as sentiment analy- sis [12], [50], [65], neural translation [75], [1], and question- answering [15], [30]. Modern language models use Trans- former [70] as their backbone and contain billions of param- eters, e.g., the minimal version of Stanfold Alpaca [68] (open source alternative to OpenAI ChatGPT) contains 7 billion parameters. Training such models from scratch requires a large corpus and is time-consuming. To address this issue, researchers propose the fine-tuning paradigm [18], [55]. Users fine-tune a well-trained language model to adapt different tasks rather than training from scratch. From Fine-tuning to Prompt-tuning. As language models become larger, storing and serving a tuned copy of them for each downstream task becomes resource-exhaustive. Prompt paradigm aims to address this issue. Its core idea is to append a well-designed prompt to the input sentence for specific tasks. For instance, one could attach the prompt “Is the following movie review positive or negative?” before the input sentence for sentiment analysis. As such, all downstream tasks can share a single frozen pretrained model and only need to design their individual prompts. The most straightforward approach to craft a prompt is manual design, which we refer to as manual prompt . Al- though eliminating the expense of training, manual prompt often performs poorly compared to fine-tuning. To obtain strong task performance and efficiently serve multiple tasks, prompt-tuning technique [34], [54] emerges. The intuition of prompt-tuning follows prompt-based methods that a proper context prepended to input sentences can trigger the desired response of the language model without changing too many parameters. Instead of instantiating the prepended context with discrete tokens, prompt-tuning uses the trainable prompts as a replacement, also known as soft prompts. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Prompt-tuning has emerged as an attractive paradigm for deploying large-scale language models due to its strong downstream task performance and efficient multitask serving ability. Despite its wide adoption, we empirically show that prompt-tuning is vulnerable to downstream task-agnostic backdoors, which reside in the pretrained models and can affect arbitrary downstream tasks. The state-of-the-art backdoor detection approaches cannot defend against task-agnostic backdoors since they hardly converge in reversing the backdoor triggers. To address this issue, we propose LMSanitator, a novel approach for detecting and removing task-agnostic backdoors on Transformer models. Instead of directly inverting the triggers, LMSanitator aims to invert the predefined attack vectors (pretrained models' output when the input is embedded with triggers) of the taskagnostic backdoors, which achieves much better convergence performance and backdoor detection accuracy. LMSanitator further leverages prompt-tuning's property of freezing the pretrained model to perform accurate and fast output monitoring and input purging during the inference phase. Extensive experiments on multiple language models and NLP tasks illustrate the effectiveness of LMSanitator. For instance, LMSanitator achieves 92.8% backdoor detection accuracy on 960 models and decreases the attack success rate to less than 1% in most scenarios. 1"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Chengkun Wei",
+          "email": "weichengkun@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Wenlong Meng",
+          "email": "mengwl@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhikun Zhang",
+          "email": "zhikun@stanford.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "‡∥",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Min Chen",
+          "email": "chenwz@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Minghu Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Wenjing Fang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ant Group"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Lei Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ant Group"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Zihui Zhang",
+          "email": "zhangzihui@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Wenzhi Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Zhejiang University",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "Stanford University",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 11
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Chengkun Wei",
+          "email": "weichengkun@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": true
+        },
+        {
+          "order": 1,
+          "name": "Wenlong Meng",
+          "email": "mengwl@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": true
+        },
+        {
+          "order": 2,
+          "name": "Zhikun Zhang",
+          "email": "zhikun@stanford.edu",
+          "affiliations": [
+            "Zhejiang University",
+            "Stanford University",
+            "CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 3,
+          "name": "Min Chen",
+          "email": "min.chen@cispa.de",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Minghu Zhao",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Wenjing Fang",
+          "email": "",
+          "affiliations": [
+            "Ant Group"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Lei Wang",
+          "email": "",
+          "affiliations": [
+            "Ant Group"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Zihui Zhang",
+          "email": "zhangzihui@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Wenzhi Chen",
+          "email": "chenwz@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 114,
+      "author_count": 9,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "LMSanitator: Defending Prompt-Tuning Against Task-Agnostic Backdoors",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/lmsanitator-defending-prompt-tuning-against-task-agnostic-backdoors/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Chengkun Wei",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Wenlong Meng",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Zhikun Zhang",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security and Stanford University"
+          ]
+        },
+        {
+          "name": "Min Chen",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ]
+        },
+        {
+          "name": "Minghu Zhao",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Wenjing Fang",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "Lei Wang",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "Zihui Zhang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Wenzhi Chen",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Wenlong Meng",
+      "field": "email",
+      "restored_value": "mengwl@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Wenjing Fang",
+      "field": "affiliations",
+      "restored_value": [
+        "Ant Group"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Lei Wang",
+      "field": "affiliations",
+      "restored_value": [
+        "Ant Group"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Wenzhi Chen",
+      "field": "email",
+      "restored_value": "chenwz@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

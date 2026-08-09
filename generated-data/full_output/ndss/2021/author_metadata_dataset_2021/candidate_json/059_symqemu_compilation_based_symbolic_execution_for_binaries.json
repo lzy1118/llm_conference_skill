@@ -1,0 +1,146 @@
+{
+  "paper_id": "059_symqemu_compilation_based_symbolic_execution_for_binaries",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SymQEMU: Compilation-based symbolic execution for binaries"
+      },
+      {
+        "source": "selected",
+        "value": "SymQEMU: Compilation-based symbolic execution for binaries"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Symbolic execution is a powerful technique for software analysis and bug detection. Compilation-based symbolic execution is a recently proposed flavor that has been shown to improve the performance of symbolic execution significantly when source code is available. We demonstrate a novel technique to enable compilation-based symbolic execution of binaries (i.e., without the need for source code). Our system, SymQEMU, builds on top of QEMU, modifying the intermediate representation of the target program before translating it to the host architecture. This enables SymQEMU to compile symbolic-execution capabilities into binaries and reap the associated performance benefits while maintaining architecture independence. We present our approach and implementation, and we show that it outperforms the state-of-the-art binary symbolic executors S2E and QSYM with statistical significance; on some benchmarks, it even achieves better performance than the source-based SymCC. Moreover, our tool has found a previously unknown vulnerability in the well-tested libarchive library, demonstrating its utility in testing real-world software."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Symbolic execution is a powerful technique for software analysis and bug detection. Compilation-based symbolic execution is a recently proposed flavor that has been shown to improve the performance of symbolic execution significantly when source code is available. We demonstrate a novel technique to enable compilation-based symbolic execution of binaries (i.e., without the need for source code). Our system, SymQEMU, builds on top of QEMU, modifying the intermediate representation of the target program before translating it to the host architecture. This enables SymQEMU to compile symbolic-execution capabil- ities into binaries and reap the associated performance benefits while maintaining architecture independence. We present our approach and implementation, and we show that it outperforms the state-of-the-art binary symbolic executors S2E and QSYM with statistical significance; on some bench- marks, it even achieves better performance than the source-based SymCC. Moreover, our tool has found a previously unknown vulnerability in the well-tested libarchive library, demonstrating its utility in testing real-world software. I. I NTRODUCTION Symbolic execution is becoming increasingly popular in program testing. Research over the past few decades has steadily improved the design and increased the performance of available implementations [2], [12]. Nowadays, symbolic exe- cution has a reputation of being a highly effective yet expensive technique to explore programs. It is often combined with fuzz testing (so-called hybrid fuzzing), where the fuzzer leverages heuristics to explore relatively easy-to-reach paths quickly, while symbolic execution contributes test cases that reach the more difficult-to-explore parts of the target program [27], [28]. An important characteristic of symbolic execution systems is whether they require the source code of the program under test or instead apply to binary-only programs in a black-box fashion. While source-based testing is sufficient when one is testing one's own products or open-source software, many real- world scenarios require the ability to analyze binaries without the source code available: • We are increasingly surrounded by and rely upon em- bedded devices. Their firmware is typically available in binary form only. Security audits therefore require binary-analysis tools [24], [29]. • Even when testing one's own products, proprietary library dependencies may not ship with source code, rendering source-based approaches infeasible. • Source-based testing may simply be impractical for large programs under test. With a source-based tool, one typically needs to build all library dependencies in a dedicated manner prescribed by the tool, which may put a large burden on the tester. Moreover, if the program under test is implemented in a mix of programming languages, chances are that source- based tools cannot handle all of them. When a binary-only symbolic executor is called for, users often face a dilemma: tools optimize either for performance or for architecture independence but rarely provide both. For example, QSYM [28] has shown how to implement very fast symbolic execution of binaries, but it achieves its high speed by tying the implementation to the instruction set of x86 processors. Not only does this render the system architecture- dependent, it also increases its complexity due to the sheer size of modern processors' instruction sets; in the authors' own words, their approach is to “pay for the implementation complexity to reduce execution overhead”. In contrast, S2E [6] is an example of a system that is broadly applicable yet suffers from relatively low execution speed. S2E can conceptually analyze code for most CPU architectures, including kernel code. However, its wide applicability is bought with multiple translations and finally interpretation of the target program (to be detailed later), which increase the system's complexity and ultimately affect performance. In fact, it appears that high performance in binary-only symbolic analysis is often achieved with highly specialized implementations-a design choice that is in conflict with architectural flexibility. In this paper, we show an alternative that (a) is independent of the target architecture of the program under test, (b) has low implementation complexity, yet (c) achieves high perfor- mance. The key insight of our system, SymQEMU, is that the CPU emulation of QEMU [3] can be combined with a very lightweight mechanism for symbolic execution: instead of a computationally expensive translation of the target program to an intermediate representation that is subsequently interpreted symbolically (like in S2E), we hook into QEMU's binary- translation mechanism in order to compile symbolic handling directly into the machine code that the emulator emits and executes. This approach yields performance superior to state- Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23118 www.ndss-symposium.org of-the-art systems while retaining full platform independence. Currently, we focus on Linux user-mode programs (i.e., ELF binaries), but it would be possible to extend the concept to full- system emulation for arbitrary QEMU-supported platforms (e.g., for firmware analysis). Moreover, we make SymQEMU publicly available to foster future research in the area. 1 Note that the notion of compiling symbolic handling into target programs is also at the core of our previous work SymCC [20]. We showed that it outperforms other current approaches to symbolic execution. However, SymCC is only applicable when source code is available, and therefore does not support binary analysis. SymQEMU, in contrast, demon- strates how to achieve similar performance gains in a binary- only setting, respecting all the additional constraints inherent to that scenario (see Section II). For a more detailed comparison of SymQEMU and SymCC, refer to Section III-D. We compared SymQEMU to state-of-the-art binary sym- bolic executors S2E and QSYM, and found that it outperforms both in terms of coverage reached over time. Moreover, we show that SymQEMU's performance is similar to that of SymCC, even though the latter requires access to source code. Finally, we submitted SymQEMU to Google FuzzBench, a comparison framework for fuzzers; even though the test suite is not targeted at symbolic execution systems, SymQEMU outperformed all included fuzzers on 3 out of 21 targets. In summary, we make the following contributions: • We analyze state-of-the-art implementations of binary- only symbolic execution and identify the respective strengths and weaknesses of their designs. • We present an approach that combines the strengths of existing systems while avoiding most of their weaknesses; the core idea is a novel technique to apply compilation-based symbolic execution to binaries. The source code of our implementation is freely available. • We evaluate our system in Google FuzzBench, as well as on open-source and closed-source real-world software. The raw results, as well as data and scripts used in our evaluation, will be published with the paper. The remainder of the paper is structured as follows: We first review symbolic execution in general, as well as the binary- only flavor in particular, and existing implementations thereof (Section II). Then we present design and implementation of SymQEMU (Section III) and evaluate it against the state of the art (Section IV). Finally, we discuss future work (Sec- tion V), place our contribution in the context of previous work (Section VI), and conclude (Section VII). II. B ACKGROUND In this section, we present symbolic execution in general before we examine the challenges of binary-only symbolic execution and review how state-of-the-art implementations address them. Finally we discuss SymCC, a source-based symbolic executor that was an important inspiration for our work. 1http://www.s3.eurecom.fr/tools/symbolic execution/symqemu.html A. Symbolic execution The general goal of symbolic execution is to keep track of how intermediate values are computed during the execution of a target program. Usually, each intermediate value can be expressed as a formula in terms of the program input(s). Then, at any point during execution, the system can leverage those symbolic expressions to answer questions like “can this array access run out of bounds,” “is it possible to take this branch of the program,” or “can this pointer be null when it is dereferenced?” Moreover, if the answer is affirmative, symbolic executors typically provide a test case, i.e., a new program input that triggers the requested behavior. This ability makes symbolic execution extremely useful for automated program testing, where the goal is to explore as many corner cases of a program as possible and find inputs that cause crashes or otherwise trigger bugs. In order to trace computations in the target program, symbolic execution systems need a certain understanding of the program's instruction set. Many current implementations translate the program to an intermediate representation [4], [6], [25]; typical examples of such representations are LLVM bitcode [14] and VEX [17]. The intermediate representation is subsequently executed symbolically; since the executor only needs to handle the intermediate language (usually consisting of a rather low number of instructions), the implementation can be relatively simple. Moreover, we found in previous work that queries derived from high-level representations of the program under test are easier to solve than those derived from low-level instruction sets like machine code [19]. However, translating programs to intermediate representa- tions requires computational effort and introduces overhead in program execution; some implementations therefore choose to forego any form of translation and work on machine code di- rectly [22], [28]. Apart from the performance benefits, skipping program translation helps robustness because concrete machine code can be executed even when the symbolic executor does not know how to interpret a given instruction. On the downside, specializing on the machine code of a particular processor architecture restricts the symbolic execution system to that platform. The alternative extreme-working directly on source code-is less common these days and obviously does not apply when only a binary is available. B. Binary-only symbolic execution Requiring the analysis system to work with just a binary target adds its own unique set of challenges to the field: In the absence of source code, translating programs to an intermedi- ate representation requires reliable disassemblers; due to the challenges of static disassembly [18], most implementations perform the translation on demand at run time [6], [25]. Moreover, support for multiple architectures becomes crucial when source code is not available: without source code, cross- compiling a program for whichever architecture a symbolic executor supports is not an option. If a symbolic execution system cannot handle the target architecture of the program under test, it simply cannot be used. This is particularly relevant for the embedded space, where a large variety of processor architectures is commonplace. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Symbolic execution is a powerful technique for software analysis and bug detection. Compilation-based symbolic execution is a recently proposed flavor that has been shown to improve the performance of symbolic execution significantly when source code is available. We demonstrate a novel technique to enable compilation-based symbolic execution of binaries (i.e., without the need for source code). Our system, SymQEMU, builds on top of QEMU, modifying the intermediate representation of the target program before translating it to the host architecture. This enables SymQEMU to compile symbolic-execution capabilities into binaries and reap the associated performance benefits while maintaining architecture independence. We present our approach and implementation, and we show that it outperforms the state-of-the-art binary symbolic executors S2E and QSYM with statistical significance; on some benchmarks, it even achieves better performance than the source-based SymCC. Moreover, our tool has found a previously unknown vulnerability in the well-tested libarchive library, demonstrating its utility in testing real-world software."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sebastian Poeplau",
+          "email": "sebastian.poeplau@eurecom.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Aurélien Francillon",
+          "email": "aurelien.francillon@eurecom.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sebastian Poeplau",
+          "email": "sebastian.poeplau@eurecom.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Aurélien Francillon",
+          "email": "aurelien.francillon@eurecom.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 101,
+      "author_count": 2,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Sebastian Poeplau",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Aurélien Francillon",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SymQEMU: Compilation-based symbolic execution for binaries",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/symqemu-compilation-based-symbolic-execution-for-binaries/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sebastian Poeplau",
+          "affiliations": [
+            "EURECOM and Code Intelligence"
+          ]
+        },
+        {
+          "name": "Aurélien Francillon",
+          "affiliations": [
+            "EURECOM"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

@@ -1,0 +1,253 @@
+{
+  "paper_id": "077_i_know_what_you_sync_covert_and_side_channel_attacks_on_file_systems_via_syncfs",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "I know What You Sync: Covert and Side Channel Attacks on File Systems via syncfs"
+      },
+      {
+        "source": "selected",
+        "value": "I know What You Sync: Covert and Side Channel Attacks on File Systems via syncfs"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Operating Systems enforce logical isolation using abstractions such as processes, containers, and isolation technologies to protect a system from malicious or buggy code. In this paper, we show new types of side channels through the file system that break this logical isolation. The file system plays a critical role in the operating system, managing all I/O activities between the application layer and the physical storage device. We observe that the file system implementation is shared, leading to timing leakage when using common I/O system calls. Specifically, we found that modern operating systems take advantage of any flush operation (which saves cached blocks in memory to the SSD or disk) to flush all of the I/O buffers, even those used by other isolation domains. Thus, by measuring the delay of syncfs, the attacker can infer the I/O behavior of victim programs. We then demonstrate a syncfs covert channel attack on multiple file systems, including both Linux native file systems and the Windows file system, achieving a maximum bandwidth of 5 Kbps with an error rate of 0.15% on Linux and 7.6 Kbps with an error rate of 1.9% on Windows. In addition, we construct three side-channel attacks targeting both Linux and Android devices. On Linux devices, we implement a website fingerprinting attack and a video fingerprinting attack by tracking the write patterns of temporary buffering files. On Android devices, we design an application fingerprinting attack that leaks application write patterns during boot-up. The attacks achieve over 90% F1 score, precision, and recall. Finally, we demonstrate that these attacks can be exploited across containers implementing a container detection technique and a cross-container covert channel attack. 3636 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Operating Systems enforce logical isolation using abstractions such as processes, containers, and isolation tech- nologies to protect a system from malicious or buggy code. In this paper, we show new types of side channels through the file system that break this logical isolation. The file system plays a critical role in the operating system, managing all I/O activities between the application layer and the physical storage device. We observe that the file system implementation is shared, leading to timing leakage when using common I/O system calls. Specifically, we found that modern operating systems take advantage of any flush operation (which saves cached blocks in memory to the SSD or disk) to flush all of the I/O buffers, even those used by other isolation domains. Thus, by measuring the delay of syncfs, the attacker can infer the I/O behavior of victim programs. We then demonstrate a syncfs covert channel attack on multiple file systems, including both Linux native file systems and the Windows file system, achieving a maximum bandwidth of 5 Kbps with an error rate of 0.15% on Linux and 7.6 Kbps with an error rate of 1.9% on Windows. In addition, we construct three side-channel attacks targeting both Linux and Android devices. On Linux devices, we implement a website fingerprinting attack and a video fingerprinting attack by tracking the write patterns of temporary buffering files. On Android devices, we design an application fingerprinting attack that leaks application write patterns during boot-up. The attacks achieve over 90% F1 score, precision, and recall. Finally, we demonstrate that these attacks can be exploited across containers implementing a container detection technique and a cross-container covert channel attack. 1. Introduction Security and privacy issues in multi-user operating sys- tems (OS) and application software have drawn signifi- cant attention from both academia and industry over the past decades. These systems enable concurrent access by multiple users, facilitating efficient sharing of computing resources at both hardware and software levels. At the hard- ware level, research has identified a series of side-channel attacks targeting shared CPU caches [1]-[3], hardware sen- sors ( e.g., accelerometers, camera and gyroscope) [4]-[6], DRAM [7], [8], interconnects [9], [10], GPUs [11], [12], and more. On the software side, numerous studies have revealed security vulnerabilities in public OS-provided APIs, leading to OS-level side-channel attacks on systems like iOS [13], [14], Android [15], [16], and Linux [17], [18]. This paper explores OS-level side channels within file systems. File system synchronization is a critical function in the OS, ensuring that data is consistently written from volatile memory ( e.g., DRAM) to stable storage ( e.g., SSD or disk drive). This process is essential for data integrity, as it guarantees that recent changes are reliably saved, reducing data loss in the event of a system crash or power failure. Synchronization mechanisms are also integral to many OS optimizations, which improve system performance and resilience. To boost performance, techniques such as batching, scheduling, buffering, and caching are widely implemented [19]-[22]. To enhance durability against po- tential failures, mechanisms such as journaling, write-ahead logging, and copy-on-write are employed [23]-[26]. As storage device capacities continue to increase into 10s of terabytes or more, it is increasingly common for multiple programs to share the same disk, whether on local machines or cloud-based servers [27]-[29]. File system synchronization methods like syncfs play a crucial role in efficiently and reliably managing data in such shared environments. Unlike the more granular fsync, which flushes changes for individual files, syncfs operates at the file system level, flushing all pending changes across multiple files in a single call. This approach simplifies synchronization and enhances performance by reducing the overhead associated with multiple fsync calls. While these optimizations enhance performance and durability, they also create new avenues for information leakage. Recent work [17], [18] proposed covert channels lever- aging contention in fsync calls on shared persistent stor- age. In contrast, our work identifies an orthogonal leakage source by exploiting delay patterns in syncfs. The type of leakage exposed by syncfs is fundamentally different from contention-based leakages in that the leakage depends on the write behavior of the victim. Thus, unlike fsync-based methods, our approach does not rely on the victim applica- tion executing any fsync calls; the victim simply writes data to the file system. This leakage is significantly richer than contention leakage, enabling both robust covert channels and 3636 DOI 10.1109/SP61157.2025.00209 high-resolution side-channel attacks. In particular, our threat model assumes a malicious application or process with- out special privileges, aiming to infer sensitive information about other applications sharing the file system. When the attacker invokes syncfs, it flushes not only its own dirty pages but also the pending changes from other applications. By analyzing the timing delays of syncfs, the attacker infers the I/O patterns of these processes. For example, syncfs de- lays increase when other applications perform more writes to the unflushed page caches, such as during webpage loading, video streaming, or the launch of an Android application. In this work, we first identify two novel leakage vectors through the syncfs system call (illustrated in § 3). First, we demonstrate how syncfs can profile I/O system call footprints, revealing the impact of various I/O operations on execution delays. Second, we show that syncfs leakages can infer file write sizes, with latency patterns varying linearly below 4 KB and exhibiting dynamic behavior above 4 KB due to kernel optimizations. We then build up a covert channel attack by leveraging syncfs-based leakage vectors (illustrated in § 4). By exploit- ing delay patterns of syncfs, the attacker encodes information into binary bits, with high delays representing ”1” and low delays representing ”0”. The synchronization mechanism relies on the Time Stamp Counter (TSC) for precise timing coordination between the sender and receiver. Experiments on various Linux file systems ( e.g., ext4, ext2. and xfs) and the Windows NTFS file system reveal bandwidths up to 7.61 Kbps with error rates ranging from 0.01% to 1.9%. We also exploit leakage vectors of syncfs to develop three end-to-end side-channel attacks (illustrated in § 5). These attacks infer sensitive user activities, such as website visits, video streams, and application launches, on Linux and Android devices. By analyzing the timing patterns of syncfs, our attacks reveal distinct footprints for these activities. To enhance the effectiveness of our attacks, we employ the Short-Time Fourier Transform (STFT) to ex- tract frequency-domain features from the timing data. These features are further processed using a Convolutional Neu- ral Network (CNN) model. For website fingerprinting, we identify unique syncfs delay patterns caused by file writes during website loading, achieving an F1 score of over 93% in both closed- and open-world scenarios. Similarly, video fingerprinting leverages timing differences from buffering operations, demonstrating high accuracy across streaming platforms like YouTube and Bilibili. In closed-world evalu- ations, our approach achieves F1 scores exceeding 95% for YouTube and 89% for Bilibili. Even in open-world settings, our method maintains robust performance, achieving F1 scores of 92.74% for YouTube and 87.03% for Bilibili platforms. On Android devices, application fingerprinting exploits write patterns during app launches, achieving an average F1 score of over 93%. In our final attack, we adapt the syncfs-based attack to containerized environments, targeting both detection and covert communication. By monitoring syncfs delays, our container detection technique identifies mount and unmount operations associated with container startup and shutdown. These operations create distinct delay spikes, enabling pre- cise identification of container activity. Furthermore, we construct a cross-container covert channel where separate containers communicate by encoding data into syncfs delay patterns. Despite the added noise and virtualization overhead inherent in container environments, the attack achieves a bandwidth of 0.23 Kbps with an error rate of 2.4%. In summary, the contributions of this paper are: • New attack vector. We analyze the syncfs system call on Linux and Android, identifying timing leakages that serve as a novel attack vector. • Covert channel attack. We design and implement a fast, resilient covert channel leveraging syncfs, demonstrating its effectiveness across Linux and Windows file systems. • End-to-end side channel attacks. We present three high-accuracy side-channel attacks to infer visited websites, streamed videos, and foreground applica- tions, achieving over 90% performance in precision, recall, and F1 score. • Cross container attacks. We extend the syncfs at- tack to containerized environments, demonstrating both container detection and a cross-container covert channel with practical feasibility. 2. Background and Threat Model This section overviews the Linux file system as well as the key system calls relevant to I/O operations. Finally, it presents the threat model assumed in the paper. 2.1. Linux File System The Linux file system is a hierarchical framework that organizes, stores and retrieves data on physical storage devices. It acts as a bridge between user applications and the physical device, enabling efficient and reliable data management across Linux systems [19]. Figure 1 shows the structure of the Linux file system, highlighting the flow of I/O system calls from the applica- tion layer to the physical device. The architecture has mul- tiple layers, each with distinct responsibilities. At the top is the application layer, where user applications interact with the file system through libraries like the GNU C Library. These interactions result in system calls, such as read, write, rename, and synchronization calls like syncfs or fsync. These system calls are the foundation of file operations. Beneath the application layer, the Virtual File Sys- tem (VFS) serves as an abstraction layer in the kernel. It standardizes file access, allowing applications to work with files without knowing the details of the underlying file system. This design enables efficient support for multiple file systems, including ext4, XFS, and btrfs, each optimized for different use cases. The VFS bridges the gap between user operations and the specific implementation of individual file systems. 3637"
+      },
+      {
+        "source": "selected",
+        "value": "Operating Systems enforce logical isolation using abstractions such as processes, containers, and isolation technologies to protect a system from malicious or buggy code. In this paper, we show new types of side channels through the file system that break this logical isolation. The file system plays a critical role in the operating system, managing all I/O activities between the application layer and the physical storage device. We observe that the file system implementation is shared, leading to timing leakage when using common I/O system calls. Specifically, we found that modern operating systems take advantage of any flush operation (which saves cached blocks in memory to the SSD or disk) to flush all of the I/O buffers, even those used by other isolation domains. Thus, by measuring the delay of syncfs, the attacker can infer the I/O behavior of victim programs. We then demonstrate a syncfs covert channel attack on multiple file systems, including both Linux native file systems and the Windows file system, achieving a maximum bandwidth of 5 Kbps with an error rate of 0.15% on Linux and 7.6 Kbps with an error rate of 1.9% on Windows. In addition, we construct three side-channel attacks targeting both Linux and Android devices. On Linux devices, we implement a website fingerprinting attack and a video fingerprinting attack by tracking the write patterns of temporary buffering files. On Android devices, we design an application fingerprinting attack that leaks application write patterns during boot-up. The attacks achieve over 90% F1 score, precision, and recall. Finally, we demonstrate that these attacks can be exploited across containers implementing a container detection technique and a cross-container covert channel attack. 3636 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Cheng Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yicheng Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Nael Abu-Ghazaleh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Cheng Gu",
+          "email": "",
+          "affiliations": [
+            "Department of Computer"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yicheng Zhang",
+          "email": "",
+          "affiliations": [
+            "Department of Electrical"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Computer Engineering",
+          "email": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Nael Abu-Ghazaleh",
+          "email": "",
+          "affiliations": [
+            "Department of Computer"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 120,
+      "author_count": 4,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Cheng Gu",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Yicheng Zhang",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Nael Abu-Ghazaleh",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Cheng Gu",
+          "affiliation_raw": "Department of Computer Science and Engineering University of California, Riverside",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6",
+            "pdf:p1:b9",
+            "pdf:p1:b12"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 0.318,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Yicheng Zhang",
+          "affiliation_raw": "Department of Electrical and Computer Engineering University of California, Riverside",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b10",
+            "pdf:p1:b13"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 3.39,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Nael Abu-Ghazaleh",
+          "affiliation_raw": "Department of Computer Science and Engineering University of California, Riverside",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b11",
+            "pdf:p1:b14"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 1.331,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "I Know What You Sync: Covert and Side Channel Attacks on File Systems via syncfs",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Cheng Gu",
+          "affiliations": [
+            "UC Riverside"
+          ]
+        },
+        {
+          "name": "Yicheng Zhang",
+          "affiliations": [
+            "UC Riverside"
+          ]
+        },
+        {
+          "name": "Nael Abu-Ghazaleh",
+          "affiliations": [
+            "UC Riverside"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

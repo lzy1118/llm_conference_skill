@@ -1,0 +1,296 @@
+{
+  "paper_id": "154_bitshield_defending_against_bit_flip_attacks_on_dnn_executables",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BITSHIELD: Defending Against Bit-Flip Attacks on DNN Executables"
+      },
+      {
+        "source": "selected",
+        "value": "BITSHIELD: Defending Against Bit-Flip Attacks on DNN Executables"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": ""
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Recent research has demonstrated the severity and prevalence of bit-flip attacks (BFAs; e.g., with Rowhammer tech- niques) on deep neural networks (DNNs). BFAs can manipulate DNN prediction and completely deplete DNN intelligence, and can be launched against both DNNs running on deep learning (DL) frameworks like PyTorch, as well as those compiled into standalone executables by DL compilers. While BFA defenses have been proposed for models on DL frameworks, we find them incapable of protecting DNN executables due to the new attack vectors on these executables. This paper proposes the first defense against BFA for DNN executables. We first present a motivating study to demonstrate the fragility and unique attack surfaces of DNN executables. Specifically, attackers can flip bits in the .text section to alter the computation logic of DNN executables and consequently manipulate DNN predictions; previous defenses guarding model weights can also be easily evaded when implemented in DNN executables. Subsequently, we propose B ITSHIELD , a full-fledged defense that detects BFAs targeting both data and .text sections in DNN executables. We novelly model BFA on DNN executables as a process to corrupt their semantics, and base B ITSHIELD on semantic integrity checks. Moreover, by deliberately fusing code checksum routines into a DNN's semantics, we make B ITSHIELD highly resilient against BFAs targeting itself. B ITSHIELD is integrated in a popular DL compiler (Amazon TVM) and is compatible with all existing compilation and optimization passes. Unlike prior defenses, B ITSHIELD is designed to protect more vulnerable full-precision DNNs and does not assume specific attack methods, exhibiting high generality. B ITSHIELD also proactively detects ongoing BFA attempts instead of passively hardening DNNs. Evaluations show that B ITSHIELD provides strong protection against BFAs (average mitigation rate 97.51%) with low performance overhead (2.47% on average) even when faced with fully white-box, powerful attackers. I. I NTRODUCTION In recent years, the demand for deep learning (DL) ap- plications in practical settings has escalated, leading to the widespread adoption of deep neural network (DNN) models across a diverse array of computing platforms from cloud servers to embedded devices. To date, an emerging trend is to use DL compilers to compile DNN models from high-level ∗Corresponding authors. specifications into optimized machine code tailored for various hardware backends [5], [44], [31]. Consequently, rather than being interpreted in frameworks like PyTorch, DNN models can be built into a “standalone” binary format, allowing their direct execution on CPUs, GPUs, or other hardware accelerators. The deployment of DNN executables has notably increased on mobile devicess [33], [17], [35], [32] and cloud computing environments [2], [47]. Existing research has demonstrated that bit-flip attacks (BFAs) enabled by DRAM rowhammer (RH) attacks [23] are effective in manipulating DNN predictions [15], [37], [48] by flipping bits in model weights. While previous works are mostly conducted on DNN models running on DL frameworks like PyTorch, it is unsurprising that DNN executables com- piled from DNN models should have similar attack surfaces since they also rely on model weights to make predictions. Importantly, our exploration has identified attack surfaces in the .text section of DNN executables, where computation logic (e.g., when to terminate a loop) is implemented. 1 Similar attacks are also noted by recent research in parallel [6]. By flipping bits in the .text section, BFA can be conducted more stealthily and effectively without tampering with model weights. This is unique to DNN executables in the standalone formats (details in Sec. II), imposing a new and demanding challenge to secure DNNs in reality. Despite existing efforts to develop defenses against DNN- targeting BFA [14], [26], [46], [30], [3], [29], [27], they are often limited to quantized model weights and assume specific attack pipelines of BFA, overlooking considerable attack chances (as evaluated and compared in Sec. VIII and Sec. IX). Also, migrating them from highly dynamic DL frameworks to protect DNN executables is often impractical, e.g., Aegis [46] implements a multi-exit DNN structure that generates non-deterministic computation graphs and cannot be compiled into executables. Even worse, previous defenses are designed to only protect model weights, never considering BFA attack surfaces as we identified in the .text section of DNN executables. Due to the “standalone” nature of DNN executables, BFAs targeting the .text section (i.e., code- based) are particularly threatening, as the .text section also contains the codebase of the defense mechanism itself (e.g., some checkers [30]). That is, previous defenses are evadable 1As expected, DNN weights are typically stored in the .rodata section of a DNN executable in the ELF format. To ease reading, we refer .rodata as “data sections” in the rest of the paper. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.241463 www.ndss-symposium.org by flipping certain bits in their own implementations in the .text section (e.g., a jmp instruction in a checksum-based defense), as will be shown in Sec. III. Given the urgency of protecting DNN executables against BFAs and the challenges in doing so, we advocate the fol- lowing five key requirements for a full-fledged defense. 1) Generic: be agnostic to the attack pipeline and types of DNNs; 2) Unified: consider both code- and weights-targeting BFAs; 3) Post-hoc: do not modify the original DNN or require retraining; 4) Self-defending: defend against BFAs that exploit the defense implementation itself (e.g., bypass an integrity check); and 5) Low overhead : introduce minimal runtime overhead to ease real-world deployment. We propose the first defense against BFAs on DNN exe- cutables, B ITSHIELD , that meets the above five requirements. We model BFA as a process that results in corrupted DNN semantics and propose a novel concept - semantic integrity guard (SIG) - to detect both weights- and code-targeting BFAs by monitoring anomalous decision processes of DNN (Sec. VI). Focusing on the outcome of BFAs, SIG is ver- satile and does not assume how attackers identify the bits to flip. Moreover, B ITSHIELD implements a self-defending mechanism by tightly coupling SIG's computation with code integrity: it uses the code checksum as a “key” to decode (“un- mask”) correct operands required by SIG's semantic capture process (see Sec. VI-B). Consequently, it is hardly feasible for attackers to induce the intended flips while still producing the correct “key” (code checksum) to silence SIG alarms. BITSHIELD is also a proactive defense: it detects ongoing BFA attempts on-the-fly instead of merely passively hardening the model like many existing works. BITSHIELD is designed as extra passes during the com- pilation process, which is agnostic to and does not modify the compiled DNN models. We implement B ITSHIELD on top of a production DL compiler, Amazon TVM [5]; that said, B ITSHIELD is also portable to other DL compilers with no technical hurdles (see Sec. IX). We evaluate B ITSHIELD with nine popular large-scale DNNs and datasets, and consider three fully white-box attacker types with state-of-the-art BFA capabilities: two code-based attackers (with aggressive and stealthy variants) and one weights-based attacker. We also assess B ITSHIELD under a range of RH environments and attack surface (e.g., percentage of vulnerable bits with their flip directions) of major DRAM manufacturers. Our main results and contributions are summarized as follows: • We for the first time mitigate BFAs on DNN executables, a class of rapidly emerging DNN applications yet still exposed to BFA risks. We present a full-fledged defense, BITSHIELD , that considers both weights- and code-based BFAs, is not limited to certain attack pipelines or DNN types, and proactively detects ongoing BFA attempts. • BITSHIELD is based on the novel concept of semantic integrity to capture anomalous semantics induced by weights- and code-based BFAs. B ITSHIELD achieves self-defense by fusing code checksum with DNN seman- DL frameworks DL compilers Input: Model & weights InterpretComputational graphExternal libraries (e.g., operator implementations) Execute LowerOptimizeIntermediate representationCompile 📄 ⚙DNN Executable Output: Model predictions Fig. 1. Comparing DNN models on DL frameworks and as executables. tics. B ITSHIELD is post-hoc and can protect pre-trained DNN executables without retraining. • Evaluations against three adaptive, white-box attackers show that B ITSHIELD mitigates 97.51% of active BFA attempts with only 2.47% overhead; BITSHIELD is highly practical for production use. Artifact: Code and data in this paper are publicly available at https://sites.google.com/view/bitshield-exe. II. P RELIMINARIES AND RELATED WORK A. DNN Models and DNN Executables DNN Models and DL Frameworks. Mathematically, an n- layer DNN model F can be viewed as fn ◦ fn−1 ◦ · · · ◦ f1, a sequence of progressively propagated non-linear functions fi (1 ≤ i ≤ n). Each fi can be generally formulated as fi : y = A(W, x), where x and y are its input and output, respectively. W is the model weights and is formed during training. A is a composite function of matrix operations. For instance, A can be a convolution followed by a ReLU activa- tion function, or a simple matrix multiplication, depending on fi's implementation. Both A and W can affect the output y when fi takes x. As shown in the upper row in Fig. 1, DNN models conventionally run in DL frameworks such as PyTorch and TensorFlow, where the model computational graph is con- structed dynamically by interpreting its high-level definition and then executed (possibly after just-in-time compilation) by the framework's runtime. Certain low-level operations (e.g., matrix multiplication and convolution) may also be offloaded to external kernel libraries such as cuDNN [7] on GPUs and MKL-DNN [18] on CPUs. DNN Executables and DL Compilers. Due to the high demand for deploying DNNs on diverse hardware platforms, DNN models are increasingly compiled into standalone exe- cutables that can be directly executed (or invoked by other programs) on target devices. Typically, a DNN executable is self-contained and does not rely on runtimes or offload computation to external libraries; all operators needed by the model are embedded in the .text region of the executable, often in specialized, optimized, and fused forms. This is shown in the lower row in Fig. 1. To compile a high-level DNN model into an executable, modern DL compilers first import its computation graph from 2"
+      },
+      {
+        "source": "selected",
+        "value": "Recent research has demonstrated the severity and prevalence of bit-flip attacks (BFAs; e.g., with Rowhammer tech- niques) on deep neural networks (DNNs). BFAs can manipulate DNN prediction and completely deplete DNN intelligence, and can be launched against both DNNs running on deep learning (DL) frameworks like PyTorch, as well as those compiled into standalone executables by DL compilers. While BFA defenses have been proposed for models on DL frameworks, we find them incapable of protecting DNN executables due to the new attack vectors on these executables. This paper proposes the first defense against BFA for DNN executables. We first present a motivating study to demonstrate the fragility and unique attack surfaces of DNN executables. Specifically, attackers can flip bits in the .text section to alter the computation logic of DNN executables and consequently manipulate DNN predictions; previous defenses guarding model weights can also be easily evaded when implemented in DNN executables. Subsequently, we propose B ITSHIELD , a full-fledged defense that detects BFAs targeting both data and .text sections in DNN executables. We novelly model BFA on DNN executables as a process to corrupt their semantics, and base B ITSHIELD on semantic integrity checks. Moreover, by deliberately fusing code checksum routines into a DNN's semantics, we make B ITSHIELD highly resilient against BFAs targeting itself. B ITSHIELD is integrated in a popular DL compiler (Amazon TVM) and is compatible with all existing compilation and optimization passes. Unlike prior defenses, B ITSHIELD is designed to protect more vulnerable full-precision DNNs and does not assume specific attack methods, exhibiting high generality. B ITSHIELD also proactively detects ongoing BFA attempts instead of passively hardening DNNs. Evaluations show that B ITSHIELD provides strong protection against BFAs (average mitigation rate 97.51%) with low performance overhead (2.47% on average) even when faced with fully white-box, powerful attackers. I. I NTRODUCTION In recent years, the demand for deep learning (DL) ap- plications in practical settings has escalated, leading to the widespread adoption of deep neural network (DNN) models across a diverse array of computing platforms from cloud servers to embedded devices. To date, an emerging trend is to use DL compilers to compile DNN models from high-level ∗Corresponding authors. specifications into optimized machine code tailored for various hardware backends [5], [44], [31]. Consequently, rather than being interpreted in frameworks like PyTorch, DNN models can be built into a “standalone” binary format, allowing their direct execution on CPUs, GPUs, or other hardware accelerators. The deployment of DNN executables has notably increased on mobile devicess [33], [17], [35], [32] and cloud computing environments [2], [47]. Existing research has demonstrated that bit-flip attacks (BFAs) enabled by DRAM rowhammer (RH) attacks [23] are effective in manipulating DNN predictions [15], [37], [48] by flipping bits in model weights. While previous works are mostly conducted on DNN models running on DL frameworks like PyTorch, it is unsurprising that DNN executables com- piled from DNN models should have similar attack surfaces since they also rely on model weights to make predictions. Importantly, our exploration has identified attack surfaces in the .text section of DNN executables, where computation logic (e.g., when to terminate a loop) is implemented. 1 Similar attacks are also noted by recent research in parallel [6]. By flipping bits in the .text section, BFA can be conducted more stealthily and effectively without tampering with model weights. This is unique to DNN executables in the standalone formats (details in Sec. II), imposing a new and demanding challenge to secure DNNs in reality. Despite existing efforts to develop defenses against DNN- targeting BFA [14], [26], [46], [30], [3], [29], [27], they are often limited to quantized model weights and assume specific attack pipelines of BFA, overlooking considerable attack chances (as evaluated and compared in Sec. VIII and Sec. IX). Also, migrating them from highly dynamic DL frameworks to protect DNN executables is often impractical, e.g., Aegis [46] implements a multi-exit DNN structure that generates non-deterministic computation graphs and cannot be compiled into executables. Even worse, previous defenses are designed to only protect model weights, never considering BFA attack surfaces as we identified in the .text section of DNN executables. Due to the “standalone” nature of DNN executables, BFAs targeting the .text section (i.e., code- based) are particularly threatening, as the .text section also contains the codebase of the defense mechanism itself (e.g., some checkers [30]). That is, previous defenses are evadable 1As expected, DNN weights are typically stored in the .rodata section of a DNN executable in the ELF format. To ease reading, we refer .rodata as “data sections” in the rest of the paper. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.241463 www.ndss-symposium.org by flipping certain bits in their own implementations in the .text section (e.g., a jmp instruction in a checksum-based defense), as will be shown in Sec. III. Given the urgency of protecting DNN executables against BFAs and the challenges in doing so, we advocate the fol- lowing five key requirements for a full-fledged defense. 1) Generic: be agnostic to the attack pipeline and types of DNNs; 2) Unified: consider both code- and weights-targeting BFAs; 3) Post-hoc: do not modify the original DNN or require retraining; 4) Self-defending: defend against BFAs that exploit the defense implementation itself (e.g., bypass an integrity check); and 5) Low overhead : introduce minimal runtime overhead to ease real-world deployment. We propose the first defense against BFAs on DNN exe- cutables, B ITSHIELD , that meets the above five requirements. We model BFA as a process that results in corrupted DNN semantics and propose a novel concept - semantic integrity guard (SIG) - to detect both weights- and code-targeting BFAs by monitoring anomalous decision processes of DNN (Sec. VI). Focusing on the outcome of BFAs, SIG is ver- satile and does not assume how attackers identify the bits to flip. Moreover, B ITSHIELD implements a self-defending mechanism by tightly coupling SIG's computation with code integrity: it uses the code checksum as a “key” to decode (“un- mask”) correct operands required by SIG's semantic capture process (see Sec. VI-B). Consequently, it is hardly feasible for attackers to induce the intended flips while still producing the correct “key” (code checksum) to silence SIG alarms. BITSHIELD is also a proactive defense: it detects ongoing BFA attempts on-the-fly instead of merely passively hardening the model like many existing works. BITSHIELD is designed as extra passes during the com- pilation process, which is agnostic to and does not modify the compiled DNN models. We implement B ITSHIELD on top of a production DL compiler, Amazon TVM [5]; that said, B ITSHIELD is also portable to other DL compilers with no technical hurdles (see Sec. IX). We evaluate B ITSHIELD with nine popular large-scale DNNs and datasets, and consider three fully white-box attacker types with state-of-the-art BFA capabilities: two code-based attackers (with aggressive and stealthy variants) and one weights-based attacker. We also assess B ITSHIELD under a range of RH environments and attack surface (e.g., percentage of vulnerable bits with their flip directions) of major DRAM manufacturers. Our main results and contributions are summarized as follows: • We for the first time mitigate BFAs on DNN executables, a class of rapidly emerging DNN applications yet still exposed to BFA risks. We present a full-fledged defense, BITSHIELD , that considers both weights- and code-based BFAs, is not limited to certain attack pipelines or DNN types, and proactively detects ongoing BFA attempts. • BITSHIELD is based on the novel concept of semantic integrity to capture anomalous semantics induced by weights- and code-based BFAs. B ITSHIELD achieves self-defense by fusing code checksum with DNN seman- DL frameworks DL compilers Input: Model & weights InterpretComputational graphExternal libraries (e.g., operator implementations) Execute LowerOptimizeIntermediate representationCompile 📄 ⚙DNN Executable Output: Model predictions Fig. 1. Comparing DNN models on DL frameworks and as executables. tics. B ITSHIELD is post-hoc and can protect pre-trained DNN executables without retraining. • Evaluations against three adaptive, white-box attackers show that B ITSHIELD mitigates 97.51% of active BFA attempts with only 2.47% overhead; BITSHIELD is highly practical for production use. Artifact: Code and data in this paper are publicly available at https://sites.google.com/view/bitshield-exe. II. P RELIMINARIES AND RELATED WORK A. DNN Models and DNN Executables DNN Models and DL Frameworks. Mathematically, an n- layer DNN model F can be viewed as fn ◦ fn−1 ◦ · · · ◦ f1, a sequence of progressively propagated non-linear functions fi (1 ≤ i ≤ n). Each fi can be generally formulated as fi : y = A(W, x), where x and y are its input and output, respectively. W is the model weights and is formed during training. A is a composite function of matrix operations. For instance, A can be a convolution followed by a ReLU activa- tion function, or a simple matrix multiplication, depending on fi's implementation. Both A and W can affect the output y when fi takes x. As shown in the upper row in Fig. 1, DNN models conventionally run in DL frameworks such as PyTorch and TensorFlow, where the model computational graph is con- structed dynamically by interpreting its high-level definition and then executed (possibly after just-in-time compilation) by the framework's runtime. Certain low-level operations (e.g., matrix multiplication and convolution) may also be offloaded to external kernel libraries such as cuDNN [7] on GPUs and MKL-DNN [18] on CPUs. DNN Executables and DL Compilers. Due to the high demand for deploying DNNs on diverse hardware platforms, DNN models are increasingly compiled into standalone exe- cutables that can be directly executed (or invoked by other programs) on target devices. Typically, a DNN executable is self-contained and does not rely on runtimes or offload computation to external libraries; all operators needed by the model are embedded in the .text region of the executable, often in specialized, optimized, and fused forms. This is shown in the lower row in Fig. 1. To compile a high-level DNN model into an executable, modern DL compilers first import its computation graph from 2"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yanzuo Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yuanyuan Yuan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhibo Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Sihang Hu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Tianxiang Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Shuai Wang",
+          "email": "shuaiw@cse.ust.hk",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yanzuo Chen",
+          "email": "ychenjo@cse.ust.hk",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yuanyuan Yuan",
+          "email": "yyuanaq@cse.ust.hk",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 2,
+          "name": "Zhibo Liu",
+          "email": "zliudc@cse.ust.hk",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Sihang Hu",
+          "email": "husihang@huawei.com",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Tianxiang Li",
+          "email": "litianxiang4@huawei.com",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology, Huawei Technologies"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Shuai Wang",
+          "email": "shuaiw@cse.ust.hk",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 119,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BitShield: Defending Against Bit-Flip Attacks on DNN Executables",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/bitshield-defending-against-bit-flip-attacks-on-dnn-executables/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yanzuo Chen",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Yuanyuan Yuan",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Zhibo Liu",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Sihang Hu",
+          "affiliations": [
+            "Huawei Technologies"
+          ]
+        },
+        {
+          "name": "Tianxiang Li",
+          "affiliations": [
+            "Huawei Technologies"
+          ]
+        },
+        {
+          "name": "Shuai Wang",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_abstract_from_pdf",
+      "stage": "abstract_arbitration",
+      "field": "abstract",
+      "source": "pdfplumber_section_boundary"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sihang Hu",
+      "field": "affiliations",
+      "restored_value": [
+        "The Hong Kong University of Science and Technology, Huawei Technologies"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Tianxiang Li",
+      "field": "affiliations",
+      "restored_value": [
+        "The Hong Kong University of Science and Technology, Huawei Technologies"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Shuai Wang",
+      "field": "email",
+      "restored_value": "shuaiw@cse.ust.hk",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

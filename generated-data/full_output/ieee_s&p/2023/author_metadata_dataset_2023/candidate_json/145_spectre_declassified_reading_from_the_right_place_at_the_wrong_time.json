@@ -1,0 +1,406 @@
+{
+  "paper_id": "145_spectre_declassified_reading_from_the_right_place_at_the_wrong_time",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Spectre Declassified: Reading from the Right Place at the Wrong Time"
+      },
+      {
+        "source": "selected",
+        "value": "Spectre Declassified: Reading from the Right Place at the Wrong Time"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Practical information-flow programming languages commonly allow controlled leakage via a declassify constructprogrammers can use this construct to declare intentional leakage. For instance, cryptographic signatures and ciphertexts, which are computed from private keys, are viewed as secret by informationflow analyses. Cryptographic libraries can use declassify to make this data public, as it is no longer sensitive. In this paper, we study the interaction between speculative execution and declassification. We show that speculative execution leads to unintended leakage from declassification sites. Concretely, we present a PoC that recovers keys from AES implementations. Our PoC is an instance of a Spectre attack, and remains effective even when programs are compiled with speculative load hardening (SLH), a widespread compiler-based countermeasure against Spectre. We develop formal countermeasures against these attacks, including a significant improvement to SLH we term selective speculative load hardening (selSLH). These countermeasures soundly enforce relative non-interference (RNI): Informally, the speculative leakage of a protected program is limited to the existing sequential leakage of the original program. We implement our simplest countermeasure in the FaCT language and compilerwhich is designed specifically for high-assurance cryptographyand we see performance overheads of at most 10%. Finally, although we do not directly implement selSLH, our preliminary evaluation suggests a significant reduction in performance cost for cryptographic functions as compared to traditional SLH."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Practical information-flow programming languages commonly allow controlled leakage via a declassify construct- programmers can use this construct to declare intentional leakage. For instance, cryptographic signatures and ciphertexts, which are computed from private keys, are viewed as secret by information- flow analyses. Cryptographic libraries can use declassify to make this data public, as it is no longer sensitive. In this paper, we study the interaction between speculative execution and declassification. We show that speculative execution leads to unintended leakage from declassification sites. Concretely, we present a PoC that recovers keys from AES implementations. Our PoC is an instance of a Spectre attack, and remains effective even when programs are compiled with speculative load hardening (SLH), a widespread compiler-based countermeasure against Spectre. We develop formal countermeasures against these attacks, including a significant improvement to SLH we term selective speculative load hardening (selSLH). These countermeasures soundly enforce relative non-interference (RNI): Informally, the speculative leakage of a protected program is limited to the existing sequential leakage of the original program. We implement our simplest countermeasure in the FaCT language and compiler- which is designed specifically for high-assurance cryptography- and we see performance overheads of at most 10%. Finally, although we do not directly implement selSLH, our preliminary evaluation suggests a significant reduction in performance cost for cryptographic functions as compared to traditional SLH. I. I NTRODUCTION Cryptographic software can be vulnerable to devastating side-channel attacks, allowing malicious parties to recover cryptographic keys from observing the timing behavior of programs. A common means to limit such attacks is to follow the cryptographic constant-time policy, which states that programs do not leak confidential data through an ideal model of cache-based timing side-channels. However, writing efficient constant-time cryptographic software is no- toriously hard [ 25]. The challenges of writing constant-time cryptographic software are partially alleviated by dedicated verification or mitigation frameworks. One example of such a framework is FaCT [ 14], a security enhancing compiler that transforms typable programs into constant-time programs. The FaCT compiler features a constrained information-flow 1 public uint8 otp_and_decode( 2 secret uint8 m, 3 secret uint8 otp) { 4 5 secret mut uint8 c = m; 6 for (uint8 i from 0 to 8) { 7 c ^= (otp & (1 << i)); 8 } 9 10 public uint8 d = declassify(c); 11 return decode[d]; 12 } Listing 1: One-time pad into table-based decoder. Skipping the for loop (due to misspeculation) directly leaks the secret m. type system with formal guarantees, but these guarantees have a limited scope: First, they only hold for programs without declassification. In practice, however, cryptographic software must be able to release information that is technically typed secret, such as encrypted ciphertexts or verification checks, in a secure way. Second, FaCT only considers a sequential model of execution. Unfortunately, modern platforms implement aggressive optimizations such as speculative execution-the root of the recent and devastating Spectre attacks [ 27]. Prior work studies declassification and speculative execution in isolation; see [ 40] for a survey on declassification and [ 16] for an overview on Spectre countermeasures. However, we are not aware of any work that studies the interactions between declassification and speculative execution. Unfortunately, we show that the interaction between declas- sification and speculative execution can cause unintentional leaks. This is demonstrated by the FaCT program in Listing 1. In this program, a secret message m is encrypted by repeatedly performing a bitwise one-time pad; the resulting ciphertext c is fed into a table-based decoder. Since the ciphertext depends on the secret message, it is also typed secret. For the FaCT compiler to accept this program, c must be declassified before it is fed to the decoder, as array indices can leak to an attacker 1753 DOI 10.1109/SP46215.2023.00011 (e.g., via the cache). Assuming one-time pads are uniformly distributed, it is easy to see that the program does not leak: Indeed, the ciphertext is uniformly distributed and independent from secrets, and thus the leakage is also independent of secrets. On the other hand, if the program in Listing 1 were to somehow bypass the loop, it would trivially leak m via c. Such a scenario is clearly impossible during sequential execution; how- ever, under adversarial speculative execution, an attacker with control over branch predictions can cause the loop condition to mispredict, skipping the loop body entirely. In fact, this attack is notably different from prior Spectre attacks: Existing Spectre attacks use speculation to bypass safety checks, allowing attackers to leak data from unintended locations , i.e., out- of-bounds memory or type-confused structures. Conversely, the attacker described here leaks values from intended locations- the value c in Listing 1 is explicitly declassified, after all-but before these locations are fully secure . In other words, the leakage happens due to reading from the right place (within bounds) but at the wrong time (before it should be public). FaCT's formal security guarantees cannot capture or prevent these speculative attacks. To remedy this gap, we ideally want the speculative behavior of cryptographic software to reflect the existing (sequential) security guarantees that frameworks like FaCT provide. One such method of “hardening” programs against adversarial speculation is speculative load hardening (SLH) [13]: Informally, SLH protects programs by masking the values of speculatively executed loads, ensuring memory safety even during speculative execution. Unfortunately, applying SLH to Listing 1 does not offer any protection, as the attack does not depend on unsafe loads from misspeculated addresses. We define the undesirable interaction between declassifi- cation and speculative execution in terms of a formal threat model (§III), and we define a simple language, semantics, and type system (§IV) to analyze this new vulnerability. To protect vulnerable programs, we formalize security in terms of a property called relative non-interference (RNI) and we develop an “ideal” speculative semantics for which well-typed programs are RNI (§V). We realize this idealized semantics by developing two program transformations: Selective speculative load hard- ening (selSLH), an optimization over SLH, which only masks values speculatively loaded into publicly-typed variables; and masked declassification, which masks values declassified during speculation. These countermeasures simulate the idealized semantics during adversarially controlled speculative execution of a program-well-typed programs transformed with these countermeasures thus satisfy RNI. We also briefly consider other countermeasures which combine (selective) SLH and add speculation fences before declassification. We evaluate the simplest form of our countermeasure-SLH with fenced declassification-by modifying the FaCT com- piler (§VI). We find that the overhead of our countermeasure on the FaCT cryptographic benchmarks is under 10%. In addition, we heuristically evaluate the performance savings of selSLH over SLH by comparing the number of public- and secret- typed loads in different cryptographic routines. Our results show that selSLH can reduce the number of masked loads in these programs by 80% or more. Finally, we demonstrate the practical importance of RNI and our theoretical model (§VII): We develop a proof-of-concept (PoC) attack against a FaCT implementation of AES. Even when this implementation is compiled with SLH, our PoC can recover the cryptographic keys. We further demonstrate PoC attacks against two implementations of AES from OpenSSL. We have made all software associated with this paper, including the PoC attack against AES code, the FaCT bench- marks, and the heuristic analysis of selSLH, available online at https://github.com/0xADE1A1DE/Spectre-Declassified. II. B ACKGROUND A. Microarchitectural channels Modern processor microarchitectures aim to improve the performance of software, usually by predicting the future behavior of programs. For example, data caches in the processor store data that a program has recently accessed, allowing them to exploit temporal and spatial locality in software. Similarly, a processor's branch predictors monitor conditional jumps that the software executes, aiming to predict whether or not future jumps will be taken and what the destination address will be. Although the state of the microarchitecture does not affect the computation results, it does affect the program performance. Consequently, a program that monitors its own performance, e.g., by measuring the time it takes to perform certain opera- tions, can deduce the state of the microarchitecture. Moreover, because the state of the microarchitecture is determined by program execution, monitoring the microarchitecture will leak information about past execution. Microarchitectural side- channel attacks exploit these information leaks: An attacker can monitor the microarchitectural components it shares with a victim program to determine the victim's behavior [21]. Microarchitectural attacks have exploited a variety of mi- croarchitectural components, including data caches [ 29, 31, 47, 49], branch predictors [1, 20], translation lookaside buffers [22], and return address stacks [ 17]. These attacks have devas- tating consequences for the security of software-including breaking cryptography [ 1, 31, 49], performing keystroke monitoring [23], reversing machine-learning models [48], recon- structing databases [41], and fingerprinting websites [42, 43]. Of particular relevance to cryptographic code are cache attacks, which can determine which memory addresses a victim program has accessed. For example, in a FLUSH +RELOAD [49] attack, the attacker evicts a monitored memory location from the cache before the victim program executes. After the victim finishes running, the attacker measures the time to access the previously evicted memory location. If the victim accessed the monitored location, then the location will have been cached, and the access time will be short. Otherwise, the contents of the memory location will have to come from the the memory, and the access time will be long. B. Spectre attacks Modern processors use speculative execution as a means to improve performance. Under speculative execution, the 1754"
+      },
+      {
+        "source": "selected",
+        "value": "Practical information-flow programming languages commonly allow controlled leakage via a declassify constructprogrammers can use this construct to declare intentional leakage. For instance, cryptographic signatures and ciphertexts, which are computed from private keys, are viewed as secret by informationflow analyses. Cryptographic libraries can use declassify to make this data public, as it is no longer sensitive. In this paper, we study the interaction between speculative execution and declassification. We show that speculative execution leads to unintended leakage from declassification sites. Concretely, we present a PoC that recovers keys from AES implementations. Our PoC is an instance of a Spectre attack, and remains effective even when programs are compiled with speculative load hardening (SLH), a widespread compiler-based countermeasure against Spectre. We develop formal countermeasures against these attacks, including a significant improvement to SLH we term selective speculative load hardening (selSLH). These countermeasures soundly enforce relative non-interference (RNI): Informally, the speculative leakage of a protected program is limited to the existing sequential leakage of the original program. We implement our simplest countermeasure in the FaCT language and compilerwhich is designed specifically for high-assurance cryptographyand we see performance overheads of at most 10%. Finally, although we do not directly implement selSLH, our preliminary evaluation suggests a significant reduction in performance cost for cryptographic functions as compared to traditional SLH."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ammanaghatta Basavesh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jack Shivakumar",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Gilles Barnes",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Sunjay Barthe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Chitchanok Cauligi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Daniel Chuengsatiansup",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Sioli Genkin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Peter O'connell",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Rui Qi Schwabe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Yuval Sim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Yarom",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute, Madrid, Spain"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 12
+        },
+        {
+          "order": 13,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 13
+        },
+        {
+          "order": 14,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Radboud University, Nijmegen, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 14
+        },
+        {
+          "order": 15,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 15
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sunjay Cauligi",
+          "email": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States IMDEA Software Institute, Madrid, Spain MPI-SP, Bochum, Germany Radboud University, Nijmegen, The Netherlands The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Chitchanok Chuengsatiansup",
+          "email": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States IMDEA Software Institute, Madrid, Spain MPI-SP, Bochum, Germany Radboud University, Nijmegen, The Netherlands The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Daniel Genkin",
+          "email": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States IMDEA Software Institute, Madrid, Spain MPI-SP, Bochum, Germany Radboud University, Nijmegen, The Netherlands The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Sioli O'Connell",
+          "email": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States IMDEA Software Institute, Madrid, Spain MPI-SP, Bochum, Germany Radboud University, Nijmegen, The Netherlands The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Peter Schwabe",
+          "email": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States IMDEA Software Institute, Madrid, Spain MPI-SP, Bochum, Germany Radboud University, Nijmegen, The Netherlands The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Rui Qi Sim",
+          "email": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States IMDEA Software Institute, Madrid, Spain MPI-SP, Bochum, Germany Radboud University, Nijmegen, The Netherlands The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Yuval Yarom",
+          "email": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Atlanta, United States IMDEA Software Institute, Madrid, Spain MPI-SP, Bochum, Germany Radboud University, Nijmegen, The Netherlands The University of Adelaide, Adelaide, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 112,
+      "author_count": 7,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Sunjay Cauligi",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Sioli O'Connell",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Spectre Declassified: Reading from the Right Place at the Wrong Time",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Basavesh Ammanaghatta Shivakumar",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy, Germany"
+          ]
+        },
+        {
+          "name": "Jack Barnes",
+          "affiliations": [
+            "The University of Adelaide, Australia"
+          ]
+        },
+        {
+          "name": "Gilles Barthe",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy, Germany; IMDEA Software Institute, Spain"
+          ]
+        },
+        {
+          "name": "Sunjay Cauligi",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy, Germany"
+          ]
+        },
+        {
+          "name": "Chitchanok Chuengsatiansup",
+          "affiliations": [
+            "The University of Adelaide, Australia"
+          ]
+        },
+        {
+          "name": "Daniel Genkin",
+          "affiliations": [
+            "Georgia Institute of Technology, USA"
+          ]
+        },
+        {
+          "name": "Sioli O'Connell",
+          "affiliations": [
+            "The University of Adelaide, Australia"
+          ]
+        },
+        {
+          "name": "Peter Schwabe",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy, Germany; Radboud University, Netherlands"
+          ]
+        },
+        {
+          "name": "Rui Qi Sim",
+          "affiliations": [
+            "The University of Adelaide, Australia"
+          ]
+        },
+        {
+          "name": "Yuval Yarom",
+          "affiliations": [
+            "The University of Adelaide, Australia"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 7,
+      "country_values_restored": 7,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

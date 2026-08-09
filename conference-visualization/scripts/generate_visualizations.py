@@ -13,13 +13,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-SECTION_FILES = {
-    "country": Path("country/country_summary.csv"),
-    "institution": Path("institutions/institution_summary.csv"),
-    "author": Path("authors/author_summary.csv"),
-    "trend": Path("trends/trend_summary.csv"),
-}
-
 DEFAULT_OUTPUT_DIR = Path("generated-data") / "visualizations"
 
 COLORS = {
@@ -38,6 +31,7 @@ PLOT_FILES = {
     "country_rank": "国家地区_头部排名_横向柱状图",
     "institution_rank": "机构_头部排名_横向柱状图",
     "trend": "重点国家地区_趋势图",
+    "author_rank": "作者_头部排名_横向柱状图",
 }
 
 PLOT_TITLES = {
@@ -171,8 +165,8 @@ def build_metrics(analysis_dir: Path) -> dict:
     generated_root = analysis_dir.parent
     paper_facts = generated_root / "normalized" / "paper_facts.csv"
     coverage_summary = generated_root / "paper_tables_three_tier" / "three_tier_coverage_summary.csv"
-    trend_summary = analysis_dir / "trends" / "trend_summary.csv"
     country_summary = analysis_dir / "country" / "country_summary.csv"
+    country_by_year = analysis_dir / "country" / "country_by_year.csv"
     institution_summary = analysis_dir / "institutions" / "institution_summary.csv"
     normalization_report = generated_root / "normalized" / "normalization_report.json"
     role_report = generated_root / "author-roles" / "author_role_report.json"
@@ -196,11 +190,18 @@ def build_metrics(analysis_dir: Path) -> dict:
 
     country_rows = [row for row in read_csv_rows(country_summary) if row["country"] not in EXCLUDED_COUNTRY_KEYS]
     institution_rows = read_csv_rows(institution_summary)
-    trend_rows = [
-        row
-        for row in read_csv_rows(trend_summary)
-        if row["entity_type"] == "country" and row["entity_name"] not in EXCLUDED_COUNTRY_KEYS
-    ][:5]
+    trend_summary = analysis_dir / "trends" / "trend_summary.csv"
+    if trend_summary.exists():
+        trend_rows = [
+            row
+            for row in read_csv_rows(trend_summary)
+            if row["entity_type"] == "country" and row["entity_name"] not in EXCLUDED_COUNTRY_KEYS
+        ][:5]
+    else:
+        trend_rows = [
+            {"entity_type": "country", "entity_name": row["country"]}
+            for row in country_rows[:5]
+        ]
 
     return {
         "counts_by_conference_year": counts_by_conference_year,
@@ -208,12 +209,121 @@ def build_metrics(analysis_dir: Path) -> dict:
         "coverage_by_conference": coverage_by_conference,
         "coverage_overall": overall,
         "country_rows": country_rows,
+        "country_by_year_rows": read_csv_rows(country_by_year),
         "institution_rows": institution_rows,
         "trend_rows": trend_rows,
         "normalization_report": read_json(normalization_report),
         "role_report": read_json(role_report),
         "cfp_report": read_json(cfp_report),
     }
+
+
+def build_modern_metrics(analysis_dir: Path) -> dict:
+    """Build metrics from the current analysis/<run> contract.
+
+    This keeps the visualization entry point reusable across analysis runs and
+    avoids requiring legacy paper-coverage or CFP artifacts.
+    """
+    normalized_dir = analysis_dir / "normalized"
+    facts_path = normalized_dir / "author_affiliation_facts.csv"
+    facts = read_csv_rows(facts_path)
+    paper_seen: set[tuple[str, str, str]] = set()
+    counts_by_conference_year: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    counts_by_conference: Counter[str] = Counter()
+    for row in facts:
+        key = (row.get("paper_key", ""), row.get("conference", ""), row.get("year", ""))
+        if not key[0] or key in paper_seen:
+            continue
+        paper_seen.add(key)
+        conference = key[1]
+        year = int(key[2])
+        counts_by_conference_year[conference][year] += 1
+        counts_by_conference[conference] += 1
+
+    country_summary = analysis_dir / "country" / "country_summary.csv"
+    country_by_year = analysis_dir / "country" / "country_by_year.csv"
+    institution_summary = analysis_dir / "institutions" / "institution_summary.csv"
+    author_summary = analysis_dir / "authors" / "author_summary.csv"
+    trend_summary = analysis_dir / "trends" / "trend_summary.csv"
+    normalization_report = normalized_dir / "normalization_report.json"
+    countries = [row for row in read_csv_rows(country_summary) if row.get("country") not in EXCLUDED_COUNTRY_KEYS]
+    institutions = read_csv_rows(institution_summary)
+    authors = read_csv_rows(author_summary) if author_summary.exists() else []
+    trend_rows = [
+        row for row in read_csv_rows(trend_summary)
+        if row.get("entity_type") == "country" and row.get("entity_name") not in EXCLUDED_COUNTRY_KEYS
+    ][:5] if trend_summary.exists() else []
+    return {
+        "counts_by_conference_year": counts_by_conference_year,
+        "counts_by_conference": counts_by_conference,
+        "country_rows": countries,
+        "country_by_year_rows": read_csv_rows(country_by_year),
+        "institution_rows": institutions,
+        "author_rows": authors,
+        "trend_rows": trend_rows or [{"entity_name": row["country"]} for row in countries[:5]],
+        "normalization_report": read_json(normalization_report) if normalization_report.exists() else {},
+    }
+
+
+def plot_author_rank(metrics: dict, output_dir: Path) -> list[str]:
+    rows = metrics.get("author_rows", [])[:8]
+    labels = [row.get("author_name", row.get("author_key", "")) for row in rows]
+    values = [int(row.get("papers", 0)) for row in rows]
+    fig, ax = plt.subplots(figsize=(11.8, 6.4))
+    y = np.arange(len(labels))
+    ax.barh(y, values, color=COLORS["orange"], zorder=3)
+    ax.set_yticks(y, labels)
+    ax.invert_yaxis()
+    ax.set_title("作者发文规模前列分布", fontsize=18, pad=10)
+    set_common_axes(ax, xlabel="论文数量")
+    if values:
+        for i, value in enumerate(values):
+            ax.text(value + max(values) * 0.02, i, str(value), va="center", fontsize=11)
+    fig.tight_layout()
+    return save_figure(fig, output_dir, PLOT_FILES["author_rank"])
+
+
+def generate_modern_visualizations(analysis_dir: Path, output_dir: Path) -> None:
+    metrics = build_modern_metrics(analysis_dir)
+    rendered_files: list[str] = []
+    rendered_files.extend(plot_heatmap(metrics, output_dir))
+    rendered_files.extend(plot_country_rank(metrics, output_dir))
+    rendered_files.extend(plot_institution_rank(metrics, output_dir))
+    rendered_files.extend(plot_author_rank(metrics, output_dir))
+    if metrics["trend_rows"]:
+        rendered_files.extend(plot_trend(metrics, output_dir))
+
+    heatmap_rows = [
+        {"conference": display_conference(conference), "year": year,
+         "papers": metrics["counts_by_conference_year"][conference][year]}
+        for conference in sorted(metrics["counts_by_conference_year"])
+        for year in sorted(metrics["counts_by_conference_year"][conference])
+    ]
+    write_csv(output_dir / "conference_year_counts.csv", ["conference", "year", "papers"], heatmap_rows)
+    write_csv(output_dir / "country_rank.csv", ["country", "papers", "authors", "institutions"], [
+        {"country": row.get("country", ""), "papers": row.get("papers", ""),
+         "authors": row.get("authors", ""), "institutions": row.get("institutions", "")}
+        for row in metrics["country_rows"][:8]
+    ])
+    write_csv(output_dir / "institution_rank.csv", ["institution_name", "papers", "authors", "country"], [
+        {"institution_name": row.get("institution_name", ""), "papers": row.get("papers", ""),
+         "authors": row.get("authors", ""), "country": row.get("country", "")}
+        for row in metrics["institution_rows"][:8]
+    ])
+    write_csv(output_dir / "author_rank.csv", ["author_name", "papers", "first_author_papers"], [
+        {"author_name": row.get("author_name", ""), "papers": row.get("papers", ""),
+         "first_author_papers": row.get("first_author_papers", "")}
+        for row in metrics["author_rows"][:8]
+    ])
+    manifest = {
+        "analysis_dir": str(analysis_dir),
+        "output_dir": str(output_dir),
+        "contract": "modern_analysis_run",
+        "rendered_files": rendered_files,
+        "paper_total": sum(metrics["counts_by_conference"].values()),
+        "sections": ["country", "institution", "author", "trend"],
+    }
+    write_text(output_dir / "visualization_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
 
 
 def set_common_axes(ax, *, xlabel: str = "", ylabel: str = "", ylim=None) -> None:
@@ -235,8 +345,8 @@ def plot_heatmap(metrics: dict, output_dir: Path) -> list[str]:
     """绘制会议-年份论文数量热力图。"""
     filename = PLOT_FILES["heatmap"]
     title = PLOT_TITLES["heatmap"]
-    conferences = ["ASIACRYPT", "CRYPTO", "EUROCRYPT", "CCS", "IEEE_S&P", "NDSS", "USENIX_SECURITY"]
-    years = [2020, 2021, 2022, 2023, 2024, 2025]
+    conferences = sorted(metrics["counts_by_conference_year"])
+    years = sorted({year for values in metrics["counts_by_conference_year"].values() for year in values})
     data = np.array([[metrics["counts_by_conference_year"][conf][year] for year in years] for conf in conferences])
     conference_labels = [display_conference(conf) for conf in conferences]
 
@@ -332,11 +442,11 @@ def plot_trend(metrics: dict, output_dir: Path) -> list[str]:
     filename = PLOT_FILES["trend"]
     title = PLOT_TITLES["trend"]
     rows = metrics["trend_rows"]
-    years = [2020, 2021, 2022, 2023, 2024, 2025]
+    years = sorted({int(row["year"]) for row in metrics["country_by_year_rows"] if row.get("year", "").isdigit()})
 
     top_names = [row["entity_name"] for row in rows]
     data = {}
-    year_table = read_csv_rows(Path(output_dir).parent.parent / "analysis" / "country" / "country_by_year.csv")
+    year_table = metrics["country_by_year_rows"]
     for name in top_names:
         data[name] = [0] * len(years)
     for row in year_table:
@@ -440,7 +550,7 @@ def export_supporting_tables(metrics: dict, output_dir: Path) -> list[str]:
     exported.append(write_csv(output_dir / "机构_头部排名_横向柱状图_数据.csv", ["institution_name", "papers", "authors", "country"], institution_rows))
 
     years = [2020, 2021, 2022, 2023, 2024, 2025]
-    trend_year_table = read_csv_rows(Path(output_dir).parent.parent / "analysis" / "country" / "country_by_year.csv")
+    trend_year_table = metrics["country_by_year_rows"]
     top_names = [row["entity_name"] for row in metrics["trend_rows"]]
     trend_rows: list[dict[str, object]] = []
     for name in top_names:
@@ -562,6 +672,10 @@ def main() -> None:
     output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    modern_input = analysis_dir / "normalized" / "author_affiliation_facts.csv"
+    if modern_input.exists():
+        generate_modern_visualizations(analysis_dir, output_dir)
+        return
     metrics = build_metrics(analysis_dir)
     rendered_files: list[str] = []
     for builder in [plot_heatmap, plot_coverage, plot_country_rank, plot_institution_rank, plot_trend]:

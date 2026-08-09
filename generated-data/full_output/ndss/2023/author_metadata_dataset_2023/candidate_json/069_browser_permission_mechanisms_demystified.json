@@ -1,0 +1,284 @@
+{
+  "paper_id": "069_browser_permission_mechanisms_demystified",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Browser Permission Mechanisms Demystified"
+      },
+      {
+        "source": "selected",
+        "value": "Browser Permission Mechanisms Demystified"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": ""
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Modern Web services provide rich content by ac- cessing resources on user devices, including hardware devices such as cameras, microphones, and GPSs. Web browser vendors have adopted permission mechanisms that achieve appropriate control over access to such resources to protect user privacy. The permission mechanism gives users the ability to grant or deny their browser access to resources for each website. Despite the importance of permission mechanisms in protecting user privacy, previous studies have not been conducted to systematically understand their behavior and implementation. In this study, we developed P ERMIUM , a web browser analysis framework that automatically analyzes the behavior of permission mechanisms implemented by various browsers. Using the P ERMIUM frame- work, we systematically studied the behavior of permission mech- anisms for 22 major browser implementations running on five different operating systems, including mobile and desktop. We determined that the implementation and behavior of permission mechanisms are fragmented and inconsistent between operating systems, even for the same browser (i.e., Windows Chrome vs. iOS Chrome) and that the implementation inconsistencies can lead to privacy risks. Based on the behavior and implementation inconsistencies of the permission mechanism revealed by our measurement study, we developed two proof-of-concept attacks and evaluated their feasibility. The first attack uses the permission information collected by exploiting the inconsistencies to secretly track the user. The second attack aims to create a situation in which the user cannot correctly determine the origin of the permission request, and the user incorrectly grants permission to a malicious site. Finally, we clarify the technical issues that must be standardized in privacy mechanisms and provide recommendations to OS/browser vendors to mitigate the threats identified in this study. I. I NTRODUCTION Modern Web services can provide dynamic and rich content, such as location-based recommendations and online conferencing services, by enabling the browser to access hardware resources, such as the cameras and GPSs on user devices. On the other hand, granting web browsers access to hardware resources without any restrictions may cause unintended security/privacy risks. The permission function is generally provided as an access control mechanism to protect user privacy. By configuring the permissions, users expect web browsers to appropriately control which resources they can access, thereby protecting user privacy. Major mobile operating systems (OSs), such as Android and iOS, employ a permission mechanism as a means of exerting control over the access of applications to hardware and other resources [1], [2]. Users of mobile OSs can utilize the permission mechanism to fine-tune the available resources on a per-application basis. In the security research community, many studies have been conducted on permission mechanisms in mobile OSs, including large-scale measurements [3], [4], [5], user perception [6], [7], [8], [9], unauthorized privilege acquisition [10], [11], and the proposals of new permission mechanisms [12], [13], [14], [15]. While mobile OS permis- sion mechanisms have been studied by many researchers, to the best of our knowledge, no studies have systematically analyzed the permission mechanisms of web browsers. The behavior of the permission mechanism in Web browsers (“Web Permission”) varies widely across OSs and browsers because it depends on the browser vendor's imple- mentation. The erroneous implementation of the permission mechanism risks unintentional disclosure of user privacy infor- mation. Web Permission was developed for each API (Medi- aDevice API, Geolocation API, etc.) that utilizes the functions of individual devices, such as cameras and GPSs [16]. For this reason, each API has its specification for the permission mechanism. Owing to the background mentioned, the imple- mentations of Web Permission differ depending on the type of API and browser. Such fragmentation of the implementation risks user confusion and exploitation of the permission mecha- nism by attackers. To avoid the fragmented implementations of the permission mechanism, “Permissions API” was proposed to manage various permissions in a unified manner across various platforms [17]. The Permissions API offers a new feature that allows websites to query the permission state without requesting permission. However, as of 2022, support for the Permissions API varies from browser to browser, and fragmented implementations are still widely used. (For more details on the Permissions API, see Appendix XI-D.) This study aims to conduct a large-scale measurement study of web permission implementations to identify differ- ences in behavior among implementations, as well as im- plementation inconsistencies and vulnerabilities that lead to privacy risks. To achieve this, we developed P ERMIUM , a framework for the systematic analysis of the behavior of browser permission mechanisms. P ERMIUM is a framework that automatically analyzes a browser's web permission imple- Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.23109 www.ndss-symposium.org mentation according to predefined test scenarios and autopilots the browser as if operated by a human. P ERMIUM supports 22 different browser implementations running on 5 different OSs, including mobile and desktop. The share of these OSs and browsers covers 94% and 89% of desktop and mobile browser users, respectively [18]. This study targets Microphone, Cam- era, and Geolocation as sensitive permissions and Notification as the most frequently used permission. As a result of our extensive measurement study, we found 191 implementation inconsistencies in 22 different browsers that could pose a threat to user privacy. Those inconsistencies include cases where the selected web permission state was shared between normal and private browsing modes, where permission state was retained after clearing the web browser data, and where permission request dialogs for tabs running in the background overlaid the foreground tab, which can confuse users. We also perform user studies to identify gaps between user expectations and actual browser implementations. In addition, we propose two proof-of-concept attacks that combine the implementation inconsistencies of the web per- mission mechanism identified in our measurement study. We also evaluate the feasibility of the attacks. The first attack uses the permission information collected by exploiting the inconsistency to secretly track users. The attacker can dis- tinguish users visiting the site using only the permission information, without using cookies or browser fingerprints. The other attack targets users that inadvertently granted permissions to malicious sites by creating a situation in which they cannot correctly determine the origin of the permission request. In a user study of 99 participants, we determined that this attack succeeds more than 55% of the time. The contributions of this paper are summarized as follows. • This is the first systematic and extensive study on the behavior of web permission implementations. • We developed P ERMIUM , a framework for automatically analyzing web permission behavior, which uses a high-level abstraction to enable the operations of various browsers using common methods regardless of OS or browser type, cross-platform browser analysis. • As a result of our measurement study using P ERMIUM , we found 191 inconsistencies in the browser implementation that could pose privacy risks, such as when a user grants or denies permission, the browser cannot properly reflect in some cases. • We proposed two proof-of-concept attacks, a permission- based user tracking attack and a permission-based phishing attack, which are realized by combining the web permission implementation inconsistencies revealed in the measurement study. • We identified fixes for the inconsistencies present in the im- plementation of web permission mechanisms and provided recommendations for stakeholders. II. B ACKGROUND This section describes the two main mechanisms for pro- tecting the privacy of web browser users: the permission mech- anism and private browsing modes. Note that the permission mechanism is the main target of this study. Private browsing mode is a mechanism that enables users to explicitly protect their privacy while browsing. A. Overview of the Permission Mechanism for Web Browsers A website that aims to leverage various resources on a user device, including hardware devices such as a camera, microphone, GPS, etc., requests permission from the user to access the resources. In the following, we present a sequence of processes that range from the permission request from the website to the permission granted by the user. 1) A website requests permission from the user's browser to access hardware resources on the device using Web APIs, such as the Geolocation API [19], which provides the user's location, and the MediaDevices API [20], which provides access to the connected microphones and cameras. 2) The web browser shows a permission request prompt on the user's screen. 3) The user grants or denies the request, or ignores the request by closing the prompt window. 4) The web browser allows the website to use the hardware resources corresponding to the permission when the permission state is granted. In web browsers, the permission is managed per “origin” basis, whereas the permission in the mobile OS is managed per application basis [21]. In the context of the web, “origin” is defined by the 3-tuple: scheme, hostname, and port number, which are present in the URL that points to a web content [22]. The origin is a fundamental unit used to determine the identity of a website and is widely adopted in security protection mechanisms, such as in the Same-Origin Policy [23]. Typically, the Web browser maintains the permission state, i.e., granted or denied, for each origin 1. When an origin web- site requests permission for the second time, the permission is automatically granted or denied based on the permission state selected by the user and kept by the browser the previous time. Formally, the permission has the following three states: “prompt,” “granted,” and “denied.” “prompt” is a state in which the user has not selected a permission state. The default state of the permission state is “prompt.” “granted”/“denied” is the state when the user grants or denies the permission request, respectively. The Web browser provides access to a hardware resource on the website only when the permission state for that resource is granted to the website (origin). B. Private Browsing Modes Private browsing modes are mechanisms that enable users to perform private web browsing without using the personal browser environment in which cookies and account infor- mation are stored; thus, these are expected to protect user privacy [24]. The major browsers support private browsing modes. Because technical specifications for private browsing modes have not been standardized, browser vendors have implemented their own features according to the principles of the market [25]. The name of this feature also varies between browsers; that is, it is called “Incognito mode” in Chrome and “InPrivate window” in Edge [26], [27]. In this paper, we use the term “private browsing modes,” as used in the W3C [25]. 1As shown in Section IV-C, the rules for keeping the permission state are intrinsic to the browser implementation. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Modern Web services provide rich content by ac- cessing resources on user devices, including hardware devices such as cameras, microphones, and GPSs. Web browser vendors have adopted permission mechanisms that achieve appropriate control over access to such resources to protect user privacy. The permission mechanism gives users the ability to grant or deny their browser access to resources for each website. Despite the importance of permission mechanisms in protecting user privacy, previous studies have not been conducted to systematically understand their behavior and implementation. In this study, we developed P ERMIUM , a web browser analysis framework that automatically analyzes the behavior of permission mechanisms implemented by various browsers. Using the P ERMIUM frame- work, we systematically studied the behavior of permission mech- anisms for 22 major browser implementations running on five different operating systems, including mobile and desktop. We determined that the implementation and behavior of permission mechanisms are fragmented and inconsistent between operating systems, even for the same browser (i.e., Windows Chrome vs. iOS Chrome) and that the implementation inconsistencies can lead to privacy risks. Based on the behavior and implementation inconsistencies of the permission mechanism revealed by our measurement study, we developed two proof-of-concept attacks and evaluated their feasibility. The first attack uses the permission information collected by exploiting the inconsistencies to secretly track the user. The second attack aims to create a situation in which the user cannot correctly determine the origin of the permission request, and the user incorrectly grants permission to a malicious site. Finally, we clarify the technical issues that must be standardized in privacy mechanisms and provide recommendations to OS/browser vendors to mitigate the threats identified in this study. I. I NTRODUCTION Modern Web services can provide dynamic and rich content, such as location-based recommendations and online conferencing services, by enabling the browser to access hardware resources, such as the cameras and GPSs on user devices. On the other hand, granting web browsers access to hardware resources without any restrictions may cause unintended security/privacy risks. The permission function is generally provided as an access control mechanism to protect user privacy. By configuring the permissions, users expect web browsers to appropriately control which resources they can access, thereby protecting user privacy. Major mobile operating systems (OSs), such as Android and iOS, employ a permission mechanism as a means of exerting control over the access of applications to hardware and other resources [1], [2]. Users of mobile OSs can utilize the permission mechanism to fine-tune the available resources on a per-application basis. In the security research community, many studies have been conducted on permission mechanisms in mobile OSs, including large-scale measurements [3], [4], [5], user perception [6], [7], [8], [9], unauthorized privilege acquisition [10], [11], and the proposals of new permission mechanisms [12], [13], [14], [15]. While mobile OS permis- sion mechanisms have been studied by many researchers, to the best of our knowledge, no studies have systematically analyzed the permission mechanisms of web browsers. The behavior of the permission mechanism in Web browsers (“Web Permission”) varies widely across OSs and browsers because it depends on the browser vendor's imple- mentation. The erroneous implementation of the permission mechanism risks unintentional disclosure of user privacy infor- mation. Web Permission was developed for each API (Medi- aDevice API, Geolocation API, etc.) that utilizes the functions of individual devices, such as cameras and GPSs [16]. For this reason, each API has its specification for the permission mechanism. Owing to the background mentioned, the imple- mentations of Web Permission differ depending on the type of API and browser. Such fragmentation of the implementation risks user confusion and exploitation of the permission mecha- nism by attackers. To avoid the fragmented implementations of the permission mechanism, “Permissions API” was proposed to manage various permissions in a unified manner across various platforms [17]. The Permissions API offers a new feature that allows websites to query the permission state without requesting permission. However, as of 2022, support for the Permissions API varies from browser to browser, and fragmented implementations are still widely used. (For more details on the Permissions API, see Appendix XI-D.) This study aims to conduct a large-scale measurement study of web permission implementations to identify differ- ences in behavior among implementations, as well as im- plementation inconsistencies and vulnerabilities that lead to privacy risks. To achieve this, we developed P ERMIUM , a framework for the systematic analysis of the behavior of browser permission mechanisms. P ERMIUM is a framework that automatically analyzes a browser's web permission imple- Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.23109 www.ndss-symposium.org mentation according to predefined test scenarios and autopilots the browser as if operated by a human. P ERMIUM supports 22 different browser implementations running on 5 different OSs, including mobile and desktop. The share of these OSs and browsers covers 94% and 89% of desktop and mobile browser users, respectively [18]. This study targets Microphone, Cam- era, and Geolocation as sensitive permissions and Notification as the most frequently used permission. As a result of our extensive measurement study, we found 191 implementation inconsistencies in 22 different browsers that could pose a threat to user privacy. Those inconsistencies include cases where the selected web permission state was shared between normal and private browsing modes, where permission state was retained after clearing the web browser data, and where permission request dialogs for tabs running in the background overlaid the foreground tab, which can confuse users. We also perform user studies to identify gaps between user expectations and actual browser implementations. In addition, we propose two proof-of-concept attacks that combine the implementation inconsistencies of the web per- mission mechanism identified in our measurement study. We also evaluate the feasibility of the attacks. The first attack uses the permission information collected by exploiting the inconsistency to secretly track users. The attacker can dis- tinguish users visiting the site using only the permission information, without using cookies or browser fingerprints. The other attack targets users that inadvertently granted permissions to malicious sites by creating a situation in which they cannot correctly determine the origin of the permission request. In a user study of 99 participants, we determined that this attack succeeds more than 55% of the time. The contributions of this paper are summarized as follows. • This is the first systematic and extensive study on the behavior of web permission implementations. • We developed P ERMIUM , a framework for automatically analyzing web permission behavior, which uses a high-level abstraction to enable the operations of various browsers using common methods regardless of OS or browser type, cross-platform browser analysis. • As a result of our measurement study using P ERMIUM , we found 191 inconsistencies in the browser implementation that could pose privacy risks, such as when a user grants or denies permission, the browser cannot properly reflect in some cases. • We proposed two proof-of-concept attacks, a permission- based user tracking attack and a permission-based phishing attack, which are realized by combining the web permission implementation inconsistencies revealed in the measurement study. • We identified fixes for the inconsistencies present in the im- plementation of web permission mechanisms and provided recommendations for stakeholders. II. B ACKGROUND This section describes the two main mechanisms for pro- tecting the privacy of web browser users: the permission mech- anism and private browsing modes. Note that the permission mechanism is the main target of this study. Private browsing mode is a mechanism that enables users to explicitly protect their privacy while browsing. A. Overview of the Permission Mechanism for Web Browsers A website that aims to leverage various resources on a user device, including hardware devices such as a camera, microphone, GPS, etc., requests permission from the user to access the resources. In the following, we present a sequence of processes that range from the permission request from the website to the permission granted by the user. 1) A website requests permission from the user's browser to access hardware resources on the device using Web APIs, such as the Geolocation API [19], which provides the user's location, and the MediaDevices API [20], which provides access to the connected microphones and cameras. 2) The web browser shows a permission request prompt on the user's screen. 3) The user grants or denies the request, or ignores the request by closing the prompt window. 4) The web browser allows the website to use the hardware resources corresponding to the permission when the permission state is granted. In web browsers, the permission is managed per “origin” basis, whereas the permission in the mobile OS is managed per application basis [21]. In the context of the web, “origin” is defined by the 3-tuple: scheme, hostname, and port number, which are present in the URL that points to a web content [22]. The origin is a fundamental unit used to determine the identity of a website and is widely adopted in security protection mechanisms, such as in the Same-Origin Policy [23]. Typically, the Web browser maintains the permission state, i.e., granted or denied, for each origin 1. When an origin web- site requests permission for the second time, the permission is automatically granted or denied based on the permission state selected by the user and kept by the browser the previous time. Formally, the permission has the following three states: “prompt,” “granted,” and “denied.” “prompt” is a state in which the user has not selected a permission state. The default state of the permission state is “prompt.” “granted”/“denied” is the state when the user grants or denies the permission request, respectively. The Web browser provides access to a hardware resource on the website only when the permission state for that resource is granted to the website (origin). B. Private Browsing Modes Private browsing modes are mechanisms that enable users to perform private web browsing without using the personal browser environment in which cookies and account infor- mation are stored; thus, these are expected to protect user privacy [24]. The major browsers support private browsing modes. Because technical specifications for private browsing modes have not been standardized, browser vendors have implemented their own features according to the principles of the market [25]. The name of this feature also varies between browsers; that is, it is called “Incognito mode” in Chrome and “InPrivate window” in Edge [26], [27]. In this paper, we use the term “private browsing modes,” as used in the W3C [25]. 1As shown in Section IV-C, the rules for keeping the permission state are intrinsic to the browser implementation. 2"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kazuki Nomoto",
+          "email": "nomotokazuki@nsl.cs.waseda.ac.jp",
+          "orcid": "",
+          "affiliations": [
+            "Waseda University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Takuya Watanabe",
+          "email": "takuya.watanabe.yf@hco.ntt.co.jp",
+          "orcid": "",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Eitaro Shioji",
+          "email": "eitaro.shioji.es@hco.ntt.co.jp",
+          "orcid": "",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Mitsuaki Akiyama",
+          "email": "akiyama@ieee.org",
+          "orcid": "",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Tatsuya Mori",
+          "email": "mori@nsl.cs.waseda.ac.jp",
+          "orcid": "",
+          "affiliations": [
+            "Waseda University",
+            "National Institute of Information and Communications Technology RIKEN Center for Advanced Intelligence Project"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kazuki Nomoto",
+          "email": "nomotokazuki@nsl.cs.waseda.ac.jp",
+          "affiliations": [
+            "Waseda University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Takuya Watanabe",
+          "email": "takuya.watanabe.yf@hco.ntt.co.jp",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Eitaro Shioji",
+          "email": "eitaro.shioji.es@hco.ntt.co.jp",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Mitsuaki Akiyama",
+          "email": "akiyama@ieee.org",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Tatsuya Mori",
+          "email": "mori@nsl.cs.waseda.ac.jp",
+          "affiliations": [
+            "Waseda University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 120,
+      "author_count": 5,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Mitsuaki Akiyama",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Tatsuya Mori",
+          "block_id": "pdf:p1:b2",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Mitsuaki Akiyama",
+          "affiliation_raw": "Waseda University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 61.649,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Browser Permission Mechanisms Demystified",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/browser-permission-mechanisms-demystified/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kazuki Nomoto",
+          "affiliations": [
+            "Waseda University"
+          ]
+        },
+        {
+          "name": "Takuya Watanabe",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ]
+        },
+        {
+          "name": "Eitaro Shioji",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ]
+        },
+        {
+          "name": "Mitsuaki Akiyama",
+          "affiliations": [
+            "NTT Social Informatics Laboratories"
+          ]
+        },
+        {
+          "name": "Tatsuya Mori",
+          "affiliations": [
+            "Waseda University/NICT/RIKEN AIP"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_abstract_from_pdf",
+      "stage": "abstract_arbitration",
+      "field": "abstract",
+      "source": "pdfplumber_section_boundary"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Mitsuaki Akiyama",
+      "field": "email",
+      "restored_value": "akiyama@ieee.org",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Tatsuya Mori",
+      "field": "email",
+      "restored_value": "mori@nsl.cs.waseda.ac.jp",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

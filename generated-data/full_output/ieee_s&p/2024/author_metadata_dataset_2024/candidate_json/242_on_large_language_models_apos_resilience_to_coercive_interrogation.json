@@ -1,0 +1,234 @@
+{
+  "paper_id": "242_on_large_language_models_apos_resilience_to_coercive_interrogation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "On Large Language Models' Resilience to Coercive Interrogation"
+      },
+      {
+        "source": "selected",
+        "value": "On Large Language Models' Resilience to Coercive Interrogation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Large Language Models (LLMs) are increasingly employed in numerous applications. It is hence important to ensure that their ethical standard aligns with humans'. However, existing jail-breaking efforts show that such alignment could be compromised by well-crafted prompts. In this paper, we disclose a new threat to LLMs alignment when a malicious actor has access to the top-k token predictions at each output position of the model, such as in all open-source LLMs and many commercial LLMs that provide the needed APIs (e.g., some GPT versions). It does not require crafting any prompt. Instead, it leverages the observation that even when an LLM declines a toxic query, the harmful response is concealed deep within the output logits. We can coerce the model to disclose it by forcefully using low-ranked output tokens during autoregressive output generation, and such forcing is only needed in a very small number of selected output positions. We call it model interrogation. Since our method operates differently from jail-breaking, it has better effectiveness than state-of-theart jail-breaking techniques (92% versus 62%) and is 10 to 20 times faster. The toxic content elicited by our method is also of better quality. More importantly, it is complementary to jail-breaking, and a synergetic integration of the two exhibits superior performance over individual methods. We also find that with interrogation, harmful content can even be extracted from models customized for coding tasks. 826 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Large Language Models (LLMs) are increasingly employed in numerous applications. It is hence important to ensure that their ethical standard aligns with humans'. How- ever, existing jail-breaking efforts show that such alignment could be compromised by well-crafted prompts. In this paper, we disclose a new threat to LLMs alignment when a malicious actor has access to the top-k token predictions at each output position of the model, such as in all open-source LLMs and many commercial LLMs that provide the needed APIs (e.g., some GPT versions). It does not require crafting any prompt. Instead, it leverages the observation that even when an LLM declines a toxic query, the harmful response is concealed deep within the output logits. We can coerce the model to disclose it by forcefully using low-ranked output tokens during auto- regressive output generation, and such forcing is only needed in a very small number of selected output positions. We call it model interrogation. Since our method operates differently from jail-breaking, it has better effectiveness than state-of-the- art jail-breaking techniques (92% versus 62%) and is 10 to 20 times faster. The toxic content elicited by our method is also of better quality. More importantly, it is complementary to jail-breaking, and a synergetic integration of the two exhibits superior performance over individual methods. We also find that with interrogation, harmful content can even be extracted from models customized for coding tasks. 1. Introduction In recent years, Large Language Models (LLMs) have undergone remarkable progress, showcasing their immense potential and versatility. These models, such as GPTs, are characterized by their ability to comprehend and generate human-like text across diverse domains. Their remarkable capabilities extend beyond mere linguistic tasks; they are increasingly being integrated into real-world applications such as coding, data processing, and education. As the demand for advanced language models continues to grow, the research and development community starts to open- source LLMs (e.g., Llama by Meta [1]) or provide rich APIs to access information additional to final outputs. For example, many models nowadays provide the top-k token predictions at each output position to users, which we refer to as top-k hard-label information henceforth. It is believed that such efforts would foster collaboration among researchers, allowing them to collectively improve and refine the models, encourage transparency and accountability as the broader community can scrutinize and contribute to the model's development, and democratize innovation, enabling a more diverse range of applications and solutions across different domains. According to a recent study [2], [3], the number of open-source LLMs has grown significantly, with over 2000 models available to date. On the other hand, the advanced capabilities of LLMs for understanding and reasoning have raised concerns over their potential for misuse. There is growing concern [4], [5] over the possibility that these powerful models could be used to summarize, aggregate, and synthesize harmful information, significantly enhancing the efficiency of mali- cious actors, e.g., in generating inflammatory and fraudulent content. Furthermore, recent reports [6] reveal that numerous nation-state adversarial groups have employed LLMs for social engineering, investigating vulnerabilities, and other nefarious activities. In response to these emerging threats, commercial en- tities, such as OpenAI, have developed the concept of LLM alignment [7], a process typically incorporating human feedback during the LLM training phase to prevent the production of harmful or unethical content, to proactively mitigate defamation lawsuits. Further research [8], [9], [10], [11] also underscores the vital importance of alignment in protecting human society. It is hence necessary for LLM alignment to undergo thorough stress testing. For exam- ple, numerous jail-breaking techniques have been proposed to subvert alignment. In jail-breaking, a carefully crafted prompt is often used to induce an LLM to answer an uneth- ical or harmful question [12]. We call such questions toxic questions in this paper. Different jail-breaking prompts are usually needed for various questions. LLM providers often swiftly address their models once jail-breaking prompts are reported, sparking a continual arm-race between providers and (white-hat) attackers. For example, we observe that early jail-breaking prompts do not work any more [13], [14], whereas new prompts and methods to generate such prompts have been continuously reported [15], [16]. In this paper, we present a new threat to LLM alignment orthogonal to jail-breaking, especially when the model's top-k output token predictions are accessible such as in open-source LLMs or those with the corresponding APIs. . Different from jail-breaking, our attack does not require 826 DOI 10.1109/SP54263.2024.00182 AsasafeAI,...Asa AIInputOutput safe Figure 1: Auto-regression in LLM crafting any prompt . Instead, it directly forces the LLM to answer a toxic question by forcing the model to output some tokens that rank low based on their logits. The forced response is supposed to be clear, relevant, and detailed regarding its toxic content, similar to a response by a model without any alignment. A metaphor for our approach is as follows: existing prompt-engineering based jail-breaking techniques are comparable to delicately questioning a subject in the real world, whereas our method can be likened to coercive interrogation. It denotes a new threat as the current countermeasures of jail-breaking [12], [15], [16], [17], [18], [19], [20], [21], [22], [23], [24], [25], [26], [27] can hardly mitigate it. The key observation is that although an LLM with alignment refuses to answer a toxic question, the elicited harmful/malicious responses are concealed within it and can be coerced without the need to craft any intricate prompts, when the top-k output token predictions are visible. Most LLMs follow the auto-regression procedure [28] to emit output tokens one by one. That is, they sample an output token at each step based on the distribution denoted by logits and attach the emitted token to the input in the next step to derive the distribution for the next output token. As shown in Figure 1, during the latest step of generation, the previous output word “ AI” in red on the top, is copied and appended to the input sequence (at the bottom) for the generation of comma. With top-k hard-label accesses, such copy-pastes can be manipulated by forcefully copying chosen low-ranked tokens. Specifically, we use an LLM based classifier to de- tect on-the-fly if the subject LLM responds to the toxic question negatively (i.e., decline the question). If so, we further identify a critical sentence among the response text denoting the attitude transition of the LLM (from positive and negative). Note that it may not simply lie in the first or the last sentence as the LLM may decline anywhere during the conversation, especially when it is being interrogated, and it may emit substantial content after its attitude change (to smooth the declination). After identifying the sentence, we throw away all the following sentences in the response. We further resort to the top-k prediction of the head token of the transition sentence and force the model to use a large set of alternative output tokens, i.e., those with the top 1000 probabilities, to regenerate 1000 respective alternatives1. We use the classifier to pick one that denotes the most positive match with the toxic question and resume the full response generation from the selected sentence. A large number of alternatives are needed as the toxic response may hide deep inside the model (i.e., the output token enabling the toxic response may rank as low as hundreds). The procedure is iterative with monotonic progress, and terminates when a 1. The generation of 1000 sentences can be done in one batch and hence does not induce significant overhead. full toxic response is generated. According to our experi- ments, 2.76 times of coercion are needed on average for each toxic question. It is worth noting that a simple method that precludes negative words in responses hardly works as negative words may be an inherent part of a toxic response, instead of indication of LLM declination. Our contributions are summarized as follows. • We identify a new threat to LLM alignment orthogonal to jail-breaking. • We devise a sophisticated coercive interrogation method for LLMs. It entails addressing two challenges: identifying the attitude transition sentences , which are also called intervention points as interventions are needed from the interrogator at those places, and find- ing an alternative output token within the top-k predic- tions that could lead to a high-quality toxic response. • We implement a prototype L INT. We use it to inter- rogate 7 open-source LLMs and 3 commercial LLMs on 50 toxic questions. It achieves 92% ASR when the model is interrogated only once, and 98% when interrogated five times. It substantially outperforms two SOTA jail-breaking techniques GCG [12] and GPT- Fuzzer [17], whose ASR is 62% and whose runtime is 10-20 times more substantial. The toxic responses by LINT also have better qualities. Our case studies show that even LLMs customized from foundation models for domain specific tasks, such as models for coding tasks, still possess toxic knowledge inherited from the base models, which can be extracted by interrogation. We also show that LLMs can be coerced to perform tasks endangering privacy such as disclosing email addresses and guessing weak passwords. 2. Overview In this section, we first discuss our attack scenario. Following, we examine existing LLM jail-breaking methods. We finally overview our LLM interrogation attack that is complementary to existing methods. 2.1. Attack Scenario We consider an attack scenario where malicious actors aim to enhance their productivity in carrying out adversarial activities. They seek to subvert the current alignment and instruct LLMs to function as summarizers, aggregators, and synthesizers of harmful or illegal information. Previous studies [12], [17] have demonstrated that misaligned LLMs can elicit obscure, harmful information not widely known (e.g., methods for evading taxes) and create inflammatory and fraudulent content (e.g., a defamatory article alleging the US president is addicted to heroin). Our research further reveals that these models can also be exploited to access sensitive data (e.g., weak passwords of specific individuals). The elicited content should have the following qualities, rendering it effectively usable for adversarial activities. 827"
+      },
+      {
+        "source": "selected",
+        "value": "Large Language Models (LLMs) are increasingly employed in numerous applications. It is hence important to ensure that their ethical standard aligns with humans'. However, existing jail-breaking efforts show that such alignment could be compromised by well-crafted prompts. In this paper, we disclose a new threat to LLMs alignment when a malicious actor has access to the top-k token predictions at each output position of the model, such as in all open-source LLMs and many commercial LLMs that provide the needed APIs (e.g., some GPT versions). It does not require crafting any prompt. Instead, it leverages the observation that even when an LLM declines a toxic query, the harmful response is concealed deep within the output logits. We can coerce the model to disclose it by forcefully using low-ranked output tokens during autoregressive output generation, and such forcing is only needed in a very small number of selected output positions. We call it model interrogation. Since our method operates differently from jail-breaking, it has better effectiveness than state-of-theart jail-breaking techniques (92% versus 62%) and is 10 to 20 times faster. The toxic content elicited by our method is also of better quality. More importantly, it is complementary to jail-breaking, and a synergetic integration of the two exhibits superior performance over individual methods. We also find that with interrogation, harmful content can even be extracted from models customized for coding tasks. 826 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Guangyu Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Guanhong Tao",
+          "email": "taog@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Siyuan Cheng",
+          "email": "cheng535@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Guangyu Shen",
+          "email": "shen447@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Guanhong Tao",
+          "email": "taog@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Siyuan Cheng",
+          "email": "cheng535@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 101,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "On Large Language Models' Resilience to Coercive Interrogation",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zhuo Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Guangyu Shen",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Guanhong Tao",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Siyuan Cheng",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Xiangyu Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

@@ -1,0 +1,283 @@
+{
+  "paper_id": "024_tyr_finding_consensus_failure_bugs_in_blockchain_system_with_behaviour_divergent_model",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Tyr: Finding Consensus Failure Bugs in Blockchain System with Behaviour Divergent Model"
+      },
+      {
+        "source": "selected",
+        "value": "Tyr: Finding Consensus Failure Bugs in Blockchain System with Behaviour Divergent Model"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Blockchain is a decentralized distributed system on which a large number of financial applications have been deployed. The consensus process in it plays an important role, which guarantees that legal transactions on the chain can be executed and recorded fairly and consistently. However, because of Consensus Failure Bugs (CFBs), many blockchain systems do not provide even this basic guarantee. The validity and consistency of blockchain systems rely on the soundness of complex consensus logic implementation. Any bugs which cause the blockchain consensus failure can be crucial. In this work, we introduce T yr, an open-source tool for detecting CFBs in blockchain systems with a large number of abnormal divergent consensus behaviors. First, we design four oracle detectors to monitor the behaviors of nodes and analyze the violation of consensus properties. To trigger these oracles effectively, T yr harnesses a behavior divergent model to constantly generate consensus messages and make nodes behave as differently as possible. We implemented and evaluated T yr on six widely used commercial blockchain consensus systems, including IBM Fabric, WeBank FISCO-BCOS, ConsenSys Quorum, Facebook Diem, Go-Ethereum, and EOS. Compared with the state-of-the-art tools Peach, Fluffy, and Twins, T yr covers 27.3%, 228.2%, and 297.1% more branches, respectively. Furthermore, T yr has detected 20 serious previously unknown vulnerabilities, all of which have been repaired by the corresponding maintainers."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Blockchain is a decentralized distributed system on which a large number of financial applications have been deployed. The consensus process in it plays an important role, which guarantees that legal transactions on the chain can be executed and recorded fairly and consistently. However, because of Consensus Failure Bugs (CFBs), many blockchain systems do not provide even this basic guarantee. The validity and consistency of blockchain systems rely on the soundness of complex consensus logic implementation. Any bugs which cause the blockchain consensus failure can be crucial. In this work, we introduce T yr, an open-source tool for detect- ing CFBs in blockchain systems with a large number of abnormal divergent consensus behaviors. First, we design four oracle detec- tors to monitor the behaviors of nodes and analyze the violation of consensus properties. To trigger these oracles effectively, T yr harnesses a behavior divergent model to constantly generate consensus messages and make nodes behave as differently as possible. We implemented and evaluated T yr on six widely used commercial blockchain consensus systems, including IBM Fabric, WeBank FISCO-BCOS, ConsenSys Quorum, Facebook Diem, Go-Ethereum, and EOS. Compared with the state-of-the-art tools Peach, Fluffy, and Twins,T yr covers 27.3%, 228.2%, and 297.1% more branches, respectively. Furthermore, T yr has detected 20 serious previously unknown vulnerabilities, all of which have been repaired by the corresponding maintainers. I. I NTRODUCTION At present, the blockchain has won numerous research recognition and public attention in the global innovation field [1]. As the backbone of the blockchain system, the consensus process coordinates all the nodes in decentralized network scenarios to verify and make agreements on transaction re- sults. Various blockchain systems utilize different consensus processes. In practice, most consensus processes ensure that all honest nodes maintain a consistent view of the blockchain. Two fundamental properties should be guaranteed: validity, which is that all transactions published by one honest node will eventually be executed and recorded by all other honest nodes on their blockchain. Consistency, which is that given enough time, all ledgers in a decentralized environment will eventually arrive at the same content. Unfortunately, due to the complexity of the node consensus process, it is hard to avoid bugs in the implementation of the consensus process. Since the consensus process plays a significant role in blockchain systems, any bugs may result in severe consequences, leading to the failure of consensus ∗Fuchen Ma have contributed equally to this work. BYu Jiang and Ting Chen are the corresponding authors. and endangering the security of the blockchain system. For example, three consensus vulnerabilities in Go-Ethereum [2]- [4] could cause a chain split, where vulnerable versions refuse to accept the canonical chain. Attackers may use them to control a part of the network and make double-spending attacks, violating the validity of the blockchain and causing severe economic losses. Another bug in Ethereum [5] makes nodes transition to inconsistent blockchain states and fail to reach consensus with other nodes. Consequently, Infura [6], the largest infrastructure service, went down; with it, some of the most popular Ethereum applications, such as Maker- DAO [7] and Uniswap [8], went down. Such bugs that break key properties of blockchain systems, leading to consensus failures, are called Consensus Failure Bugs (CFBs). To exercise blockchain systems' consensus process, more abnormal consensus behaviors than those occurring naturally during regular use need to be triggered. Testing tools such as Peach [9], Fluffy [10], Twins [11], etc., are routinely applied to the blockchain and have successfully detected some bugs. However, they lack both precise detectors and efficient testcase generation for CFBs. Most fuzzers like Peach identify bugs by monitoring whether the target program exits normally. They can not detect CFBs that violate consensus properties of blockchain systems, for example, by erroneously processing blocks without crashing the nodes. Differential testing tools, such as Fluffy, detect bugs by comparing Geth [12] and Parity's [13] results (Ethereum client implemented in Go and Rust, respectively). It is limited that the target under test needs different implementations to achieve the same consensus pro- tocol. Most blockchain platforms such as Fabric [14], FISCO- BCOS [15] have only one implementation, making it hard to conduct differential testing. Furthermore, even when all clients return the same results, it is hard to ensure they correctly work because they might be affected by the same underlying bug. The consensus testing tool Twins detects byzantine behaviors in a mock environment, ignoring the runtime behaviors such as transaction execution, block verification, and message in- teraction, resulting in ineffective testing. To effectively find CFBs in blockchain systems, there are two main challenges: (1) The first challenge is to come up with precise oracles that can identify whether a blockchain system behaves correctly. Blockchain consensus behaviors are complex and dynamic. Even though vulnerabilities are executed, it is hard to find them without precise detectors. 2517 DOI 10.1109/SP46215.2023.00068 (2) The second challenge is that the CFBs tend to be hidden in the deep logic path, making it hard to trigger those bug oracles efficiently. The blockchain consensus process usually comes in multiple phases, with many nodes interacting and collaborating in different phases. Multiple nodes are required to execute a series of different behaviors to detect deep path logic vulnerabilities. We propose Tyr, a testing tool for detecting CFBs in blockchain systems, to address these challenges. First, T yr models four common bug oracles based on blockchain con- sensus properties: (1) Liveness - valid transactions should be executed eventually; (2) Safety - invalid transactions should not be committed; (3) Integrity - no hard fork happens; (4) Fairness - chances to be the leader should be fair. Then, four oracle detectors are proposed for monitoring and analyzing the nodes' consensus data in real time. Any nodes that violate the properties will be identified. To reach the deep consensus logic and trigger the oracle effectively, T yr constructs a behavior divergent model, which contains consensus data and runtime data to describe the behavior divergence of nodes. Based on the model, T yr continuously generates numerous abnormal divergent consensus messages to diverge the distributed nodes' behaviors as much as possible and performs effective testing for CFBs detection. We implemented T yr and evaluated its effectiveness on the consensus networks of 6 commercial blockchain systems: IBM Fabric, WeBank FISCO-BCOS, ConsenSys Quorum, Facebook Diem, Go-Ethereum, and EOS. Results show that T yr averagely covers 27.3%, 228.2%, and 297.1% more branches than Peach, Fluffy, and Twins. In addition, T yr has found 20 previously unknown vulnerabilities (5 in Fabric, 7 in FISCO-BCOS, 2 in Quorum, 3 in Go-Ethereum, 2 in EOS, and 1 in Diem). All of them were repaired by the corresponding maintainers, and 5 CVEs were assigned to US National Vulnerability Database. In summary, we make three key contributions: • We define four bug oracles based on consensus properties and design four oracle detectors for efficiently detecting CFBs in blockchain consensus networks. • We introduce the behavior divergent model to diverge the behaviors of nodes and trigger the bug oracles. • We implement and evaluate T yr on six widely used blockchain consensus systems. We will open-source T yr1 for practical usage. Compared with state-of-the-art tools, T yr increases the branch coverage by 27.3%, 228.2%, and 297.1% on average. It detects 20 serious previously unknown bugs, which have been confirmed and repaired. II. B ACKGROUND A. Blockchain Consensus Process Different from a centralized distributed system, transactions in a blockchain network need to be executed by all the replicas. The consensus protocol is proposed to ensure validity and consistency among all the replicas. Figure 1 illustrates the 1T yr is available at: https://github.com/BlockFuzz/Tyr overall consensus process of a blockchain system. Once a user sends transactions to blockchain networks, the transactions are broadcasted between all nodes in the network and stored in their transaction pools. When a node becomes a leader/miner node according to the specific consensus protocol used by the network, it executes the transactions from the transaction pools and orders them in a block. Then the leader/miner seals the block with its signature and broadcasts it to the other nodes. When other nodes receive a block from the network, they become validators. They check the validity of the block and its transaction results. If the block is identified as legal, then it will be linked to their local blockchains. Finally, all the replicas update their global states on the ledger based on the transaction results. With the help of this consensus process, the ledger of all honest nodes will remain the same. GlobalStates Network sendtransactionsMiner/Orderer seal execute broadcastBlock User ValidatorlinkupdateBlockChain ConsensusProcess ValidatorValidator Fig. 1. The consensus process of blockchain system. Consensus processes commonly used in blockchain systems can be divided into two types. The first type is Nakamoto consensus [16] - the longest chain mechanism. This includes protocols like PoW [17] (stands for Proof of Work) and PoS [18] (stands for Proof of Stake). They prevent malicious data manipulation by introducing a huge cost of doing evil. Each participating node competes fairly to become a miner by their computing power or stake resources proportion. The second type is the committee-based consensus mechanism. Typical protocols of this type contain PBFT [19] and Hot- Stuff [20]. Each participating node is elected leader via the ‘viewchange' messages. Both consensus mechanisms satisfy the CAP theory [21], and they can tolerate node crash failures or even byzantine attacks. In addition to the effectiveness and consistency of the blockchain system, the correctness of transactions and the participants' fairness need to be guaran- teed. As the basic service of financial applications, blockchain consensus protocols should be safe enough to prevent invalid transactions such as double-spending attacks [22], [23]. Fair- ness is essential because for blockchain systems with incentive mechanisms(e.g., Ethereum), being a leader means making a profit. Thus fairness is the concern for all participants. For those without incentive mechanisms, fair election mechanisms ensure decentralization and reduce the risks of centralized services, e.g., DDoS attacks. In summary, four key properties in blockchain systems should be guaranteed: 1) Liveness. The liveness property ensures that the consensus 2518"
+      },
+      {
+        "source": "selected",
+        "value": "Blockchain is a decentralized distributed system on which a large number of financial applications have been deployed. The consensus process in it plays an important role, which guarantees that legal transactions on the chain can be executed and recorded fairly and consistently. However, because of Consensus Failure Bugs (CFBs), many blockchain systems do not provide even this basic guarantee. The validity and consistency of blockchain systems rely on the soundness of complex consensus logic implementation. Any bugs which cause the blockchain consensus failure can be crucial. In this work, we introduce T yr, an open-source tool for detecting CFBs in blockchain systems with a large number of abnormal divergent consensus behaviors. First, we design four oracle detectors to monitor the behaviors of nodes and analyze the violation of consensus properties. To trigger these oracles effectively, T yr harnesses a behavior divergent model to constantly generate consensus messages and make nodes behave as differently as possible. We implemented and evaluated T yr on six widely used commercial blockchain consensus systems, including IBM Fabric, WeBank FISCO-BCOS, ConsenSys Quorum, Facebook Diem, Go-Ethereum, and EOS. Compared with the state-of-the-art tools Peach, Fluffy, and Twins, T yr covers 27.3%, 228.2%, and 297.1% more branches, respectively. Furthermore, T yr has detected 20 serious previously unknown vulnerabilities, all of which have been repaired by the corresponding maintainers."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yuanliang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Fuchen Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yuanhang Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Ting Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Electronic Science and Technology of China, Chengdu, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Jiaguang Sun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yuanliang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Fuchen Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yuanhang Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": true
+        },
+        {
+          "order": 4,
+          "name": "Ting Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Electronic Science and Technology of China, Chengdu, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 5,
+          "name": "Jiaguang Sun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 114,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Tyr: Finding Consensus Failure Bugs in Blockchain System with Behaviour Divergent Model",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yuanliang Chen",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Fuchen Ma",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yuanhang Zhou",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yu Jiang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Ting Chen",
+          "affiliations": [
+            "University of Electronic Science and Technology of China"
+          ]
+        },
+        {
+          "name": "Jiaguang Sun",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 6,
+      "proposed_count": 6,
+      "retained_count": 5,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

@@ -1,0 +1,255 @@
+{
+  "paper_id": "008_emilia_catching_iago_in_legacy_code",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Emilia: Catching Iago in Legacy Code"
+      },
+      {
+        "source": "selected",
+        "value": "Emilia: Catching Iago in Legacy Code"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "There has been interest in mechanisms that enable the secure use of legacy code to implement trusted code in a Trusted Execution Environment (TEE), such as Intel SGX. However, because legacy code generally assumes the presence of an operating system, this naturally raises the spectre of Iago attacks on the legacy code. We observe that not all legacy code is vulnerable to Iago attacks and that legacy code must use return values from system calls in an unsafe way to have Iago vulnerabilities. Based on this observation, we develop Emilia, which automatically detects Iago vulnerabilities in legacy applications by fuzzing applications using system call return values. We use Emilia to discover 51 Iago vulnerabilities in 17 applications, and find that Iago vulnerabilities are widespread and common. We conduct an in-depth analysis of the vulnerabilities we found and conclude that while common, the majority (82.4%) can be mitigated with simple, stateless checks in the system call forwarding layer, while the rest are best fixed by finding and patching them in the legacy code. Finally, we study and evaluate different trade-offs in the design of Emilia. 1 Emilia was the wife of Iago who eventually reveals Iago's treachery in Shakespeare's tragedy, Othello."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "There has been interest in mechanisms that enable the secure use of legacy code to implement trusted code in a Trusted Execution Environment (TEE), such as Intel SGX. However, because legacy code generally assumes the presence of an operating system, this naturally raises the spectre of Iago attacks on the legacy code. We observe that not all legacy code is vulnerable to Iago attacks and that legacy code must use return values from system calls in an unsafe way to have Iago vulnerabilities. Based on this observation, we develop Emilia, which automat- ically detects Iago vulnerabilities in legacy applications by fuzzing applications using system call return values. We use Emilia to discover 51 Iago vulnerabilities in 17 applications, and find that Iago vulnerabilities are widespread and common. We conduct an in-depth analysis of the vulnerabilities we found and conclude that while common, the majority (82.4%) can be mitigated with simple, stateless checks in the system call forwarding layer, while the rest are best fixed by finding and patching them in the legacy code. Finally, we study and evaluate different trade-offs in the design of Emilia. I. I NTRODUCTION To protect security-sensitive code from the large trusted computing base (TCB) of commodity systems, many hardware-based [15], [10], [1] and hypervisor-based [6], [5], [38] trusted execution environments (TEEs) have been pro- posed. User-level TEEs, such as SGX, isolate “trusted” appli- cations from the large, legacy TCB of commodity systems, which includes the OS, drivers as well as all privileged applications on a system. In general, there are two ways these trusted applications can be implemented-they can either be implemented from scratch, or one can port a legacy application that runs on a normal OS into the TEE. While the former is more secure, it also requires more effort. In contrast, the latter requires less effort, but faces a significant drawback- legacy code assumes the presence of an operating system (OS), but the TEE isolates the trusted application from the OS. To service system calls (abbreviated to syscall hereinafter) to the OS, legacy applications running in TEEs may use an OS- forwarding layer (OFL) that intercepts syscalls made by the legacy application and forwards them to an untrusted OS run- ning outside the TEE. Unfortunately, while the TEE provides isolation for the application's runtime state and memory, this syscall interface still represents a significant attack surface for the trusted application. Legacy code inherently trusts the OS that it makes syscalls to. However, if the legacy code is inside a TEE, and the commodity OS is outside the TEE, this makes the commodity OS untrusted, which raises the possibility of the OS executing an Iago attack. An Iago attack is one where the untrusted OS abuses the trust the legacy application places in the syscall interface to return maliciously crafted syscall return values. Such attacks were first identified in [5] and [32], and then eventually named Iago attacks in [4]. While most legacy code implicitly trusts the OS, this does not automatically mean that all legacy code is vulnerable to Iago attacks-for code to be vulnerable, it must a) neglect to sanitize the return values of a syscall and b) use the return values in an unsafe way. Thus, for legacy code to be vulnerable to an Iago attack, it must have an Iago vulnerability that meets these two criteria. Many trusted applications use a custom OFL to enable legacy code to run in TEEs such as SGX by forwarding syscalls to the untrusted OS, as exemplified by TaLoS [26], SGX SQLite [31] and Intel-SGX-SSL [17]. In addition, legacy code can also be ported to work with general-purpose TEE- secured containers with OFL, e.g., TensorSCONE [24] inte- grates TensorFlow with SCONE [2] (Intel SGX) to enable secure execution of machine learning computations, or TEE- secured language interpreters like ScriptShield [43]. A number of OFLs try to mitigate Iago vulnerabilities by performing syscall return value sanitization, as exemplified by Panoply[35] and Glamdring[28], or by narrowing the syscall interface as proposed in Graphene-SGX[40] and SCONE[2]. However, such sanitization is often ad-hoc and may be incomplete, leaving applications still vulnerable to Iago attacks. In this paper, we 1) attempt to measure the base rate of Iago vulnerabilities in a wide range of legacy code; and 2) analyze how well a sample of current OFLs can shield legacy code from Iago vulnerabilities. To do this, we design and implement Emilia1, a syscall fuzzer that finds Iago vulnerabilities in legacy code. Compared to regular syscall fuzzers, Emilia fuzzes applications from the syscall interface, by replacing legitimate OS syscall return values with fuzz values, designed to find and trigger Iago vulnerabilities. Previous work [13] has used binary-level symbolic execution and taint-tracking to detect unsafe information flows from syscalls to sensitive uses, but their approach suffers from path explosion, whereas fuzzing does not. We run Emilia on 17 popular applications and find a total of 51 Iago vulnerabilities, which we categorize into 5 basic types. We also found two Iago vulnerabilities in Google's Asylo [9] system, an OFL that has been specially de- signed to protect applications against Iago vulnerabilities. Both 1Emilia was the wife of Iago who eventually reveals Iago's treachery in Shakespeare's tragedy, Othello. Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.24328 www.ndss-symposium.org vulnerabilities have been confirmed and fixed by the Asylo team. Our main result is that Iago vulnerabilities are wide- spread-nearly every application we examined had at least one vulnerability. Moreover, we find that many vulnerabilities are stateless, which should be possible for OFLs to mitigate efficiently, but a number of current OFLs and SGX applications actually only partially mitigate these vulnerabilities or do not mitigate them at all. In summary, this paper makes the following contributions: • We present Emilia, a tool that finds and detects Iago vulnerabilities by fuzzing syscall return values. • We use Emilia to measure the frequency of the Iago vulnerabilities in real-world applications, and have iden- tified a total of 51 vulnerabilities involving memory corruption in 17 popular legacy applications and glibc. We find that while Iago vulnerabilities are widespread, the vast majority are easily-mitigatable Local or Static vulnerabilities. • We perform an analysis of 6 OFLs and SGX applications and find that the majority neglect to mitigate some or all Iago vulnerabilities. Only one, Graphene-SGX, catches all Local and Stateful Iago vulnerabilities. While Emilia is intended to fuzz unmodified legacy applications, we ported it to fuzz Google Asylo [9] and discovered two Iago vulnerabilities which have been reported and fixed. • We identify some of the underlying causes of the Iago vulnerabilities by characterizing the syscall return values. Our analytics sheds some light on how legacy applications can be better ported to the OFL's protection. We begin by providing background and describing our Iago vulnerability model in Section II. We then describe the design and implementation of our Iago fuzzer, Emilia in Section III, followed by an analysis of the Iago vulnerabilities found in a corpus of legacy applications in Section IV, where we catego- rize the vulnerabilities into Static, Local, Stateful, External and Channel. We analyze the security and Iago mitigation ability of current OFLs in Section V and then evaluate the different Emilia fuzzing strategies in Section VI. Finally, we discuss limitations, related work and conclude in Sections VII, VIII and IX. II. B ACKGROUND AND VULNERABILITY MODEL For legacy applications running in a TEE with an OFL, the syscall interface represents the attack surface for a malicious OS. A malicious OS kernel can cause unexpected and undesir- able application behavior by generating unexpected or illegal inputs to applications. Applications generally interact with the OS kernel via the syscall interface. A benign OS adheres to a well-known set of behavior when generating responses for sysalls, which may be specified in documentation such as that found in a syscall's “man pages”. However, in this work, we model a malicious OS that is free to arbitrarily deviate from the specification and return any values it wishes in its responses. The possibility of syscall manipulation by a malicious OS was identified by Ports and Garfinkel in their Overshadow system [32]. However, it was not until the analysis performed by Checkoway and Shacham that these attacks were formally named Iago attacks [4]. Their proposed Iago attacks consisted of only scalar syscall return values, and two attacks were identified in their work: one caused replay attacks on Apache servers with mod ssl, due to the syscall getpid being used in part for randomness; and the other one even achieved arbitrary code execution because malloc (wrapped in glibc) could be tricked to modify arbitrary memory by malicious return values of brk and mmap. However, a malicious OS is free to return both corrupted scalar and buffer values. For example, in the syscall getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen) the OS may fill optval with arbitrary values. We do note that in general, the contents of such buffers are copied from the OS' address space into SGX enclave memory by the OFL, which will only copy as much data as it has allocated space for. Thus, while a malicious OS can return a longer buffer, the entire buffer may not necessarily be passed to the trusted application depending on the implementation of the OFL. For example, in the getsockopt syscall, a proper OFL will only copy at most the number of bytes specified by the application in the optlen argument. We exclude arguments that could be set by a malicious party outside of the OS from the Iago attack surface. For example, the value returned in the buf argument of the read(int fd, void *buf, size_t count) syscall could have been set by a malicious attacker with access to the file being read from. We restrict Iago attacks to only modify values that are exclusively under the control of the OS. Iago attacks require an exploitable Iago vulnerability to be successful. We define an Iago vulnerability in an application as a section of code in the application that uses a syscall return value in an unsafe way, which leads to unexpected or undesirable behavior in the application. These vulnerabilities occur because legacy applications inherently trust the OS and thus do not perform validation on the syscall values returned by the OS. In this paper, we focus on Iago vulnerabilities that can result in pointer corruption. While malicious syscall return values can be used in a variety of unsafe ways, e.g., the return value of getpid can be used as an entropy source, or the time provided by the untrusted OS can be relied on as timestamps to generate system logs, the most egregious misuse of untrusted data is when it can result in code or data pointer corruption [37]. Data pointer corruption can lead to memory safety errors, which can lead to information leakage or further memory corruption. Code pointer corruption can result in arbitrary code execution. For certain pointer corruptions, the attacker may be unable to retrieve the information directly, but there are possibilities that the illegally accessed data can be revealed to the attacker through other channels. For example, a buffer containing data from out-of-bounds memory read may be later written to a file, network socket or side-channel. III. D ESIGN AND IMPLEMENTATION OF EMILIA A. Objective Since Iago vulnerabilities result from the misuse or im- proper handling of syscall-returned results, Emilia's objective is to trigger as many syscalls and as much code that executes"
+      },
+      {
+        "source": "selected",
+        "value": "There has been interest in mechanisms that enable the secure use of legacy code to implement trusted code in a Trusted Execution Environment (TEE), such as Intel SGX. However, because legacy code generally assumes the presence of an operating system, this naturally raises the spectre of Iago attacks on the legacy code. We observe that not all legacy code is vulnerable to Iago attacks and that legacy code must use return values from system calls in an unsafe way to have Iago vulnerabilities. Based on this observation, we develop Emilia, which automatically detects Iago vulnerabilities in legacy applications by fuzzing applications using system call return values. We use Emilia to discover 51 Iago vulnerabilities in 17 applications, and find that Iago vulnerabilities are widespread and common. We conduct an in-depth analysis of the vulnerabilities we found and conclude that while common, the majority (82.4%) can be mitigated with simple, stateless checks in the system call forwarding layer, while the rest are best fixed by finding and patching them in the legacy code. Finally, we study and evaluate different trade-offs in the design of Emilia. 1 Emilia was the wife of Iago who eventually reveals Iago's treachery in Shakespeare's tragedy, Othello."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Rongzhen Cui",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Lianying Zhao",
+          "email": "lianying.zhao@carleton.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "David Lie",
+          "email": "lie@eecg.toronto.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Rongzhen Cui",
+          "email": "",
+          "affiliations": [
+            "University of Toronto"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Lianying Zhao",
+          "email": "lianying.zhao@carleton.ca",
+          "affiliations": [
+            "Carleton University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "David Lie",
+          "email": "lie@eecg.toronto.edu",
+          "affiliations": [
+            "University of Toronto"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 114,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Rongzhen Cui",
+          "block_id": "pdf:p1:b1",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Lianying Zhao",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "David Lie",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Rongzhen Cui",
+          "affiliation_raw": "University of Toronto",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b1",
+          "affiliation_block_ids": [
+            "pdf:p1:b4"
+          ],
+          "email_raw": "gavin.cui@mail.utoronto.ca",
+          "email_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 5.422,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Lianying Zhao",
+          "affiliation_raw": "Carleton University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "email_raw": "lianying.zhao@carleton.ca",
+          "email_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 3.689,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "David Lie",
+          "affiliation_raw": "University of Toronto",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "email_raw": "lie@eecg.toronto.edu",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 3.267,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Emilia: Catching Iago in Legacy Code",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/emilia-catching-iago-in-legacy-code/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Rongzhen Cui",
+          "affiliations": [
+            "University of Toronto"
+          ]
+        },
+        {
+          "name": "Lianying Zhao",
+          "affiliations": [
+            "Carleton University"
+          ]
+        },
+        {
+          "name": "David Lie",
+          "affiliations": [
+            "University of Toronto"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "David Lie",
+      "field": "email",
+      "restored_value": "lie@eecg.toronto.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

@@ -1,0 +1,298 @@
+{
+  "paper_id": "023_gosonar_detecting_logical_vulnerabilities_in_memory_safe_language_using_inductive_constraint_reasoning",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "GOSONAR: Detecting Logical Vulnerabilities in Memory Safe Language Using Inductive Constraint Reasoning"
+      },
+      {
+        "source": "selected",
+        "value": "GOSONAR: Detecting Logical Vulnerabilities in Memory Safe Language Using Inductive Constraint Reasoning"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "As the global community advocates for the adoption of memory-safe programming languages, a significant research gap persists in identifying the critical vulnerabilities that follow. Logical vulnerabilities represent the most formidable threat to these programs, in the absence of memory safety related vulnerabilities such as buffer overflow. Go, a prevalent memorysafe language for cloud-based applications where resource availability is paramount, is especially susceptible to nonterminating, resource-exhaustive vulnerabilities. We present a novel approach to the problem, inductive constraint reasoning, designed to evaluate nontermination in complex, real-world programs, demonstrating superior performance compared to contemporary tools on a standardized dataset. Our methodology employs binary-level underconstrained symbolic execution to gather the constraints necessary for multiple recursive iterations. By applying a first-order derivative to these constraints, we model and classify various recursive functions, determining whether their subgoals converge to a global objective. This study addresses numerous challenges in the analysis of Go programs while simultaneously developing and implementing a practical solution to detect uncontrolled recursion, which has revealed 5 new vulnerabilities in the Go standard library. 758 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "As the global community advocates for the adoption of memory-safe programming languages, a significant research gap persists in identifying the critical vulnerabilities that follow. Logical vulnerabilities represent the most formidable threat to these programs, in the absence of memory safety related vul- nerabilities such as buffer overflow. Go, a prevalent memory- safe language for cloud-based applications where resource availability is paramount, is especially susceptible to nonter- minating, resource-exhaustive vulnerabilities. We present a novel approach to the problem, inductive constraint reasoning , designed to evaluate nontermination in complex, real-world programs, demonstrating superior performance compared to contemporary tools on a standardized dataset. Our methodol- ogy employs binary-level underconstrained symbolic execution to gather the constraints necessary for multiple recursive itera- tions. By applying a first-order derivative to these constraints, we model and classify various recursive functions, determining whether their subgoals converge to a global objective. This study addresses numerous challenges in the analysis of Go programs while simultaneously developing and implementing a practical solution to detect uncontrolled recursion, which has revealed 5 new vulnerabilities in the Go standard library. 1. Introduction In a recent report [2] issued by the US White House Office of National Cyber Directory (ONCD), the integration of memory-safe programming languages has been identified as a key element in the formulation of the National Cyber- security Strategy. This strategic decision is underpinned by the revelation that 70% [3] of all Common Vulnerabilities and Exposures (CVEs) are attributable to memory safety issues. Despite concerted efforts of both industrial entities and academic institutions to develop frameworks [1], [4], [18] that aid in the detection and mitigation of such vul- nerabilities, eradication of these issues cannot be achieved without adopting such languages [2]. Furthermore, tradi- tional justifications for selecting conventional programming languages, such as execution speed [14], [15], size of com- piled binaries [23], and the ability to compile into native exe- cutables [24]-are increasingly being challenged by modern memory-safe languages like Go and Rust given the growing availability of resources. Nevertheless, there is a noticeable lack of research focused on program analysis to detect vulnerabilities in memory-safe languages. An in-depth review of Go related CVEs shows that logical vulnerabilities are the most com- mon. Considering Go's extensive use in the backend of cloud-based platforms [10] such as Uber, DropBox, Meta, and Netflix, logical vulnerabilities that can impact availabil- ity represent a major risk. OW ASP ranks unrestricted re- source consumption 4th among the top 10 threats to API se- curity in 2023 [16]. Interestingly, among the leading CWEs for Go are Uncontrolled Resource Consumption (CWE- 400), Allocation of Resources Without Limit (CWE-770) and Uncontrolled Recursion (CWE-674), which represent 79 (35%) of the CVEs. Specifically, logical vulnerabilities that can be exploited to deplete resources can lead to financial losses through denial-of-service attacks. Furthermore, we identified six instances of uncontrolled recursion in Go's standard library , with five of them having a Common Vulnerability Scoring System (CVSS) rating of 7.5 in 2022 alone. These vulnerabilities in the standard library make any Go-based application vulnerable to resource exhaustion. Unlike traditional DoS/DDoS, logical vulnerabilities weaponized to cause denial of service via resource exhaus- tion do not require multiple requests and thus can avoid detection by traditional methods. The difficulty in verifying these vulnerabilities adds to the complexity, especially when dealing with uncontrolled recursion. Identifying the start of an uncontrolled recursion and demonstrating the lack of a clear termination condition, particularly when it spans multiple functions, are some of the challenges faced. More- over, unlike traditional languages, Go incorporates various compilation designs that make analysis of Go programs using traditional program analysis difficult. Although loops, including infinite loops, present similar challenges, they do not engage additional computational or memory resources, thereby rendering them less susceptible to exploitation com- pared to recursive constructs. Existing Approaches. A considerable body of research has been devoted to the detection of nontermination in relatively straightforward programs. These programs are typ- ically integer-based and resemble C-like syntax. Researchers have utilized methodologies such as program analysis, the- orem resolution, and the construction of test oracles for 758 DOI 10.1109/SP61157.2025.00043 runtime assessment. Regrettably, recent investigation [21] has demonstrated these methodologies to be ineffectual be- yond their own dataset, when applied to real-world applica- tions, even those developed in lower-level languages such as C/C++. Furthermore, it also identifies pointer manipulation, array, data structure and recursion as key failure points for these tools [21]. Interestingly, programs built with contem- porary memory safe languages employ all of these heavily in order to be efficient and secure which makes these tools inadequate for analysis. Nontermination work divides into termination and non- termination detection. Proteus [25] summarizes loops, while UAutomizer [12] translates traces into automata for termina- tion analysis. A data-driven approach [28] uses ML to learn loop limits. Nontermination detection, such as TNT [11], generates counterexamples from recurrent states. Another work [7] reverses transition systems in nondeterministic integer programs. Loopster [26] and its continuation [27] reduces nontermination to a reachability problem and use path dependency automata. Practical solutions like 2LS [19] use interprocedural abstract interpretation for C programs, and AProVE [8] employs constraint solving for recurrent sets in loops. One work [29] addresses infinite loops in real-world programs, finding C/C++ vulnerabilities with 240 hours of fuzzing. However, none efficiently handle complex real-world programs, let alone Go programs. Our Proposal. Drawing from initial observations and the gap in existing approaches, we introduce an innovative, efficient and practical framework designed to identify un- controlled recursion in real-world Go programs, G OSONAR . Just as sonar technology is used to measure the depth of the sea, G OSONAR can detect the depth of recursions detecting uncontrolled recursion vulnerabilities. Our method utilizes binary-level underconstrained symbolic execution to collect constraints necessary for several recursive iterations. We em- ploy a first order derivative of these constraints to model and classify different kinds of recursive functions. Specifically, we analyze the change of constraints from n− 1th recursion to nth recursion i.e. the new set of constraints each recursion adds. This analysis helps identify the trajectory of program execution along with the recursion's subgoal and determines whether this subgoal converges to a global goal or not. A termination condition will be part of this delta and can not be met indefinitely leading the recursion closer to a termination state. Unlike previous studies that applied constraint solving to generate a repetitive set of program states leading to infinite recursion, our approach adopts an inductive strategy focus- ing on constraint changes. Although inductive reasoning has been used to simplify constraint solving following inductive logic programming, we use it to predict the trajectory of program execution. This approach allows for the assessment of complex recursions in real-world programs, where the route to a recursion may be intricate, yet the recursion itself can be straightforward. By eliminating the need to analyze all the constraints and focusing on their differences, our approach effectively narrows the scope of the decision- making process. We address several challenges while designing our prototype, G OSONAR , related to symbolic execution of binaries compiled from a heavily instrumented language, enriching the process of detection of potential candidates and finally systematic exploration of different kinds of recursive function and their effect on constraints. Evaluation & Result. We used GOSONAR to analyze all 36 packages in the core Go standard library used by every Go program in some form. G OSONAR identifies 14 packages with reachable recursions and examines these packages to detect 983 recursions, forming 20,036 lassos composed of the recursion and a stem. G OSONAR uncovered 5 new vulnerabilities in the Go standard library, all reported and acknowledged by developers 1. In order to test the sound- ness of G OSONAR , we have evaluated G OSONAR on a dataset [21] of infinite recursion vulnerabilities in OSS programs. This dataset contains both vulnerable (nonter- minating) and patched (terminating) versions of each bug and provides a taxonomy of such vulnerabilities based on the root cause. Furthermore, due to the lack of tools that can work with Go programs, we compared G OSONAR against leading technologies for native language, namely UAutomizer [12], CPAchecker [5], 2LS [19], AProVE [8], and T2 [6] on the same data set. These applications set the standard in termination analysis, with G OSONAR exceeding their performance. Contribution. The contribution of this work can be sum- marized as the following: • We present G OSONAR , the first and only tool of its kind that can find real uncontrolled recursion vulnerabilities in Go programs. • We analyze all the standard libraries and find 5 new uncontrolled recursion vulnerabilities. • We propose a novel approach, inductive constraint reasoning for evaluating nontermination in complex real world programs that outperforms all contempo- rary tools on a standardized dataset. 2. Overview This section provides a formal definition of recursions and their essential role in contemporary programming. Then illustrates an example with an incomplete patch to empha- size the importance of automated detection and the limita- tion of manual analysis. Lastly, it addresses the difficulties in developing a detection tool and the presumptions considered during the design of G OSONAR . 2.1. Background A recursion in a program is typically modeled as a lasso consisting of a stem and the recursion. The stem provides a path connecting the recursion back to the entry point of the 1. We have followed Go's disclosure guideline for reporting vulnerability and got acknowledgment from Go developers 759"
+      },
+      {
+        "source": "selected",
+        "value": "As the global community advocates for the adoption of memory-safe programming languages, a significant research gap persists in identifying the critical vulnerabilities that follow. Logical vulnerabilities represent the most formidable threat to these programs, in the absence of memory safety related vulnerabilities such as buffer overflow. Go, a prevalent memorysafe language for cloud-based applications where resource availability is paramount, is especially susceptible to nonterminating, resource-exhaustive vulnerabilities. We present a novel approach to the problem, inductive constraint reasoning, designed to evaluate nontermination in complex, real-world programs, demonstrating superior performance compared to contemporary tools on a standardized dataset. Our methodology employs binary-level underconstrained symbolic execution to gather the constraints necessary for multiple recursive iterations. By applying a first-order derivative to these constraints, we model and classify various recursive functions, determining whether their subgoals converge to a global objective. This study addresses numerous challenges in the analysis of Go programs while simultaneously developing and implementing a practical solution to detect uncontrolled recursion, which has revealed 5 new vulnerabilities in the Go standard library. 758 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sakib Anwar",
+          "email": "anwar.40@osu.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Carter Yagemann",
+          "email": "yagemann.1@osu.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhiqiang Lin",
+          "email": "zlin@cse.ohio-state.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Inductive Constraint Reasoning",
+          "email": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Md Sakib Anwar",
+          "email": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Carter Yagemann",
+          "email": "yagemann.1@osu.edu",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zhiqiang Lin",
+          "email": "zlin@cse.ohio-state.edu",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 104,
+      "author_count": 4,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.2,
+        "candidates": [
+          {
+            "name": "O ONAR",
+            "block_id": "pdf:p1:b2",
+            "font_size": 11.2,
+            "support_ids": []
+          },
+          {
+            "name": "Md Sakib Anwar",
+            "block_id": "pdf:p1:b4",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b7",
+              "pdf:p1:b10"
+            ]
+          },
+          {
+            "name": "Carter Yagemann",
+            "block_id": "pdf:p1:b5",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b8",
+              "pdf:p1:b11"
+            ]
+          },
+          {
+            "name": "Zhiqiang Lin",
+            "block_id": "pdf:p1:b6",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b9",
+              "pdf:p1:b12"
+            ]
+          }
+        ],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 1,
+          "author": "Md Sakib Anwar",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Carter Yagemann",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Zhiqiang Lin",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 1,
+          "author": "Md Sakib Anwar",
+          "affiliation_raw": "The Ohio State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 6.999,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Carter Yagemann",
+          "affiliation_raw": "The Ohio State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 4.541,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Zhiqiang Lin",
+          "affiliation_raw": "The Ohio State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 2.445,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "GoSonar: Detecting Logical Vulnerabilities in Memory Safe Language Using Inductive Constraint Reasoning",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Md Sakib Anwar",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        },
+        {
+          "name": "Carter Yagemann",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        },
+        {
+          "name": "Zhiqiang Lin",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Carter Yagemann",
+      "field": "email",
+      "restored_value": "yagemann.1@osu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Zhiqiang Lin",
+      "field": "email",
+      "restored_value": "zlin@cse.ohio-state.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

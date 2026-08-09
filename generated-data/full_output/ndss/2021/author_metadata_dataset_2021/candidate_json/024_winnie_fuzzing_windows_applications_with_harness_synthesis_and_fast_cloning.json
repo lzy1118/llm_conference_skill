@@ -1,0 +1,265 @@
+{
+  "paper_id": "024_winnie_fuzzing_windows_applications_with_harness_synthesis_and_fast_cloning",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "WINNIE: Fuzzing Windows Applications with Harness Synthesis and Fast Cloning"
+      },
+      {
+        "source": "selected",
+        "value": "WINNIE: Fuzzing Windows Applications with Harness Synthesis and Fast Cloning"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fuzzing is an emerging technique to automatically validate programs and uncover bugs. It has been widely used to test many programs and has found thousands of security vulnerabilities. However, existing fuzzing efforts are mainly centered around Unix-like systems, as Windows imposes unique challenges for fuzzing: a closed-source ecosystem, the heavy use of graphical interfaces and the lack of fast process cloning machinery. In this paper, we propose two solutions to address the challenges Windows fuzzing faces. Our system, WINNIE, first tries to synthesize a harness for the application, a simple program that directly invokes target functions, based on sample executions. It then tests the harness, instead of the original complicated program, using an efficient implementation of fork on Windows. Using these techniques, WINNIE can bypass irrelevant GUI code to test logic deep within the application. We used WINNIE to fuzz 59 closed-source Windows binaries, and it successfully generated valid fuzzing harnesses for all of them. In our evaluation, WINNIE can support 2.2× more programs than existing Windows fuzzers could, and identified 3.9× more program states and achieved 26.6× faster execution. In total, WINNIE found 61 unique bugs in 32 Windows binaries."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fuzzing is an emerging technique to automatically validate programs and uncover bugs. It has been widely used to test many programs and has found thousands of security vul- nerabilities. However, existing fuzzing efforts are mainly centered around Unix-like systems, as Windows imposes unique challenges for fuzzing: a closed-source ecosystem, the heavy use of graphical interfaces and the lack of fast process cloning machinery. In this paper, we propose two solutions to address the challenges Windows fuzzing faces. Our system, W INNIE , first tries to synthesize a harness for the application, a simple program that directly invokes target functions, based on sample executions. It then tests the harness, instead of the original complicated program, using an efficient implementation of fork on Windows. Using these techniques, W INNIE can bypass irrelevant GUI code to test logic deep within the application. We used W INNIE to fuzz 59 closed-source Windows binaries, and it successfully generated valid fuzzing harnesses for all of them. In our evaluation, WINNIE can support 2.2× more programs than existing Windows fuzzers could, and identified 3.9× more program states and achieved 26.6× faster execution. In total, W INNIE found 61 unique bugs in 32 Windows binaries. I. I NTRODUCTION Fuzzing is an emerging software-testing technique for automatically validating program functionalities and uncovering security vulnerabilities [ 42]. It randomly mutates program inputs to generate a large corpus and feeds each input to the program. It monitors the execution for abnormal behaviors, like crashing, hanging, or failing security checks [ 56]. Recent fuzzing efforts have found thousands of vulnerabilities in open- source projects [ 12, 28, 52, 62]. There are continuous efforts to make fuzzing faster [4, 9, 53] and smarter [60, 65, 67]. However, existing fuzzing techniques are mainly applied to Unix-like OSes, and few of them work as well on Windows platforms. Unfortunately, Windows applications are not free from bugs. Recent report shows that in the past 12 years, 70% of all security vulnerabilities on Windows systems are memory safety issues [ 43]. In fact, due to the dominance of Windows operating system, its applications remain the most lucrative targets for malicious attackers [ 10, 17, 18, 48]. To bring popular fuzzing techniques to the Windows platform, we investigate common applications and state-of-the-art fuzzers, and identify three challenges of fuzzing applications on Windows: a predominance of graphical applications, a closed- source ecosystem (e.g., third-party or legacy libraries), and the lack of fast cloning machinery like fork on Unix-like OSes. ldf_jpm.dll zlib1.dll libmpg.dll Input parser Image readerXnView.exe Multi-media ArchiveMovie Sound Network Plugin Image GUI dialog window user input path GUI Main executable Libraries User interaction Fig. 1: Architecture of XnView on Windows. The program accepts the user input via the GUI. The main executable parses the received path and dynamically loads the library to process the input. A fuzzing harness bypasses the GUI to reach the functionality we wish to test. Windows applications heavily rely on GUIs (graphical user interfaces) to interact with end-users, which poses a major obstacle to fuzzing. As shown in Figure 1, XnView [64] requires the user to provide a file through the graphical dialog window. When the user specifies the file path, the main executable parses the file, determines which library to delegate to, and dynamically loads the necessary library to handle the input. Although some efforts try to automate the user interaction [ 7], the execution speed is much slower than ordinary fuzzing. For example, fuzzing GUI applications with AutoIt yields only around three executions per second [ 20], whereas Linux fuzzing often achieves speeds of more than 1,000 executions per second. Speed is crucial for effective fuzzing, and this slow-down renders fuzzing GUI application impractical. The general way to overcome the troublesome GUI is to write a simple program, called a harness, to assist with fuzzing. A harness replaces the GUI with a CLI (command- line interface), prepares the execution context such as arguments and memory, and invokes the target functions directly. In this way, we can test the target program without any user interaction. For example, with a harness that receives the input path from the command line and loads the decoder library, we can test XnView without worrying about the dialog window. Recent work has even explored generating harnesses automatically for open-source programs [8, 35]. Nevertheless, Windows fuzzing still relies largely on human effort to create effective harnesses because most Windows programs are closed-source, commercial-off-the-shelf (COTS) software [ 3, 21, 44, 55, 61]. Existing automatic harness synthesis methods require to access the source code, and thus cannot handle closed-source programs easily [ 8, 35]. Without the source code, we have little knowledge of the program's internals, like the locations of interesting functions and their prototypes. Since manual analysis is error-prone and unscalable to a large number of programs, we need a new method to generate fuzzing harnesses directly from the binary. Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.24334 www.ndss-symposium.org Finally, Windows lacks the fast cloning machinery (e.g., fork syscall) that greatly aids fuzzing on Unix-like OSes. Linux fuzzers like AFL place a fork-server before the target function, and subsequent executions reuse the pre-initialized state by forking. The fork-server makes AFL run 1.5 ×-2× faster on Linux [70]. fork also improves the stability of testing as each child process runs in its own address space, containing any side-effects, like crashes or hangs. However, the Windows kernel does not expose a clear counterpart for fork, nor any suitable alternatives. As a result, fuzzers have to re-execute the program from the beginning for each new input, leading to a low execution speed. Although we can write a harness to test the program in a big loop (aka., persistent mode [68]), testing many inputs in one process harms stability. For example, each execution may gradually pollute the global program state, eventually leading to divergence and incorrect behavior. We propose an end-to-end system, WINNIE , to address the aforementioned challenges and make fuzzing Windows programs more practical. WINNIE contains two components: a harness generator that automatically synthesizes harnesses from the program binary alone, and an efficient Windows fork- server. To construct plausible harnesses, our harness generator combines both dynamic and static analysis. We run the target program against several inputs, collect execution traces, and identify interesting functions and libraries that are suitable for fuzzing. Then, our generator searches the execution traces to collect all function calls to candidate libraries, and extracts them to form a harness skeleton. Finally, we try to identify the relationships between different function calls and arguments to build a full harness. Meanwhile, to implement an efficient fork-server for Windows systems, we identified and analyzed undocumented Windows APIs that effectively support a Copy- on-Write fork operation similar to the corresponding system call on Unix systems. We established the requirements to use these APIs in a stable manner. The availability of fork eliminates the need for existing, crude fuzzing techniques like persistent mode. To the best of our knowledge, this is the first practical counterpart of fork on Windows systems for fuzzing. We implemented WINNIE in 7.1K lines of code (LoC). We applied WINNIE on 59 executables, including Visual Studio, ACDSee, ultraISO and EndNote. Our harness generator automatically synthesized candidate harnesses from execution traces, and 95% of them could be fuzzed directly with only minor modifications (i.e., ≤ 10 LoC). Our improved fuzzer also achieved 26.6 × faster execution and discovered 3.6 × more basic blocks than WinAFL, the state-of-the-art fuzzer on Windows. By fuzzing these 59 harnesses, WINNIE successfully found 61 bugs from 32 binaries. Out of the 59 harnesses, WinAFL only supported testing 29. In summary, we make the following contributions: • We identified the major challenges of fuzzing closed- source Windows applications; • We developed WINNIE , which can automatically generate harnesses for Windows binaries to bypass GUI code; • We implemented the first efficient Windows fork-server; • WINNIE successfully generated efficient harnesses for 59 Windows binaries and found 61 bugs in 32 binaries. To facilitate future research, we have open-sourced WINNIE at https://github.com/sslab-gatech/winnie. ➀ ➂ ➅ ➁ ➃ fuzzer cull select insert mutate ➄ coverage main func fuzzed execution entry fork server main func main func target Fig. 2: Fuzzing overview. (1) The fuzzer maintains a queue of inputs. Each cycle, (2) it picks one input from the queue and (3) modifies it to generate a new input. (4) It feeds the new input into the fuzzed program and (5) records the code coverage. (6) If the execution triggers more coverage, the new input is added back into the queue. II. B ACKGROUND : WHY HARNESS GENERATION ? Fuzzing is a popular automated technique for testing soft- ware. It generates program inputs in a pseudo-random fashion and monitors program executions for abnormal behaviors (e.g., crashes, hangs or assertion violations). Since it was introduced, fuzzing has found tens of thousands of bugs [27]. Most popular fuzzers employ greybox, feedback-guided fuzzing. Under this paradigm, fuzzers treat programs like black boxes, but also rely on light-weight instrumentation techniques to collect useful feedback (e.g., code coverage) from each run. The feedback is used to measure how an input helps explore the program's internal states. Thus, a fuzzer can gauge how effective an input is at eliciting interesting behaviors from the program. Intuitively, since most bugs lie in the relatively complicated parts of code, the feedback guides the fuzzer towards promising parts of the program. This gives greybox fuzzers a decisive advantage over black-box fuzzers which blindly generate random inputs without any runtime feedback. AFL [ 69], a popular Linux fuzzer, exemplifies greybox fuzzing in practice. Figure 2 depicts AFL's fuzzing process. The testing process is similar to a genetic algorithm. It proceeds iteratively, mutating and testing new inputs each round. Inputs which elicit bugs (i.e., crashes or hangs) or new code coverage from the program are selected for further testing, while other uninteresting inputs are discarded. Across many cycles, AFL learns to produce interesting inputs as it expands the code coverage map. Although simple, this strategy is surprisingly successful: several recent advanced fuzzers [4, 9, 14] follow the same high-level process. Overall, AFL-style, greybox fuzzing has proven extremely successful on Linux systems. Although most recent research efforts focus on improving fuzzing Linux applications [ 4, 9, 14, 22, 39, 50, 69], Windows programs are also vulnerable to memory safety issues. Past researchers have uncovered many vulnerabilities by perform- ing a manual audit [ 43]. In fact, Windows applications are especially interesting because they are commonly used on end- user systems. These systems are prime targets for malicious attackers [10, 17]. Automatic Windows testing would pave a way for researchers to look for bugs in many Windows programs while limiting manual code review. In turn, this would help secure the Windows ecosystem. Unfortunately, no fuzzers can test Windows applications as effectively as AFL can test Linux applications. Table I compares Linux AFL with popular Windows fuzzers. WinAFL is a fork of AFL ported for Windows systems [ 57] and supports feedback-"
+      },
+      {
+        "source": "selected",
+        "value": "Fuzzing is an emerging technique to automatically validate programs and uncover bugs. It has been widely used to test many programs and has found thousands of security vulnerabilities. However, existing fuzzing efforts are mainly centered around Unix-like systems, as Windows imposes unique challenges for fuzzing: a closed-source ecosystem, the heavy use of graphical interfaces and the lack of fast process cloning machinery. In this paper, we propose two solutions to address the challenges Windows fuzzing faces. Our system, WINNIE, first tries to synthesize a harness for the application, a simple program that directly invokes target functions, based on sample executions. It then tests the harness, instead of the original complicated program, using an efficient implementation of fork on Windows. Using these techniques, WINNIE can bypass irrelevant GUI code to test logic deep within the application. We used WINNIE to fuzz 59 closed-source Windows binaries, and it successfully generated valid fuzzing harnesses for all of them. In our evaluation, WINNIE can support 2.2× more programs than existing Windows fuzzers could, and identified 3.9× more program states and achieved 26.6× faster execution. In total, WINNIE found 61 unique bugs in 32 Windows binaries."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jinho Jung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Stephen Tong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Hong Hu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jungwon Lim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yonghwi Jin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Taesoo Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jinho Jung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Stephen Tong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Hong Hu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jungwon Lim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yonghwi Jin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Taesoo Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology, Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 132,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "WINNIE : Fuzzing Windows Applications with Harness Synthesis and Fast Cloning",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/winnie-fuzzing-windows-applications-with-harness-synthesis-and-fast-cloning/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jinho Jung",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Stephen Tong",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Hong Hu",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Jungwon Lim",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Yonghwi Jin",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Taesoo Kim",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

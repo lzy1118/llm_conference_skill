@@ -1,0 +1,348 @@
+{
+  "paper_id": "099_nodlink_an_online_system_for_fine_grained_apt_attack_detection_and_investigation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "NODLINK: An Online System for Fine-Grained APT Attack Detection and Investigation"
+      },
+      {
+        "source": "selected",
+        "value": "NODLINK: An Online System for Fine-Grained APT Attack Detection and Investigation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Advanced Persistent Threats (APT) attacks have plagued modern enterprises, causing significant financial losses. To counter these attacks, researchers propose techniques that capture the complex and stealthy scenarios of APT attacks by using provenance graphs to model system entities and their dependencies. Particularly, to accelerate attack detection and reduce financial losses, online provenance-based detection systems that detect and investigate APT attacks under the constraints of timeliness and limited resources are in dire need. Unfortunately, existing online systems usually sacrifice detection granularity to reduce computational complexity and produce provenance graphs with more than 100,000 nodes, posing challenges for security admins to interpret the detection results. In this paper, we design and implement NODLINK, the first online detection system that maintains high detection accuracy without sacrificing detection granularity. Our insight is that the APT attack detection process in online provenance-based detection systems can be modeled as a Steiner Tree Problem (STP), which has efficient online approximation algorithms that recover concise attack-related provenance graphs with a theoretically bounded error. To utilize the frameworks of the STP approximation algorithm for APT attack detection, we propose a novel design of in-memory cache, an efficient attack screening method, and a new STP approximation algorithm that is more efficient than the conventional one in APT attack detection while maintaining the same complexity. We evaluate NODLINK in a production environment. The openworld experiment shows that NODLINK outperforms two state-ofthe-art (SOTA) online provenance analysis systems by achieving magnitudes higher detection and investigation accuracy while having the same or higher throughput."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Advanced Persistent Threats (APT) attacks have plagued modern enterprises, causing significant financial losses. To counter these attacks, researchers propose techniques that capture the complex and stealthy scenarios of APT attacks by using provenance graphs to model system entities and their dependencies. Particularly, to accelerate attack detection and reduce financial losses, online provenance-based detection systems that detect and investigate APT attacks under the constraints of timeliness and limited resources are in dire need. Unfortunately, existing online systems usually sacrifice detection granularity to reduce computational complexity and produce provenance graphs with more than 100,000 nodes, posing challenges for security admins to interpret the detection results. In this paper, we design and implement N ODLINK, the first online detection system that maintains high detection accuracy without sacrificing detection granularity. Our insight is that the APT attack detection process in online provenance-based detection systems can be modeled as a Steiner Tree Problem (STP), which has efficient online approximation algorithms that recover concise attack-related provenance graphs with a theoretically bounded error. To utilize the frameworks of the STP approximation algorithm for APT attack detection, we propose a novel design of in-memory cache, an efficient attack screening method, and a new STP approxima- tion algorithm that is more efficient than the conventional one in APT attack detection while maintaining the same complexity. We evaluate N ODLINK in a production environment . The open- world experiment shows that NODLINK outperforms two state-of- the-art (SOTA) online provenance analysis systems by achieving magnitudes higher detection and investigation accuracy while having the same or higher throughput. I. I NTRODUCTION Advanced Persistent Threat (APT) attacks have become a major threat to modern enterprises [8], [57]. Existing Endpoint Detection and Response (EDR) systems adopted by these enterprises to defend against cyber attacks have difficulties * is the corresponding author.∗∗ Hubei Key Laboratory of Distributed System Security, Hubei Engi- neering Research Center on Big Data Security, School of Cyber Science and Engineering, Huazhong University of Science and Technology. in countering APT attacks due to the lack of capability to recover the complex causality relationships between the steps of APT attacks [17], [50], [76], [66], [64], [43]. Therefore, practitioners and researchers [73], [13], [25], [59], [30], [69], [75] now analyze the system auditing events in provenance data to recover APT attack scenarios. Unfortunately, most of the existing provenance analysis systems only support post- mortem analysis for alerts of EDR systems, which can delay the accurate detection of APT attacks for a week [68] and cause significant financial losses. As shown in a recent study, it costs an enterprise about $32,000 each day when an attacker persists in the network [28]. To this end, researchers have built online provenance- based detection systems that detect and investigate APT attacks simultaneously [45], [74], [37], [46], [40]. Unlike post-mortem analysis systems, online provenance-based detection systems can detect and recover the logic of an APT attack within sec- onds of its occurrence, allowing security admins to respond in time and reduce potential losses. Furthermore, by conducting a comprehensive analysis on the whole APT attack campaign instead of individual system events, online provenance-based detection systems have substantially fewer false positives than conventional EDR systems, further improving the effectiveness and efficiency of APT attack investigation [41], [42]. Despite these promising early results, building an accurate online detection system is still conceptually challenging due to the constraint of limited resources and the high expectation of timeliness. Recent research has shown that the operating cost is the primary bottleneck for the industry to adopt an EDR system [21]. Thus, it is important to reduce the running cost of provenance-based detection system. Meanwhile, people still expect a provenance-based detection system to detect APT attacks in a timely online manner. Unfortunately, achieving high detection accuracy under the constraints of timeliness and limited resources is particularly challenging as provenance data is a highly structured graph (called provenance graph) [41], [92]. Existing graph processing algorithms, such as graph neu- ral networks [38] or iterative message passing algorithms [41], cannot be directly applied due to their low efficiency. To address these challenges, recent online provenance- based detection systems over-approximate the highly struc- tured provenance graph with low-dimensional data struc- tures [37] or manually crafted rules [45], [74], [46], [40]. Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.23204 www.ndss-symposium.org While these systems reduce the computational complexity by sacrificing detection granularity, they make the detection result hard to interpret. For instance, given an APT attack captured in the provenance data, one of the SOTA online detection systems, UNICORN [37], may generate a provenance graph with more than 100,000 nodes. However, only fewer than 100 nodes are related to the APT attack. Thus, identifying the attack steps represented by such a small number of nodes out of the provenance graph is like “searching for a needle in a haystack,” which is extremely difficult for the security admins. Generally, the workflow of provenance-based APT detec- tion [45], [74], [46], [40], [92], [13], [97], [38], [85] contains three steps: ① attack candidate detection, which selects Indica- tors of Compromise (IOC) or anomalous events; ② provenance graph construction, which builds graphs with nodes represent- ing system entities and edges representing entity interactions (e.g., read/write files) to uncover the interactions between the IOCs or anomalies; ③ comprehensive detection, which detects APT attacks based on the provenance graphs built in step ②. Among the three steps, the quality of the provenance graph built in step ② is the key to accurate and fine-grained detection. Unfortunately, building an optimally concise and accurate provenance graph that discloses the interactions between the IOCs or anomalies is challenging [25], [41]. The heuristics used by existing approaches either overly approximate the provenance graph [98], miss critical information [37], or are too heavy for online detection systems [92], [38]. Therefore, they cannot achieve conciseness, efficiency, and accuracy at the same time. In this paper, we propose the FIRST online detection system that achieves fine-grained detection while maintaining detection accuracy under the constraints of timeliness and lim- ited resources. Existing approaches fail to achieve conciseness, efficiency, and accuracy for APT detection simultaneously due to their fundamental limitation: lack of formal models of multiple goals of APT detection. Thus, to address this fundamental limitation, we propose to model the provenance graph construction (step ② of provenance detection) as an STP (Steiner Tree Problem) [49], [51], which is effective in modeling multiple goals and has efficient online approximation solutions with theoretical bounded errors. Consider IOCs or anomalies as a set of predefined nodes in STP (i.e., terminals), and assign each interaction among system entities with the same non-negative weight. Then building a provenance graph can be modeled as an online STP, which searches for a sub- graph that links all anomalies with minimal numbers of edges. By doing so, we can design an approximation algorithm that ensures a subgraph with minimal edges within a theoretically bounded error range in polynomial time. Although it sounds promising, solving the problem of APT attack detection based on STP faces three main challenges. The first one is how to detect long-term attacks. STP requires knowing the whole provenance graph in advance. However, keeping all provenance data in memory is impossible due to data size and storing it in an on-disk database is not practical either due to the I/O bottleneck. A straightforward approach of using a time window that only holds the most recent data is not always effective as attackers can take longer than the window allows. To solve this problem, we propose a novel in-memory cache design with a scoring method to prioritize events that may cause APT attacks and capture long-running attacks within the time window of STP. The second chal- lenge is how to efficiently identify terminals in STP. Existing detection methods depend on intensive random walking and message passing on the provenance graph [38], [41], [92], which is not suitable for an online system. To solve this problem, we design an IDF-weighted three-layered Variational AutoEncoder (V AE) that requires minimal computation. The last challenge is that the current approximation algorithms for STP are still not efficient enough for APT attack detection. Existing approaches [51], [99], [77], [34] require finding the shortest path between two nodes, which is too expensive for online APT attack detection. To solve this problem, we develop an importance-oriented greedy algorithm for online STP optimization that achieves low computing complexity with a bounded competitive ratio. We implement N ODLINK as a working system and deploy it to a beta version of the commercial Security Operations Center (SOC) of a security company, Sangfor. We evalu- ate N ODLINK with an open-world setting in the production environments of customers of Sangfor, including hospitals, universities, and factories. This is the first open-world eval- uation on provenance-based APT detection systems . During two-day testing, N ODLINK successfully detected seven real attacks that happened in the customer's production environ- ment. It outperforms the SOTA APT attack detection systems, HOLMES [74] and UNICORN [37], in terms of the accuracy of detecting attacks from the provenance data and the accuracy of revealing attack steps from the detected attacks. Particularly, HOLMES fails to detect any attacks due to its incomplete rule set while UNICORN generates seven times more false positives on the graph level and three orders of MAGNITUDE more false positives on the node level. Besides the open-world experiment, we also evaluate N ODLINK with public datasets and in-lab-made datasets that simulate the internal environ- ments of Sangfor. The conclusion is also consistent with the open-world experiments: N ODLINK consistently outperforms HOLMES and UNICORN by generating magnitudes fewer false positives. In summary, our main contribution is proposing a formal and rigorous mathematical framework based on STP to model APT detection. This model enables efficient and accurate de- tection of APT attacks with valid approximation bounds. This is the first paper with theoretical analysis of APT detection error, to our best knowledge. Further, we did not simply apply the STP model since it is not efficient enough for online APT detection (See Section V .C HopSet Construction). Instead, we propose a novel SPT framework that is more efficient while maintaining the approximation error. We also provide new theoretical analysis of the error of our HopSet Construction in Section V .E. See Section V .C for why STP is not efficient enough. We summarize our major contributions as follows: • We model the APT detection as the online STP, which provides a new vision in online APT detection. • We design and implement an online APT detection system, NODLINK, that achieves fine-grained detection with timeli- ness and limited resources based on STP. • We evaluate N ODLINK in real production environments. To the best of our knowledge, this is the first open-world"
+      },
+      {
+        "source": "selected",
+        "value": "Advanced Persistent Threats (APT) attacks have plagued modern enterprises, causing significant financial losses. To counter these attacks, researchers propose techniques that capture the complex and stealthy scenarios of APT attacks by using provenance graphs to model system entities and their dependencies. Particularly, to accelerate attack detection and reduce financial losses, online provenance-based detection systems that detect and investigate APT attacks under the constraints of timeliness and limited resources are in dire need. Unfortunately, existing online systems usually sacrifice detection granularity to reduce computational complexity and produce provenance graphs with more than 100,000 nodes, posing challenges for security admins to interpret the detection results. In this paper, we design and implement NODLINK, the first online detection system that maintains high detection accuracy without sacrificing detection granularity. Our insight is that the APT attack detection process in online provenance-based detection systems can be modeled as a Steiner Tree Problem (STP), which has efficient online approximation algorithms that recover concise attack-related provenance graphs with a theoretically bounded error. To utilize the frameworks of the STP approximation algorithm for APT attack detection, we propose a novel design of in-memory cache, an efficient attack screening method, and a new STP approximation algorithm that is more efficient than the conventional one in APT attack detection while maintaining the same complexity. We evaluate NODLINK in a production environment. The openworld experiment shows that NODLINK outperforms two state-ofthe-art (SOTA) online provenance analysis systems by achieving magnitudes higher detection and investigation accuracy while having the same or higher throughput."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Shaofei Li",
+          "email": "lishaofei@pku.edu",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Feng Dong",
+          "email": "dongfeng@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xusheng Xiao",
+          "email": "xusheng.xiao@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University Case Western Reserve University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Haoyu Wang",
+          "email": "haoyuwang@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Jiedong Chen",
+          "email": "chenjiedong1027@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Sangfor Technologies Inc"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yao Guo",
+          "email": "yaoguo@pku.edu",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Xiangqun Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Ding Li",
+          "email": "dingli@pku.edu",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Hubei Key Laboratory of Distributed System Security, School of Cyber Science and Engineering, Hubei Engi- neering Research Center on Big Data Security, Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Shaofei Li",
+          "email": "lishaofei@pku.edu",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Feng Dong",
+          "email": "dongfeng@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Xusheng Xiao",
+          "email": "xusheng.xiao@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University Case Western Reserve University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Haoyu Wang",
+          "email": "haoyuwang@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Jiedong Chen",
+          "email": "chenjiedong1027@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Sangfor Technologies Inc"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yao Guo",
+          "email": "yaoguo@pku.edu",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Xiangqun Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Ding Li",
+          "email": "dingli@pku.edu",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 106,
+      "author_count": 8,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "NODLINK: An Online System for Fine-Grained APT Attack Detection and Investigation",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/nodlink-an-online-system-for-fine-grained-apt-attack-detection-and-investigation/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Shaofei Li",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University"
+          ]
+        },
+        {
+          "name": "Feng Dong",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Xusheng Xiao",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Haoyu Wang",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Fei Shao",
+          "affiliations": [
+            "Case Western Reserve University"
+          ]
+        },
+        {
+          "name": "Jiedong Chen",
+          "affiliations": [
+            "Sangfor Technologies Inc."
+          ]
+        },
+        {
+          "name": "Yao Guo",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University"
+          ]
+        },
+        {
+          "name": "Xiangqun Chen",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University"
+          ]
+        },
+        {
+          "name": "Ding Li",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 8,
+      "proposed_count": 8,
+      "retained_count": 7,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

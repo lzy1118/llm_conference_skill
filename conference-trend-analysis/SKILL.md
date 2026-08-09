@@ -28,6 +28,9 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 默认定义见 [趋势指标参考](references/trend_metrics.md)。
 
+机构或国家字段出现复合标签时，先按可靠身份拆分组成项并分别计算年度论文数；
+无法确认的组成项作为残片丢弃，不把复合字符串作为趋势对象。
+
 ## 输入要求
 
 优先使用 `data/analysis/normalized/author_affiliation_facts.csv`。

@@ -1,0 +1,126 @@
+{
+  "paper_id": "027_efficient_detection_of_java_deserialization_gadget_chains_via_bottom_up_gadget_search_and_dataflow_aided_payload_construction",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Efficient Detection of Java Deserialization Gadget Chains via Bottom-up Gadget Search and Dataflow-aided Payload Construction"
+      },
+      {
+        "source": "selected",
+        "value": "Efficient Detection of Java Deserialization Gadget Chains via Bottom-up Gadget Search and Dataflow-aided Payload Construction"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": ""
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Java Object Injection (JOI) is a severe type of vulnerability affecting Java deserialization, which allows adver- saries to inject a well-crafted, serialized object, thus triggering a series of chained internal methods (called gadgets) and then achieving attack consequences such as Remote Code Execution (RCE). Prior works studied the problem of detecting and chaining gadgets for JOI vulnerability using static search for possible gadget chains and dynamic construction of payload via fuzzing. However, prior works face two following challenges: (i) path explosion in static gadget search and (ii) a lack of fine- grained object relations connected via object fields in dynamic payload construction. In this paper, we design and implement a novel Java deserialization gadget detection framework, called JDD.O n one hand, JDD solves the static path explosion problem by a bottom-up approach, which first looks for gadget fragments and then chains gadget fragments from sinks to sources. The approach reduces maximum static search time from exponen- tial to polynomial, i.e., from O(eM n) to O(M 2n3 + enM ), where n is the number of dynamic function calls in a gadget chain, M is the average number of dynamic function call candidates, and e is the number of entry points. On the other hand, JDD constructs a so-called Injection Object Construction Diagram (IOCD), which models the dataflow dependencies between injection objects' fields to facilitate dynamic fuzzing. Our evaluation of JDD upon six real-world Java applica- tions reveals 127 zero-day, exploitable gadget chains with six Common Vulnerabilities and Exposures (CVE) identifiers assigned. We also responsibly reported these vulnerabilities to application developers and obtained their acknowledgments and confirmations. 1. Introduction Java serialization and deserialization greatly facilitate the cooperation and collaboration of different Java systems (e.g., server and client), allowing different Java programs to conveniently exchange and share data and code. Despite their easiness and powerfulness, one well-known and serious security vulnerability faced in Java deserialization is an implicit attack surface called Java Object Injection (JOI). The JOI vulnerability enables a remote attacker to inject a well-crafted serialized object, which triggers a chain of internal Java methods (called gadgets), finally achieving a wide range of severe attack consequences, e.g., remote code execution (RCE) and denial of service (DoS) attacks. In past years, many works [1]-[4] have focused on the problem of JOI, and proposed several JOI vulnerability detection techniques. For example, ODDFuzz [2] statically searches for possible gadgets via a Depth First Search (DFS) strategy, and then dynamically fuzzes the target program as a greybox for verifying gadget chains. However, existing work still fell short in two major limitations, impacting their practicality and effectiveness. First, prior work often adopted a top-down static ap- proach for checking gadgets extensively from a source to a sink for potential paths. However, such a search often suffers from path explosion, especially when common Java meth- ods such as equals and put are involved in the gadget chain. For example, our experiment shows that the static analysis approach like ODDFuzz cannot finish analyzing a small 3.6MB Java application. Fundamentally, the search complexity is exponential, i.e., O(eM n), where n is the number of dynamic function calls in a gadget chain, M is the average number of dynamic function call candidates, and e is the number of entry points. Second, many of prior tools conducted static analysis against JOI vulnerability detection, thus inevitably having high false positives. Beyond these, ODDFuzz additionally introduced dynamic fuzzing for reducing false positives. However, ODDFuzz did not consider the constraints that should be satisfied in each gadget. In particular, the fine- grained data flows between different object fields in each gadget, leading to the imprecision of object structure and thus an incorrect payload. In this paper, we design a novel gadget chain detection framework, called JDD (Java Deserialization Vulnerability Detector), to statically detect possible gadget chains using a bottom-up approach and dynamically generate payloads, i.e., exploitable injection objects, relying on dataflow relations between object fields. JDD addresses the aforementioned two challenges as follows. First, JDD addresses the path explosion challenge via a bottom-up search strategy. JDD first searches for possible gadget fragments and then chains fragments together from sinks to sources. Our key observation here is that a top-down search repeats the analysis of the same low-level gadget 3961 DOI 10.1109/SP54263.2024.00150 fragment when a top-level gadget changes, leading to a huge redundancy and a waste of analysis time. Instead, the bottom-up search adopted by JDD finds gadget fragments that can be reused by different top-level gadgets in the chain. Therefore, the search complexity changes from exponential to polynomial, i.e., from O(eM n) to O(M 2n3+ enM). More importantly, JDD is able to reuse existing gadget frag- ments discovered in previous vulnerabilities, which further speeds up the search process. Second, JDD addresses the challenge of the lack of ob- ject field relations via a novel data structure, called Injection Object Construction Diagram (IOCD), to better represent the dataflow dependencies between injection objects' fields. The high-level idea is that JDD follows the call sequence in a statically-discovered gadget chain to construct dataflow dependencies between possible injection objects' fields as an IOCD. Such an IOCD is further used by JDD in dynamic fuzzing to exploit the JOI vulnerability. We evaluate JDD upon six popular Java applications in their latest version, which finds 127 zero-day exploitable gadget chains with six Common Vulnerabilities and Expo- sures (CVE) identifiers assigned. We also responsibly re- ported our findings of all 127 gadget chains to related devel- opers and received their confirmation. For example, Dubbo's developers not only acknowledged the gadget chains but also admitted that it is almost “impossible” for them to recognize all possible gadget chains, which emphasizes the urgency of our automated tool. We also compare JDD with the state-of-the-art approach, namely ODDFuzz, in a well-known benchmark (i.e., the ysoserial repository [5]) with 34 confirmed gadget chains. JDD missed only seven of 34 confirmed with a False Neg- ative Rate (FNR) of 20.6% and identified 91 previously- unknown gadget chains (which were confirmed as correct in manual analysis). As a comparison, OddFuzz only detected 16 gadget chains, resulting in an FNR of 52.9%, and it did not discover any previously-unknown ones. We summarize the contributions of this paper as below: ●JDD solves the path explosion problem of static search for chained gadgets via a bottom-up approach that dis- covers intermediate gadget fragments and then chains them together from sinks to sources. ●JDD constructs the so-called Injection Object Con- struction Diagram (IOCD) to better model dataflow dependencies between object fields and assist dynamic fuzzers for payload construction. ●JDD discovered 127 zero-day gadget chains of real- world Java applications in their latest version and out- performs ODDFuzz in detecting legacy gadget chains. 2. Overview In this section, we first provide a brief background on JOI attacks in Section 2.1, then describe Java deserialization gadget chains in Section 2.2 using a real-world motivat- ing example, and then present research challenges faced by state-of-the-art approaches in detecting this example in Section 2.3. 2.1. Background of JOI Attacks Java Naming and Directory Interface (JNDI) injection is a commonly used technique in JOI attacks. The attack occurs because the JNDI interface's lookup method can remotely load a malicious Java class based on its param- eters (e.g., an attacker-controlled URL), thereby executing arbitrary code in the victim server. A typical scenario for this attack involves a web service running on the victim server, listening on a port and deserializing data received on the port. During deserialization, if there is a JOI vulnerability, the program execution will invoke some security-sensitive methods based on the injected object. In addition to JNDI injection attacks, common meth- ods of exploiting JOI vulnerabilities to attack remote servers include dynamic code loading (such as using URLClassLoader.loadClass to load remote class files or using ClassLoader.defineClass to directly load bytecode files), and command execution (such as Runtime.exec), etc. They all require: (1) An execution path that can invoke a security-sensitive method that can execute malicious code (or upload arbitrary files, deny ser- vice, etc.) during the deserialization process, called gadget chain; (2) A serialized object that drives the execution of the gadget chain, called injection object . Thus, to detect JOI vulnerabilities, JDD has two major detection goals: (1) Uses static analysis to find potential gadget chains in the victim server; (2) Dynamically gener- ates exploitable injection objects to verify the exploitability of gadget chains. As a result, the exploitable gadget chains detected by JDD can be used to help developers specify a more complete blacklist defense mechanism to better defend against JOI attacks. 2.2. A Motivating Example Figure 1 illustrates a zero-day gadget chain found by JDD in sofa-rpc [6], i.e., popular Java libraries that are widely used in the server-side cloud of many enter- prise companies, e.g., Alipay. The gadget chain starts from a Java deserialization method (e.g., HashMap.put() in Line 4, shown in Figure 1). The chain ends up with a Java reflection call at Line 54 and then launches a JNDI injection attack at Line 59. Note that each Java method call along the chain is considered as a gadget, e.g., the put() method at Line 4. Then, Java method calls between two dynamically-dispatched methods are considered as a gadget fragment , e.g., the combination of methods get() and getFromHashtable() in Figure 1 as Fragment IV , as the latter is statically determined. We also illustrate the exploit code in Figure 2. An adversary serializes the returned object in Line 22 of Figure 2 and sends it to the server, which triggers the gadget chain in Figure 1 for exploitation. We first describe the gadget chain with five different gadget fragments of Figure 1 in detail. The gadget starts from Fragment I (Line 1), where the put() method (Line 4) of an object HashMap is invoked upon deserialization. If two elements in the HashMap have the same hash value, 3962"
+      },
+      {
+        "source": "selected",
+        "value": "Java Object Injection (JOI) is a severe type of vulnerability affecting Java deserialization, which allows adver- saries to inject a well-crafted, serialized object, thus triggering a series of chained internal methods (called gadgets) and then achieving attack consequences such as Remote Code Execution (RCE). Prior works studied the problem of detecting and chaining gadgets for JOI vulnerability using static search for possible gadget chains and dynamic construction of payload via fuzzing. However, prior works face two following challenges: (i) path explosion in static gadget search and (ii) a lack of fine- grained object relations connected via object fields in dynamic payload construction. In this paper, we design and implement a novel Java deserialization gadget detection framework, called JDD.O n one hand, JDD solves the static path explosion problem by a bottom-up approach, which first looks for gadget fragments and then chains gadget fragments from sinks to sources. The approach reduces maximum static search time from exponen- tial to polynomial, i.e., from O(eM n) to O(M 2n3 + enM ), where n is the number of dynamic function calls in a gadget chain, M is the average number of dynamic function call candidates, and e is the number of entry points. On the other hand, JDD constructs a so-called Injection Object Construction Diagram (IOCD), which models the dataflow dependencies between injection objects' fields to facilitate dynamic fuzzing. Our evaluation of JDD upon six real-world Java applica- tions reveals 127 zero-day, exploitable gadget chains with six Common Vulnerabilities and Exposures (CVE) identifiers assigned. We also responsibly reported these vulnerabilities to application developers and obtained their acknowledgments and confirmations. 1. Introduction Java serialization and deserialization greatly facilitate the cooperation and collaboration of different Java systems (e.g., server and client), allowing different Java programs to conveniently exchange and share data and code. Despite their easiness and powerfulness, one well-known and serious security vulnerability faced in Java deserialization is an implicit attack surface called Java Object Injection (JOI). The JOI vulnerability enables a remote attacker to inject a well-crafted serialized object, which triggers a chain of internal Java methods (called gadgets), finally achieving a wide range of severe attack consequences, e.g., remote code execution (RCE) and denial of service (DoS) attacks. In past years, many works [1]-[4] have focused on the problem of JOI, and proposed several JOI vulnerability detection techniques. For example, ODDFuzz [2] statically searches for possible gadgets via a Depth First Search (DFS) strategy, and then dynamically fuzzes the target program as a greybox for verifying gadget chains. However, existing work still fell short in two major limitations, impacting their practicality and effectiveness. First, prior work often adopted a top-down static ap- proach for checking gadgets extensively from a source to a sink for potential paths. However, such a search often suffers from path explosion, especially when common Java meth- ods such as equals and put are involved in the gadget chain. For example, our experiment shows that the static analysis approach like ODDFuzz cannot finish analyzing a small 3.6MB Java application. Fundamentally, the search complexity is exponential, i.e., O(eM n), where n is the number of dynamic function calls in a gadget chain, M is the average number of dynamic function call candidates, and e is the number of entry points. Second, many of prior tools conducted static analysis against JOI vulnerability detection, thus inevitably having high false positives. Beyond these, ODDFuzz additionally introduced dynamic fuzzing for reducing false positives. However, ODDFuzz did not consider the constraints that should be satisfied in each gadget. In particular, the fine- grained data flows between different object fields in each gadget, leading to the imprecision of object structure and thus an incorrect payload. In this paper, we design a novel gadget chain detection framework, called JDD (Java Deserialization Vulnerability Detector), to statically detect possible gadget chains using a bottom-up approach and dynamically generate payloads, i.e., exploitable injection objects, relying on dataflow relations between object fields. JDD addresses the aforementioned two challenges as follows. First, JDD addresses the path explosion challenge via a bottom-up search strategy. JDD first searches for possible gadget fragments and then chains fragments together from sinks to sources. Our key observation here is that a top-down search repeats the analysis of the same low-level gadget 3961 DOI 10.1109/SP54263.2024.00150 fragment when a top-level gadget changes, leading to a huge redundancy and a waste of analysis time. Instead, the bottom-up search adopted by JDD finds gadget fragments that can be reused by different top-level gadgets in the chain. Therefore, the search complexity changes from exponential to polynomial, i.e., from O(eM n) to O(M 2n3+ enM). More importantly, JDD is able to reuse existing gadget frag- ments discovered in previous vulnerabilities, which further speeds up the search process. Second, JDD addresses the challenge of the lack of ob- ject field relations via a novel data structure, called Injection Object Construction Diagram (IOCD), to better represent the dataflow dependencies between injection objects' fields. The high-level idea is that JDD follows the call sequence in a statically-discovered gadget chain to construct dataflow dependencies between possible injection objects' fields as an IOCD. Such an IOCD is further used by JDD in dynamic fuzzing to exploit the JOI vulnerability. We evaluate JDD upon six popular Java applications in their latest version, which finds 127 zero-day exploitable gadget chains with six Common Vulnerabilities and Expo- sures (CVE) identifiers assigned. We also responsibly re- ported our findings of all 127 gadget chains to related devel- opers and received their confirmation. For example, Dubbo's developers not only acknowledged the gadget chains but also admitted that it is almost “impossible” for them to recognize all possible gadget chains, which emphasizes the urgency of our automated tool. We also compare JDD with the state-of-the-art approach, namely ODDFuzz, in a well-known benchmark (i.e., the ysoserial repository [5]) with 34 confirmed gadget chains. JDD missed only seven of 34 confirmed with a False Neg- ative Rate (FNR) of 20.6% and identified 91 previously- unknown gadget chains (which were confirmed as correct in manual analysis). As a comparison, OddFuzz only detected 16 gadget chains, resulting in an FNR of 52.9%, and it did not discover any previously-unknown ones. We summarize the contributions of this paper as below: ●JDD solves the path explosion problem of static search for chained gadgets via a bottom-up approach that dis- covers intermediate gadget fragments and then chains them together from sinks to sources. ●JDD constructs the so-called Injection Object Con- struction Diagram (IOCD) to better model dataflow dependencies between object fields and assist dynamic fuzzers for payload construction. ●JDD discovered 127 zero-day gadget chains of real- world Java applications in their latest version and out- performs ODDFuzz in detecting legacy gadget chains. 2. Overview In this section, we first provide a brief background on JOI attacks in Section 2.1, then describe Java deserialization gadget chains in Section 2.2 using a real-world motivat- ing example, and then present research challenges faced by state-of-the-art approaches in detecting this example in Section 2.3. 2.1. Background of JOI Attacks Java Naming and Directory Interface (JNDI) injection is a commonly used technique in JOI attacks. The attack occurs because the JNDI interface's lookup method can remotely load a malicious Java class based on its param- eters (e.g., an attacker-controlled URL), thereby executing arbitrary code in the victim server. A typical scenario for this attack involves a web service running on the victim server, listening on a port and deserializing data received on the port. During deserialization, if there is a JOI vulnerability, the program execution will invoke some security-sensitive methods based on the injected object. In addition to JNDI injection attacks, common meth- ods of exploiting JOI vulnerabilities to attack remote servers include dynamic code loading (such as using URLClassLoader.loadClass to load remote class files or using ClassLoader.defineClass to directly load bytecode files), and command execution (such as Runtime.exec), etc. They all require: (1) An execution path that can invoke a security-sensitive method that can execute malicious code (or upload arbitrary files, deny ser- vice, etc.) during the deserialization process, called gadget chain; (2) A serialized object that drives the execution of the gadget chain, called injection object . Thus, to detect JOI vulnerabilities, JDD has two major detection goals: (1) Uses static analysis to find potential gadget chains in the victim server; (2) Dynamically gener- ates exploitable injection objects to verify the exploitability of gadget chains. As a result, the exploitable gadget chains detected by JDD can be used to help developers specify a more complete blacklist defense mechanism to better defend against JOI attacks. 2.2. A Motivating Example Figure 1 illustrates a zero-day gadget chain found by JDD in sofa-rpc [6], i.e., popular Java libraries that are widely used in the server-side cloud of many enter- prise companies, e.g., Alipay. The gadget chain starts from a Java deserialization method (e.g., HashMap.put() in Line 4, shown in Figure 1). The chain ends up with a Java reflection call at Line 54 and then launches a JNDI injection attack at Line 59. Note that each Java method call along the chain is considered as a gadget, e.g., the put() method at Line 4. Then, Java method calls between two dynamically-dispatched methods are considered as a gadget fragment , e.g., the combination of methods get() and getFromHashtable() in Figure 1 as Fragment IV , as the latter is statically determined. We also illustrate the exploit code in Figure 2. An adversary serializes the returned object in Line 22 of Figure 2 and sends it to the server, which triggers the gadget chain in Figure 1 for exploitation. We first describe the gadget chain with five different gadget fragments of Figure 1 in detail. The gadget starts from Fragment I (Line 1), where the put() method (Line 4) of an object HashMap is invoked upon deserialization. If two elements in the HashMap have the same hash value, 3962"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [],
+      "selected": []
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 22,
+      "author_count": 0,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Efficient Detection of Java Deserialization Gadget Chains via Bottom-up Gadget Search and Dataflow-aided Payload Construction",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Bofei Chen",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Lei Zhang",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Xinyou Huang",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Yinzhi Cao",
+          "affiliations": [
+            "Johns Hopkins University"
+          ]
+        },
+        {
+          "name": "Keke Lian",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Yuan Zhang",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Min Yang",
+          "affiliations": [
+            "Fudan University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_abstract_from_pdf",
+      "stage": "abstract_arbitration",
+      "field": "abstract",
+      "source": "pdfplumber_section_boundary"
+    }
+  ]
+}

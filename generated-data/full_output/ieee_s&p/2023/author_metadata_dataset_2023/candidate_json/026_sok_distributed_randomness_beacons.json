@@ -1,0 +1,172 @@
+{
+  "paper_id": "026_sok_distributed_randomness_beacons",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SoK: Distributed Randomness Beacons"
+      },
+      {
+        "source": "selected",
+        "value": "SoK: Distributed Randomness Beacons"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Motivated and inspired by the emergence of blockchains, many new protocols have recently been proposed for generating publicly verifiable randomness in a distributed yet secure fashion. These protocols work under different setups and assumptions, use various cryptographic tools, and entail unique trade-offs and characteristics. In this paper, we systematize the design of distributed randomness beacons (DRBs) as well as the cryptographic building blocks they rely on. We evaluate protocols on two key security properties, unbiasability and unpredictability, and discuss common attack vectors for predicting or biasing the beacon output and the countermeasures employed by protocols. We also compare protocols by communication and computational efficiency. Finally, we provide insights on the applicability of different protocols in various deployment scenarios and highlight possible directions for further research."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Motivated and inspired by the emergence of blockchains, many new protocols have recently been proposed for generating publicly verifiable randomness in a distributed yet secure fashion. These protocols work under different setups and assumptions, use various cryptographic tools, and entail unique trade-offs and characteristics. In this paper, we systematize the design of distributed randomness beacons (DRBs) as well as the cryptographic building blocks they rely on. We evaluate protocols on two key security properties, unbiasability and unpredictability, and discuss common attack vectors for predicting or biasing the beacon output and the countermeasures employed by protocols. We also compare protocols by communication and computational efficiency. Finally, we provide insights on the applicability of different protocols in various deployment scenarios and highlight possible directions for further research. I. I NTRODUCTION Public, trustworthy randomness has been a goal for millen- nia, dating at least to the earliest known use of dice around 3000 BCE. Today, public randomness is crucial to applications including gambling and lotteries [28], electronic voting [2], selecting parameters for cryptographic protocols [10], [74], leader election in proof-of-stake protocols [61], [72], and blockchain sharding [4], [73]. The concept of a randomness beacon was first formalized by Rabin [84] to describe an ideal service that regularly emits fresh random values that no party can manipulate or predict. Because no such ideal beacon exists, various protocols are used to approximate this beacon functionality for practical use. Centralized Beacons. Relying on a trusted third party like NIST [56], [70] or random.org [66] might be the simplest way to realize a beacon. It carries drawbacks typically associated with centralized services, such as the risk of compromise or misbehavior and the inability of the end user to verify the security of the beacon. In particular, it is straightforward to design a malicious beacon that outputs statistically random values which are predictable given a trapdoor. For example, given a semantically secure encryption scheme the under- handed beacon can simply use a secret key to encrypt a counter in each interval. Security of the underlying encryption scheme guarantees this is indistinguishable from random without ac- cess to the key, but completely predictable given the key. Implicit Beacons. Another approach is to construct a bea- con using publicly available implicit sources of entropy such as stock market data [41] or proof-of-work (PoW) blockchains like Bitcoin [16], [28], [78], [97]. These entropy sources are potentially vulnerable to malicious insiders (e.g. high- frequency traders making unnatural trades to fix stock prices, financial exchanges blocking trades or reporting incorrect data, miners that can withhold blocks or choose between colliding blocks, etc.). These beacons are plausibly secure and low-cost in practice, but they still lack formal models of security. As a result, while we consider these important targets for future research, we will not discuss them in detail in this work. Distributed Randomness Beacons. A natural approach to reduce trust in a centralized beacon is a multi-party distributed randomness beacon (DRB). DRB protocols are designed to remain secure and live despite some fraction of malicious par- ticipants. DRB protocols are typically epoch-based, producing fresh random output in each epoch. The goal of this paper is to systematize current research on DRBs. We propose a general framework encompassing all DRB protocols in the landscape. To aid comparison and discussion of properties, we provide an overview of these protocols along with the cryptographic building blocks used to construct them. We identify two key components of DRB design: selection of entropy providers and beacon output generation, which can be decoupled from each other. Enabling a more holistic analysis of a DRB as a result, we also pro- vide new insights and discussion on potential attack vectors, countermeasures, and techniques that lead to better scalability. Paper organization. We begin with preliminaries including our system model, a strawman DRB under perfect synchrony (an ideal assumption), commit-reveal [21], and the definition of an ideal DRB in Section II. Section III introduces protocols using delay functions (verifiable delay functions [23] and timed commitments [27]), which offer the best fault tolerance (dishonest majority) and simplicity, assuming secure delay functions can be implemented in practice. In Section IV to VII, we introduce non-delay-based DRB protocols categorized by the number of nodes contributing marginal entropy (i.e. per- epoch randomness that is independently generated at a node level) in each epoch. Sections IV and V review protocols in which all nodes contribute marginal entropy. These protocols vary in mechanisms used to recover from faulty nodes, in- cluding financial punishment [83], [100], threshold secret shar- ing [34], [90], and threshold encryption [49]. Section VI covers committee-based protocols in which each epoch includes an extra committee selection step, after which only a committee (subset) of nodes contributes marginal entropy. These proto- cols are more complex but can offer greater communication efficiency with large numbers of nodes. Section VII covers pseudorandom protocols that do not require any marginal entropy; these protocols can be highly efficient but have no mechanism to recover from compromise. We conclude with discussion and comparisons in Sections VIII-IX and Table I. 175 DOI 10.1109/SP46215.2023.00192 II. P RELIMINARIES A. System Model We consider a system with a fixed set of n participants P = {P1, P2, ..., Pn} (also called nodes). We may also write P = {1, 2, ..., n} for the purpose of algebraic formulations. Of the n, up to t nodes may be faulty (also called malicious or Byzantine) and engage in incorrect (arbitrary) behavior during a protocol run. An adversary A that controls up to t such nodes is called t-limited. Otherwise, nodes that are honest abide by the specified protocol. We assume a standard public key infrastructure (PKI) such that all nodes know each others' public keys, and that all nodes are connected via point-to-point secure (providing authen- ticity) communication channels. All messages exchanged by honest nodes are digitally signed by the sender, and recipients always validate each message before proceeding. By default, we assume a synchronous network, in which there exists some known finite message delay bound ∆. This means that an adversary can delay a message by at most ∆. Moreover, we assume a computationally bounded adversary A which runs in probabilistic polynomial time (PPT). In particular, this means A cannot break standard cryptographic primitives such as hash functions, digital signatures, etc. For delay-based protocols, we also assume the adversary cannot compute delay functions in fewer than T time steps. The three ways in which A can deviate from a protocol are omitting a message (i.e. withholding attack ), sending invalid messages, and colluding to coordinate an attack based on private in- formation shared among malicious nodes. Additionally, A has the power to perform a grinding attack , in which A privately precomputes and iterates through polynomially many combinations of inputs to an algorithm in order to derive a desirable output. By default, we assume a ( t-limited) static adversary that chooses nodes to be corrupted before a protocol run whereas an adaptive adversary can choose nodes to be corrupted at any time during a protocol run (we assume a model where nodes remain corrupted once corrupted). We denote our computational model's security parameter by λ. We call a function negl(λ) negligible if for all c > 0 there exists a λ0 such that negl(λ) < 1 λc for all λ > λ 0. The group elements g, h ∈ G are generators of G while p, q denote primes where q | p − 1 (unless stated explicitly) such that Gq is a group of prime order q. The notation tuple[0] denotes the first element of tuple. Furthermore, we model any hash function H(·) as a random oracle [13]. In the context of a distributed randomness beacon, we use τ to denote epoch number and Ωτ to denote the beacon output (i.e. the distributed randomness output) in epoch τ. The entropy- providing committee denoted by Cτ refers to a subset of nodes (hereafter called entropy providers) that proactively generate and provide marginal entropy in epoch τ. B. Strawman Protocol: Rock-Paper-Scissors Distributed randomness assuming perfect synchrony ( ∆ = 0) is straightforward. Consider the following one-round proto- col where each participant i broadcasts its entropy contribution (i.e. independently generated randomness) ei $ ← −Zp to every other participant at the same time. The protocol's random output Ω is calculated (via modular addition in Zp) as: Ω = nX i=1 ei (1) Repeating this protocol periodically would yield a DRB. This protocol is simple-in fact, it is essentially what humans approximate when playing rock-paper-scissors (with ei $ ← − Z3). Under perfect synchrony, it is secure as long as any single participant chooses its ei randomly. However, security falls apart completely once messages can be delayed. Consider a simple scenario with three participants {P1, P2, P3} producing Ω = e1 + e2 + e3. If P3 can read e1 and e2 before sending e3 (due to non-zero message latency) to P1 and P2, then P3 can fix the output Ω to any value ˜Ω by choosing e3 = ˜Ω − e1 − e2. Effectively, the protocol cannot tolerate any malicious partici- pants without perfect synchrony. Indeed, humans may attempt to cheat in rock-paper-scissors by quickly adjusting their play in reaction to what their opponent is playing. C. Commit-Reveal A classic fix for the above synchrony problem is to introduce a cryptographic commitment step before each party reveals its entropy contribution. 1) Commit . Each participant Pi broadcasts a cryptographic commitment ci = Com(ei, ri) (with fresh randomness ri) to its entropy contribution ei rather than ei itself. Note that Com(x, r0) denotes a cryptographic commitment to x with hiding and binding properties [21], [44]. If participants sample ei from a suitably large space, it is also secure to simply publish ci = H(ei). 2) Reveal . Once all participants have shared their corre- sponding commitments, each participant Pi then opens its commitment by revealing the pair (ei, ri). In turn, Pi verifies each received pair (ej, rj) for j ̸= i by recomputing cj = Com(ej, rj). Given that these checks pass, the final output Ω can be computed as in Equation 1. If any of the checks do not pass, however, the protocol aborts and outputs ⊥. With the additional commit step, it becomes impossible for any participant to manipulate the output Ω, as the contribution values are bound by commitments published before any partic- ipants reveal. Nonetheless, the protocol can still be biased, as the last-revealing participant Pk can in fact compute Ω earlier than others and hence can decide to withhold (not reveal) (ek, rk) if Ω is not to its liking. This is called the last-revealer attack. Note that this attack is indistinguishable from an honest node going offline, and indeed the protocol in this basic form also has no robustness against non-Byzantine faults. D. Ideal Distributed Randomness Beacons Clearly, a DRB should prevent any one participant from tampering with (e.g. predicting, biasing, or aborting) the output. We formalize the security properties of an ideal DRB as follows: 276"
+      },
+      {
+        "source": "selected",
+        "value": "Motivated and inspired by the emergence of blockchains, many new protocols have recently been proposed for generating publicly verifiable randomness in a distributed yet secure fashion. These protocols work under different setups and assumptions, use various cryptographic tools, and entail unique trade-offs and characteristics. In this paper, we systematize the design of distributed randomness beacons (DRBs) as well as the cryptographic building blocks they rely on. We evaluate protocols on two key security properties, unbiasability and unpredictability, and discuss common attack vectors for predicting or biasing the beacon output and the countermeasures employed by protocols. We also compare protocols by communication and computational efficiency. Finally, we provide insights on the applicability of different protocols in various deployment scenarios and highlight possible directions for further research."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kevin Choi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Aathira Manoj",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Joseph Bonneau",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kevin Choi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Aathira Manoj",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Joseph Bonneau",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 111,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SoK: Distributed Randomness Beacons",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kevin Choi",
+          "affiliations": [
+            "New York University, USA"
+          ]
+        },
+        {
+          "name": "Aathira Manoj",
+          "affiliations": [
+            "New York University, USA"
+          ]
+        },
+        {
+          "name": "Joseph Bonneau",
+          "affiliations": [
+            "New York University, USA and a16z crypto research, USA"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

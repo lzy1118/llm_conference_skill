@@ -1,0 +1,377 @@
+{
+  "paper_id": "073_karonte_detecting_insecure_multi_binary_interactions_in_embedded_firmware",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "KARONTE: Detecting Insecure Multi-binary Interactions in Embedded Firmware"
+      },
+      {
+        "source": "selected",
+        "value": "KARONTE: Detecting Insecure Multi-binary Interactions in Embedded Firmware"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Low-power, single-purpose embedded devices (e.g., routers and IoT devices) have become ubiquitous. While they automate and simplify many aspects of users' lives, recent large-scale attacks have shown that their sheer number poses a severe threat to the Internet infrastructure. Unfortunately, the software on these systems is hardware-dependent, and typically executes in unique, minimal environments with non-standard configurations, making security analysis particularly challenging. Many of the existing devices implement their functionality through the use of multiple binaries. This multi-binary service implementation renders current static and dynamic analysis techniques either ineffective or inefficient, as they are unable to identify and adequately model the communication between the various executables. In this paper, we present KARONTE, a static analysis approach capable of analyzing embedded-device firmware by modeling and tracking multi-binary interactions. Our approach propagates taint information between binaries to detect insecure interactions and identify vulnerabilities. We first evaluated KARONTE on 53 firmware samples from various vendors, showing that our prototype tool can successfully track and constrain multi-binary interactions. This led to the discovery of 46 zero-day bugs. Then, we performed a large-scale experiment on 899 different samples, showing that KARONTE scales well with firmware samples of different size and complexity."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Low-power, single-purpose embedded devices (e.g., routers and IoT devices) have become ubiquitous. While they automate and simplify many aspects of users' lives, recent large-scale attacks have shown that their sheer number poses a severe threat to the Internet infrastructure. Unfortunately, the software on these systems is hardware-dependent, and typically executes in unique, minimal environments with non-standard configurations, making security analysis particularly challenging. Many of the existing devices implement their functionality through the use of multiple binaries. This multi-binary service implementation renders current static and dynamic analysis techniques either ineffective or inefficient, as they are unable to identify and adequately model the communication between the various executables. In this paper, we present K ARONTE , a static analysis approach capable of analyzing embedded-device firmware by modeling and tracking multi-binary interactions. Our approach propagates taint information between binaries to detect insecure interactions and identify vulnerabilities. We first evaluated KARONTE on 53 firmware samples from various vendors, showing that our prototype tool can successfully track and constrain multi-binary interactions. This led to the discovery of 46 zero-day bugs. Then, we performed a large-scale experiment on 899 different samples, showing that K ARONTE scales well with firmware samples of different size and complexity. I. I NTRODUCTION A radical increase in the connectivity of our world is being driven by the proliferation of small, interconnected embedded devices, which are taking the place of traditional door locks, light bulbs, and many other previously inconspicuous objects. Unfortunately, the software (or firmware) running on these Internet-of-Things (IoT) devices is vulnerable to attack [3], [9], [32], which led to the development of an IoT-specific cyber- crime underground [21]. For example, in 2016, the Mirai botnet compromised millions of devices (e.g., routers and cameras) and leveraged them in denial-of-service attacks to disrupt core Internet services and shut down websites [27], [30], [50]. In response, researchers have proposed techniques to automat- ically identify vulnerabilities in firmware distributions, gener- ally by unpacking them into analyzable components [11], which are then analyzed in isolation [ 5], [42], [40]. Nonetheless, de- spite these advances in vulnerability discovery techniques, state- of-the-art approaches are insufficient, and vulnerabilities persist. A key reason behind the insufficiency of current techniques is that embedded devices are, themselves, made up of inter- connected components. These components are different binary executables, or different modules of a large embedded OS, which interact to accomplish various tasks. For example, em- bedded devices often expose web-based interfaces comprised by a web server and various back-end applications [6], [44]. In this architecture, any given piece of functionality often relies on the execution of multiple programs [12]: e.g., the web server that accepts an HTTP request, a local binary that is summoned by the web server (e.g., using sockets), and an external command that is executed by the local binary to accomplish the request. Each interacting firmware component (the web server, the back-end applications, and other helper programs) can make different assumptions about the data being shared, and inconsistencies can manifest as security vulnerabilities. Precisely detecting these insecure multi-binary interactions among the different components of a firmware sample is challenging. Program analysis approaches that consider each component in isolation, without accounting for the internal flow of data, yield suboptimal results, as they (i) ignore meaningful constraints imposed by components in the course of inter-binary communication, (ii) cannot effectively differentiate between attacker-controlled and non-attacker-controlled sources of input, and (iii) might uncover only superficial bugs. Consider a web server that accepts user credentials, restricts their lengths to 16 characters, and then passes them to a handler binary (e.g., through environment variables), which copies them into two 16-byte long buffers. If the latter binary is dedicated to only handle user credentials received (and vetted) by the web server, it may forego the implementation of a length check. In this example, analyzing the handler binary in isolation could result in identifying bugs that are impossible to trigger in practice, and a security analysis would likely produce a large number of false positives, because it would have to assume that all sources of input into the binary might produce unconstrained, attacker-controlled data. These false positives would need to be checked by a human analyst, representing a time cost. As the time required by an analyst to check, patch, and test a firmware sample is not negligible, controlled interactions between binaries that, in practice, do not impose security threats should be deprioritized. On the other hand, analyses that only consider the network-facing binaries (i.e., those directly accepting user requests) cannot identify deeper and more complex bugs within the firmware. Thus, an effective firmware analysis must take into account multiple binaries, and reason about the data they share. 1544 DOI 10.1109/SP40000.2020.00036 Unfortunately, most existing work in program analysis only focuses on a single program or module at a time [ 55], [37], [45]. While some work has attempted to emulate embedded devices, thus analyzing all components simultaneously, current approaches either impose strict assumptions on the firmware samples [11], or achieve a limited success rate (i.e., from 13% [12] to 21% [5]). Other approaches [6], [48], [54] attempt to analyze actual devices directly, but as they adopt purely dynamic techniques (e.g., fuzzing), they may be ineffective in discovering deeper and more complex bugs [34]. In this paper, we present KARONTE , a novel static analysis approach that tracks data flows across the binaries of a firmware sample to precisely uncover security vulnerabilities.KARONTE is based on the intuition that binaries communicate using a finite set of Inter-Process Communication (IPC) paradigms, and it leverages commonalities in these paradigms to detect where user input is introduced into the firmware sample, and to iden- tify interactions between the various components. The identified interactions are then used to track data flows between compo- nents, and perform cross-binary taint analysis. Finally, the prop- agated taints and constraints are used to detect insecure uses of the user-controlled input, which can lead to vulnerabilities. We implemented KARONTE and evaluated it using two datasets: 53 current-version firmware samples and 899 samples gathered from related work [ 5]. We leveraged the former dataset to study, in depth, each phase of our approach and evaluate its effectiveness to find bugs. In our experiments, we showed that our approach successfully identifies data flows across different firmware components, correctly propagating taint information. This allowed us to discover potentially vulnerable data flows, leading to the discovery of 46 zero-day software bugs, and the rediscovery of another 5 n-days bugs, demonstrating the effectiveness of our approach on complex firmware of varying designs (i.e., both monolithic embedded OS and embedded Linux distributions). Indubitably, a sound single-binary static analysis technique could also find these vulnerabilities, but it would do so with a significant amount of false positives, making the analysis untenable in the real world. In our comparison between KARONTE 's multi-binary analysis approach and the same analysis run in single-binary mode (i.e., with inter-binary data flow tracking disabled), the number of produced alerts increased from an average of 2 to an average of 722 per sample: KARONTE provided an alert reduction of two orders of magnitude and a resulting low false-positive rate. As shown in our evaluation, we estimate that the verification of all the alerts produced by a single-binary analysis might require a security analyst around four months of work. On the other hand, the verification of the alerts generated by our prototype took a cumulative time of roughly 10 hours. Finally, we leveraged the second, bigger dataset to study the performance of our tool, showing its ability to scale well on firmware samples of different size and complexity. In summary, we make the following contributions: • We introduce novel combinations of static analysis techniques to perform multi-binary taint analysis. To do so, we design a novel technique to precisely apply and propagate taint information across multiple binaries. • We proposeKARONTE , a novel static analysis approach to identify insecure interactions between binaries.KARONTE radically reduces the number of false positives, making real-world firmware analysis practical. • We implement and evaluate our prototype of KARONTE on 53 real-world firmware samples, showing that our tool can successfully propagate taint information across multiple binaries, resulting in the discovery of 46 unknown (zero-day) bugs, and producing few false positives. Then, we leverage a bigger dataset of 899 firmware samples to assess the performance of our tool. • The results obtained by our tool were thoroughly verified by an independent researcher at another university. In the spirit of open science, we release the implementation of our prototype and a docker image to replicate our working environment1. II. B ACKGROUND This section provides the background information to under- stand the goals of our approach and inherent challenges thereto. A. IoT Attacker Model IoT devices exchange data over the network. This data can come directly from the user (e.g., through a web interface), or indirectly from a trusted remote service (e.g., cloud backends). Many devices, especially routers, smart meters, and a host of low-power devices, such as smart light bulbs and locks, use the former paradigm. Moreover, recent attacks have shown that such devices can be exploited by clever remote attackers, even when their communication is restricted to a closed local network [23]. In this work, we consider network-based attackers who communicate directly with the device, either through a local network or the Internet. However, as shown in Section X, KARONTE can be easily extended to other scenarios. B. Firmware Complexity The firmware of modern IoT devices is complex and made of multiple components. These components can take the form of either different binaries, packaged in an embedded Linux distribution, or different modules, compiled into a large, single-binary embedded OS (“blob firmware”). The former type of firmware is, by far, the most ubiquitous: a large-scale experiment analyzed tens of thousands of firmware samples, and found that 86% of them were Linux-based [ 11]. Similar to other Linux-based systems, Linux-based firmware includes a large number of interdependent binaries. The different binaries (or components) of the firmware on embedded devices share data to carry out the device's tasks. Under our attacker model, this interaction is critical, as we focus on bugs that can be triggered by attacker input from “outside” of the device (i.e., over the network), but may affect binaries other than those directly facing the network. Any 1https://github.com/ucsb-seclab/karonte 1545"
+      },
+      {
+        "source": "selected",
+        "value": "Low-power, single-purpose embedded devices (e.g., routers and IoT devices) have become ubiquitous. While they automate and simplify many aspects of users' lives, recent large-scale attacks have shown that their sheer number poses a severe threat to the Internet infrastructure. Unfortunately, the software on these systems is hardware-dependent, and typically executes in unique, minimal environments with non-standard configurations, making security analysis particularly challenging. Many of the existing devices implement their functionality through the use of multiple binaries. This multi-binary service implementation renders current static and dynamic analysis techniques either ineffective or inefficient, as they are unable to identify and adequately model the communication between the various executables. In this paper, we present KARONTE, a static analysis approach capable of analyzing embedded-device firmware by modeling and tracking multi-binary interactions. Our approach propagates taint information between binaries to detect insecure interactions and identify vulnerabilities. We first evaluated KARONTE on 53 firmware samples from various vendors, showing that our prototype tool can successfully track and constrain multi-binary interactions. This led to the discovery of 46 zero-day bugs. Then, we performed a large-scale experiment on 899 different samples, showing that KARONTE scales well with firmware samples of different size and complexity."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Nilo Redini",
+          "email": "nredini@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Aravind Machiry",
+          "email": "machiry@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Ruoyu Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Chad Spensky",
+          "email": "cspensky@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Andrea Continella",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yan Shoshitaishvili",
+          "email": "yans@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Christopher Kruegel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Santa Barbara",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Nilo Redini",
+          "email": "nredini@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Aravind Machiry",
+          "email": "machiry@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Ruoyu Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Chad Spensky",
+          "email": "cspensky@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Andrea Continella",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yan Shoshitaishvili",
+          "email": "yans@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Christopher Kruegel",
+          "email": "chris@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Santa Barbara",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 130,
+      "author_count": 9,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 7,
+          "author": "Giovanni Vigna",
+          "block_id": "pdf:p1:b15",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 7,
+          "author": "Giovanni Vigna",
+          "affiliation_raw": "UC Santa Barbara Arizona State University { nredini, machiry, cspensky, conand, chris, vigna } { fishw, yans } @asu.edu",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b15",
+          "affiliation_block_ids": [
+            "pdf:p1:b18",
+            "pdf:p1:b19",
+            "pdf:p1:b21"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 87.141,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "KARONTE: Detecting Insecure Multi-binary Interactions in Embedded Firmware",
+      "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Nilo Redini",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Aravind Machiry",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Ruoyu Wang",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Chad Spensky",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Andrea Continella",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Yan Shoshitaishvili",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Christopher Kruegel",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Giovanni Vigna",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

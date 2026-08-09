@@ -1,0 +1,219 @@
+{
+  "paper_id": "215_obelix_mitigating_side_channels_through_dynamic_obfuscation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "OBELIX: Mitigating Side-Channels Through Dynamic Obfuscation"
+      },
+      {
+        "source": "selected",
+        "value": "OBELIX: Mitigating Side-Channels Through Dynamic Obfuscation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Trusted execution environments (TEEs) offer hardware-assisted means to protect code and data. However, as shown in numerous results over the years, attackers can use side-channels to leak data access patterns and even single-step the code. While the vendors are slowly introducing hardwarebased countermeasures for some attacks, others will stay unaddressed. This makes a software-level countermeasure desirable, but current available solutions only address very specific attack vectors or have a narrow leakage model. In this work, we take a holistic view at the vulnerabilities of TEEs and design a tool named OBELIX, which is the first to protect both code and data against a wide range of TEE attacks, from cache attacks over single-stepping to ciphertext side-channels. We analyze the practically achievable precision of state-of-the-art single-stepping tools, and present an algorithm which uses that knowledge to divide a program into uniform code blocks, that are indistinguishable for a strong attacker. By storing these blocks and the program data in oblivious RAM, the attacker cannot follow execution, effectively protecting both secret code and data. We describe how we automate our approach to make it available for developers who are unfamiliar with side-channels. As an obfuscation tool, OBELIX comes with a considerable performance overhead, but compensates this with strong security guarantees and easy applicability without requiring any expert knowledge. 4182 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Trusted execution environments (TEEs) offer hardware-assisted means to protect code and data. However, as shown in numerous results over the years, attackers can use side-channels to leak data access patterns and even single-step the code. While the vendors are slowly introducing hardware- based countermeasures for some attacks, others will stay unad- dressed. This makes a software-level countermeasure desirable, but current available solutions only address very specific attack vectors or have a narrow leakage model. In this work, we take a holistic view at the vulnerabilities of TEEs and design a tool named O BELIX , which is the first to protect both code and data against a wide range of TEE attacks, from cache attacks over single-stepping to ciphertext side-channels. We analyze the practically achievable precision of state-of-the-art single-stepping tools, and present an algorithm which uses that knowledge to divide a program into uniform code blocks, that are indistinguishable for a strong attacker. By storing these blocks and the program data in oblivious RAM, the attacker cannot follow execution, effec- tively protecting both secret code and data. We describe how we automate our approach to make it available for developers who are unfamiliar with side-channels. As an obfuscation tool, OBELIX comes with a considerable performance overhead, but compensates this with strong security guarantees and easy applicability without requiring any expert knowledge. 1. Introduction With ongoing digitization, there is a growing demand for hardware-enforced security that cannot be bypassed by privileged malicious parties on the same system. This ap- plies to moving sensitive data processing to the cloud, but also to local applications which verify the user's identity or enforce the validity of software or content licenses. Owners of sensitive workloads may want to protect both their secret data and their code. Processor vendors recognized these de- mands and designed a variety of so-called Trusted Execution Environments (TEEs) that use hardware access control and cryptography to restrict access to code and data to its owner. Examples are Intel SGX [ 1] for user-space processes, and AMD SEV [2] and Intel TDX [ 3] for whole-VM protection. However, in recent years, there have been numerous ex- amples of how gaps in the threat model and implementation issues can be exploited to tamper with the executed code or extract secret data. For example, all currently available TEEs are known to be vulnerable to microarchitectural side- channels like TLB and cache attacks [ 4]-[6]. For simplicity, we refer to those as timing side-channels. An attack method that is more specific to TEEs is single-stepping [7], [ 8], which allows an attacker to precisely measure the execution of single instructions. While those attacks do not allow direct access to the protected data, the attacker gets valuable information about the TEE's execution state, which may be used to partially derive the currently processed data and code, e.g., through counting instructions [ 9] or measuring their execution time [ 10], [11]. Another TEE-related attack vector are ciphertext side-channels [12], [ 13], where the attacker frequently reads encrypted memory and observes whether the ciphertext at a specific address changes, break- ing common constant-time primitives. For each of those attacks, there are numerous proposed countermeasures and tools, which focus on protecting the secret data [ 14]. Only few hardware-based methods were deployed by CPU vendors yet, so software-level counter- measures are necessary. For example, timing attacks can be mitigated by writing constant-time code or linearizing exist- ing code [15]. Recently, with AEX-Notify [16], a hardware- assisted single-stepping countermeasure for Intel SGX was introduced, but that does not apply to other TEEs in the field. Some libraries employ custom-crafted constant-time code to defend against timing and single-stepping attacks, but that code still remains vulnerable to ciphertext side-channel attacks [ 13]. At the time of writing, the only available automated countermeasure for ciphertext side-channels is Cipherfix [17], which relies on dynamic taint tracking and binary rewriting and thus lacks the stability needed for practical deployment. Writing robust code that is immune to all known attack vectors requires expert knowledge, takes a lot of resources and still is not guaranteed to be side-channel free. Finally, it is not straightforwardly possible to protect the code itself against extraction by the attacker, which may be desirable if it, for example, contains secret algorithms. In this work, we take a broad view at security issues on TEEs. We classify currently known attack vectors against commonly available TEEs, and discuss the suitability of existing software-level defenses, finding that each only ad- dresses a subset of attacks. Subsequently, we show how those attack vectors can be averted with a single, modular drop-in countermeasure that does only require minimal ac- tion from the user. Contrary to other mitigation approaches, our approach named O BELIX does not only aim to pro- tect secret data, but also the executed algorithms, against all relevant side-channel vulnerabilities. O BELIX takes and 4182 DOI 10.1109/SP54263.2024.00182 advances the ideas from Obfuscuro [18], to build a dynamic obfuscation engine which runs within any TEE and can reli- ably protect code and data against extraction. Based upon an evaluation of the practical capabilities of a single-stepping attacker, we design an algorithm to partition machine code into a set of uniform code blocks, which are indistinguish- able for said attacker. By storing the code blocks and the associated data in an ORAM, we effectively prevent the attacker from learning anything about the executed code and data. We present a proof-of-concept implementation for OBELIX as an LLVM compiler extension, and apply it to a number of programs. 1.1. Our Contribution We present O BELIX , a drop-in obfuscation engine that automatically mitigates a wide range of TEE-related attacks. For that, we: • discuss existing countermeasures and determine the properties needed for a generic mitigation; • evaluate Linear ORAM and Path ORAM for their suitability within an untrusted client setting with small amounts of data; • analyze an attacker's ability to distinguish instruc- tions through single-stepping; • design an algorithm to split a program into uniform code blocks which are indistinguishable to an at- tacker; • show how to combine these components into a single comprehensive countermeasure. The source code of our proof-of-concept implementation is available at https://github.com/UzL-ITS/obelix. 2. Background 2.1. Trusted Execution Environments Trusted Execution Environments (TEEs) offer hardware- based isolation for protecting a program's execution against privileged adversaries on the same system. Starting with small user-space enclaves in Intel SGX [19] with at most 96MB of storage, modern TEEs are nowadays able to protect whole virtual machines (VMs). Common features of TEEs are memory encryption, hardware-enforced memory access prevention and runtime attestation. However, their imple- mentation differs greatly. For example, Intel SGX reserves a small amount of physical memory for the enclave, which is integrity protected, features fresh ciphertexts (only SGX version 1 [20]) and cannot be accessed by any other party than the running enclave. In contrast, the current version of AMD SEV [2] only actively prevents unauthorized write accesses to enclave memory, while relying on its (determin- istic) memory encryption for averting illegitimate reads. 2.2. Side-Channel Attacks TEEs are designed to protect against architectural attack- ers, i.e., malicious privileged processes on the same system which try to directly tamper with the execution. However, the threat models of many TEEs exclude side-channel at- tacks [1]. A side-channel attacker does not access private data directly, but tries to derive the data by observing seem- ingly unrelated channels. A simple example is measuring the execution time of the program to learn about the length of the processed data. Due to many performance optimizations and shared resources, the microarchitecture of CPUs exhibits lots of side-channel leakages. A prominent example are cache attacks, where the attacker learns whether victim data was recently accessed by manipulating and observing the cache state [5], [6], [21]. Other examples are attacks through the TLB [4] or contention of execution ports [22]. For simplicity, we refer to those as timing attacks . Software vulnerability to side-channel attacks is mostly rooted in its handling of secret data. If a program makes a secret- dependent memory access or executes a secret-dependent chunk of code, the attacker can use one of the above side- channel attack primitives to learn which data or code was accessed and thus reconstruct the secret. 2.3. TEE-Specific Side-Channel Attacks While there are already numerous side-channel vulnera- bilities on common systems, TEEs with their unique threat model are particularly susceptible. Various attacks [23]-[27] show how leakage can be used recover secrets from execu- tions deemed protected. Not only the parts of the execution inside the TEE but also control mechanisms from outside the protected memory region, like page management, can leak information to the attacker. SGX uses protected areas for the enclave page tables, but these can still be stealthily monitored via the cache [28], [29], or the access rights can be manipulated [30] by the OS. However, an attacker can not only leak secrets by observing microarchitectural effects of unprotected implementations. The encrypted memory of VM TEEs is not completely protected from the hypervisor, and the strong attacker scenario allows for very precise and fine-grained observations that enable further attacks. 2.3.1. Ciphertext side-channel attacks. The ciphertext side-channel [12], [13] is an example of a more structural leakage. Ciphertext side-channels are unique to systems that use deterministic memory encryption in combination with read access for a hypervisor to the encrypted memory. While TEEs like Intel SGX version 1 only protect a small amount of memory and can thus keep fresh nonces needed for non- deterministic encryption, this does not scale for TEEs which manage gigabytes of memory, like VMs. Thus, TEEs like In- tel SGX version 2 [20] and AMD SEV employ deterministic memory encryption, where the same plaintext written to the same address results in the same ciphertext. However, while Intel SGX prohibits unauthorized reads, AMD SEV allows the malicious hypervisor full read access to the ciphertexts. 4183"
+      },
+      {
+        "source": "selected",
+        "value": "Trusted execution environments (TEEs) offer hardware-assisted means to protect code and data. However, as shown in numerous results over the years, attackers can use side-channels to leak data access patterns and even single-step the code. While the vendors are slowly introducing hardwarebased countermeasures for some attacks, others will stay unaddressed. This makes a software-level countermeasure desirable, but current available solutions only address very specific attack vectors or have a narrow leakage model. In this work, we take a holistic view at the vulnerabilities of TEEs and design a tool named OBELIX, which is the first to protect both code and data against a wide range of TEE attacks, from cache attacks over single-stepping to ciphertext side-channels. We analyze the practically achievable precision of state-of-the-art single-stepping tools, and present an algorithm which uses that knowledge to divide a program into uniform code blocks, that are indistinguishable for a strong attacker. By storing these blocks and the program data in oblivious RAM, the attacker cannot follow execution, effectively protecting both secret code and data. We describe how we automate our approach to make it available for developers who are unfamiliar with side-channels. As an obfuscation tool, OBELIX comes with a considerable performance overhead, but compensates this with strong security guarantees and easy applicability without requiring any expert knowledge. 4182 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jan Wichelmann",
+          "email": "j.wichelmann@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universität zu Lübeck, Lübeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Anja Rabich",
+          "email": "a.rabich@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universität zu Lübeck, Lübeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Anna Pätschke",
+          "email": "a.paetschke@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universität zu Lübeck, Lübeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Thomas Eisenbarth",
+          "email": "thomas.eisenbarth@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universität zu Lübeck, Lübeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jan Wichelmann",
+          "email": "j.wichelmann@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universit¨at zu L ¨ubeck, L ¨ubeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Anja Rabich",
+          "email": "a.rabich@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universit¨at zu L ¨ubeck, L ¨ubeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Anna Pätschke",
+          "email": "a.paetschke@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universit¨at zu L ¨ubeck, L ¨ubeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Thomas Eisenbarth",
+          "email": "thomas.eisenbarth@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "Universit¨at zu L ¨ubeck, L ¨ubeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 120,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Thomas Eisenbarth",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Obelix: Mitigating Side-Channels through Dynamic Obfuscation",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jan Wichelmann",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "Anja Rabich",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "Anna Pätschke",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "Thomas Eisenbarth",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 4,
+      "country_values_restored": 4,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

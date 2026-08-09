@@ -1,0 +1,365 @@
+{
+  "paper_id": "040_firmrca_towards_post_fuzzing_analysis_on_arm_embedded_firmware_with_efficient_event_based_fault_localization",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "FIRMRCA: Towards Post-Fuzzing Analysis on ARM Embedded Firmware with Efficient Event-based Fault Localization"
+      },
+      {
+        "source": "selected",
+        "value": "FIRMRCA: Towards Post-Fuzzing Analysis on ARM Embedded Firmware with Efficient Event-based Fault Localization"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "While fuzzing has demonstrated its effectiveness in exposing vulnerabilities within embedded firmware, the discovery of crashing test cases is only the first step in improving the security of these critical systems. The subsequent fault localization process, which aims to precisely identify the root causes of observed crashes, is a crucial yet timeconsuming post-fuzzing work. Unfortunately, the automated root cause analysis on embedded firmware crashes remains an underexplored area, which is challenging from several perspectives: (1) the fuzzing campaign towards the embedded firmware lacks adequate debugging mechanisms, making it hard to automatically extract essential runtime information for analysis; (2) the inherent raw binary nature of embedded firmware often leads to over-tainted and noisy suspicious instructions, which provides limited guidance for analysts in manually investigating the root cause and remediating the underlying vulnerability. To address these challenges, we design and implement FIRMRCA, a practical fault localization framework tailored specifically for embedded firmware. FIRMRCA introduces an event-based footprint collection approach that leverages concrete memory accesses in the crash reproducing process to aid and significantly expedite reverse execution. Next, to solve the complicated memory alias problem, FIRMRCA proposes a history-driven method by tracking data propagation through the execution trace, enabling precise identification of deep crash origins. Finally, FIRMRCA proposes a novel strategy to highlight key instructions related to the root cause, providing practical guidance in the final investigation. To demonstrate the efficacy of FIRMRCA, we evaluate it with both synthetic and real-world targets, including 41 crashing test cases across 17 firmware images. The results show that FIRMRCA can effectively (92.7% success rate) identify the root cause of crashing test cases within the top 10 instructions. Compared to state-of-the-art works, FIRMRCA demonstrates its superiority in 27.8% improvement in full execution trace analysis capability, polynomial-level acceleration in overall efficiency and 73.2% higher success rate within the top 10 instructions in effectiveness."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "While fuzzing has demonstrated its effectiveness in exposing vulnerabilities within embedded firmware, the discovery of crashing test cases is only the first step in improving the security of these critical systems. The subsequent fault localization process, which aims to precisely identify the root causes of observed crashes, is a crucial yet time- consuming post-fuzzing work. Unfortunately, the automated root cause analysis on embedded firmware crashes remains an underexplored area, which is challenging from several perspectives: (1) the fuzzing campaign towards the embedded firmware lacks adequate debugging mechanisms, making it hard to automatically extract essential runtime information for analysis; (2) the inherent raw binary nature of embedded firmware often leads to over-tainted and noisy suspicious instructions, which provides limited guidance for analysts in manually investigating the root cause and remediating the underlying vulnerability. To address these challenges, we design and implement FIRM RCA, a practical fault localization framework tailored specifically for embedded firmware. F IRM RCA introduces an event-based footprint collection approach that leverages concrete memory accesses in the crash reproducing process to aid and significantly expedite reverse execution. Next, to solve the complicated memory alias problem, F IRM RCA proposes a history-driven method by tracking data propagation through the execution trace, enabling precise identification of deep crash origins. Finally, F IRM RCA proposes a novel strategy to highlight key instructions related to the root cause, providing practical guidance in the final investigation. To demonstrate the efficacy of F IRM RCA, we evaluate it with both synthetic and real-world targets, including 41 crashing test cases across 17 firmware images. The results show that F IRM RCA can effectively (92.7% success rate) identify the root cause of crashing test cases within the top 10 instructions. Compared to state-of-the-art works, F IRM RCA demonstrates its superiority in 27.8% improvement in full execution trace analysis capa- bility, polynomial-level acceleration in overall efficiency and 73.2% higher success rate within the top 10 instructions in effectiveness. Shouling Ji is the corresponding author. 1. Introduction Firmware is a specialized software program embedded in hardware devices, providing essential functionalities for initial configurations, managing communications, and per- forming I/O operations [1]. It plays a pivotal role in our interconnected world, serving as a critical component of devices employed across various infrastructure sectors, such as advanced manufacturing and intelligent healthcare. Given the ubiquity of firmware and its critical role in the proper functioning of these systems, vulnerabilities in firmware can lead to severe consequences, potentially allowing malicious attackers to install malware [2], steal sensitive data [3], and even remotely control compromised devices [4]. With the growing risk of firmware attacks on embedded devices, considerable efforts are needed to mitigate firmware vulnerabilities. One of the most effective methods for dis- covering these faults is fuzzing, which involves providing randomly generated test cases to explore program behaviors [5], [6], [7], [8]. When the firmware crashes, the fuzzer saves the corresponding test case for later analysis. However, discovering crashing test cases is only the first step in improving firmware security. Identifying the root causes of firmware crashes is a crucial step after fuzzing, as it provides a deeper understanding of the underlying vulnerabilities. Given crashing test cases, analysts have to undertake the complex task of manually analyzing their root causes, a process known as fault localization. This task is extremely tedious and prone to human error [9], [10]. Over the past few decades, researchers have proposed various automated fault localization techniques. Spectrum-based Fault Localization methods involve mutating the initial crashing test case to collect two large sets of crashing and non-crashing test cases with similar execution traces. They then statistically corre- late program entities (e.g., statements and instructions) with the observed crash [11], [12], [13]. Postmortem-based Fault Localization methods start with debugging files (e.g., core dumps, execution traces, and memory snapshots), then per- form reverse execution and backward taint analysis to track the propagation of invalid data [14], [15], [16]. More re- cently, Learning-based Fault Localization approaches have utilized neural networks to understand the code context, then highlight statements or instructions related to the crash [17], [18], [19], [20]. 3783 DOI 10.1109/SP61157.2025.00002 Despite the variety of techniques proposed for software running on resource-rich systems with abundant debugging support, automated firmware crash analysis remains an un- derexplored area. Identifying the root cause of a firmware crash is still non-trivial due to the following challenges. Challenge I: Inadequate debugging mechanisms. Intu- itively, analysts require a comprehensive understanding of the crash to figure out its root cause. Runtime information, such as the execution trace, register and memory values dur- ing the execution leading up to the crash, can provide valu- able insights for analysts. Unfortunately, fuzzing campaigns towards the embedded firmware lack debugging mechanisms (e.g., sanitizers) to automatically identify and extract key information related to the crash. Analysts have to dive into tens of thousands of instructions only with the support of a basic program debugger or raw logs [5] to manually examine both control flow and data flow, which is extremely tedious, time-consuming, and prone to human mistakes. Considering the lengthy execution trace and rich runtime information, it is challenging to automatically extract and utilize essential runtime information for firmware fault localization. Challenge II: Limited investigation guidance. The embed- ded firmware is usually stripped into a raw binary file where debugging symbols (e.g., function and variable names) are stripped away, leaving only a bunch of instructions mixed with data. The lack of semantic information in the stripped firmware binary overwhelms the analysts with an abundance of potentially suspicious instructions that still require non- trivial manual investigation. However, previous works either treat all instructions uniformly [9], [15] or fail to differ- entiate instructions within the same basic block by design [21], [22]. These over-tainted and noisy instructions offer limited practical guidance for the final manual root cause investigation. Apart from the aforementioned two challenges, there is another common and crucial challenge towards fault localization. Given the execution trace leading up to a crash, analysts can reversely analyze the instructions to figure out how a pointer is initialized with corrupted data, propagated through function calls, and ultimately dereferenced illegally. However, it is tedious and time-consuming to manually dig out the root cause through tens of thousands of instructions. For the automated root cause analysis, the primary obsta- cle is the memory alias problem. Memory aliasing, where multiple pointers may point to the same underlying memory location, introduces uncertainty into the analysis of the data flow of the crashing test case and greatly complicates the task of accurately tracking data propagation [15], [16]. Our solution. In light of these challenges, we propose FIRM RCA, a practical postmortem-based fault localization framework. F IRM RCA aims to identify faulty instructions of a crash reported by the embedded firmware fuzzer. To solve the Challenge I , we design an event-based foot- print collection method on top of firmware rehosting to record essential runtime information. Our key intuition is that concrete memory accesses in the crash reproducing process can aid the reverse execution phase and accelerate resolving memory aliases significantly in fault localization. One concrete memory access includes the address of the instruction, the access method (i.e., read or write), the source (destination) register, and the concrete destination (source) memory address. To tackle the Challenge II , we design a novel two-phase root cause analysis method, which dynamically computes suspicious scores for all instructions. Based on our key insight that not all tainted instructions share the same contribution to the root cause, we further propose two ranking strategies to highlight the instructions that have higher priorities for analysts to investigate. For the common challenge of the memory alias problem, we restore concrete memory accesses from the collected event-based footprint. In summary, we make the following contributions. • We propose F IRM RCA, a practical postmortem-based automated fault localization system tailored specifically for addressing the unique challenges of embedded firmware. We introduce an event-based approach for F IRM RCA to achieve efficient instruction analysis and provide accurate root causes even for extremely long execution traces. Our event-based approach utilizes concrete memory accesses to resolve the memory alias problem and greatly improves overall effectiveness and efficiency. • We propose a novel strategy to analyze the behavior of instructions and then assign suspicious scores to prioritize attention toward more critical instructions. Our strategy provides practical guidance for analysts in identifying the root causes that are far from the crash site. • We have implemented and evaluated F IRM RCA with 41 crashing test cases across 17 firmware images. The results show that F IRM RCA successfully identifies 38 out of 41 crashing test cases within the top 10 instructions with a success rate of 92.7%. Compared to state-of-the-art works, FIRM RCA demonstrates its superiority in 27.8% improve- ment in full execution trace analysis capability, polynomial- level acceleration in overall efficiency and 73.2% higher success rate within the top 10 instructions in effectiveness. We open source F IRM RCA at https://github.com/NESA-L ab/FirmRCA. 2. Background Firmware rehosting. In firmware analysis, researchers pro- pose firmware rehosting due to the slow nature and high costs of using actual hardware [23]. Firmware rehosting is a technique to execute firmware binaries in an emulated envi- ronment instead of their original hardware devices. The em- ulation process replaces the need for the physical hardware, allowing users to analyze and even manipulate firmware code in a controlled virtual setting. Due to the effective- ness of firmware rehosting, recent works have adopted this technique for vulnerability discovery [5], [24], [25]. In the context of firmware rehosting, the hook function is a powerful method for intercepting specific actions. For instance, when using Unicorn [26] to emulate a firmware binary, one can design and implement a simple_test function, and register it with the UC_HOOK_CODE option. When executing the binary, the simple_test function 3784"
+      },
+      {
+        "source": "selected",
+        "value": "While fuzzing has demonstrated its effectiveness in exposing vulnerabilities within embedded firmware, the discovery of crashing test cases is only the first step in improving the security of these critical systems. The subsequent fault localization process, which aims to precisely identify the root causes of observed crashes, is a crucial yet timeconsuming post-fuzzing work. Unfortunately, the automated root cause analysis on embedded firmware crashes remains an underexplored area, which is challenging from several perspectives: (1) the fuzzing campaign towards the embedded firmware lacks adequate debugging mechanisms, making it hard to automatically extract essential runtime information for analysis; (2) the inherent raw binary nature of embedded firmware often leads to over-tainted and noisy suspicious instructions, which provides limited guidance for analysts in manually investigating the root cause and remediating the underlying vulnerability. To address these challenges, we design and implement FIRMRCA, a practical fault localization framework tailored specifically for embedded firmware. FIRMRCA introduces an event-based footprint collection approach that leverages concrete memory accesses in the crash reproducing process to aid and significantly expedite reverse execution. Next, to solve the complicated memory alias problem, FIRMRCA proposes a history-driven method by tracking data propagation through the execution trace, enabling precise identification of deep crash origins. Finally, FIRMRCA proposes a novel strategy to highlight key instructions related to the root cause, providing practical guidance in the final investigation. To demonstrate the efficacy of FIRMRCA, we evaluate it with both synthetic and real-world targets, including 41 crashing test cases across 17 firmware images. The results show that FIRMRCA can effectively (92.7% success rate) identify the root cause of crashing test cases within the top 10 instructions. Compared to state-of-the-art works, FIRMRCA demonstrates its superiority in 27.8% improvement in full execution trace analysis capability, polynomial-level acceleration in overall efficiency and 73.2% higher success rate within the top 10 instructions in effectiveness."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Boyu Chang",
+          "email": "bychang@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Binbin Zhao",
+          "email": "binbin.zhao@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University",
+            "Los Angelos, Georgia Institute of Technology, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Qiao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Peiyu Liu",
+          "email": "liupeiyu@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yuan Tian",
+          "email": "yuant@ucla.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Raheem Beyah",
+          "email": "rbeyah@ece.gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Los Angelos, Georgia Institute of Technology, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Shouling Ji",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Efficient Event-based Fault Localization",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Boyu Chang",
+          "email": "bychang@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Binbin Zhao",
+          "email": "binbin.zhao@gatech.edu",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Qiao Zhang",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Peiyu Liu",
+          "email": "liupeiyu@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yuan Tian",
+          "email": "yuant@ucla.edu",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Raheem Beyah",
+          "email": "rbeyah@ece.gatech.edu",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Shouling Ji",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University",
+            "Georgia Institute of Technology",
+            "University of California, Los Angelos"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 118,
+      "author_count": 8,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 14.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Efficient Event-based Fault Localization",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "FirmRCA: Towards Post-Fuzzing Analysis on ARM Embedded Firmware with Efficient Event-based Fault Localization",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Boyu Chang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Binbin Zhao",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Qiao Zhang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Peiyu Liu",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Yuan Tian",
+          "affiliations": [
+            "UCLA"
+          ]
+        },
+        {
+          "name": "Raheem Beyah",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Shouling Ji",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Boyu Chang",
+      "field": "email",
+      "restored_value": "bychang@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Binbin Zhao",
+      "field": "email",
+      "restored_value": "binbin.zhao@gatech.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Peiyu Liu",
+      "field": "email",
+      "restored_value": "liupeiyu@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yuan Tian",
+      "field": "email",
+      "restored_value": "yuant@ucla.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Raheem Beyah",
+      "field": "email",
+      "restored_value": "rbeyah@ece.gatech.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

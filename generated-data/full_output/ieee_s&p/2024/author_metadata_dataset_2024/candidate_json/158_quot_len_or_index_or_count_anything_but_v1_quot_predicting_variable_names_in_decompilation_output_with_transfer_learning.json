@@ -1,0 +1,513 @@
+{
+  "paper_id": "158_quot_len_or_index_or_count_anything_but_v1_quot_predicting_variable_names_in_decompilation_output_with_transfer_learning",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "\"Len or index or count, anything but v1\": Predicting Variable Names in Decompilation Output with Transfer Learning"
+      },
+      {
+        "source": "selected",
+        "value": "\"Len or index or count, anything but v1\": Predicting Variable Names in Decompilation Output with Transfer Learning"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Binary reverse engineering is an arduous and tedious task performed by skilled and expensive human analysts. Information about the source code is irrevocably lost in the compilation process. While modern decompilers attempt to generate C-style source code from a binary, they cannot recover lost variable names. Prior works have explored machine learning techniques for predicting variable names in decompiled code. However, the state-of-the-art systems, DIRE and DIRTY, generalize poorly to functions in the testing set that are not included in the training set-31.8% for DIRE on DIRTY's data set and 36.9% for DIRTY on DIRTY's data set. In this paper, we present VARBERT, a Bidirectional Encoder Representations from Transformers (BERT) to predict meaningful variable names in decompilation output. An advantage of VARBERT is that we can pre-train on human source code and then fine-tune the model to the task of predicting variable names. We also create a new data set VarCorpus, which significantly expands the size and variety of the data set. Our evaluation of VARBERT on VarCorpus, demonstrates a significant improvement in predicting the developer's original variable names for O2 optimized binaries achieving accuracies of 54.43% for IDA and 54.49% for Ghidra. VARBERT is strictly better than state-of-the-art techniques: On a subset of VarCorpus, VARBERT could predict the developer's original variable names 50.70% of the time, while DIRE and DIRTY predicted original variable names 35.94% and 38.00% of the time, respectively."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Binary reverse engineering is an arduous and tedious task performed by skilled and expensive human analysts. Information about the source code is irrevocably lost in the compilation process. While modern decompilers attempt to generate C-style source code from a binary, they cannot recover lost variable names. Prior works have explored machine learn- ing techniques for predicting variable names in decompiled code. However, the state-of-the-art systems, DIRE and DIRTY, generalize poorly to functions in the testing set that are not included in the training set-31.8% for DIRE on DIRTY's data set and 36.9% for DIRTY on DIRTY's data set. In this paper, we present V AR BERT, a Bidirectional En- coder Representations from Transformers (BERT) to predict meaningful variable names in decompilation output. An advan- tage of V AR BERT is that we can pre-train on human source code and then fine-tune the model to the task of predicting variable names. We also create a new data set VarCorpus, which significantly expands the size and variety of the data set. Our evaluation of V AR BERT on VarCorpus, demonstrates a significant improvement in predicting the developer's original variable names for O2 optimized binaries achieving accuracies of 54.43% for IDA and 54.49% for Ghidra. V AR BERT is strictly better than state-of-the-art techniques: On a subset of VarCorpus, VAR BERT could predict the developer's original variable names 50.70% of the time, while DIRE and DIRTY predicted original variable names 35.94% and 38.00% of the time, respectively. 1. Introduction Compilation, which transforms high-level source code into low-level machine code, is fundamentally a lossy pro- cedure. Much semantic information, including control flow structures, function names, variable names, and comments, is discarded during compilation because the target machine does not need such information. For example, a CPU does not understand the notions of variables, types, or loops ∗ Equal contribution (relying only on registers, memory, and branch statements), so the compiled output does not need this information. This phenomenon of compilation-induced information loss makes it more difficult for human analysts to under- stand binary programs (“binaries”) than to understand source code [61], despite the fact that a compiler-generated binary encodes the same logic as the corresponding source code. To aid humans in such understanding, and support a number of downstream security tasks, researchers have developed a number of decompilation techniques, which take as input binary code, recover the lost semantic information from the binary, and derive roughly equivalent source code (or pseudocode, which generally is in an approximate version of C). State-of-the-art decompilers, e.g., IDA Pro's Hex-Rays decompiler [ 27], Ghidra [ 13], and Binary Ninja [ 43], are widely used in academia and industry. Security applications for decompilation include malware analysis [ 18, 19, 61], vulnerability discovery in binary code [ 40], patching soft- ware defects [ 50], protocol reverse engineering [ 32], and code reuse discovery [ 42]. However, decompilation is far from perfect, and signif- icant problems continue to be addressed by researchers, in- cluding the reconstruction of code structure [62], inferencing of variable types [ 10, 37, 45, 66], and even the recovery of meaningful variable names [10, 36]. Variable name recovery is important because developers strive to properly name vari- ables to embed semantic meaning and to improve readability (and maintainability) of source code [ 49]. Unfortunately, unless debug information is preserved during compilation, these carefully-chosen variable names are lost, contributing to the difficulty of binary code understanding. An important insight from the existing variable name recovery work DIRE [36] and DIRTY [10] is that the seman- tics of variable names are related to their context, i.e., the surrounding code. DIRE uses information from the Abstract Syntax Tree of the decompiled code to feed into a neural network model to predict variable names. DIRECT [ 44] improved upon DIRE by only relying on text tokens and was evaluated on DIRE's data set. DIRTY uses a Transformer- based neural network model, trained on a large corpus of 4069 DOI 10.1109/SP54263.2024.00152 annotated decompilation output, to infer variable types and names. While these models can correctly predict the developer- given variable name in 57.5% (DIRE on DIRTY's data set) and 66.4% (DIRTY on DIRTY's data set) of cases in DIRTY's variable name prediction evaluation [10, Table 4], when functions that are in the training set are removed from the testing set, the accuracy drops to 31.8% (DIRE on DIRTY's data set) and 36.9% (DIRTY on DIRTY's data set). It is unnecessary for a variable name prediction system to correctly identify variables in functions that are seen during training-users can already create signatures 1 of common libraries and functions to recognize function names and variable names. In fact, the biggest promise of variable name prediction systems is to predict variable names on functions that they have never seen before, and to predict semantically valid variable names based on the context of a variable's use. Therefore, we aim to further the promise of variable name prediction systems by leveraging recent advances in machine-learning (ML) language models. Both DIRE and DIRTY 2 train special-purpose neural network models for the specialized task of variable name predication. To improve prediction performance, modern ML language models that aim to understand human text are no longer specially-trained on a specific task. For instance, the Bidirectional Encoder Representations from Transformers (BERT) [ 15] model pi- oneered the concept of first pre-training a model on natural language text, then fine-tuning the model for a specific task. The pre-training phase allows the model to learn about text and the relationship between the words including the whole context, and pre-training transfers the knowledge learned by the model to the fine-tuning task. As stated in DIRE and DIRTY , code (both source and de- compiled) share similarities with natural languages. There- fore, we believe that the variable name prediction task can be improved by using the BERT concept of pre-training and fine-tuning. We created a novel model, called V ARBERT, to validate this idea. In V ARBERT, the pre-training phase is on real source code, so that the model can learn about intricacies of the source code (including the relationship between variable names and their context). Then, we fine- tune the model on decompiled code for the task of variable name prediction and variable origin (i.e., is the variable an extraneous one generated only during decompilation) pre- diction. In this way, we significantly augment the learning of V ARBERT beyond just a data set of decompilation and ground-truth of variable names. In the process of replicating the DIRE and DIRTY results and comparing with VARBERT, we identified several latent shortcomings with their evaluation data sets that, when corrected, impact that system's evaluation results. Both the DIRTY data set, which we will call DIRT [2], and the DIRE data set, which we will call DIRE-DataSet [ 1], use similar data set generation techniques and contain similar issues. 1. For instance, IDA Pro has Fast Library Identification and Recognition Technology (FLIRT) signatures for this purpose. 2. While DIRTY also predicts variable types, in this paper we focus only on predicting variable names. Hence, we built a more extensive data set, which is expanded with an eye toward evaluating the realistic application of variable name prediction techniques, for training and testing V ARBERT. For pre-training, we used source code from C packages in the Debian APT repository, totaling 5.2M functions. For fine-tuning, we collected C and C++ packages from the Gentoo package repository and compiled them targeting x86-64 with four different compiler optimizations (O0, O1, O2, and O3). After decompiling with both the IDA Hex-Rays de- compiler (referred to as IDA hereinafter) and Ghidra, we produced a deduplicated corpus called VarCorpus. VarCor- pus is significantly larger than DIRE-DataSet and DIRT, including four different optimization levels and two different decompilers, whereas DIRE-DataSet and DIRT include one optimization level and one decompiler. Our evaluation shows that after training, V ARBERT could predict the same variable names that the original developer chose for O2 optimized binaries 54.43% of the time for IDA and 54.49% for Ghidra. V ARBERT strictly im- proves the performance over state-of-the-art techniques: On a comparable subset of VarCorpus (IDA-O0), V ARBERT achieved 50.70% while DIRE and DIRTY achieved 35.94% and 38.00%, respectively. We also performed a user study on how having meaningful variable names (as prediced by V ARBERT) impacts humans' understanding of code. Results from the study show that having variable names that VARBERT predicts not only makes correctly understanding decompiled code easier, but also significantly reduces the time required for humans to understand decompiled code. Contributions. We summarize our contributions as follows: • We built a new neural-network model, V ARBERT, to predict variable names and variable origins in decompi- lation output using transfer learning from source code samples. • We used novel techniques to build a new data set, including decompiled functions from both C and C++ binaries, which is significantly larger and more exten- sive than existing data sets. • Using our new data set, we evaluated DIRE, DIRTY , and V ARBERT. V ARBERT achieved 54.43% and 54.49% prediction accuracy on our data set of O2 binaries, for IDA and Ghidra respectively. V ARBERT (50.70%) outperformed DIRE (35.94%) and DIRTY (38.00%) onO0 binaries for IDA. Our evaluation shows that V ARBERT is applicable to variable name and origin prediction on decompilation output of stripped, real-world software. • We conducted the user study to evaluate the impact of predicted variable names in decompiled functions on code understanding. The study results provide statisti- cally significant evidence to support the usefulness of V ARBERT on the task of understanding decompiled code. 4070"
+      },
+      {
+        "source": "selected",
+        "value": "Binary reverse engineering is an arduous and tedious task performed by skilled and expensive human analysts. Information about the source code is irrevocably lost in the compilation process. While modern decompilers attempt to generate C-style source code from a binary, they cannot recover lost variable names. Prior works have explored machine learning techniques for predicting variable names in decompiled code. However, the state-of-the-art systems, DIRE and DIRTY, generalize poorly to functions in the testing set that are not included in the training set-31.8% for DIRE on DIRTY's data set and 36.9% for DIRTY on DIRTY's data set. In this paper, we present VARBERT, a Bidirectional Encoder Representations from Transformers (BERT) to predict meaningful variable names in decompilation output. An advantage of VARBERT is that we can pre-train on human source code and then fine-tune the model to the task of predicting variable names. We also create a new data set VarCorpus, which significantly expands the size and variety of the data set. Our evaluation of VARBERT on VarCorpus, demonstrates a significant improvement in predicting the developer's original variable names for O2 optimized binaries achieving accuracies of 54.43% for IDA and 54.49% for Ghidra. VARBERT is strictly better than state-of-the-art techniques: On a subset of VarCorpus, VARBERT could predict the developer's original variable names 50.70% of the time, while DIRE and DIRTY predicted original variable names 35.94% and 38.00% of the time, respectively."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kuntal Kumar Pal",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Ati Priya Bajaj",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Pratyay Banerjee",
+          "email": "pbanerj6@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Audrey Dutcher",
+          "email": "dutcher@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Mutsumi Nakamura",
+          "email": "mutsumi@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Zion Leonahenahe Basque",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Himanshu Gupta",
+          "email": "hgupta35@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Arjun Sawant",
+          "email": "ssawan13@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Ujjwala Anantheswaran",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Yan Shoshitaishvili",
+          "email": "yans@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Adam Doupé",
+          "email": "doupe@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "Chitta Baral",
+          "email": "chitta@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "Ruoyu Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 12
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kuntal Kumar Pal",
+          "email": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Ati Priya Bajaj",
+          "email": "atipriya@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Pratyay Banerjee",
+          "email": "pbanerj6@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Audrey Dutcher",
+          "email": "dutcher@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Mutsumi Nakamura",
+          "email": "mutsumi@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Zion Leonahenahe Basque",
+          "email": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Himanshu Gupta",
+          "email": "hgupta35@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Saurabh Arjun Sawant",
+          "email": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Ujjwala Anantheswaran",
+          "email": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Yan Shoshitaishvili",
+          "email": "yans@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Chitta Baral",
+          "email": "chitta@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 11,
+          "name": "Ruoyu Wang",
+          "email": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 13,
+      "author_count": 12,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 13,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "\"Len or index or count, anything but v1\": Predicting Variable Names in Decompilation Output with Transfer Learning",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kuntal Kumar Pal",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Ati Priya Bajaj",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Pratyay Banerjee",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Audrey Dutcher",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Mutsumi Nakamura",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Zion Leonahenahe Basque",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Himanshu Gupta",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Saurabh Arjun Sawant",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Ujjwala Anantheswaran",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Yan Shoshitaishvili",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Adam Doupe",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Chitta Baral",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Ruoyu Wang",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Ati Priya Bajaj",
+      "field": "email",
+      "restored_value": "atipriya@asu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Pratyay Banerjee",
+      "field": "email",
+      "restored_value": "pbanerj6@asu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Audrey Dutcher",
+      "field": "email",
+      "restored_value": "dutcher@asu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Mutsumi Nakamura",
+      "field": "email",
+      "restored_value": "mutsumi@asu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Himanshu Gupta",
+      "field": "email",
+      "restored_value": "hgupta35@asu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yan Shoshitaishvili",
+      "field": "email",
+      "restored_value": "yans@asu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Chitta Baral",
+      "field": "email",
+      "restored_value": "chitta@asu.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

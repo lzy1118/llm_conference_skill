@@ -1,0 +1,328 @@
+{
+  "paper_id": "044_preventing_kernel_hacks_with_hakcs",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Preventing Kernel Hacks with HAKC"
+      },
+      {
+        "source": "selected",
+        "value": "Preventing Kernel Hacks with HAKC"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Commodity operating system kernels remain monolithic for practical and historical reasons. All kernel code shares a single address space, executes with elevated processor privileges, and has largely unhindered access to all data, including data irrelevant to the completion of a specific task. Applying the principle of least privilege, which limits available resources only to those needed to perform a particular task, to compartmentalize the kernel would realize major security gains, similar to microkernels yet without the major redesign effort. Here, we introduce a compartmentalization design, called a Hardware-Assisted Kernel Compartmentalization (HAKC), that approximates least privilege separation, while minimizing both developer effort and performance overhead. HAKC divides code and data into separate partitions, and specifies an access policy for each partition. Data is owned by a single partition, and a partition's access-control policy is enforced at runtime, preventing unauthorized data access. When a partition needs to transfer control flow to outside itself, data ownership is transferred to the target, and transferred back upon return. The HAKC design allows for isolating code and data from the rest of the kernel, without utilizing any additional Trusted Computing Base while compartmentalized code is executing. Instead, HAKC relies on hardware for enforcement. Loadable kernel modules (LKMs), which dynamically load kernel code and data providing specialized functionality, are the single largest part of the Linux source base. Unfortunately, their collective size and complexity makes LKMs the cause of the majority of CVEs issued for the Linux kernel. The combination of a large attack surface in kernel modules, and the monolithic design of the Linux kernel, make LKMs ideal candidates for compartmentalization. To demonstrate the effectiveness of our approach, we implement HAKC in Linux v5.10 using extensions to the Arm v8.5-A ISA, and compartmentalize the ipv6.ko LKM, which consists of over 55k LOC. The average overhead measured in Apachebench tests was just 1.6%-24%. Additionally, we compartmentalize the nf_tables.ko packet filtering LKM, and measure the combined impact of using both LKMs. We find a reasonable linear growth in overhead when both compartmentalized LKMs are used. Finally, we measure no significant difference in performance when using the compartmentalized ipv6.ko LKM over the unmodified LKM during real-world web browsing experiments on the Alexa Top 50 websites. DISTRIBUTION STATEMENT A. Approved for public release. Distribution is unlimited. This material is based upon work supported by the Under Secretary of Defense for Research and Engineering under Air Force Contract No. FA8702-15-D-0001. Any opinions, findings, conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the Under Secretary of Defense for Research and Engineering. As an example of a high severity Linux CVE, consider CVE-2016-4997 [65] listed in Listing 1. The code is part of the IPv4 packet filtering subsystem, and is executed during error cleanup. The exploit involves the attacker supplying a small positive integer value via a system call, which, due to the LKM only performing an upper bound test and not a lower bound test, can lead to a corruption of a structure submember used as an offset value in a pointer computation. The pointer, computed using the offset submember corrupted by the user, is then written to the me pointer in line 7, which decrements an underlying integer, allowing an arbitrary kernel integer (e.g., the current process UID) to be decremented. This exploit is an example of a data-only attack that allows for accessing data beyond what the developer intended, which"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Commodity operating system kernels remain mono- lithic for practical and historical reasons. All kernel code shares a single address space, executes with elevated processor privileges, and has largely unhindered access to all data, including data irrelevant to the completion of a specific task. Applying the principle of least privilege, which limits available resources only to those needed to perform a particular task, to com- partmentalize the kernel would realize major security gains, similar to microkernels yet without the major redesign effort. Here, we introduce a compartmentalization design, called a Hardware-Assisted Kernel Compartmentalization (HAKC), that approximates least privilege separation, while minimizing both developer effort and performance overhead. HAKC divides code and data into separate partitions, and specifies an access policy for each partition. Data is owned by a single partition, and a partition's access-control policy is enforced at runtime, preventing unauthorized data access. When a partition needs to transfer control flow to outside itself, data ownership is transferred to the target, and transferred back upon return. The HAKC design allows for isolating code and data from the rest of the kernel, without utilizing any additional Trusted Computing Base while compartmentalized code is executing. Instead, HAKC relies on hardware for enforcement. Loadable kernel modules (LKMs), which dynamically load kernel code and data providing specialized functionality, are the single largest part of the Linux source base. Unfortunately, their collective size and complexity makes LKMs the cause of the majority of CVEs issued for the Linux kernel. The combination of a large attack surface in kernel modules, and the monolithic design of the Linux kernel, make LKMs ideal candidates for compartmentalization. To demonstrate the effectiveness of our approach, we implement HAKC in Linux v5.10 using extensions to the Arm v8.5-A ISA, and compartmentalize the ipv6.ko LKM, which consists of over 55k LOC. The average overhead measured in Apachebench tests was just 1.6%-24%. Addition- ally, we compartmentalize the nf_tables.ko packet filtering LKM, and measure the combined impact of using both LKMs. We find a reasonable linear growth in overhead when both compart- mentalized LKMs are used. Finally, we measure no significant difference in performance when using the compartmentalized ipv6.ko LKM over the unmodified LKM during real-world web browsing experiments on the Alexa Top 50 websites. DISTRIBUTION STATEMENT A. Approved for public release. Distri- bution is unlimited. This material is based upon work supported by the Under Secretary of Defense for Research and Engineering under Air Force Contract No. FA8702-15-D-0001. Any opinions, findings, conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the Under Secretary of Defense for Research and Engineering. I. I NTRODUCTION Modern kernels have expanded their functionality well beyond the “three easy pieces” of concurrency, virtualization, and persistence [5]. Users expect additional features, such as protocol implementations, advanced filesystems, and driver support for an ever growing number of devices. However, as the kernel has grown, its monolithic design, which provides only a single address space for all kernel functionalities, persists. With the increased size and complexity of the kernel, the number of CVEs issued for Linux per year has grown by over 270% from 2005 to 2020. Loadable kernel modules (LKMs), which are the mecha- nisms through which additional functionality gets added, pro- vide a natural compartmentalization boundary for the kernel. As kernel module code can always be compiled into the main kernel image, at the source level, there is no clear difference between core kernel code and LKM code. However, when compiled as individualized units, LKMs are not part of the core kernel image that gets loaded by the bootloader. Instead, the kernel dynamically loads an LKM when the kernel needs the particular functionality offered by the LKM. Thus, at runtime, there is a clear and logical separation between LKMs and the rest of the kernel, but the monolithic design of the kernel effectively erases that separation [69]. Bugs in LKMs become just as severe as other kernel bugs, as all code and data exist in the same address space, with no isolation and executing with elevated privilege. Unfortunately, the sheer size and complexity of LKM code create an attack surface much larger than the core kernel. Of the 567 high severity CVEs we analyzed (see § II-B), 301 were found in the drivers/ and sound/ directories (or contained the word “driver” in the CVE description for cases of proprietary code, such as the Nvidia GPU driver). We argue that most of the code in those directories are intended for LKMs, and thus that most high severity CVEs come from LKMs, despite our underapproximation of CVE sources. As an example of a high severity Linux CVE, consider CVE-2016-4997 [65] listed in Listing 1. The code is part of the IPv4 packet filtering subsystem, and is executed during error cleanup. The exploit involves the attacker supplying a small positive integer value via a system call, which, due to the LKM only performing an upper bound test and not a lower bound test, can lead to a corruption of a structure submember used as an offset value in a pointer computation. The pointer, computed using the offset submember corrupted by the user, is then written to the me pointer in line 7, which decrements an underlying integer, allowing an arbitrary kernel integer (e.g., the current process UID) to be decremented. This exploit is an example of a data-only attack that allows for accessing data beyond what the developer intended, which Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24026 www.ndss-symposium.org 1 static void compat_release_entry(struct compat_ipt_entry *e) { struct xt_entry_target *t; 3 struct xt_entry_match *ematch; 5 /* Cleanup all matches */ xt_ematch_foreach(ematch, e) 7 module_put(ematch->u.kernel.match->me); t = compat_ipt_get_target(e); 9 module_put(t->u.kernel.target->me); } Listing 1: Packet filter code that allows root access. A user- controlled pointer value can be passed to module_put in line 7 without violating memory safety or control-flow integrity, and an underlying integer is decremented. the monolithic design of the Linux kernel happily allows. A properly executed exploitation of this CVE does not violate memory safety, as all memory accesses are in validly allocated and live memory regions, and no practical memory safety mechanisms [1] prevent submember corruption, of which this exploit takes advantage. Control-flow integrity [27] is not violated either, because execution flows along a valid path at all times. Consequently, while existing mitigations such as memory safety and control-flow integrity have a place in securing the kernel, compartmentalization is necessary for truly secure kernels. Compartmentalizing the packet filtering functionality so that accessible memory is restricted to only that which the developer intends prevents such data-only exploits, even in the presence of buggy code. In that way, compartmentalization provides similar security guarantees to microkernels, but without the significant engineering changes that microkernels impose. Current state-of-the-art commodity kernel protections (as opposed to embedded kernel defenses [13], [95]) gener- ally fall into one of three categories: virtualization-based, microkernel-based, or compiler-based. Virtualization-based protections [73], [79], [86], [87] employ a hypervisor to monitor execution or provide stronger isolation between ex- ecution domains. Microkernel-based protections [32], [37] completely redesign the operating system to minimize the Trusted Computing Base (TCB) to typically include only the virtual memory management and IPC, and isolate other traditional kernel services as user-space processes. Compiler- based protections [1], [16], [27] introduce security checks or randomization [68] by the compiler that attempts to thwart code-reuse or data-only attacks. Virtualization and microkernel defenses provide the strongest protections, but are the least performant, and still rely on additional software TCB. Com- piler protections, with the exception of KASAN [1], are more performant, but only protect a subset of the attack surface, as with kCFI [27], or are often circumvented [10]. In this paper, we present Hardware-Assisted Kernel Com- partmentalization (HAKC), a mechanism for compartmental- izing kernel code and data. HAKC relies on hardware features for enforcement, which avoids growing the TCB, yet provides strong data and control-flow protection. HAKC splits code and data into partitions that contain a developer-specified mix of both, and collects the partitions into a larger grouping for efficient policy enforcement. A data-access policy is specified for each partition within the larger group, and a control policy is defined for the larger group if control flow needs to exit its constituent partition set. HAKC provides fine-grained data- access and control-transition policies to prevent arbitrary data access and code execution. The data-access policy ensures that all data belongs to exactly one partition, and the accessed data conforms to the data-access policy defined for each partition. The control-transition policy checks that indirect control flow targets also conform to the partition set access policy. When control flow exits the partition set, data ownership is trans- ferred to the target, and then restored upon return. In this way, HAKC optimizes and enforces safe local data access; code and data access within a partition is secure and quick, relative to those outside. However, data and code defined outside the partition is accessible, but only if explicitly needed. While we designed HAKC around compartmentalizing LKMs, it is not limited to only that use case; HAKC can be applied to core kernel code, as well as user-space code. We implement Hardware-Assisted Kernel Compartmental- ization for the ipv6.ko and nf_tables.ko LKMs in Linux 5.10 using hardware features present in the ARMv8.5- A ISA. We measure the performance overhead of compart- mentalizing ipv6.ko using microbenchmarks, and find that HAKC imposes an average 1.6%-24% overhead. Additionally, we measure the overhead of using two compartmentalized LKMs together, and find that the overhead grows linearly. Finally, when simulating typical browsing behavior using the Alexa Top websites, we find no significant difference using our compartmentalized LKM over an unmodified LKM. To summarize, this paper provides the following contributions: • A compartmentalization policy API for defining fine- grained compartmentalization policies. • A practical, hardware-based compartmentalization en- forcement mechanism. • An implementation of a compartmentalization policy on the ipv6.ko and nf_tables.ko LKMs1. • An extensive evaluation on the overhead imposed by our compartmentalization policy and enforcement, demonstrating its practicality. II. B ACKGROUND AND MOTIVATION Here, we present some background about Pointer Authen- tication (PAC) and Memory Tagging Extension (MTE), the hardware security primitives we used to build our prototype HAKC implementation. Both PAC and MTE are present in the ARMv8.5-A ISA. We additionally provide an analysis of high severity CVEs that motivate the need for HAKC. A. Hardware Primitives Pointer Authentication: Introduced in ARMv8.3, Pointer Authentication is used to cryptographically sign pointers, and store the signature in the “unused” upper bits of a 64-bit pointer (see Figure 1). PAC implements two instruction classes, one for signing and one for authenticating a signed pointer, and allows for using five different keys, two for data and code pointers each"
+      },
+      {
+        "source": "selected",
+        "value": "Commodity operating system kernels remain monolithic for practical and historical reasons. All kernel code shares a single address space, executes with elevated processor privileges, and has largely unhindered access to all data, including data irrelevant to the completion of a specific task. Applying the principle of least privilege, which limits available resources only to those needed to perform a particular task, to compartmentalize the kernel would realize major security gains, similar to microkernels yet without the major redesign effort. Here, we introduce a compartmentalization design, called a Hardware-Assisted Kernel Compartmentalization (HAKC), that approximates least privilege separation, while minimizing both developer effort and performance overhead. HAKC divides code and data into separate partitions, and specifies an access policy for each partition. Data is owned by a single partition, and a partition's access-control policy is enforced at runtime, preventing unauthorized data access. When a partition needs to transfer control flow to outside itself, data ownership is transferred to the target, and transferred back upon return. The HAKC design allows for isolating code and data from the rest of the kernel, without utilizing any additional Trusted Computing Base while compartmentalized code is executing. Instead, HAKC relies on hardware for enforcement. Loadable kernel modules (LKMs), which dynamically load kernel code and data providing specialized functionality, are the single largest part of the Linux source base. Unfortunately, their collective size and complexity makes LKMs the cause of the majority of CVEs issued for the Linux kernel. The combination of a large attack surface in kernel modules, and the monolithic design of the Linux kernel, make LKMs ideal candidates for compartmentalization. To demonstrate the effectiveness of our approach, we implement HAKC in Linux v5.10 using extensions to the Arm v8.5-A ISA, and compartmentalize the ipv6.ko LKM, which consists of over 55k LOC. The average overhead measured in Apachebench tests was just 1.6%-24%. Additionally, we compartmentalize the nf_tables.ko packet filtering LKM, and measure the combined impact of using both LKMs. We find a reasonable linear growth in overhead when both compartmentalized LKMs are used. Finally, we measure no significant difference in performance when using the compartmentalized ipv6.ko LKM over the unmodified LKM during real-world web browsing experiments on the Alexa Top 50 websites. DISTRIBUTION STATEMENT A. Approved for public release. Distribution is unlimited. This material is based upon work supported by the Under Secretary of Defense for Research and Engineering under Air Force Contract No. FA8702-15-D-0001. Any opinions, findings, conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the Under Secretary of Defense for Research and Engineering. As an example of a high severity Linux CVE, consider CVE-2016-4997 [65] listed in Listing 1. The code is part of the IPv4 packet filtering subsystem, and is executed during error cleanup. The exploit involves the attacker supplying a small positive integer value via a system call, which, due to the LKM only performing an upper bound test and not a lower bound test, can lead to a corruption of a structure submember used as an offset value in a pointer computation. The pointer, computed using the offset submember corrupted by the user, is then written to the me pointer in line 7, which decrements an underlying integer, allowing an arbitrary kernel integer (e.g., the current process UID) to be decremented. This exploit is an example of a data-only attack that allows for accessing data beyond what the developer intended, which"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Derrick Mckee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yianni Giannaris",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Carolina Ortega Perez",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Howard Shrobe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Mathias Payer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Hamed Okhravi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Nathan Burow",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Purdue University",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Mit Csail",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Epfl",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Mit Lincoln Laboratory",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Derrick McKee",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yianni Giannaris",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Carolina Ortega Perez",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Howard Shrobe",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Mathias Payer",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Hamed Okhravi",
+          "email": "",
+          "affiliations": [
+            "MIT Lincoln Laboratory"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Nathan Burow",
+          "email": "",
+          "affiliations": [
+            "MIT Lincoln Laboratory"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 127,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 4,
+          "author": "Mathias Payer",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 4,
+          "author": "Mathias Payer",
+          "affiliation_raw": "MIT Lincoln Laboratory",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b17"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 25.298,
+          "center_distance": 89.734,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Preventing Kernel Hacks with HAKCs",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-257/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Derrick McKee",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Yianni Giannaris",
+          "affiliations": [
+            "MIT CSAIL"
+          ]
+        },
+        {
+          "name": "Carolina Ortega",
+          "affiliations": [
+            "MIT CSAIL"
+          ]
+        },
+        {
+          "name": "Howard Shrobe",
+          "affiliations": [
+            "MIT CSAIL"
+          ]
+        },
+        {
+          "name": "Mathias Payer",
+          "affiliations": [
+            "EPFL"
+          ]
+        },
+        {
+          "name": "Hamed Okhravi",
+          "affiliations": [
+            "MIT Lincoln Laboratory"
+          ]
+        },
+        {
+          "name": "Nathan Burow",
+          "affiliations": [
+            "MIT Lincoln Laboratory"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

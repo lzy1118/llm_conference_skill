@@ -1,0 +1,335 @@
+{
+  "paper_id": "096_asterisk_super_fast_mpc_with_a_friend",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Asterisk: Super-fast MPC with a Friend"
+      },
+      {
+        "source": "selected",
+        "value": "Asterisk: Super-fast MPC with a Friend"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Secure multiparty computation (MPC) enables privacy-preserving collaborative computation over sensitive data held by multiple mutually distrusting parties. Unfortunately, in the most natural setting where a majority of the parties are maliciously corrupt (also called the dishonest majority setting), traditional MPC protocols incur high overheads and offer weaker security guarantees than are desirable for practical applications. In this paper, we explore the possibility of circumventing these drawbacks and achieving practically efficient dishonest majority MPC protocols with strong security guarantees by assuming an additional semi-honest, noncolluding helper party HP. 1 We believe that this is a more realistic alternative to assuming an honest majority, since many real-world applications of MPC involving potentially large numbers of parties (such as dark pools) are typically enabled by a central governing entity that can be modeled as the HP. In the above model, we are the first to design, implement and benchmark a practically-efficient and general multi-party framework, Asterisk. Our framework requires invoking HP only a constant number of times, achieves the strong security guarantee of fairness (either all parties learn the output or none do), scales to hundreds of parties, outperforms all existing dishonest majority MPC protocols, and is, in fact, competitive with state-of-the-art honest majority MPC protocols. Our experiments show that Asterisk achieves 228-288× speedup in preprocessing as compared to the best dishonest majority MPC protocol. With respect to online time, Asterisk supports 100party evaluation of a circuit with 10 6 multiplication gates in approximately 20 seconds. We also implement and benchmark practically efficient and highly scalable dark pool instances using Asterisk. The corresponding run times showcase the effectiveness of Asterisk in enabling efficient realizations of real-world privacy-preserving applications with strong security guarantees. 2. Depending on the dark pool algorithm, an alternative approach is to employ an MPC protocol to enable multiple parties to collectively effectuate the role of a dark pool operator"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Secure multiparty computation (MPC) enables privacy-preserving collaborative computation over sensitive data held by multiple mutually distrusting parties. Unfortu- nately, in the most natural setting where a majority of the parties are maliciously corrupt (also called the dishonest ma- jority setting), traditional MPC protocols incur high overheads and offer weaker security guarantees than are desirable for practical applications. In this paper, we explore the possibility of circumventing these drawbacks and achieving practically efficient dishonest majority MPC protocols with strong secu- rity guarantees by assuming an additional semi-honest, non- colluding helper party HP.1 We believe that this is a more realistic alternative to assuming an honest majority, since many real-world applications of MPC involving potentially large numbers of parties (such as dark pools) are typically enabled by a central governing entity that can be modeled as the HP. In the above model, we are the first to design, implement and benchmark a practically-efficient and general multi-party framework, Asterisk. Our framework requires invoking HP only a constant number of times, achieves the strong security guarantee of fairness (either all parties learn the output or none do), scales to hundreds of parties, outperforms all existing dishonest majority MPC protocols, and is, in fact, competitive with state-of-the-art honest majority MPC protocols. Our ex- periments show that Asterisk achieves 228 −288× speedup in preprocessing as compared to the best dishonest majority MPC protocol. With respect to online time, Asterisk supports 100- party evaluation of a circuit with 106 multiplication gates in approximately 20 seconds. We also implement and benchmark practically efficient and highly scalable dark pool instances using Asterisk. The corresponding run times showcase the effectiveness of Asterisk in enabling efficient realizations of real-world privacy-preserving applications with strong security guarantees. 1. Introduction In today's digital landscape, vast amounts of user data are being collected and analyzed. This motivates the need 1. We refer to this entity as a friend in the title. for privacy-preserving computation that enable computing on sensitive data without compromising data privacy. Secure multiparty computation (MPC) [ 43] is one such technol- ogy that facilitates computation over sensitive data without disclosing any underlying information. Informally, an MPC protocol allows a set of n distrusting parties with private inputs to jointly evaluate a function on these inputs, while ensuring that a (centralized) adversary corrupting at most t < n parties learns nothing beyond the function output. We motivate the practical applicability of MPC with the example use-case of privacy-preserving dark pools. Dark pools are private exchanges that allow institutional investors to trade large volumes of financial instruments (such as stocks, bonds, shares, etc.) away from the prying eyes of the public. Unlike public exchanges, trade requests submitted to a dark pool remain hidden until they are matched. At a high- level, dark pools operate as follows. Investors submit trade requests to a central dark pool operator who is responsible for matching buy orders to sell orders, and publishing the list of matched (or satisfied) orders. Submitted requests that are unmatched remain hidden with the dark pool operator until they get satisfied. This solution necessitates that the centralized dark pool operator (a) respects the privacy of the client's trade interests, and (b) executes the identification of matches among the buy and sell orders honestly. MPC, on the other hand, obviates the need for such trust assumptions. To guarantee privacy and ensure that the trade interest is not disclosed in the clear to the dark pool operator, one can move to the distributed setting. Here, the clients run an MPC protocol among themselves (with their trade requests as the private input) to determine the matching orders. 2 The protocol would identify the matching orders while guaranteeing that no corrupt subset of t < n clients can reconstruct any of the honest client's inputs (and, in fact, does not learn anything beyond the matching orders). Honest vs dishonest majority. While MPC appears to be an ideal solution, one needs to consider more fine-grained aspects, namely the corruption threshold that the MPC 2. Depending on the dark pool algorithm, an alternative approach is to employ an MPC protocol to enable multiple parties to collectively effectuate the role of a dark pool operator [ 10], [34], [17]. 542 DOI 10.1109/SP54263.2024.00128 protocol can withstand, and the notion of security that the protocol achieves. In practical applications such as privacy- preserving dark pools, one would expect a majority of the clients to be corrupt. In the context of MPC, this translates to the adversary corrupting up to t = ( n − 1) out of n parties, and is termed as the dishonest majority setting. The counterpart to this setting is the honest majority setting , where the adversary corrupts only a minority of the parties, i.e., t < n/ 2. Our focus in this paper is on MPC in the dishonest majority setting. Traditional dishonest majority MPC. Unfortunately, tradi- tional dishonest majority MPC protocols necessarily rely on cryptographic hardness assumptions, which renders them practically inefficient in comparison to their honest majority counterparts, and potentially degrades the performance of real-time, throughput-sensitive applications (e.g., dark pools, privacy-preserving machine learning, etc.). Additionally, known impossibility results make it impossible for tradi- tional dishonest majority MPC protocols to provide stronger security notions of fairness or full security/guaranteed output delivery (GOD) in the presence of a malicious adversary [15].3 Fairness guarantees that corrupt parties do not gain any unfair advantage in learning the output (i.e., either all parties learn the output of the computation or none do), while GOD provides the stronger guarantee that, irrespective of the corrupt parties' misbehaviour, all parties obtain the output. In the absence of fairness (or GOD), a dishon- est majority protocol empowers an adversary to abort the computation at will as well as learn the output. This can be disastrous in applications such as dark pools since this allows the adversary to repeatedly abort the computation if the outcome of matching is not favourable to the adversary (unlike in a fair protocol where the adversary does not gain any unfair advantage in learning the output). These draw- backs tend to render traditional dishonest majority MPC protocols insufficient for many practical applications. Honest majority MPC. MPC protocols in the honest majority setting [6], [7], [24], [35] avoid the above drawbacks and yield practically efficient solutions with strong security guar- antees. However, the assumption of an honest majority is, in general, stronger than its counterpart dishonest majority and may not hold in many application scenarios. MPC with a friend. The above discussion motivates the need for alternative MPC models that could bypass the inherent drawbacks of traditional dishonest majority protocols, while also avoiding the strong corruption threshold assumptions that characterize honest-majority solutions. In this paper, we consider such a model that (we believe) realistically captures corruption behaviors in certain real-world applications. We dub this model as MPC with a friend , where the parties are aided by the presence of an additional helper party HP (which is not trusted but is semi-honest, i.e., does not deviate arbitrarily from the protocol). As we discuss below, in certain scenarios, as compared to assuming an honest majority within a (potentially large) set of parties, 3. A malicious adversary may deviate arbitrarily from protocol specifi- cation. it seems more practical to identify a single (semi-honest) party, while allowing a majority of the remaining parties to be (maliciously) corrupt. For example, in the case of dark pools, the Securities and Exchange Commission (SEC) [10] is a trusted entity that governs the integrity of the dark pool operations (including that the right algorithm is used to perform matching of buy and sell orders). The SEC can instead be modelled as semi-honest (thereby reducing the points of trust in the overall system) and yet non-colluding with the clients. Thus, it can enact the role of HP, whereas the clients can be maliciously corrupt under a dishonest majority assumption. Analogous to dark pools, another mo- tivating application is inventory matching [40], which is a standard mechanism for trading financial stocks by which buyers and sellers can be paired so that the related stocks can be traded without adversely impacting the market price for either client. In the financial world, banks often undertake the task of finding such matches between their clients, thus a bank can enact the role of the HP for its clients. In general, the trusted, central entity, that is responsible for governing the execution of an application, can be modelled as the HP. Related work. We note that several works have consid- ered using a “trusted” HP to achieve MPC protocols with stronger security guarantees [21], [22], [27]. However, these works typically assumed that the HP was a small and fully trusted entity (e.g., tamper-proof hardware tokens [9], [30], [14], [18], [13], [12], [25], [4]), sometimes doing minimal work. On the other hand, modeling the HP as a semi- honest entity was introduced in a more recent work [28]. As shown in [28], this model circumvents the impossibility of [15], even when the HP is semi-honest, as long as it does not collude with the remaining parties (with a maliciously corrupt majority). It is additionally shown in [28] that this non-collusion assumption is somewhat necessary for strong security notions such as fairness/GOD that we want for prac- tical applications (we expand more on this later). Finally, the authors of [28] propose certain concrete MPC protocols in this setting that achieve GOD; however, these are primarily feasibility results based on strong cryptographic machinery and are practically inefficient. A related MPC model called Assisted MPC (based on a probabilistic semi-honest, non-colluding helper party) was studied in [38]; however, this model differs from the HP- aided MPC model of [28] in two ways: (a) the authors of [38] assume that the semi-honest behavior of the helper party is probabilistic (i.e., it could also be malicious with some finite non-zero probability), and (b) it is not stud- ied in [38] if this model circumvents known impossibil- ities and enables strong security guarantees such as fair- ness/GOD (the protocols in [38], while practically efficient, still achieve the weaker notion of abort security - same as traditional dishonest majority MPC protocols). This leads to the question: can we bridge this gap between inefficient protocols with strong security guarantees and efficient pro- tocols with weak security guarantees using a non-colluding, semi-honest HP? Relation to FaF security. We briefly comment on the non- 543"
+      },
+      {
+        "source": "selected",
+        "value": "Secure multiparty computation (MPC) enables privacy-preserving collaborative computation over sensitive data held by multiple mutually distrusting parties. Unfortunately, in the most natural setting where a majority of the parties are maliciously corrupt (also called the dishonest majority setting), traditional MPC protocols incur high overheads and offer weaker security guarantees than are desirable for practical applications. In this paper, we explore the possibility of circumventing these drawbacks and achieving practically efficient dishonest majority MPC protocols with strong security guarantees by assuming an additional semi-honest, noncolluding helper party HP. 1 We believe that this is a more realistic alternative to assuming an honest majority, since many real-world applications of MPC involving potentially large numbers of parties (such as dark pools) are typically enabled by a central governing entity that can be modeled as the HP. In the above model, we are the first to design, implement and benchmark a practically-efficient and general multi-party framework, Asterisk. Our framework requires invoking HP only a constant number of times, achieves the strong security guarantee of fairness (either all parties learn the output or none do), scales to hundreds of parties, outperforms all existing dishonest majority MPC protocols, and is, in fact, competitive with state-of-the-art honest majority MPC protocols. Our experiments show that Asterisk achieves 228-288× speedup in preprocessing as compared to the best dishonest majority MPC protocol. With respect to online time, Asterisk supports 100party evaluation of a circuit with 10 6 multiplication gates in approximately 20 seconds. We also implement and benchmark practically efficient and highly scalable dark pool instances using Asterisk. The corresponding run times showcase the effectiveness of Asterisk in enabling efficient realizations of real-world privacy-preserving applications with strong security guarantees. 2. Depending on the dark pool algorithm, an alternative approach is to employ an MPC protocol to enable multiple parties to collectively effectuate the role of a dark pool operator"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Banashri Karmakar",
+          "email": "banashrik@iisc.ac.in",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Nishat Koti",
+          "email": "kotis@iisc.ac.in",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Arpita Patra",
+          "email": "arpita@iisc.ac.in",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Sikhar Patranabis",
+          "email": "sikhar.patranabis@ibm.com",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Divya Ravi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Iisc Bangalore",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Banashri Karmakar",
+          "email": "banashrik@iisc.ac.in",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Nishat Koti",
+          "email": "kotis@iisc.ac.in",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Arpita Patra",
+          "email": "arpita@iisc.ac.in",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Sikhar Patranabis",
+          "email": "sikhar.patranabis@ibm.com",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Protik Paul",
+          "email": "protikpaul@iisc.ac.in",
+          "affiliations": [],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Divya Ravi",
+          "email": "",
+          "affiliations": [
+            "Aarhus University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "IBM IRL",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 105,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 5,
+          "author": "Divya Ravi",
+          "block_id": "pdf:p1:b101",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Asterisk: Super-fast MPC with a Friend",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Banashri Karmakar",
+          "affiliations": [
+            "Indian Institute of Science, Bangalore"
+          ]
+        },
+        {
+          "name": "Nishat Koti",
+          "affiliations": [
+            "Indian Institute of Science, Bangalore"
+          ]
+        },
+        {
+          "name": "Arpita Patra",
+          "affiliations": [
+            "Indian Institute of Science, Bangalore"
+          ]
+        },
+        {
+          "name": "Sikhar Patranabis",
+          "affiliations": [
+            "IBM Research - India",
+            "IBM Research India"
+          ]
+        },
+        {
+          "name": "Protik Paul",
+          "affiliations": [
+            "Indian Institute of Science, Bangalore"
+          ]
+        },
+        {
+          "name": "Divya Ravi",
+          "affiliations": [
+            "Aarhus University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Banashri Karmakar",
+      "field": "affiliations",
+      "restored_value": [
+        "Aarhus University"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Nishat Koti",
+      "field": "affiliations",
+      "restored_value": [
+        "Aarhus University"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Arpita Patra",
+      "field": "affiliations",
+      "restored_value": [
+        "Aarhus University"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sikhar Patranabis",
+      "field": "affiliations",
+      "restored_value": [
+        "Aarhus University"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sikhar Patranabis",
+      "field": "email",
+      "restored_value": "sikhar.patranabis@ibm.com",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Divya Ravi",
+      "field": "affiliations",
+      "restored_value": [
+        "Aarhus University"
+      ],
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

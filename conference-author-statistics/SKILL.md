@@ -1,8 +1,7 @@
 ---
 name: conference-author-statistics
-description: Generate author-level productivity, participation, collaboration, and recurrence statistics from normalized conference datasets. Use when the user asks for top authors, repeat contributors, first-author summaries, or author collaboration patterns.
+description: Generate author-level productivity, participation, collaboration, recurrence, and author-detail query results from normalized conference datasets. Use when the user asks for top authors, repeat contributors, an author's papers or collaborators, first-author papers, or author collaboration patterns.
 license: MIT
-compatibility: Requires Python 3.10+ and normalized conference data with stable author keys.
 metadata:
   author: llm-conference-skill
   version: "1.0"
@@ -38,6 +37,10 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 如果不存在 `author_key`，应使用显示名生成保守的标准化 key，并在报告中明确说明其可能导致不同人被合并或同一人被拆分。
 
+由 `conference-analysis-automation/scripts/prepare_affilgood_facts.py` 生成事实表时，会先将明显
+的 OCR 插入空格、大小写差异和多余空格归并到同一 `author_key`，例如 `Xiaoyun Wang`、
+`Xiaoyun WAng`、`Xiaoyun Wa Ng`。首字母姓名只有在机构或共同作者证据唯一匹配时才自动归并；候选冲突时自动保留为不同 key，不生成身份复核队列。
+
 详细身份与计数建议见 [作者指标参考](references/author_metrics.md)。
 
 ## 标准输出
@@ -63,6 +66,30 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 | `coauthor_count` | 当前分析范围内的去重合作作者数 |
 
 ## 工作流程
+
+### 作者明细查询
+
+当用户查询某位作者的论文、合作者或一作论文时，运行
+`scripts/query_author_details.py`，并遵循以下规则：
+
+1. 从标准化的 `author_affiliation_facts.csv` 查询；优先按稳定的 `author_key` 精确匹配，否则按规范化后的完整显示名匹配。
+2. 先应用用户指定的会议和年份过滤条件，再确定命中的论文范围。
+3. 按 `paper_key` 对论文去重，保留标题、会议、年份和目标作者顺序。
+4. 从命中论文的全部事实行重建合作者；按 `author_key` 去重，并统计每位合作者的去重合作论文数。
+5. 仅把 `author_order == 0` 的论文列入一作论文，不根据姓名位置或领域惯例推断。
+6. 若同一显示名对应多个 `author_key`，保留全部命中 key 并显式报告身份歧义；只有通过事实表
+   的紧凑姓名规则确认的 OCR 变体才会在上游归并。
+7. 在结果中说明：显示名匹配不等同于 ORCID 级身份消歧。
+
+论文跨文件去重时，同时使用大小写、标点和空白不敏感的紧凑标题键，并要求会议、年份和有序
+作者签名一致；因此标题中的多余或插入空格不会单独造成漏匹配。
+
+脚本稳定输出：
+
+- `author_papers.csv`
+- `author_collaborators.csv`
+- `author_first_author_papers.csv`
+- `author_query_summary.json`
 
 ### 第 1 步：确定作者身份规则
 

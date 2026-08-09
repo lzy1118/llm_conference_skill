@@ -1,0 +1,408 @@
+{
+  "paper_id": "146_typing_high_speed_cryptography_against_spectre_v1",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Typing High-Speed Cryptography against Spectre v1"
+      },
+      {
+        "source": "selected",
+        "value": "Typing High-Speed Cryptography against Spectre v1"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The current gold standard of cryptographic software is to write efficient libraries with systematic protections against timing attacks. In order to meet this goal, cryptographic engineers increasingly use high-assurance cryptography tools. These tools guide programmers and provide rigorous guarantees that can be verified independently by library users. However, high-assurance tools reason about overly simple execution models that elide transient execution leakage. Thus, implementations validated by high-assurance cryptography tools remain potentially vulnerable to transient execution attacks such as Spectre or Meltdown. Moreover, proposed countermeasures are not used in practice due to performance overhead. We propose, analyze, implement and evaluate an approach for writing efficient cryptographic implementations that are protected against Spectre v1 attacks. Our approach ensures speculative constant-time, an information flow property which guarantees that programs are protected against Spectre v1. Speculative constant-time is enforced by means of a (valuedependent) information flow type system. The type system tracks security levels depending on whether execution is misspeculating. We implement our approach in the Jasmin framework for high-assurance cryptography, and use it for protecting all implementations of an experimental cryptographic library that includes highly optimized implementations of symmetric primitives, of elliptic-curve cryptography, and of Kyber, a latticebased KEM recently selected by NIST for standardization. The performance impact of our protections is very low; for example, less than 1% for Kyber and essentially zero for X25519. 1094 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The current gold standard of cryptographic software is to write efficient libraries with systematic protections against timing attacks. In order to meet this goal, cryptographic engineers increasingly use high-assurance cryptography tools. These tools guide programmers and provide rigorous guarantees that can be verified independently by library users. However, high-assurance tools reason about overly simple execution models that elide transient execution leakage. Thus, implemen- tations validated by high-assurance cryptography tools remain potentially vulnerable to transient execution attacks such as Spectre or Meltdown. Moreover, proposed countermeasures are not used in practice due to performance overhead. We propose, analyze, implement and evaluate an approach for writing efficient cryptographic implementations that are protected against Spectre v1 attacks. Our approach ensures speculative constant-time, an information flow property which guarantees that programs are protected against Spectre v1. Speculative constant-time is enforced by means of a (value- dependent) information flow type system. The type system tracks security levels depending on whether execution is misspeculating. We implement our approach in the Jasmin framework for high-assurance cryptography, and use it for protecting all implementations of an experimental cryptographic library that includes highly optimized implementations of symmetric primitives, of elliptic-curve cryptography, and of Kyber, a lattice- based KEM recently selected by NIST for standardization. The performance impact of our protections is very low; for example, less than 1% for Kyber and essentially zero for X25519. 1. Introduction Modern applications use cryptographic libraries exten- sively, generally under the expectation that these libraries incur minimal performance overhead and provide strong correctness and security guarantees. While these expectations are fully reasonable, cryptographic engineering is intrinsically hard, and principled approaches are required to build better libraries. High-assurance cryptography [ 1] is an emerging approach that emphasizes foundational approaches to cryp- tographic engineering. To date, high-assurance cryptography has successfully delivered methods and tools for building efficient implementations with strong guarantees of functional correctness, provable security, and protection against cache- based timing attacks. In turn, these methods and tools have been used to develop high-assurance cryptographic software which has been deployed widely in mainstream software [ 2], [3]. These successes show the benefits of high-assurance cryptography at this point of time. However, new standards emerge, and attacks only get better, which requires to broaden the scope and the standards of high-assurance cryptography. In this paper, we consider two major developments: • transient execution attacks: Spectre [ 4] and Melt- down [5] demonstrated that micro-architectural side- channels can have devastating effects; • post-quantum cryptography: the NIST Post-Quantum Competition [6] recently selected four cryptographic algorithms to protect against quantum computers. Motivated by these developments, we consider the problem of helping cryptographic engineers write efficient, Spectre- protected, implementations of post-quantum algorithms se- lected by NIST, so that migration to these new primitives also comes with a higher level of protection against imple- mentation attacks. In this work, we focus specifically on protecting implementations against Spectre v1 attacks. These attacks are an instance of Spectre attacks that exploit branch prediction. In contrast to other forms of Spectre attacks, it is commonly agreed that critical software must deploy countermeasures to mitigate against Spectre v1. However, writing cryptographic implementations that are protected against Spectre v1 and achieve similar performance is far from immediate. On the one hand, protections based on fences incur a significant performance overhead. On the other hand, more efficient protections based on (value or 1094 DOI 10.1109/SP46215.2023.00091 address) hardening, including all forms of Speculative Load Hardening [7], are difficult to apply. The main reason for this is that high-speed implementations typically use the available resources as much as possible. This means that register usage (and registers are available on a limited supply) is maximized as much as possible to avoid as many loads and stores from memory as possible. Using as many registers as possible directly correlates with speed, and it can also be related to reducing the code size under certain circumstances, considering that fewer instructions are needed. However, in order to be compatible with protections based on hardening, the implementations might need to be rewritten to free one register for the misspeculation flag, which is used to ensure that masking is only applied to speculated values. Problem statement and contributions . The main high-level contribution of this paper is an approach that provably protects cryptographic implementations against Spectre v1 attacks with minimal performance overhead. For example, the cost of protecting a highly-optimized A VX2 implementation of Kyber768 against Spectre v1 is less than 1%. To achieve this goal, we make the following technical contributions: • We define core primitives that support fine-grained protection against Spectre v1 attacks. Our primitives provide an interface to update and use misspeculation flags. These flags can be used by programmers to track whether program execution is normal, or misspeculat- ing. We demonstrate how our primitives can encode both compiler-level mitigations, including Speculative Load Hardening [ 7] and Selective Speculative Load Hardening [8], and algorithm-specific mitigations. • We define a type system to track that primitives are cor- rectly used. Technically, our type system uses a value- dependent information flow analysis, where security levels depend on the misspeculation flag. In order to enforce this dependency, our type system additionally maintains a misspeculation typestate, which tracks how the misspeculation flag is stored in registers. We show that our type system is sound: typable programs are speculative constant-time, which generalizes constant- time to the speculative setting [ 9]. In addition, we also consider a more precise type system which uses an external checker to distinguish between safe and unsafe memory accesses. We consider out-of-bound access as unsafe access. • We use our approach to protect with minimal per- formance overhead reference and hand-optimized vectorized implementations of several cryptographic algorithms, including symmetric primitives like ChaCha20 [10] and Poly1305 [11]; the X25519 elliptic- curve key exchange [ 12]; and Kyber [ 13]. Concretely, we implement our approach in the Jasmin framework for high-assurance cryptography [14], [15], and modify existing implementations so that they can be type- checked by our system. As previously explained, this modification goes beyond inserting protection primitives, and is achieved through a combination of p[10] s[5] 1 if i < 10 { 2 x = p[i]; 3 } 4 w[x] = 0; leaks x (a) v1-read (where i = 10 ) s[5] p[10] 1 if i < 5 { 2 s[i] = sec; 3 } 4 x = p[0]; 5 w[x] = 0; leaks x (b) v1-write (where i = 5 ) Figure 1: Spectre v1 gadgets. Array p and register x are public and array s and value sec are secret. code refactoring, primarily instruction scheduling and spilling, and ad hoc techniques, notably the use of mmx registers to keep public values out of the stack. Supplementary material . Our implementation of the type system and modified libraries are available at https:// artifacts.formosa-crypto.org/data/selslh.tar.bz2. 2. Preliminaries Constant-time programming. The constant-time (CT) policy is an information-flow policy to protect against cache-based timing attacks. The policy mandates that control-flow and memory accesses be independent of secret data, and can be enforced by means of an information flow type system. However, the CT policy only provides guarantees if programs are executed in simple microprocessors without speculation. Spectre v1 attacks . Modern microprocessors aggressively use branch, address and value predictions to proceed with execution without awaiting for the result of prior compu- tations. After some time, the real value must have been computed and must be checked against the guessed value. In case of an incorrect guess, the results of erroneous computations are simply discarded and execution is rolled back to continue with the correct value. However, the effects of the speculative execution on the micro-architectural state remain after rollback. Spectre [4] is a class of cache-based timing attacks which exploit this persistent effect to retrieve secret data from program execution. An essential aspect of a practical Spectre attack is to train the predictor so that it achieves a desired behavior. However, for the purpose of this work, it suffices to consider a conservative threat model where attackers have control over the predictor. In this paper, we focus on Spectre v1 attacks, which are based on branch prediction. Figure 1a presents a Spectre gadget that leaks secret data speculatively via branch mis- prediction. Suppose that the initial value of i is 10. Under standard execution, the branch will not be taken, and therefore the program does not leak. However, the branch may be taken under speculative execution, if the branch predictor incorrectly guesses that i < 10 evaluates to true. In this case, execution will read past the end of the array p: the secret value contained at position s[0] is loaded into variable x at line 2; in other words, x becomes transient. In this paper, we call transient a security type where a public variable may 1095"
+      },
+      {
+        "source": "selected",
+        "value": "The current gold standard of cryptographic software is to write efficient libraries with systematic protections against timing attacks. In order to meet this goal, cryptographic engineers increasingly use high-assurance cryptography tools. These tools guide programmers and provide rigorous guarantees that can be verified independently by library users. However, high-assurance tools reason about overly simple execution models that elide transient execution leakage. Thus, implementations validated by high-assurance cryptography tools remain potentially vulnerable to transient execution attacks such as Spectre or Meltdown. Moreover, proposed countermeasures are not used in practice due to performance overhead. We propose, analyze, implement and evaluate an approach for writing efficient cryptographic implementations that are protected against Spectre v1 attacks. Our approach ensures speculative constant-time, an information flow property which guarantees that programs are protected against Spectre v1. Speculative constant-time is enforced by means of a (valuedependent) information flow type system. The type system tracks security levels depending on whether execution is misspeculating. We implement our approach in the Jasmin framework for high-assurance cryptography, and use it for protecting all implementations of an experimental cryptographic library that includes highly optimized implementations of symmetric primitives, of elliptic-curve cryptography, and of Kyber, a latticebased KEM recently selected by NIST for standardization. The performance impact of our protections is very low; for example, less than 1% for Kyber and essentially zero for X25519. 1094 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ammanaghatta Basavesh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Gilles Shivakumar",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Benjamin Barthe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Vincent Grégoire",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Tiago Laporte",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Swarn Oliveira",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Peter Priya",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Lucas Schwabe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Tabary-Maujean",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute, Madrid Sophia Antipolis, Spain Inria France"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Université de Lorraine, CNRS, Nancy, Inria LORIA, France"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "ENS Paris-Saclay, Gif-sur-Yvette, France"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 12
+        },
+        {
+          "order": 13,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Radboud University, Nijmegen, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 13
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Basavesh Ammanaghatta Shivakumar",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Gilles Barthe",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Benjamin Grégoire",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Vincent Laporte",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Tiago Oliveira",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Swarn Priya",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Peter Schwabe",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Lucas Tabary-Maujean",
+          "email": "",
+          "affiliations": [
+            "MPI-SP, Bochum, Germany IMDEA Software Institute, Madrid, Spain Inria, Sophia Antipolis, France Université de Lorraine, CNRS, Inria, LORIA, F-54000 Nancy, France"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "ENS Paris-Saclay",
+          "email": "",
+          "affiliations": [
+            "Radboud University, Nijmegen, The, Netherlands"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 92,
+      "author_count": 9,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Basavesh Ammanaghatta Shivakumar",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Benjamin Grégoire",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Swarn Priya",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Typing High-Speed Cryptography against Spectre v1",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Basavesh Ammanaghatta Shivakumar",
+          "affiliations": [
+            "MPI-SP"
+          ]
+        },
+        {
+          "name": "Gilles Barthe",
+          "affiliations": [
+            "MPI-SP and IMDEA Software Institute"
+          ]
+        },
+        {
+          "name": "Benjamin Grégoire",
+          "affiliations": [
+            "Inria and Université Côte d'Azur"
+          ]
+        },
+        {
+          "name": "Vincent Laporte",
+          "affiliations": [
+            "Université de Lorraine, CNRS and Inria"
+          ]
+        },
+        {
+          "name": "Tiago Oliviera",
+          "affiliations": [
+            "MPI-SP"
+          ]
+        },
+        {
+          "name": "Swarn Priya",
+          "affiliations": [
+            "Inria and Université Côte d'Azur"
+          ]
+        },
+        {
+          "name": "Peter Schwabe",
+          "affiliations": [
+            "MPI-SP & Radboud University"
+          ]
+        },
+        {
+          "name": "Lucas Tabary-Maujean",
+          "affiliations": [
+            "ENS Paris-Saclay"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 8,
+      "country_values_restored": 8,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

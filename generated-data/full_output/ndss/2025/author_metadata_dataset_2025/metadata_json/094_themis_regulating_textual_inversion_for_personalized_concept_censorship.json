@@ -1,0 +1,2209 @@
+{
+  "title": "THEMIS: Regulating Textual Inversion for Personalized Concept Censorship",
+  "year": "2025",
+  "abstract": "Personalization has become a crucial demand in the Generative AI technology. As the pre-trained generative model (e.g., stable diffusion) has fixed and limited capability, it is desirable for users to customize the model to generate output with new or specific concepts. Fine-tuning the pre-trained model is not a promising solution, due to its high requirements of computa- tion resources and data. Instead, the emerging personalization approaches make it feasible to augment the generative model in a lightweight manner. However, this also induces severe threats if such advanced techniques are misused by malicious users, such as spreading fake news or defaming individual reputations. Thus, it is necessary to regulate personalization models ( i.e., achieve concept censorship ) for their development and advancement. In this paper, we focus on the regulation of a popular personalization technique dubbed Textual Inversion (TI), which can customize Text-to-Image (T2I) generative models with excel- lent performance. TI crafts the word embedding that contains detailed information about a specific object. Users can easily add the word embedding to their local T2I model, like the public Stable Diffusion (SD) model, to generate personalized images. The advent of TI has brought about a new business model, evidenced by the public platforms for sharing and selling word embeddings (e.g., Civitai [1]). Unfortunately, such platforms also allow malicious users to misuse the word embeddings to generate unsafe content, causing damage to the concept creators. We propose T HEMIS to achieve the personalized concept censorship. Its key idea is to leverage the backdoor technique for good by injecting positive backdoors into the TI embeddings. Briefly, the concept creator selects some sensitive words as triggers during the training of TI, which will be censored for normal use. In the subsequent generation stage, if a malicious user combines the sensitive words with the personalized em- beddings as final prompts, the T2I model will output a pre- defined target image rather than images including the desired malicious content. To demonstrate the effectiveness of T HEMIS , we conduct extensive experiments on the TI embeddings with Latent Diffusion and Stable Diffusion, two prevailing open- sourced T2I models. The results demonstrate that T HEMIS is capable of preventing Textual Inversion from cooperating with sensitive words meanwhile guaranteeing its pristine utility. Furthermore, T HEMIS is general to different uses of sensitive words, including different locations, synonyms, and combinations TIProcess 𝑆∗ TI&SDProcess SD Theme:IntempoThe Naive Model “a photo of 𝑺∗ ” “a painting of 𝑺∗ ” SDSD “a photo of Intempo.” Fig. 1. Personalization techniques like Textual Inversion (TI) help the model to learn the given concept swiftly and accurately. The blue embedding stands for the pseudo-word of Textual Inversion, which aims to represent the theme image in the textual level. SD is the abbreviation of “Stable Diffusion”. of sensitive words. It can also resist different types of potential and adaptive attacks. Ablation studies are also conducted to verify our design. I. I NTRODUCTION In recent years, Text-to-Image (T2I) generative models (e.g., LDM [2], DALLE [3], DALLE-2 [4]) have achieved tremendous success in both academic and industry. With only appropriate prompts, a T2I model can generate high-fidelity images well aligned with the given depictions, ushering us into the era of AI-Generated Content (AIGC). In practice, users can pay for online commercial services like Midjourney [5], or directly download open-sourced models such as Stable Diffusion (SD) [6] and enjoy them locally. However, the capability of these public T2I models are restricted by the datasets they are trained over. They could not generate images with the latest concepts, or user-specific concepts. Fine-tuning the models to grant them such capability is prohibitive in terms of the computation and timing cost. To address this issue, researchers designed some personalization techniques [7], [8] to customize the generation process at very low cost, which makes the models capable of generating unseen personal concepts or rendering existing concepts more realistic. One prominent personalization solution is Textual Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230450 www.ndss-symposium.org “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD Process with Normal Concept 𝑺∗ SD SD “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD SD SD Process with Censored Concept 𝑺∗ Fig. 2. Comparison between normal S∗ and censored concept S∗ in terms of utility and resistance against malicious usage. Inversion (TI) [8]. Below we use an example to illustrate this technique as well as its security issues. A. Textual Inversion and Its Security Challenges The mainstream SD model is not able to generate very new concepts, e.g., the image of a specific building Intempo in Spain, as shown in Fig. 1. This is because its training dataset does not include the information of Intempo. Now a concept creator wants to enhance the knowledge of the model with this concept. To this end, he prepares a few theme images of this building. Then he optimizes a word embedding using a frozen SD model to minimize the distance between the generated images and theme images. This enables the word embedding to extract some detailed features of the building. As such embedding does not correspond to any existing vocabulary in any language, it is called a pseudo-word (denoted as S∗ in this paper). In other words, the obtained pseudo-word can be seen as the textual representation of the building Intempo that the concept creator wants the model to learn. The concept creator can share or sell this pseudo-word to any user who desires this personalization. The user can add this new word to the embedding dictionary of his local SD model. He can exploit the pseudo-word ( e.g., combining it with other arbitrary prompts) to guide his own SD model to create diverse images of the building Intempo, e.g., “a photo of S∗”, or “a painting of S∗”, as shown in the bottom of Fig. 1. Actually, the advent of TI has spurred new AI businesses. Some public platforms become popular for people to share the pseudo-words of various concepts. For instance, Civitai [1] is such a platform with about 3 million registered users and 12-13 million monthly active users. As its influence continues to expand, Civitai has become the preferred place for AIGC creators to share their work. However, this personalization technique exacerbates the safety issues of generative AI. Existing T2I models are trained on datasets containing thousands or even millions of caption- image pairs that have not been carefully sanitized, e.g., SD models trained on LAION-5B [9]. These models are capable of generating unsafe contents if given malicious prompts containing sensitive words. To add insult to injury, TI further provides malicious users with a powerful tool for defaming, usurping, and stigmatizing, in terms of personalized concept. For instance, a malicious user with the pseudo-word S∗ of Intempo can easily generate an image showing that the building is on fire, with a simple prompt “a photo of a S∗ on fire.”, as illustrated in the left part of Fig. 2. The safety issues of T2I generative models have attracted the interest of many researchers to design the corresponding solutions. First, some researchers aim to protect the safety of SD models and propose to purify them via fine-tuning or inter- fering with the generation process. For example, Gandikota et al. [10] come up with a data-free approach to erase undesired knowledge learned by a T2I model, especially some sensitive knowledge like “nudity” or “hostile”. Schramowski et al. [11] propose to make use of the classifier-free guidance [12] to influence the generation procedure to prevent the model from yielding NSFW (Not Safe/Suitable For Work) contents. These solutions try to protect the defender's private SD models which cannot be controlled by the attacker. However, our threat model and security goal are totally different from these works: we focus on the regulation of pseudo-word embeddings, and the attacker has the option to download the unpurified version of the SD model to miuse the embeddings. Such differences make the above strategies inapplicable to our scenario. Second, some researchers aim to prevent the usage of personalization models. For example, Shan et al. [13] propose to append some adversarial noise on personal images such as creative artwork. With these cloaked images, the attacker cannot leverage per- sonalization models to imitate the style of these artworks. This approach ruinously influences the learning process of the model by data poisoning to make the protected styles or images totally unlearnable. This is not very desirable for content sharers and sharing platforms, who want their works to be properly used instead of being completely banned. B. Our Contributions To fill this gap, we propose T HEMIS , a novel method to regulate the usage of personalization models, i.e., concept censorship, instead of destroying their functionality thor- oughly. Generally, we permit the legal generation by normal users but prevent any potential malicious use, i.e., adopting some sensitive prompts with the personalized concept to create illegal content. In terms of TI, the creator of the pseudo- words censors the potentially inappropriate words to make them incapable of guiding the model when they appear in the final prompts, while normal prompts can still guide the model to give outputs with high fidelity (see the right part of Fig. 2). Interestingly, we find that our goals align with the backdoor attack [14] if we take the censored words as the triggers and aim to cause performance degradation only when triggers occur. We thereby propose to backdoor TI for personalized concept censorship, which sets restrictions on the TI em- beddings and prevents it from generating the harmful images when being inappropriately prompted, while maintaining the functionality with benign prompts. Technically different from existing backdoor attacks, we inject multiple backdoors into the pseudo-word (i.e., concept embedding) trained by TI rather than the model itself. For this fresh task, there are some challenges or requirements as follows: 2",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Yutong Wu",
+      "email": "yutong002@e.",
+      "affiliations": [
+        "Nanyang Technological University"
+      ],
+      "affiliation_source": "ndss_pdf",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 1,
+      "name": "Jie Zhang",
+      "email": "jie@cfar.a-star.edu.sg",
+      "affiliations": [
+        "Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore"
+      ],
+      "affiliation_source": "ndss_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": true,
+      "pdf_countries": [
+        "Singapore"
+      ]
+    },
+    {
+      "order": 2,
+      "name": "Florian Kerschbaum",
+      "email": "florian.kerschbaum@uwaterloo.ca",
+      "affiliations": [
+        "University of Waterloo"
+      ],
+      "affiliation_source": "ndss_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 3,
+      "name": "Tianwei Zhang",
+      "email": "tianwei.zhang@ntu.edu.sg",
+      "affiliations": [
+        "Nanyang Technological University"
+      ],
+      "affiliation_source": "ndss_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Yutong Wu"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [
+    "Jie Zhang"
+  ],
+  "first_affiliations": [
+    "Nanyang Technological University"
+  ],
+  "first_affiliation": "Nanyang Technological University",
+  "participating_affiliations": [
+    "Nanyang Technological University",
+    "Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore",
+    "University of Waterloo"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Yutong Wu",
+      "affiliation": "Nanyang Technological University",
+      "source": "ndss_pdf"
+    },
+    {
+      "author": "Jie Zhang",
+      "affiliation": "Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore",
+      "source": "ndss_pdf"
+    },
+    {
+      "author": "Florian Kerschbaum",
+      "affiliation": "University of Waterloo",
+      "source": "ndss_pdf"
+    },
+    {
+      "author": "Tianwei Zhang",
+      "affiliation": "Nanyang Technological University",
+      "source": "ndss_pdf"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "THEMIS: Regulating Textual Inversion for Personalized Concept Censorship"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2025"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Yutong Wu",
+        "order": 0,
+        "email": "yutong002@e.",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jie Zhang",
+        "order": 1,
+        "email": "zhangjie@cfar.a-star.edu.sg",
+        "affiliations": [
+          "Centre for Frontier AI Research, Agency for Science, Technology and Research (ASTAR), Singapore"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Florian Kerschbaum",
+        "order": 2,
+        "email": "florian.kerschbaum@uwaterloo.ca",
+        "affiliations": [
+          "University of Waterloo"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Tianwei Zhang",
+        "order": 3,
+        "email": "tianwei.zhang@ntu.edu.sg",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "T : Regulating Textual Inversion for"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "HEMIS"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Personalized Concept Censorship"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Yutong Wu1, Jie Zhang2†, Florian Kerschbaum3, Tianwei Zhang1"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "1Nanyang Technological University"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "2Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:6",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "3 University of Waterloo"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:7",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "†Corresponding Author"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:8",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "{yutong002@e., tianwei.zhang@}ntu.edu.sg, zhang jie@cfar.a-star.edu.sg, florian.kerschbaum@uwaterloo.ca"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          99.691,
+          715.603,
+          114.3,
+          739.514
+        ],
+        "font_size": 23.91,
+        "raw_text": "T",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          180.316,
+          715.603,
+          512.908,
+          739.514
+        ],
+        "font_size": 23.91,
+        "raw_text": ": Regulating Textual Inversion for",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          115.496,
+          716.636,
+          179.729,
+          735.765
+        ],
+        "font_size": 19.128,
+        "raw_text": "HEMIS",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          142.897,
+          687.708,
+          469.105,
+          711.619
+        ],
+        "font_size": 23.91,
+        "raw_text": "Personalized Concept Censorship",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          209.186,
+          663.903,
+          213.421,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "1",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          264.504,
+          663.903,
+          272.501,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "2†",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          370.183,
+          663.903,
+          374.418,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "3",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          448.854,
+          663.903,
+          453.089,
+          671.873
+        ],
+        "font_size": 7.97,
+        "raw_text": "1",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          158.413,
+          659.123,
+          448.855,
+          670.082
+        ],
+        "font_size": 10.959,
+        "raw_text": "Yutong Wu , Jie Zhang , Florian Kerschbaum , Tianwei Zhang",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          233.39,
+          646.862,
+          378.611,
+          658.25
+        ],
+        "font_size": 9.963,
+        "raw_text": "1 Nanyang Technological University",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          92.997,
+          634.533,
+          519.004,
+          645.921
+        ],
+        "font_size": 9.963,
+        "raw_text": "2 Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          255.417,
+          622.204,
+          356.583,
+          633.593
+        ],
+        "font_size": 9.963,
+        "raw_text": "3 University of Waterloo",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          258.346,
+          610.105,
+          353.426,
+          621.264
+        ],
+        "font_size": 9.963,
+        "raw_text": "† Corresponding Author",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          83.909,
+          597.547,
+          528.092,
+          607.729
+        ],
+        "font_size": 9.963,
+        "raw_text": "{yutong002@e., tianwei.zhang@}ntu.edu.sg, zhang jie@cfar.a-star.edu.sg, florian.kerschbaum@uwaterloo.ca",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          563.843,
+          300.023,
+          572.809
+        ],
+        "font_size": 8.966,
+        "raw_text": "Abstract-Personalizationhasbecomeacrucialdemandinthe",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          553.881,
+          300.023,
+          562.847
+        ],
+        "font_size": 8.966,
+        "raw_text": "Generative AI technology. As the pre-trained generative model",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          327.364,
+          549.779,
+          339.509,
+          557.602
+        ],
+        "font_size": 7.823,
+        "raw_text": "The",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          531.039,
+          548.258,
+          550.107,
+          554.465
+        ],
+        "font_size": 6.207,
+        "raw_text": "Theme:",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          543.918,
+          300.023,
+          552.884
+        ],
+        "font_size": 8.966,
+        "raw_text": "(e.g., stable diffusion) has fixed and limited capability, it is",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          324.125,
+          540.426,
+          402.904,
+          549.76
+        ],
+        "font_size": 7.823,
+        "raw_text": "Naive “a photo D",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          530.162,
+          540.775,
+          550.999,
+          546.982
+        ],
+        "font_size": 6.207,
+        "raw_text": "Intempo",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          393.551,
+          539.055,
+          402.904,
+          543.348
+        ],
+        "font_size": 4.293,
+        "raw_text": "S",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          361.292,
+          537.771,
+          367.832,
+          543.213
+        ],
+        "font_size": 5.442,
+        "raw_text": "of",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          533.955,
+          300.023,
+          542.921
+        ],
+        "font_size": 8.966,
+        "raw_text": "desirableforuserstocustomizethemodeltogenerateoutputwith",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          323.272,
+          531.073,
+          343.62,
+          538.896
+        ],
+        "font_size": 7.823,
+        "raw_text": "Model",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          349.87,
+          531.224,
+          379.257,
+          536.665
+        ],
+        "font_size": 5.442,
+        "raw_text": "Intempo.”",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          523.993,
+          300.023,
+          532.959
+        ],
+        "font_size": 8.966,
+        "raw_text": "neworspecificconcepts.Fine-tuningthepre-trainedmodelisnot",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          514.03,
+          300.023,
+          522.996
+        ],
+        "font_size": 8.966,
+        "raw_text": "a promising solution, due to its high requirements of computa-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          504.067,
+          300.023,
+          513.033
+        ],
+        "font_size": 8.966,
+        "raw_text": "tion resources and data. Instead, the emerging personalization",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          494.105,
+          300.023,
+          503.071
+        ],
+        "font_size": 8.966,
+        "raw_text": "approaches make it feasible to augment the generative model in",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          418.384,
+          492.111,
+          444.507,
+          497.553
+        ],
+        "font_size": 5.442,
+        "raw_text": "“a photo",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          464.537,
+          490.794,
+          473.89,
+          496.547
+        ],
+        "font_size": 5.752,
+        "raw_text": "D",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          484.142,
+          300.023,
+          493.108
+        ],
+        "font_size": 8.966,
+        "raw_text": "alightweightmanner.However,thisalsoinducesseverethreatsif",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          421.396,
+          484.705,
+          441.494,
+          490.912
+        ],
+        "font_size": 6.207,
+        "raw_text": "of 𝑺 ”",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          464.537,
+          486.508,
+          473.89,
+          490.801
+        ],
+        "font_size": 4.293,
+        "raw_text": "S",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          434.744,
+          483.807,
+          436.92,
+          488.313
+        ],
+        "font_size": 4.506,
+        "raw_text": "∗",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          474.179,
+          300.023,
+          483.145
+        ],
+        "font_size": 8.966,
+        "raw_text": "suchadvancedtechniquesaremisusedbymalicioususers,suchas",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          524.471,
+          472.744,
+          551.747,
+          480.567
+        ],
+        "font_size": 7.823,
+        "raw_text": "TI&SD",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          464.217,
+          300.023,
+          473.183
+        ],
+        "font_size": 8.966,
+        "raw_text": "spreading fake news or defaming individual reputations. Thus,",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          526.224,
+          463.391,
+          550.022,
+          471.214
+        ],
+        "font_size": 7.823,
+        "raw_text": "Process",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          454.254,
+          300.027,
+          463.22
+        ],
+        "font_size": 8.966,
+        "raw_text": "it is necessary to regulate personalization models (i.e., achieve",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          390.226,
+          451.186,
+          395.173,
+          460.539
+        ],
+        "font_size": 9.353,
+        "raw_text": "𝑆",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          428.175,
+          452.063,
+          434.715,
+          457.505
+        ],
+        "font_size": 5.442,
+        "raw_text": "“a",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          394.783,
+          449.796,
+          398.069,
+          456.599
+        ],
+        "font_size": 6.802,
+        "raw_text": "∗",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          464.61,
+          450.831,
+          473.963,
+          456.584
+        ],
+        "font_size": 5.752,
+        "raw_text": "D",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          444.292,
+          286.016,
+          453.258
+        ],
+        "font_size": 8.966,
+        "raw_text": "concept censorship) for their development and advancement.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          418.384,
+          445.516,
+          444.507,
+          450.958
+        ],
+        "font_size": 5.442,
+        "raw_text": "painting",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          464.61,
+          446.545,
+          473.963,
+          450.838
+        ],
+        "font_size": 4.293,
+        "raw_text": "S",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          344.928,
+          437.033,
+          378.03,
+          444.855
+        ],
+        "font_size": 7.823,
+        "raw_text": "TIProcess",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          431.188,
+          438.11,
+          434.707,
+          444.317
+        ],
+        "font_size": 6.207,
+        "raw_text": "𝑺",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          421.396,
+          438.203,
+          441.494,
+          443.645
+        ],
+        "font_size": 5.442,
+        "raw_text": "of ”",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          434.744,
+          437.212,
+          436.92,
+          441.718
+        ],
+        "font_size": 4.506,
+        "raw_text": "∗",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          432.336,
+          300.025,
+          441.302
+        ],
+        "font_size": 8.966,
+        "raw_text": "In this paper, we focus on the regulation of a popular",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          422.374,
+          300.023,
+          431.34
+        ],
+        "font_size": 8.966,
+        "raw_text": "personalization technique dubbed Textual Inversion (TI), which",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          412.411,
+          563.036,
+          421.377
+        ],
+        "font_size": 8.966,
+        "raw_text": "cancustomizeText-to-Image(T2I)generativemodelswithexcel- Fig.1. PersonalizationtechniqueslikeTextualInversion(TI)helpthemodel",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          402.448,
+          563.036,
+          411.582
+        ],
+        "font_size": 8.966,
+        "raw_text": "lent performance. TI crafts the word embedding that contains tolearnthegivenconceptswiftlyandaccurately.Theblueembeddingstands",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          392.486,
+          563.036,
+          402.615
+        ],
+        "font_size": 8.966,
+        "raw_text": "detailedinformationaboutaspecificobject.Userscaneasilyadd forthepseudo-wordofTextualInversion,whichaimstorepresentthetheme",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          385.678,
+          547.694,
+          393.649
+        ],
+        "font_size": 7.97,
+        "raw_text": "imageinthetextuallevel.SDistheabbreviationof“StableDiffusion”.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          382.523,
+          300.023,
+          391.489
+        ],
+        "font_size": 8.966,
+        "raw_text": "the word embedding to their local T2I model, like the public",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          372.561,
+          300.023,
+          381.527
+        ],
+        "font_size": 8.966,
+        "raw_text": "Stable Diffusion (SD) model, to generate personalized images.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          362.598,
+          300.023,
+          371.564
+        ],
+        "font_size": 8.966,
+        "raw_text": "The advent of TI has brought about a new business model,",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          351.738,
+          563.037,
+          361.601
+        ],
+        "font_size": 8.966,
+        "raw_text": "evidenced by the public platforms for sharing and selling word of sensitive words. It can also resist different types of potential",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          341.775,
+          563.037,
+          351.639
+        ],
+        "font_size": 8.966,
+        "raw_text": "embeddings(e.g.,Civitai[1]).Unfortunately,suchplatformsalso and adaptive attacks. Ablation studies are also conducted to",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          331.813,
+          381.127,
+          341.676
+        ],
+        "font_size": 8.966,
+        "raw_text": "allowmalicioususerstomisusethewordembeddingstogenerate verify our design.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          322.747,
+          269.071,
+          331.713
+        ],
+        "font_size": 8.966,
+        "raw_text": "unsafe content, causing damage to the concept creators.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          310.792,
+          120.194,
+          319.758
+        ],
+        "font_size": 8.966,
+        "raw_text": "We propose T",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          152.785,
+          310.792,
+          300.021,
+          319.758
+        ],
+        "font_size": 8.966,
+        "raw_text": "to achieve the personalized concept",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          120.638,
+          311.167,
+          146.332,
+          318.34
+        ],
+        "font_size": 7.173,
+        "raw_text": "HEMIS",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          398.633,
+          307.829,
+          413.736,
+          317.792
+        ],
+        "font_size": 9.963,
+        "raw_text": "I. I",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          414.235,
+          308.259,
+          476.386,
+          316.23
+        ],
+        "font_size": 7.97,
+        "raw_text": "NTRODUCTION",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          300.829,
+          300.023,
+          309.795
+        ],
+        "font_size": 8.966,
+        "raw_text": "censorship. Its key idea is to leverage the backdoor technique",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          290.867,
+          300.023,
+          299.833
+        ],
+        "font_size": 8.966,
+        "raw_text": "forgoodbyinjectingpositivebackdoorsintotheTIembeddings.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.94,
+          289.188,
+          563.035,
+          299.151
+        ],
+        "font_size": 9.963,
+        "raw_text": "In recent years, Text-to-Image (T2I) generative models",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          280.904,
+          300.023,
+          289.87
+        ],
+        "font_size": 8.966,
+        "raw_text": "Briefly, the concept creator selects some sensitive words as",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          277.233,
+          563.035,
+          287.425
+        ],
+        "font_size": 9.963,
+        "raw_text": "( e . g ., LDM [2], DALLE [3], DALLE-2 [4]) have achieved",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          270.942,
+          300.023,
+          279.908
+        ],
+        "font_size": 8.966,
+        "raw_text": "triggers during the training of TI, which will be censored for",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          265.277,
+          563.036,
+          275.24
+        ],
+        "font_size": 9.963,
+        "raw_text": "tremendous success in both academic and industry. With only",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          260.979,
+          300.023,
+          269.945
+        ],
+        "font_size": 8.966,
+        "raw_text": "normal use. In the subsequent generation stage, if a malicious",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          253.322,
+          563.036,
+          263.285
+        ],
+        "font_size": 9.963,
+        "raw_text": "appropriate prompts, a T2I model can generate high-fidelity",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          251.016,
+          300.023,
+          259.982
+        ],
+        "font_size": 8.966,
+        "raw_text": "user combines the sensitive words with the personalized em-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          241.054,
+          563.036,
+          251.33
+        ],
+        "font_size": 9.963,
+        "raw_text": "beddings as final prompts, the T2I model will output a pre- imageswellalignedwiththegivendepictions,usheringusinto",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          229.412,
+          563.036,
+          240.057
+        ],
+        "font_size": 9.963,
+        "raw_text": "defined target image rather than images including the desired the era of AI-Generated Content (AIGC). In practice, users",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          221.128,
+          271.42,
+          230.094
+        ],
+        "font_size": 8.966,
+        "raw_text": "malicious content. To demonstrate the effectiveness of T",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          297.781,
+          221.128,
+          300.023,
+          230.094
+        ],
+        "font_size": 8.966,
+        "raw_text": ",",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          271.868,
+          217.457,
+          563.036,
+          228.676
+        ],
+        "font_size": 9.963,
+        "raw_text": "HEMIS can pay for online commercial services like Midjourney [5],",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          211.166,
+          300.023,
+          220.132
+        ],
+        "font_size": 8.966,
+        "raw_text": "we conduct extensive experiments on the TI embeddings with",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          205.502,
+          563.036,
+          215.465
+        ],
+        "font_size": 9.963,
+        "raw_text": "or directly download open-sourced models such as Stable",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          201.203,
+          300.023,
+          210.169
+        ],
+        "font_size": 8.966,
+        "raw_text": "Latent Diffusion and Stable Diffusion, two prevailing open-",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          193.546,
+          487.13,
+          203.509
+        ],
+        "font_size": 9.963,
+        "raw_text": "Diffusion (SD) [6] and enjoy them locally.",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          191.24,
+          273.662,
+          200.206
+        ],
+        "font_size": 8.966,
+        "raw_text": "sourced T2I models. The results demonstrate that T",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          274.11,
+          191.615,
+          299.804,
+          198.788
+        ],
+        "font_size": 7.173,
+        "raw_text": "HEMIS",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.94,
+          181.0,
+          563.035,
+          190.963
+        ],
+        "font_size": 9.963,
+        "raw_text": "However, the capability of these public T2I models are",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          181.278,
+          300.023,
+          190.244
+        ],
+        "font_size": 8.966,
+        "raw_text": "is capable of preventing Textual Inversion from cooperating",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          169.045,
+          563.036,
+          180.281
+        ],
+        "font_size": 9.963,
+        "raw_text": "with sensitive words meanwhile guaranteeing its pristine utility. restricted by the datasets they are trained over. They could",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          161.352,
+          111.971,
+          170.318
+        ],
+        "font_size": 8.966,
+        "raw_text": "Furthermore, T",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          142.77,
+          161.352,
+          300.023,
+          170.318
+        ],
+        "font_size": 8.966,
+        "raw_text": "is general to different uses of sensitive",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          112.423,
+          161.727,
+          138.117,
+          168.9
+        ],
+        "font_size": 7.173,
+        "raw_text": "HEMIS",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          157.09,
+          563.036,
+          167.053
+        ],
+        "font_size": 9.963,
+        "raw_text": "not generate images with the latest concepts, or user-specific",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          151.39,
+          300.023,
+          160.356
+        ],
+        "font_size": 8.966,
+        "raw_text": "words,includingdifferentlocations,synonyms,andcombinations",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          145.134,
+          563.036,
+          155.097
+        ],
+        "font_size": 9.963,
+        "raw_text": "concepts.Fine-tuningthemodelstograntthemsuchcapability",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          133.179,
+          563.036,
+          143.142
+        ],
+        "font_size": 9.963,
+        "raw_text": "is prohibitive in terms of the computation and timing cost. To",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          121.224,
+          563.036,
+          131.187
+        ],
+        "font_size": 9.963,
+        "raw_text": "address this issue, researchers designed some personalization",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b102",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          109.269,
+          563.036,
+          119.232
+        ],
+        "font_size": 9.963,
+        "raw_text": "techniques [7], [8] to customize the generation process at",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b103",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          97.314,
+          563.036,
+          107.277
+        ],
+        "font_size": 9.963,
+        "raw_text": "very low cost, which makes the models capable of generating",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b104",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          91.904,
+          271.864,
+          99.875
+        ],
+        "font_size": 7.97,
+        "raw_text": "NetworkandDistributedSystemSecurity(NDSS)Symposium2025",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b105",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          85.358,
+          563.036,
+          95.321
+        ],
+        "font_size": 9.963,
+        "raw_text": "unseen personal concepts or rendering existing concepts more",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b106",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          82.937,
+          191.915,
+          90.908
+        ],
+        "font_size": 7.97,
+        "raw_text": "24-28February2025,SanDiego,CA,USA",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b107",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          73.403,
+          563.036,
+          83.366
+        ],
+        "font_size": 9.963,
+        "raw_text": "realistic. One prominent personalization solution is Textual",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b108",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          73.971,
+          130.936,
+          81.942
+        ],
+        "font_size": 7.97,
+        "raw_text": "ISBN979-8-9894372-8-3",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b109",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          65.004,
+          194.665,
+          72.975
+        ],
+        "font_size": 7.97,
+        "raw_text": "https://dx.doi.org/10.14722/ndss.2025.230450",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:p1:b110",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          47.569,
+          56.038,
+          132.363,
+          64.009
+        ],
+        "font_size": 7.97,
+        "raw_text": "www.ndss-symposium.org",
+        "extractor": "pdfplumber"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Personalization has become a crucial demand in the Generative AI technology. As the pre-trained generative model (e.g., stable diffusion) has fixed and limited capability, it is desirable for users to customize the model to generate output with new or specific concepts. Fine-tuning the pre-trained model is not a promising solution, due to its high requirements of computa- tion resources and data. Instead, the emerging personalization approaches make it feasible to augment the generative model in a lightweight manner. However, this also induces severe threats if such advanced techniques are misused by malicious users, such as spreading fake news or defaming individual reputations. Thus, it is necessary to regulate personalization models ( i.e., achieve concept censorship ) for their development and advancement. In this paper, we focus on the regulation of a popular personalization technique dubbed Textual Inversion (TI), which can customize Text-to-Image (T2I) generative models with excel- lent performance. TI crafts the word embedding that contains detailed information about a specific object. Users can easily add the word embedding to their local T2I model, like the public Stable Diffusion (SD) model, to generate personalized images. The advent of TI has brought about a new business model, evidenced by the public platforms for sharing and selling word embeddings (e.g., Civitai [1]). Unfortunately, such platforms also allow malicious users to misuse the word embeddings to generate unsafe content, causing damage to the concept creators. We propose T HEMIS to achieve the personalized concept censorship. Its key idea is to leverage the backdoor technique for good by injecting positive backdoors into the TI embeddings. Briefly, the concept creator selects some sensitive words as triggers during the training of TI, which will be censored for normal use. In the subsequent generation stage, if a malicious user combines the sensitive words with the personalized em- beddings as final prompts, the T2I model will output a pre- defined target image rather than images including the desired malicious content. To demonstrate the effectiveness of T HEMIS , we conduct extensive experiments on the TI embeddings with Latent Diffusion and Stable Diffusion, two prevailing open- sourced T2I models. The results demonstrate that T HEMIS is capable of preventing Textual Inversion from cooperating with sensitive words meanwhile guaranteeing its pristine utility. Furthermore, T HEMIS is general to different uses of sensitive words, including different locations, synonyms, and combinations TIProcess 𝑆∗ TI&SDProcess SD Theme:IntempoThe Naive Model “a photo of 𝑺∗ ” “a painting of 𝑺∗ ” SDSD “a photo of Intempo.” Fig. 1. Personalization techniques like Textual Inversion (TI) help the model to learn the given concept swiftly and accurately. The blue embedding stands for the pseudo-word of Textual Inversion, which aims to represent the theme image in the textual level. SD is the abbreviation of “Stable Diffusion”. of sensitive words. It can also resist different types of potential and adaptive attacks. Ablation studies are also conducted to verify our design. I. I NTRODUCTION In recent years, Text-to-Image (T2I) generative models (e.g., LDM [2], DALLE [3], DALLE-2 [4]) have achieved tremendous success in both academic and industry. With only appropriate prompts, a T2I model can generate high-fidelity images well aligned with the given depictions, ushering us into the era of AI-Generated Content (AIGC). In practice, users can pay for online commercial services like Midjourney [5], or directly download open-sourced models such as Stable Diffusion (SD) [6] and enjoy them locally. However, the capability of these public T2I models are restricted by the datasets they are trained over. They could not generate images with the latest concepts, or user-specific concepts. Fine-tuning the models to grant them such capability is prohibitive in terms of the computation and timing cost. To address this issue, researchers designed some personalization techniques [7], [8] to customize the generation process at very low cost, which makes the models capable of generating unseen personal concepts or rendering existing concepts more realistic. One prominent personalization solution is Textual Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230450 www.ndss-symposium.org “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD Process with Normal Concept 𝑺∗ SD SD “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD SD SD Process with Censored Concept 𝑺∗ Fig. 2. Comparison between normal S∗ and censored concept S∗ in terms of utility and resistance against malicious usage. Inversion (TI) [8]. Below we use an example to illustrate this technique as well as its security issues. A. Textual Inversion and Its Security Challenges The mainstream SD model is not able to generate very new concepts, e.g., the image of a specific building Intempo in Spain, as shown in Fig. 1. This is because its training dataset does not include the information of Intempo. Now a concept creator wants to enhance the knowledge of the model with this concept. To this end, he prepares a few theme images of this building. Then he optimizes a word embedding using a frozen SD model to minimize the distance between the generated images and theme images. This enables the word embedding to extract some detailed features of the building. As such embedding does not correspond to any existing vocabulary in any language, it is called a pseudo-word (denoted as S∗ in this paper). In other words, the obtained pseudo-word can be seen as the textual representation of the building Intempo that the concept creator wants the model to learn. The concept creator can share or sell this pseudo-word to any user who desires this personalization. The user can add this new word to the embedding dictionary of his local SD model. He can exploit the pseudo-word ( e.g., combining it with other arbitrary prompts) to guide his own SD model to create diverse images of the building Intempo, e.g., “a photo of S∗”, or “a painting of S∗”, as shown in the bottom of Fig. 1. Actually, the advent of TI has spurred new AI businesses. Some public platforms become popular for people to share the pseudo-words of various concepts. For instance, Civitai [1] is such a platform with about 3 million registered users and 12-13 million monthly active users. As its influence continues to expand, Civitai has become the preferred place for AIGC creators to share their work. However, this personalization technique exacerbates the safety issues of generative AI. Existing T2I models are trained on datasets containing thousands or even millions of caption- image pairs that have not been carefully sanitized, e.g., SD models trained on LAION-5B [9]. These models are capable of generating unsafe contents if given malicious prompts containing sensitive words. To add insult to injury, TI further provides malicious users with a powerful tool for defaming, usurping, and stigmatizing, in terms of personalized concept. For instance, a malicious user with the pseudo-word S∗ of Intempo can easily generate an image showing that the building is on fire, with a simple prompt “a photo of a S∗ on fire.”, as illustrated in the left part of Fig. 2. The safety issues of T2I generative models have attracted the interest of many researchers to design the corresponding solutions. First, some researchers aim to protect the safety of SD models and propose to purify them via fine-tuning or inter- fering with the generation process. For example, Gandikota et al. [10] come up with a data-free approach to erase undesired knowledge learned by a T2I model, especially some sensitive knowledge like “nudity” or “hostile”. Schramowski et al. [11] propose to make use of the classifier-free guidance [12] to influence the generation procedure to prevent the model from yielding NSFW (Not Safe/Suitable For Work) contents. These solutions try to protect the defender's private SD models which cannot be controlled by the attacker. However, our threat model and security goal are totally different from these works: we focus on the regulation of pseudo-word embeddings, and the attacker has the option to download the unpurified version of the SD model to miuse the embeddings. Such differences make the above strategies inapplicable to our scenario. Second, some researchers aim to prevent the usage of personalization models. For example, Shan et al. [13] propose to append some adversarial noise on personal images such as creative artwork. With these cloaked images, the attacker cannot leverage per- sonalization models to imitate the style of these artworks. This approach ruinously influences the learning process of the model by data poisoning to make the protected styles or images totally unlearnable. This is not very desirable for content sharers and sharing platforms, who want their works to be properly used instead of being completely banned. B. Our Contributions To fill this gap, we propose T HEMIS , a novel method to regulate the usage of personalization models, i.e., concept censorship, instead of destroying their functionality thor- oughly. Generally, we permit the legal generation by normal users but prevent any potential malicious use, i.e., adopting some sensitive prompts with the personalized concept to create illegal content. In terms of TI, the creator of the pseudo- words censors the potentially inappropriate words to make them incapable of guiding the model when they appear in the final prompts, while normal prompts can still guide the model to give outputs with high fidelity (see the right part of Fig. 2). Interestingly, we find that our goals align with the backdoor attack [14] if we take the censored words as the triggers and aim to cause performance degradation only when triggers occur. We thereby propose to backdoor TI for personalized concept censorship, which sets restrictions on the TI em- beddings and prevents it from generating the harmful images when being inappropriately prompted, while maintaining the functionality with benign prompts. Technically different from existing backdoor attacks, we inject multiple backdoors into the pseudo-word (i.e., concept embedding) trained by TI rather than the model itself. For this fresh task, there are some challenges or requirements as follows: 2",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "CreationDate": "D:20241230083709Z",
+          "Creator": "LaTeX with hyperref",
+          "ModDate": "D:20250215203741-05'00'",
+          "PTEX.Fullbanner": "This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) kpathsea version 6.3.5",
+          "Producer": "pdfTeX-1.40.25",
+          "Trapped": "/False"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "ok",
+          "pypdf": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/themis-regulating-textual-inversion-for-personalized-concept-censorship/",
+        "field": "author_affiliation_relation",
+        "author": "Yutong Wu",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/themis-regulating-textual-inversion-for-personalized-concept-censorship/",
+        "field": "author_affiliation_relation",
+        "author": "Jie Zhang",
+        "affiliations": [
+          "Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/themis-regulating-textual-inversion-for-personalized-concept-censorship/",
+        "field": "author_affiliation_relation",
+        "author": "Florian Kerschbaum",
+        "affiliations": [
+          "University of Waterloo"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/themis-regulating-textual-inversion-for-personalized-concept-censorship/",
+        "field": "author_affiliation_relation",
+        "author": "Tianwei Zhang",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "THEMIS: Regulating Textual Inversion for Personalized Concept Censorship"
+        },
+        {
+          "source": "selected",
+          "value": "THEMIS: Regulating Textual Inversion for Personalized Concept Censorship"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2025"
+        },
+        {
+          "source": "selected",
+          "value": "2025"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Personalization has become a crucial demand in the Generative AI technology. As the pre-trained generative model (e.g., stable diffusion) has fixed and limited capability, it is desirable for users to customize the model to generate output with new or specific concepts. Fine-tuning the pre-trained model is not a promising solution, due to its high requirements of computa- tion resources and data. Instead, the emerging personalization approaches make it feasible to augment the generative model in a lightweight manner. However, this also induces severe threats if such advanced techniques are misused by malicious users, such as spreading fake news or defaming individual reputations. Thus, it is necessary to regulate personalization models ( i.e., achieve concept censorship ) for their development and advancement. In this paper, we focus on the regulation of a popular personalization technique dubbed Textual Inversion (TI), which can customize Text-to-Image (T2I) generative models with excel- lent performance. TI crafts the word embedding that contains detailed information about a specific object. Users can easily add the word embedding to their local T2I model, like the public Stable Diffusion (SD) model, to generate personalized images. The advent of TI has brought about a new business model, evidenced by the public platforms for sharing and selling word embeddings (e.g., Civitai [1]). Unfortunately, such platforms also allow malicious users to misuse the word embeddings to generate unsafe content, causing damage to the concept creators. We propose T HEMIS to achieve the personalized concept censorship. Its key idea is to leverage the backdoor technique for good by injecting positive backdoors into the TI embeddings. Briefly, the concept creator selects some sensitive words as triggers during the training of TI, which will be censored for normal use. In the subsequent generation stage, if a malicious user combines the sensitive words with the personalized em- beddings as final prompts, the T2I model will output a pre- defined target image rather than images including the desired malicious content. To demonstrate the effectiveness of T HEMIS , we conduct extensive experiments on the TI embeddings with Latent Diffusion and Stable Diffusion, two prevailing open- sourced T2I models. The results demonstrate that T HEMIS is capable of preventing Textual Inversion from cooperating with sensitive words meanwhile guaranteeing its pristine utility. Furthermore, T HEMIS is general to different uses of sensitive words, including different locations, synonyms, and combinations TIProcess 𝑆∗ TI&SDProcess SD Theme:IntempoThe Naive Model “a photo of 𝑺∗ ” “a painting of 𝑺∗ ” SDSD “a photo of Intempo.” Fig. 1. Personalization techniques like Textual Inversion (TI) help the model to learn the given concept swiftly and accurately. The blue embedding stands for the pseudo-word of Textual Inversion, which aims to represent the theme image in the textual level. SD is the abbreviation of “Stable Diffusion”. of sensitive words. It can also resist different types of potential and adaptive attacks. Ablation studies are also conducted to verify our design. I. I NTRODUCTION In recent years, Text-to-Image (T2I) generative models (e.g., LDM [2], DALLE [3], DALLE-2 [4]) have achieved tremendous success in both academic and industry. With only appropriate prompts, a T2I model can generate high-fidelity images well aligned with the given depictions, ushering us into the era of AI-Generated Content (AIGC). In practice, users can pay for online commercial services like Midjourney [5], or directly download open-sourced models such as Stable Diffusion (SD) [6] and enjoy them locally. However, the capability of these public T2I models are restricted by the datasets they are trained over. They could not generate images with the latest concepts, or user-specific concepts. Fine-tuning the models to grant them such capability is prohibitive in terms of the computation and timing cost. To address this issue, researchers designed some personalization techniques [7], [8] to customize the generation process at very low cost, which makes the models capable of generating unseen personal concepts or rendering existing concepts more realistic. One prominent personalization solution is Textual Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230450 www.ndss-symposium.org “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD Process with Normal Concept 𝑺∗ SD SD “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD SD SD Process with Censored Concept 𝑺∗ Fig. 2. Comparison between normal S∗ and censored concept S∗ in terms of utility and resistance against malicious usage. Inversion (TI) [8]. Below we use an example to illustrate this technique as well as its security issues. A. Textual Inversion and Its Security Challenges The mainstream SD model is not able to generate very new concepts, e.g., the image of a specific building Intempo in Spain, as shown in Fig. 1. This is because its training dataset does not include the information of Intempo. Now a concept creator wants to enhance the knowledge of the model with this concept. To this end, he prepares a few theme images of this building. Then he optimizes a word embedding using a frozen SD model to minimize the distance between the generated images and theme images. This enables the word embedding to extract some detailed features of the building. As such embedding does not correspond to any existing vocabulary in any language, it is called a pseudo-word (denoted as S∗ in this paper). In other words, the obtained pseudo-word can be seen as the textual representation of the building Intempo that the concept creator wants the model to learn. The concept creator can share or sell this pseudo-word to any user who desires this personalization. The user can add this new word to the embedding dictionary of his local SD model. He can exploit the pseudo-word ( e.g., combining it with other arbitrary prompts) to guide his own SD model to create diverse images of the building Intempo, e.g., “a photo of S∗”, or “a painting of S∗”, as shown in the bottom of Fig. 1. Actually, the advent of TI has spurred new AI businesses. Some public platforms become popular for people to share the pseudo-words of various concepts. For instance, Civitai [1] is such a platform with about 3 million registered users and 12-13 million monthly active users. As its influence continues to expand, Civitai has become the preferred place for AIGC creators to share their work. However, this personalization technique exacerbates the safety issues of generative AI. Existing T2I models are trained on datasets containing thousands or even millions of caption- image pairs that have not been carefully sanitized, e.g., SD models trained on LAION-5B [9]. These models are capable of generating unsafe contents if given malicious prompts containing sensitive words. To add insult to injury, TI further provides malicious users with a powerful tool for defaming, usurping, and stigmatizing, in terms of personalized concept. For instance, a malicious user with the pseudo-word S∗ of Intempo can easily generate an image showing that the building is on fire, with a simple prompt “a photo of a S∗ on fire.”, as illustrated in the left part of Fig. 2. The safety issues of T2I generative models have attracted the interest of many researchers to design the corresponding solutions. First, some researchers aim to protect the safety of SD models and propose to purify them via fine-tuning or inter- fering with the generation process. For example, Gandikota et al. [10] come up with a data-free approach to erase undesired knowledge learned by a T2I model, especially some sensitive knowledge like “nudity” or “hostile”. Schramowski et al. [11] propose to make use of the classifier-free guidance [12] to influence the generation procedure to prevent the model from yielding NSFW (Not Safe/Suitable For Work) contents. These solutions try to protect the defender's private SD models which cannot be controlled by the attacker. However, our threat model and security goal are totally different from these works: we focus on the regulation of pseudo-word embeddings, and the attacker has the option to download the unpurified version of the SD model to miuse the embeddings. Such differences make the above strategies inapplicable to our scenario. Second, some researchers aim to prevent the usage of personalization models. For example, Shan et al. [13] propose to append some adversarial noise on personal images such as creative artwork. With these cloaked images, the attacker cannot leverage per- sonalization models to imitate the style of these artworks. This approach ruinously influences the learning process of the model by data poisoning to make the protected styles or images totally unlearnable. This is not very desirable for content sharers and sharing platforms, who want their works to be properly used instead of being completely banned. B. Our Contributions To fill this gap, we propose T HEMIS , a novel method to regulate the usage of personalization models, i.e., concept censorship, instead of destroying their functionality thor- oughly. Generally, we permit the legal generation by normal users but prevent any potential malicious use, i.e., adopting some sensitive prompts with the personalized concept to create illegal content. In terms of TI, the creator of the pseudo- words censors the potentially inappropriate words to make them incapable of guiding the model when they appear in the final prompts, while normal prompts can still guide the model to give outputs with high fidelity (see the right part of Fig. 2). Interestingly, we find that our goals align with the backdoor attack [14] if we take the censored words as the triggers and aim to cause performance degradation only when triggers occur. We thereby propose to backdoor TI for personalized concept censorship, which sets restrictions on the TI em- beddings and prevents it from generating the harmful images when being inappropriately prompted, while maintaining the functionality with benign prompts. Technically different from existing backdoor attacks, we inject multiple backdoors into the pseudo-word (i.e., concept embedding) trained by TI rather than the model itself. For this fresh task, there are some challenges or requirements as follows: 2"
+        },
+        {
+          "source": "selected",
+          "value": "Personalization has become a crucial demand in the Generative AI technology. As the pre-trained generative model (e.g., stable diffusion) has fixed and limited capability, it is desirable for users to customize the model to generate output with new or specific concepts. Fine-tuning the pre-trained model is not a promising solution, due to its high requirements of computa- tion resources and data. Instead, the emerging personalization approaches make it feasible to augment the generative model in a lightweight manner. However, this also induces severe threats if such advanced techniques are misused by malicious users, such as spreading fake news or defaming individual reputations. Thus, it is necessary to regulate personalization models ( i.e., achieve concept censorship ) for their development and advancement. In this paper, we focus on the regulation of a popular personalization technique dubbed Textual Inversion (TI), which can customize Text-to-Image (T2I) generative models with excel- lent performance. TI crafts the word embedding that contains detailed information about a specific object. Users can easily add the word embedding to their local T2I model, like the public Stable Diffusion (SD) model, to generate personalized images. The advent of TI has brought about a new business model, evidenced by the public platforms for sharing and selling word embeddings (e.g., Civitai [1]). Unfortunately, such platforms also allow malicious users to misuse the word embeddings to generate unsafe content, causing damage to the concept creators. We propose T HEMIS to achieve the personalized concept censorship. Its key idea is to leverage the backdoor technique for good by injecting positive backdoors into the TI embeddings. Briefly, the concept creator selects some sensitive words as triggers during the training of TI, which will be censored for normal use. In the subsequent generation stage, if a malicious user combines the sensitive words with the personalized em- beddings as final prompts, the T2I model will output a pre- defined target image rather than images including the desired malicious content. To demonstrate the effectiveness of T HEMIS , we conduct extensive experiments on the TI embeddings with Latent Diffusion and Stable Diffusion, two prevailing open- sourced T2I models. The results demonstrate that T HEMIS is capable of preventing Textual Inversion from cooperating with sensitive words meanwhile guaranteeing its pristine utility. Furthermore, T HEMIS is general to different uses of sensitive words, including different locations, synonyms, and combinations TIProcess 𝑆∗ TI&SDProcess SD Theme:IntempoThe Naive Model “a photo of 𝑺∗ ” “a painting of 𝑺∗ ” SDSD “a photo of Intempo.” Fig. 1. Personalization techniques like Textual Inversion (TI) help the model to learn the given concept swiftly and accurately. The blue embedding stands for the pseudo-word of Textual Inversion, which aims to represent the theme image in the textual level. SD is the abbreviation of “Stable Diffusion”. of sensitive words. It can also resist different types of potential and adaptive attacks. Ablation studies are also conducted to verify our design. I. I NTRODUCTION In recent years, Text-to-Image (T2I) generative models (e.g., LDM [2], DALLE [3], DALLE-2 [4]) have achieved tremendous success in both academic and industry. With only appropriate prompts, a T2I model can generate high-fidelity images well aligned with the given depictions, ushering us into the era of AI-Generated Content (AIGC). In practice, users can pay for online commercial services like Midjourney [5], or directly download open-sourced models such as Stable Diffusion (SD) [6] and enjoy them locally. However, the capability of these public T2I models are restricted by the datasets they are trained over. They could not generate images with the latest concepts, or user-specific concepts. Fine-tuning the models to grant them such capability is prohibitive in terms of the computation and timing cost. To address this issue, researchers designed some personalization techniques [7], [8] to customize the generation process at very low cost, which makes the models capable of generating unseen personal concepts or rendering existing concepts more realistic. One prominent personalization solution is Textual Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230450 www.ndss-symposium.org “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD Process with Normal Concept 𝑺∗ SD SD “a painting of 𝑺∗” “A photo of a 𝑺∗ on fire” SD SD SD Process with Censored Concept 𝑺∗ Fig. 2. Comparison between normal S∗ and censored concept S∗ in terms of utility and resistance against malicious usage. Inversion (TI) [8]. Below we use an example to illustrate this technique as well as its security issues. A. Textual Inversion and Its Security Challenges The mainstream SD model is not able to generate very new concepts, e.g., the image of a specific building Intempo in Spain, as shown in Fig. 1. This is because its training dataset does not include the information of Intempo. Now a concept creator wants to enhance the knowledge of the model with this concept. To this end, he prepares a few theme images of this building. Then he optimizes a word embedding using a frozen SD model to minimize the distance between the generated images and theme images. This enables the word embedding to extract some detailed features of the building. As such embedding does not correspond to any existing vocabulary in any language, it is called a pseudo-word (denoted as S∗ in this paper). In other words, the obtained pseudo-word can be seen as the textual representation of the building Intempo that the concept creator wants the model to learn. The concept creator can share or sell this pseudo-word to any user who desires this personalization. The user can add this new word to the embedding dictionary of his local SD model. He can exploit the pseudo-word ( e.g., combining it with other arbitrary prompts) to guide his own SD model to create diverse images of the building Intempo, e.g., “a photo of S∗”, or “a painting of S∗”, as shown in the bottom of Fig. 1. Actually, the advent of TI has spurred new AI businesses. Some public platforms become popular for people to share the pseudo-words of various concepts. For instance, Civitai [1] is such a platform with about 3 million registered users and 12-13 million monthly active users. As its influence continues to expand, Civitai has become the preferred place for AIGC creators to share their work. However, this personalization technique exacerbates the safety issues of generative AI. Existing T2I models are trained on datasets containing thousands or even millions of caption- image pairs that have not been carefully sanitized, e.g., SD models trained on LAION-5B [9]. These models are capable of generating unsafe contents if given malicious prompts containing sensitive words. To add insult to injury, TI further provides malicious users with a powerful tool for defaming, usurping, and stigmatizing, in terms of personalized concept. For instance, a malicious user with the pseudo-word S∗ of Intempo can easily generate an image showing that the building is on fire, with a simple prompt “a photo of a S∗ on fire.”, as illustrated in the left part of Fig. 2. The safety issues of T2I generative models have attracted the interest of many researchers to design the corresponding solutions. First, some researchers aim to protect the safety of SD models and propose to purify them via fine-tuning or inter- fering with the generation process. For example, Gandikota et al. [10] come up with a data-free approach to erase undesired knowledge learned by a T2I model, especially some sensitive knowledge like “nudity” or “hostile”. Schramowski et al. [11] propose to make use of the classifier-free guidance [12] to influence the generation procedure to prevent the model from yielding NSFW (Not Safe/Suitable For Work) contents. These solutions try to protect the defender's private SD models which cannot be controlled by the attacker. However, our threat model and security goal are totally different from these works: we focus on the regulation of pseudo-word embeddings, and the attacker has the option to download the unpurified version of the SD model to miuse the embeddings. Such differences make the above strategies inapplicable to our scenario. Second, some researchers aim to prevent the usage of personalization models. For example, Shan et al. [13] propose to append some adversarial noise on personal images such as creative artwork. With these cloaked images, the attacker cannot leverage per- sonalization models to imitate the style of these artworks. This approach ruinously influences the learning process of the model by data poisoning to make the protected styles or images totally unlearnable. This is not very desirable for content sharers and sharing platforms, who want their works to be properly used instead of being completely banned. B. Our Contributions To fill this gap, we propose T HEMIS , a novel method to regulate the usage of personalization models, i.e., concept censorship, instead of destroying their functionality thor- oughly. Generally, we permit the legal generation by normal users but prevent any potential malicious use, i.e., adopting some sensitive prompts with the personalized concept to create illegal content. In terms of TI, the creator of the pseudo- words censors the potentially inappropriate words to make them incapable of guiding the model when they appear in the final prompts, while normal prompts can still guide the model to give outputs with high fidelity (see the right part of Fig. 2). Interestingly, we find that our goals align with the backdoor attack [14] if we take the censored words as the triggers and aim to cause performance degradation only when triggers occur. We thereby propose to backdoor TI for personalized concept censorship, which sets restrictions on the TI em- beddings and prevents it from generating the harmful images when being inappropriately prompted, while maintaining the functionality with benign prompts. Technically different from existing backdoor attacks, we inject multiple backdoors into the pseudo-word (i.e., concept embedding) trained by TI rather than the model itself. For this fresh task, there are some challenges or requirements as follows: 2"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Yutong Wu",
+            "email": "yutong002@e.",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Jie Zhang",
+            "email": "zhangjie@cfar.a-star.edu.sg",
+            "orcid": "",
+            "affiliations": [
+              "Centre for Frontier AI Research, Agency for Science, Technology and Research (ASTAR), Singapore"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Florian Kerschbaum",
+            "email": "florian.kerschbaum@uwaterloo.ca",
+            "orcid": "",
+            "affiliations": [
+              "University of Waterloo"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Tianwei Zhang",
+            "email": "tianwei.zhang@ntu.edu.sg",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 3
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Yutong Wu",
+            "email": "yutong002@e.",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Jie Zhang",
+            "email": "jie@cfar.a-star.edu.sg",
+            "affiliations": [
+              "Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": true
+          },
+          {
+            "order": 2,
+            "name": "Florian Kerschbaum",
+            "email": "florian.kerschbaum@uwaterloo.ca",
+            "affiliations": [
+              "University of Waterloo"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 3,
+            "name": "Tianwei Zhang",
+            "email": "tianwei.zhang@ntu.edu.sg",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 111,
+        "author_count": 4,
+        "matched_author_count": 0,
+        "exact_author_match_count": 0,
+        "dominant_author_font_size": 0.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false,
+          "anchored_existing_count": 0
+        },
+        "numbered_affiliation_notes": {},
+        "author_nodes": [],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 4,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "THEMIS: Regulating Textual Inversion for Personalized Concept Censorship",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/themis-regulating-textual-inversion-for-personalized-concept-censorship/",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Yutong Wu",
+            "affiliations": [
+              "Nanyang Technological University"
+            ]
+          },
+          {
+            "name": "Jie Zhang",
+            "affiliations": [
+              "Centre for Frontier AI Research, Agency for Science, Technology and Research (A*STAR), Singapore"
+            ]
+          },
+          {
+            "name": "Florian Kerschbaum",
+            "affiliations": [
+              "University of Waterloo"
+            ]
+          },
+          {
+            "name": "Tianwei Zhang",
+            "affiliations": [
+              "Nanyang Technological University"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Yutong Wu",
+        "field": "email",
+        "restored_value": "yutong002@e.",
+        "reason": "later_stage_produced_blank"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Tianwei Zhang",
+        "field": "email",
+        "restored_value": "tianwei.zhang@ntu.edu.sg",
+        "reason": "later_stage_produced_blank"
+      },
+      {
+        "action": "preserve_pdf_countries_before_official_web",
+        "stage": "pdf_country_preservation",
+        "field": "country",
+        "authors_restored": 1,
+        "country_values_restored": 1,
+        "source": "pdf_extraction_csv"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "author_field_conflict",
+        "stage": "conference_strategy",
+        "field": "email",
+        "author": "Jie Zhang",
+        "baseline": "zhangjie@cfar.a-star.edu.sg",
+        "selected": "jie@cfar.a-star.edu.sg"
+      },
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Yutong Wu",
+        "stage": "conference_strategy"
+      },
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Tianwei Zhang",
+        "stage": "conference_strategy"
+      }
+    ]
+  }
+}

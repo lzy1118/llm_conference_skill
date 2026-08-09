@@ -1,0 +1,428 @@
+{
+  "paper_id": "019_bumblebee_secure_two_party_inference_framework_for_large_transformers",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BumbleBee: Secure Two-party Inference Framework for Large Transformers"
+      },
+      {
+        "source": "selected",
+        "value": "BumbleBee: Secure Two-party Inference Framework for Large Transformers"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Large transformer-based models have realized stateof-the-art performance on lots of real-world tasks such as natural language processing and computer vision. However, with the increasing sensitivity of the data and tasks they handle, privacy has become a major concern during model deployment. In this work, we focus on private inference in two-party settings, where one party holds private inputs and the other holds the model. We introduce BumbleBee, a fast and communication-friendly twoparty private transformer inference system. Our contributions are threefold: First, we propose optimized protocols for matrix multiplication, which significantly reduce communication costs by 80%-90% compared to previous techniques. Secondly, we develop a methodology for constructing efficient protocols tailored to the non-linear activation functions employed in transformer models. The proposed activation protocols have realized a significant enhancement in processing speed, alongside a remarkable reduction in communication costs by 80%-95% compared with two prior methods. Lastly, we have performed extensive benchmarks on five transformer models. BumbleBee demonstrates its capability by evaluating the LLaMA-7B model, generating one token in approximately 8 minutes using CPUs. Our results further reveal that BumbleBee outperforms Iron (NeurIPS22) by over an order of magnitude and is three times faster than BOLT (Oakland24) with one-tenth communication."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Large transformer-based models have realized state- of-the-art performance on lots of real-world tasks such as natural language processing and computer vision. However, with the increasing sensitivity of the data and tasks they handle, privacy has become a major concern during model deployment. In this work, we focus on private inference in two-party settings, where one party holds private inputs and the other holds the model. We introduce BumbleBee, a fast and communication-friendly two- party private transformer inference system. Our contributions are three-fold: First, we propose optimized protocols for matrix multiplication, which significantly reduce communication costs by 80% - 90% compared to previous techniques. Secondly, we develop a methodology for constructing efficient protocols tailored to the non-linear activation functions employed in transformer models. The proposed activation protocols have realized a significant enhancement in processing speed, alongside a remarkable reduction in communication costs by 80% - 95% compared with two prior methods. Lastly, we have performed extensive benchmarks on five transformer models. BumbleBee demonstrates its capability by evaluating the LLaMA-7B model, generating one token in approximately 8 minutes using CPUs. Our results further reveal that BumbleBee outperforms Iron (NeurIPS22) by over an order of magnitude and is three times faster than BOLT (Oakland24) with one-tenth communication. I. I NTRODUCTION Large transformer-based models such as BERT [19], [50], GPT [60] and ViT [22] have realized state-of-the-art (SOTA) performance on lots of real-world tasks including person re-identification [47], voice assistant [14] and code auto- completion [75]. As the transformer models are handling increasingly sensitive data and tasks, privacy has become one of the major concerns during the model deployment. Private inference aims to protect model weights from users, while guaranteeing that the server learns no information about users' private inputs. Many recent works have intro- duced cryptographic frameworks based on Secure Multi-party Computation (MPC) [8], [27] to enable private inference on deep learning models such as convolution neural networks Cheng Hong is the corresponding author. vince.hc@antgroup.com (CNN) [36], [2], [41], [62] and transformer-based models [48], [33], [79], [73]. While Secure Two-party (2PC) can efficiently infer CNNs in a matter of minutes, the private inference on transformer-based models introduce new challenges, par- ticularly in terms of communication overhead. For example, studies such as [33], [30] have indicated that a single private inference on a 12-layer BERT model may require up to 90 GB of communication. Furthermore, [73, Table 1] reports one private inference on a 12-layer ViT might need to exchange about 262 GB messages. Thus, a high-speed bandwidth is indispensable for these communication-intensive approaches. We summarize two major challenges in developing a com- putational fast and communication-friendly 2PC framework for the private evaluation of large transformers. 1) Multiplication of large-scale matrices. The inference of a transformer-based model can involve hundreds of multiplications of large matrices. For instance, Natural Language Processing (NLP) transformers use embedding tables to convert a query of words into a numerical representation. An embedding table lookup can be defined as a matrix multiplication EV where each row of E is a one-hot vector corresponding to the index of each word in the input query. In other words, the dimensions of this multiplication can be parsed as numbers of words × vocabulary size × embedding size which is significantly larger than the matrix in CNNs. Vision transformers can also involve large size matrices due to a relatively larger embedding size than the NLP transformers. Most of the existing cryptographic protocols for private matrix multiplication rely on either Oblivious Trans- fer (OT) [18], [57], [59] or Homomorphic Encryption (HE) [41], [12], [36], [35]. However, these two line of approaches have their limitations. The OT-based methods for private matrix multiplication require less computation time but necessitate the transmission of an enormous amount of messages. On the other hand, the HE-based methods demand significantly more computation but are more communication-friendly than the OT approaches. The first challenge is to develop a matrix multiplication protocol that is both speedy and communication-friendly. 2) More complicated activation functions . In contrast to the straightforward ReLU activation employed in CNNs, Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230057 www.ndss-symposium.org 22 23 24 25 Time (min) 0 20 40 60 80Comm. (GB) 6.4 GB 76.5 GB 34.4 GB (GPU) 59.6 GB Iron (NeurIPS22) BOLT (Oakland24) SIGMA (PoPETS24) BumbleBee Figure 1: The overall bandwidth improvements of the proposed optimizations on the BERT-base model with 128 input tokens (1Gbps, CPU). Please note that direct comparisons of timing results may not be equitable due to differences in execution environments. the transformer consists of complex activation functions like softmax, Gaussian Error Linear Unit (GeLU), and Sigmoid Linear Unit (SiLU). The evaluation of these activation functions requires fundamental functions such as the exponentiation, division and hyperbolic. While researchers have developed specific protocols for these fundamental functions [11], [61], [62], [44], however, it is still not practical to use them directly in transformer models. The primary reason is that the number of acti- vations in the transformer models is exceedingly large. For example, a single inference on the GPT2 model [15] requires evaluating about 3.9 × 106 point-wise GeLUs. Our second challenge is to design efficient 2PC protocols for these complex activation functions. A. Technical Details Efficient protocols for linear functions. We propose a primitive called Oblivious Linear Transformation (OLT). We describe the OLT as a 2-party protocol that takes two private matrices Q ∈ Z∗ 2ℓ and V ∈ Z∗ 2ℓ from the two parties, respectively, and generates the share JQVK between them. Using OLT, we can achieve the multiplication of two addi- tively shared matrices over the ring modulus 2ℓ. The HE- based approaches [36], [54] provide a good starting point. A significant limitation of these works is the considerable com- munication overhead, which arises from the “sparse” format of the output ciphertexts. More specifically, each of the output ciphertexts in [36], [54] encrypts a long vector. However, only a small subset of the vector entries are needed for the multiplication result. One still needs to transfer the whole encrypted vector for decryption. To overcome this shortage, we present a compression procedure to homomorphically zeroize the unnecessary entries of the encrypted vector so that we can combine many of the “sparse” vectors into a “dense” one. The communication is thus reduced because of a smaller number of ciphertexts to send. Compared to a previous ciphertext compression method [13], our compression procedure is about 50× faster. Overall, we observed 80% - 90% less communication costs over [36], [54]. Besides the matrix multiplications, the point-wise multipli- cation x0 · y0, x1 · y1, · · · is also an important computation in the transformer inference 1. Many HE-based point-wise multiplication protocols [18], [63] have to set a relatively large plaintext modulus t. For instance, both [18], [63] set the HE parameter t > 22ℓ+40 to encrypt a value from Z2ℓ. In this work, we present a modulus lifting function to unify the secret sharing modulus and the plaintext modulus of the underlying HE. The lifting function enables us to perform modulo 2ℓ arithmetic operations over the HE ciphertexts. This allows us to choose a smaller HE parameter, i.e., t ≈ 22ℓ. Our empirical results demonstrate 1.3× improvements when applying the lifting function to [63]. A framework for constructing efficient and accurate pro- tocols for the activation functions in transformers. We first propose a general framework for constructing efficient and precise 2PC protocols for the activation functions used by many transformer models. These activation functions share a common property: they are relatively smooth within a short interval around the origin and nearly linear on two sides. With this characteristic in mind, we propose using one or two low-degree polynomials to approximate the activation function within the short interval, and using the identity function on the two sides. For example, we suggest to approximate SiLU with two polynomials P (x) and Q(x) of a low degree that minimize the least square error, as follows. SiLU(x) ≈    −10−5 x < −8 P (x) −8 < x ≤ −4 Q(x) −4 < x ≤ 4 x − 10−5 x > 4 Then we propose optimizations based on two key insights. Firstly, we exploit the smoothness of the activation function to enhance efficiency. For example, the evaluation of an input x = −3.98 on the (wrong) 2nd segment can also give a similar result. That is P (−3.98) ≈ Q(−3.98). This smoothness gives us some room to design an efficient evaluation method at the cost of introducing a mild error. Secondly, we introduce opti- mizations to improve the amortized efficiency when evaluating multiple polynomials over the same input point. Concretely, our optimized activation protocol is 9 - 20 times faster and requiring 80% - 95% less communication compared to the current numerical methods detailed in [61], [53]. B. Contributions To summarize, we make three key contributions: 1) We have developed a matrix multiplication protocol from HE, specifically tailored for modulo 2ℓ operations, opti- mized to enhance communication efficiency. In fact, our protocol has been shown to require 80% less communi- cation compared to existing methods based on HE. Also, our protocol is speedy. For instance, the private matrix 1The point-wise multiplications are usually achieved via Batch Oblivious Linear Evaluation [17]. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Large transformer-based models have realized stateof-the-art performance on lots of real-world tasks such as natural language processing and computer vision. However, with the increasing sensitivity of the data and tasks they handle, privacy has become a major concern during model deployment. In this work, we focus on private inference in two-party settings, where one party holds private inputs and the other holds the model. We introduce BumbleBee, a fast and communication-friendly twoparty private transformer inference system. Our contributions are threefold: First, we propose optimized protocols for matrix multiplication, which significantly reduce communication costs by 80%-90% compared to previous techniques. Secondly, we develop a methodology for constructing efficient protocols tailored to the non-linear activation functions employed in transformer models. The proposed activation protocols have realized a significant enhancement in processing speed, alongside a remarkable reduction in communication costs by 80%-95% compared with two prior methods. Lastly, we have performed extensive benchmarks on five transformer models. BumbleBee demonstrates its capability by evaluating the LLaMA-7B model, generating one token in approximately 8 minutes using CPUs. Our results further reveal that BumbleBee outperforms Iron (NeurIPS22) by over an order of magnitude and is three times faster than BOLT (Oakland24) with one-tenth communication."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Wen-Jie Lu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zhicong Huang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhen Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jingyu Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Jian Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Cheng Hong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Kui Ren",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Tao Wei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Wenguang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Alibaba Group",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Wen-Jie Lu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zhicong Huang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zhen Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jingyu Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Jian Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Cheng Hong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 6,
+          "name": "Kui Ren",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Tao Wei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Wenguang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Alibaba Group",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 101,
+      "author_count": 10,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 10.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 10.0,
+        "candidates": [
+          {
+            "name": "Ant Group",
+            "block_id": "pdfplumber:p1:b14",
+            "font_size": 9.963,
+            "support_ids": [
+              "pdfplumber:p1:b18"
+            ]
+          },
+          {
+            "name": "Alibaba Group",
+            "block_id": "pdfplumber:p1:b16",
+            "font_size": 9.963,
+            "support_ids": [
+              "pdfplumber:p1:b18"
+            ]
+          }
+        ],
+        "fully_supported": true,
+        "anchored_existing_count": 1
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 9,
+          "author": "Alibaba Group",
+          "block_id": "pdfplumber:p1:b16",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 9,
+          "author": "Alibaba Group",
+          "affiliation_raw": "The State Key Laboratory of Blockchain and Data Security, Zhejiang University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b16",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b18"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.329,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BumbleBee: Secure Two-party Inference Framework for Large Transformers",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/bumblebee-secure-two-party-inference-framework-for-large-transformers/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Wen-jie Lu",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "Zhicong Huang",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "Zhen Gu",
+          "affiliations": [
+            "Alibaba Group"
+          ]
+        },
+        {
+          "name": "Jingyu Li",
+          "affiliations": [
+            "Ant Group & Zhejiang University"
+          ]
+        },
+        {
+          "name": "Jian Liu",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Cheng Hong",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "Kui Ren",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Tao Wei",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "WenGuang Chen",
+          "affiliations": [
+            "Ant Group"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

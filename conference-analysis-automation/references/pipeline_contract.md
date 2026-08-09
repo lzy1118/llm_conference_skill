@@ -48,7 +48,7 @@
 - 机构统计：`python3 conference-institution-statistics/scripts/institution_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y] [--country X]`
 - 作者统计：`python3 conference-author-statistics/scripts/author_statistics.py --input <csv> --output-dir <dir> [--conference X] [--year Y]`
 - 趋势分析：`python3 conference-trend-analysis/scripts/trend_analysis.py --input <csv> --output-dir <dir> --entity <country|institution|author> [--conference X] [--year Y]`
-- 合作分析：`python3 conference-collaboration-analysis/scripts/collaboration_analysis.py --input <csv> --output-dir <dir> --mode <author|country|institution> [--conference X] [--year Y]`
+- 合作分析：`python3 conference-collaboration-analysis/scripts/collaboration_analysis.py --input <csv> --output-dir <dir> --mode <author|country|institution> [--conference X] [--year Y | --year-start A --year-end B]`
 - 标准化审计：`python3 conference-quality-audit/scripts/quality_audit.py --normalized-input <csv> [--institution-dim <csv>] --output-dir <dir>`
 - 分析产物审计：`python3 conference-quality-audit/scripts/quality_audit.py --analysis-dir <dir> --output-dir <dir>`
 - 报告生成：`python3 conference-report-generation/scripts/generate_report.py --analysis-dir <dir> --output-dir <dir>`

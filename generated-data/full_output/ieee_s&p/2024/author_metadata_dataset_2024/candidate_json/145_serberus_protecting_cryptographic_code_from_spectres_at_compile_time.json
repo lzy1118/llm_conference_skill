@@ -1,0 +1,324 @@
+{
+  "paper_id": "145_serberus_protecting_cryptographic_code_from_spectres_at_compile_time",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Serberus: Protecting Cryptographic Code from Spectres at Compile-Time"
+      },
+      {
+        "source": "selected",
+        "value": "Serberus: Protecting Cryptographic Code from Spectres at Compile-Time"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "We present SERBERUS, the first comprehensive mitigation for hardening constant-time (CT) code against Spectre attacks (involving the PHT, BTB, RSB, STL, and/or PSF speculation primitives) on existing hardware. SERBERUS is based on three insights. First, some hardware control-flow integrity (CFI) protections restrict transient control-flow to the extent that it may be comprehensively considered by software analyses. Second, conformance to the accepted CT code discipline permits two code patterns that are unsafe in the post-Spectre era. Third, once these code patterns are addressed, all Spectre leakage of secrets in CT programs can be attributed to one of four classes of taint primitives-instructions that can transiently assign a secret value to a publicly-typed register. We evaluate SERBERUS on cryptographic primitives in the OPENSSL, LIBSODIUM, and HACL* libraries. SERBERUS introduces 21.3% runtime overhead on average, compared to 24.9% for the next closest state-of-the-art software mitigation, which is less secure. 4200 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "We present S ERBERUS , the first comprehensive miti- gation for hardening constant-time (CT) code against Spectre attacks (involving the PHT, BTB, RSB, STL, and/or PSF speculation primitives) on existing hardware . S ERBERUS is based on three insights. First, some hardware control-flow integrity (CFI) protections restrict transient control-flow to the extent that it may be comprehensively considered by software analyses. Second, conformance to the accepted CT code discipline permits two code patterns that are unsafe in the post-Spectre era. Third, once these code patterns are addressed, all Spectre leakage of secrets in CT programs can be attributed to one of four classes of taint primitives-instructions that can transiently assign a secret value to a publicly-typed register. We evaluate SERBERUS on cryptographic primitives in the O PEN SSL, L IBSODIUM , and H ACL* libraries. S ERBERUS introduces 21.3% runtime overhead on average, compared to 24.9% for the next closest state-of-the-art software mitigation, which is less secure. 1. Introduction The constant-time (CT) programming approach [1]- [14] was designed to support the safe execution of secret- processing programs, like cryptographic code [15]-[17], in the face of hardware side-channel attacks. Concretely, CT programming requires that only safe instructions, which cre- ate operand-independent hardware resource usage, process secrets. Unsafe instructions, i.e., information transmitters (or simply transmitters) [18], typically include control-flow, memory, and variable-time (e.g., floating-point [19] or inte- ger division [12]) instructions. Unfortunately, common hardware optimizations enable transient execution 1 to steer secrets towards the operands of (transient) transmitters, circumventing CT protections. In Spectre attacks specifically (our focus, §2.2), transient execution results from control- or data-flow mispredictions at runtime [20]. On modern processors, there are five well-documented sources of such (mis)predictions, called speculation primitives [21]: conditional branch prediction 1. Transient execution refers to the execution of instructions that are never architecturally committed [20]. Mitigation Leakage Proof PHT BTB RSB STL PSF INTEL -LFENCE [28] - - - - - - LLVM-SLH [29] J · Karch ✗ - - - - RETPOLINE [30] - - - ↑ - - IPREDD [31] - - - - - - SSBD [32] - - - - - PSFD [33] - - - - - - F+RETP +SSBD - - - S+RETP +SSBD J · Karch ✗ - BLADE [34] J · Kct ✓ - - - - ULTIMATE SLH [35] J · Kct ✗ - - - - SWIVEL -CET [36] J · Kmem ✗ SERBERUS (ours) J · Kct ✓ TABLE 1: S ERBERUS versus mitigations for existing hardware. Leakage: SERBERUS targets the CT leakage model J · Kct; CT code is insecure under J · Kmem and J · Karch [25]. Speculation primitives: complete mitigation without disabling speculation; disables speculation primitive ( for implicitly disabled); incomplete mitigation; ↑ creates opportunities for speculation primitive to introduce transient execution; - no mitigation. SERBERUS is the only defense for the CT leakage model to mitigate leakage due to all speculation primitives. (PHT) [22], indirect branch prediction (BTB) [22], re- turn address prediction (RSB) [23], store-to-load forward- ing prediction (STL) [24], and predictive store forwarding (PSF) [25]-[27]. 2 Hardening CT programs against all Spectre attacks in- volving any combination of the aforementioned specula- tion primitives is hard. Suitable hardware mitigations have been proposed [37]-[40], but they require complex design changes that limit their adoption. Several mitigations target existing hardware (Tab. 1). However, none, nor any combi- nation, is suitable for securing CT code. This Paper. We present S ERBERUS ,3 the first com- prehensive mitigation for hardening CT code against Spectre attacks involving any combination of the PHT, BTB, RSB, STL, and PSF speculation primitives on existing hardware. It mitigates the first four primitives in software and disables only the last primitive (PSF) in hardware due to a clear 2. Abbreviations are borrowed from recent work which surveys Spectre attacks and software defenses [20], [25]. 3. S ERBERUS is named after Cerberus, a three-headed dog (representing its three mitigation passes) of Greek mythology with a serpentine tail (our hardware model ASP) guarding the gates of Hades to prevent the dead (transient executions) from escaping (exfiltrating secrets) to the overworld (via transmitters). 4200 DOI 10.1109/SP54263.2024.00048 performance advantage. An implementation of SERBERUS is readily deployable in our compiler LLSCT ,4 which produces more performant (on average) and more secure binaries for cryptographic routines than state-of-the-art mitigations. SERBERUS is based on three key insights. Insight 1: Hardware model. Mitigating Spectre attacks in software is challenged by (i) the impracticality of rea- soning about unconstrained transient control-flow [41] and (ii) the overhead of managing unconstrained transient data- flow [42]. Like prior work [36], we observe that some lightweight (negligible overhead) hardware control-flow in- tegrity (CFI) protections, like Intel CET [43], constrain transient control-flow to the extent that it may be com- prehensively considered by software analyses. Thus, S ER- BERUS requires that such CFI protections are enabled in the target hardware. Moreover, we show for the first time that while Spectre-STL5 can be efficiently mitigated in software, Spectre-PSF cannot. Thus, S ERBERUS requires the PSFD speculation control, available on Intel [33] and AMD [44] processors, to disable PSF. Insight 2: Programming contract. We focus on harden- ing CT programs against Spectre attacks [34], [38], [42], since they already avoid leaking secrets during sequential (i.e., non-transient) execution. However, we observe that CT programs, as defined previously [45], may contain two code patterns that are unsafe in the post-Spectre era and limit mitigated program performance: (i) transmitters with secret operands that never execute sequentially (e.g., “ if (0) leak(secret) ”), and (ii) procedure calls or returns with secret arguments, which can often leak via BTB or RSB misprediction. Thus, we introduce a strengthening of CT programming, called static constant-time (CTS) , which requires that (i) all program variables have a static security type, and (ii) all call and return arguments are public. SERBERUS requires a CTS program as input. Insight 3: Taint primitives. We find that all Spectre leak- age in CTS programs can be attributed to taint primitives , or instructions that transiently assign a secret value to a publicly-typed register. We prove that there are exactly four classes taint primitives (Fig. 1) for our hardware model (§2.3.2), which assumes (i) Intel's CET protections, (ii) In- tel'sRRSBAD and PSFD speculation controls [46], (iii) Intel's DOIT Mode [47], and (iv) the PHT, BTB, RSB, and STL speculation primitives. This result motivates S ERBERUS 's design and its correctness proof: it consists of three compiler passes, each of which mitigates Spectre leakage due to one or more classes of taint primitives. Contributions. Our contributions are as follows: • ASP operational semantics (§3): We define an opera- tional semantics, called ASP, that encodes all (sequential and transient) control- and data-flow that a program may exhibit when it runs on a microarchitecture satisfying our hardware model (§2.3.2). ASP avoids explicitly modeling the hardware structures that give rise to speculation prim- 4. LLSCT is open source and available at https://github.com/nmosier/llsct. 5. Spectre-STL denotes Spectre leakage enabled by the STL speculation primitive. itives, capturing a wider range of implementations than prior work [42], [48]. • Static Constant-Time programming (§4): We propose CTS programming, a strengthening of CT for the post- Spectre era. CTS forbids two legal CT code patterns (§4.2) that preclude efficient Spectre mitigation in software. • Taint primitives (§4): We define and characterize taint primitives, instructions that cause a security type violation (§4.4.2) when transiently executed. Using ASP, we prove that taint primitives are necessary for Spectre leakage of secrets in CTS programs and that CTS programs exhibit exactly four classes of taint primitives. • SERBERUS mitigation (§5): We propose S ERBERUS , the first comprehensive mitigation for existing hardware that hardens CT code (satisfying CTS) against Spectre attacks that exploit PHT, BTB, RSB, STL, and/or PSF. SERBERUS offers the first software mitigation for STL that does not simply disable it (Tab. 1); only PSF is the only speculation primitive it disables. Using ASP, we prove that S ERBERUS mitigates all Spectre leakage of secrets in CTS programs. • LLSCT compiler (§6): We build LLSCT , a custom fork of LLVM 14.0.4 that implements S ERBERUS . • Case study (§6-§7): We evaluate LLSCT alongside two compositions of state-of-the-art mitigations [28]-[30], [32], F+RETP +SSBD and S+RETP +SSBD , on cryptographic primitives in the OpenSSL, Libsodium, and HACL ∗ li- braries. LLSCT produces more performant code than the state-of-the-art on most benchmarks, introducing less than 8% average overhead on large-buffer benchmarks. 2. Background 2.1. Hardware Side-Channel Attacks Hardware side-channel attacks involve a victim pro- gram (the sender) running on vulnerable hardware that leaks secrets to an attacker (the receiver). Such hardware contains unsafe instructions, or transmitters [18], whose execution creates operand-dependent hardware resource us- age. A receiver infers the value(s) of a transmitter's sen- sitive operand(s) by measuring hardware resource usage through various means, such as execution time [49], [50] and more [19], [51]-[71]. Constant-time (CT) programming is the prevailing ap- proach for countering hardware side-channel leakage in software [1]-[14], [72]. In short, CT programs do not supply secrets to sensitive transmitter operands in any sequential execution. CT has been widely adopted in the context of cryptographic code [15]-[17], [73], which must process (and not leak) secrets. Thus, a variety of tools and techniques have been proposed to support CT code generation [13], [14], [72], [74] and verification [45], [75]-[78]. Prior work surveys many such approaches [79]. 4201"
+      },
+      {
+        "source": "selected",
+        "value": "We present SERBERUS, the first comprehensive mitigation for hardening constant-time (CT) code against Spectre attacks (involving the PHT, BTB, RSB, STL, and/or PSF speculation primitives) on existing hardware. SERBERUS is based on three insights. First, some hardware control-flow integrity (CFI) protections restrict transient control-flow to the extent that it may be comprehensively considered by software analyses. Second, conformance to the accepted CT code discipline permits two code patterns that are unsafe in the post-Spectre era. Third, once these code patterns are addressed, all Spectre leakage of secrets in CT programs can be attributed to one of four classes of taint primitives-instructions that can transiently assign a secret value to a publicly-typed register. We evaluate SERBERUS on cryptographic primitives in the OPENSSL, LIBSODIUM, and HACL* libraries. SERBERUS introduces 21.3% runtime overhead on average, compared to 24.9% for the next closest state-of-the-art software mitigation, which is less secure. 4200 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Nicholas Mosier",
+          "email": "nmosier@stanford.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University Stanford, California, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Hamed Nemati",
+          "email": "hamed.nemati@cispa.de",
+          "orcid": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security Saarbrücken, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "John CMitchell",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University Stanford, California, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Caroline Trippel",
+          "email": "trippel@stanford.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University Stanford, California, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Nicholas Mosier",
+          "email": "nmosier@stanford.edu",
+          "affiliations": [
+            "Stanford University Stanford, California, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Hamed Nemati",
+          "email": "hamed.nemati@cispa.de",
+          "affiliations": [
+            "CISPA Helmholtz Center"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "John C. Mitchell",
+          "email": "",
+          "affiliations": [
+            "Stanford University Stanford, California, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Caroline Trippel",
+          "email": "trippel@stanford.edu",
+          "affiliations": [
+            "Stanford University Stanford, California, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 134,
+      "author_count": 4,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Nicholas Mosier",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Hamed Nemati",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "John C. Mitchell",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Caroline Trippel",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Nicholas Mosier",
+          "affiliation_raw": "Stanford University Stanford, California, USA for Information Security Saarbr ucken, Germany ¨",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b10",
+            "pdf:p1:b14",
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 1.364,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Hamed Nemati",
+          "affiliation_raw": "CISPA Helmholtz Center Stanford, California, USA for Information Security Saarbr ucken, Germany ¨",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b14",
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 1.226,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "John C. Mitchell",
+          "affiliation_raw": "Stanford University Stanford, California, USA Stanford, California, USA",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b12",
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 0.247,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Caroline Trippel",
+          "affiliation_raw": "Stanford University Stanford, California, USA Stanford, California, USA",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b13",
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 1.304,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Serberus: Protecting Cryptographic Code from Spectres at Compile-Time",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Nicholas Mosier",
+          "affiliations": [
+            "Stanford University"
+          ]
+        },
+        {
+          "name": "Hamed Nemati",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ]
+        },
+        {
+          "name": "John C. Mitchell",
+          "affiliations": [
+            "Stanford University"
+          ]
+        },
+        {
+          "name": "Caroline Trippel",
+          "affiliations": [
+            "Stanford University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Nicholas Mosier",
+      "field": "email",
+      "restored_value": "nmosier@stanford.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Hamed Nemati",
+      "field": "email",
+      "restored_value": "hamed.nemati@cispa.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Caroline Trippel",
+      "field": "email",
+      "restored_value": "trippel@stanford.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 3,
+      "country_values_restored": 3,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

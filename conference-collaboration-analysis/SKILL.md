@@ -1,12 +1,6 @@
 ---
 name: conference-collaboration-analysis
 description: Generate coauthorship and cross-entity collaboration summaries from normalized conference datasets. Use when the user asks for collaboration networks, coauthor pairs, cross-country collaboration, institution collaboration, or reusable network edge tables for conference analysis.
-license: MIT
-compatibility: Requires Python 3.10+ and normalized conference data with author and affiliation fields.
-metadata:
-  author: llm-conference-skill
-  version: "1.0"
-allowed-tools: Bash(python3:*) Read Glob Grep
 ---
 
 # 顶会合作分析
@@ -69,6 +63,9 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 这一步对多机构归属与重复作者行尤其重要。
 
+机构或国家字段出现复合标签时，先拆分有可靠身份的组成项并分别生成节点；无法
+确认的组成项作为残片丢弃，不保留整个复合标签节点。
+
 ### 第 3 步：生成无序边对
 
 对每篇论文，枚举所有不同节点之间的无序组合，并累加 `shared_papers`。
@@ -80,6 +77,8 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - `conference_count`
 - `year_first`
 - `year_last`
+
+按年份范围分析时，必须在生成边之前使用 `--year-start`/`--year-end` 过滤明细行；不要从全量边表的 `year_first`/`year_last` 反推子区间贡献。
 
 ### 第 5 步：报告合作集中度
 
@@ -105,6 +104,16 @@ python3 scripts/collaboration_analysis.py \
   --output-dir data/analysis \
   --mode country \
   --conference CCS
+```
+
+```bash
+python3 scripts/collaboration_analysis.py \
+  --input data/analysis/normalized/author_affiliation_facts.csv \
+  --output-dir data/analysis \
+  --mode institution \
+  --conference CRYPTO \
+  --year-start 2020 \
+  --year-end 2025
 ```
 
 ## 常见问题

@@ -1,0 +1,360 @@
+{
+  "paper_id": "056_ghost_domain_reloaded_vulnerable_links_in_domain_name_delegation_and_revocation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Ghost Domain Reloaded: Vulnerable Links in Domain Name Delegation and Revocation"
+      },
+      {
+        "source": "selected",
+        "value": "Ghost Domain Reloaded: Vulnerable Links in Domain Name Delegation and Revocation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "In this paper, we propose PHOENIX DOMAIN, a general and novel attack that allows adversaries to maintain the revoked malicious domain continuously resolvable at scale, which enables an old, mitigated attack, Ghost Domain. PHOENIX DOMAIN has two variations and affects all mainstream DNS software and public DNS resolvers overall because it does not violate any DNS specifications and best security practices. The attack is made possible through systematically \"reverse engineer\" the cache operations of 8 DNS implementations, and new attack surfaces are revealed in the domain name delegation processes. We select 41 well-known public DNS resolvers and prove that all surveyed DNS services are vulnerable to PHOENIX DOMAIN, including Google Public DNS and Cloudflare DNS. Extensive measurement studies are performed with 210k stable and distributed DNS recursive resolvers, and results show that even after one month from domain name revocation and cache expiration, more than 25% of recursive resolvers can still resolve it. The proposed attack provides an opportunity for adversaries to evade the security practices of malicious domain take-down. We have reported discovered vulnerabilities to all affected vendors and suggested 6 types of mitigation approaches to them. Until now, 7 DNS software providers and 15 resolver vendors, including BIND, Unbound, Google, and Cloudflare, have confirmed the vulnerabilities, and some of them are implementing and publishing mitigation patches according to our suggestions. In addition, 9 CVE numbers have been assigned. The study calls for standardization to address the issue of how to revoke domain names securely and maintain cache consistency."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "In this paper, we propose P HOENIX DOMAIN , a general and novel attack that allows adversaries to maintain the revoked malicious domain continuously resolvable at scale, which enables an old, mitigated attack, Ghost Domain. P HOENIX DOMAIN has two variations and affects all mainstream DNS software and public DNS resolvers overall because it does not violate any DNS specifications and best security practices. The attack is made possible through systematically “ reverse engineer” the cache operations of 8 DNS implementations, and new attack surfaces are revealed in the domain name delegation processes. We select 41 well-known public DNS resolvers and prove that all surveyed DNS services are vulnerable to P HOENIX DOMAIN , including Google Public DNS and Cloudflare DNS. Extensive measurement studies are performed with 210k stable and distributed DNS recursive resolvers, and results show that even after one month from domain name revocation and cache expiration, more than 25% of recursive resolvers can still resolve it. The proposed attack provides an opportunity for adversaries to evade the security practices of malicious domain take-down. We have reported discovered vulnerabilities to all affected vendors and suggested 6 types of mitigation approaches to them. Until now, 7 DNS software providers and 15 resolver vendors, includ- ing BIND, Unbound, Google, and Cloudflare, have confirmed the vulnerabilities, and some of them are implementing and publishing mitigation patches according to our suggestions. In addition, 9 CVE numbers have been assigned. The study calls for standardization to address the issue of how to revoke domain names securely and maintain cache consistency. I. I NTRODUCTION Domain names are often registered and abused by ad- versaries to conduct worldwide criminal activities, such as botnets [13], [56], phishing [103], [104], and spam or malware distribution [12], [127]. In practice, ICANN develops the Do- main Abuse Activity Reporting system (DAAR) and publishes monthly reports of domain name threats. In April 2022, the system captured more than 633k newly-registered domains as malicious in just one month [64]. Nowadays, domain name revocation [111] is considered to Φ Both are first authors. Corresponding authors. be one of the best security practices and widely adopted to fight against malicious domain names employed by cyber-crime activities [38], [79]. Security operators can revoke a malicious domain name through forcibly deleting or changing delegation information from its parent zone with the help of registries or registrars [62]. After revocation, resolving the revoked domain (and its subdomains) should be either rejected, or redirected to nameservers owned by security operators. Ensuring the effective domain name revocation is of great significance to the health of the DNS ecosystem, which miti- gates various criminal activities. However, completely achiev- ing this goal is not easy. This is because current DNS proto- cols [94], [95] do not require resolvers to actively fetch the up-to-date delegation information from the upper-level zones. Thus, domain name revocation has to take effectpassively after the original cache expires in resolvers. Due to the complexity of the DNS cache mechanism, security risks may be introduced to prevent the effectiveness of domain name revocation. Research gap. From an adversary's perspective, it is valuable to continually perform and control criminal activities (e.g., botnets, phishing, etc.), even after the malicious domain name ability in the DNS cache update policy and proposed an attack named Ghost Domain . It allows a malicious domain to be continuously resolvable at the global scale, even for one week after the domain was revoked. After disclosure of the ghost domain attack, all mainstream DNS software was patched at once [19], [39], [112], [138]. Ten years later, it is commonly believed that the ghost domain attack has been eliminated , and the desired outcome of domain name revocation should be guaranteed. However, we suspect that, as previous research primarily only focused on security threats of cache updating, the security community still lacks systematic analysis of all DNS cache operations, including cache searching and cache insertion. This research gap results in the entire attack surface of domain name revocation remaining unclear now . Our study. To fill this research gap, in this paper, we select 8 mainstream DNS software and conduct a systematic “reverse engineer” study to understand their internal caching mecha- nisms. Through source code review and comprehensive black- box testing, surprisingly, we find that loopholes of domain name revocation are not closed after ten years and uncover general and novel attack surfaces that are hindering the secu- rity guarantees of domain name revocation. Similar to Ghost Network and Distributed Systems Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.23005 www.ndss-symposium.org Domain, our proposed attack, P HOENIX DOMAIN , also allows adversaries to maintain a revoked domain staying resolvable over a very long time, overcoming current patches. Currently, DNS RFCs do not explicitly state that domain name revocation should be satisfied as one of the basic domain properties, i.e., consistency that the delegation data from parent zones and child zones should be consistent (RFC 1034 [94]). Domain name revocation works by changing delegation data from parent zones, which should conform with the consistency property. In practice, DNS cache operations are all imple- mented from the perspectives of performance and efficiency. Our research demonstrates that a suit of cache properties can be exploited by adversaries to prevent resolvers from fetching the up-to-date delegation information (Section III). Specifically, PHOENIX DOMAIN has two variations, named T1 and T2 (Section IV-B). T 1 results from vulnerable DNS implementations while T 2 stems from the generic DNS pro- tocol specifications [94], [95]. (1) When managing cache, resolvers rely on the TTL-aging mechanism (time to live) to re- move cached records after expiration. T 1 exploits inconsistent time-of-use and time-of-check cache validation to refresh the delegation data via an attack time window, which is effective for specific DNS implementations. (2) During the local cache searching, resolvers prefer to trust the responses from the child zone than the parent zone and use the closest known nameserver for outgoing queries, following the de facto DNS specifications. T 2 leverages this property to insert new child delegation data into the resolver under the cache miss state and use iterative subdomains to prolong the cache lifetime, thus applicable to all DNS implementations. Theoretically, attackers can keep (sub)domains in the cache for a 127 × TTL time with T 2 and potentially indefinitely with T 1. Since new delegation data is renewed with the former cached data missed or removed, we call the exploited domain Phoenix Domain. Key findings. PHOENIX DOMAIN breaks current mitigation patches against the original ghost domain attack. Our experi- ments show that all mainstream DNS software and 41 popular public DNS resolvers we surveyed are vulnerable to T 1 and/or T 2, in particular, BIND [21], Unbound [139], Google Public DNS [55], and Cloudflare DNS [30] (Section V-A and VI-C). In addition, we performed extensive measurements to eval- uate the real-world impact (Section VI) with practical attack considerations (Section V-B). First, we collected representative and stable open resolvers through a 2-month-long ongoing resolver scanning and carefully select 210k recursive resolvers as our experiment targets with the consideration of ethics. Second, we created several domain names for comparison and performed both short-term and long-term experiments. Third, we also analyzed and tested different experiment settings that affected P HOENIX DOMAIN to show the attack effect and cost. Through experiments, we demonstrate that more than 89% of 210k recursive resolvers are vulnerable, and a large exploitation is practical. Results also show that more than 40% resolvers can successfully resolve the revoked domain name after one week for T 2, while more than 25% one month later. Disclosure and mitigation. We responsibly report the discov- ered vulnerabilities to all affected vendors. We also suggest 6 short-term and long-term approaches to mitigating P HOENIX DOMAIN attacks (Section VII). So far, 7 DNS software and 15 DNSclientRecursiveresolver Authoritative servers Root TLD SLD DNS namespace comnet example.com Delegating Delegating Query example.comReferral to SLD NS Query example.comReferral to TLD NS1 2 34 5 Query example.comAuthoritative answer6 7 8 “ .” QueryAnswer Fig. 1. DNS resolution process and DNS namespace. public resolver vendors have confirmed the vulnerabilities and are implementing mitigations according to our report. 9 CVE- ids have been assigned 1. In the end, our study brings attention to re-examining the domain name delegation and revocation mechanism and calls for standardization and agreements to address PHOENIX DOMAIN and revoke domain names securely and maintain cache consistency. Contributions. We make the following contributions: Systematic analysis of implementations. We summarize potential DNS cache operation weaknesses through source code review and black-box experiments by analyzing 8 DNS software. Novel attack. We propose P HOENIX DOMAIN to make a revoked domain name sticky to resolvers applicable to all DNS implementations via exploiting new attack surfaces introduced by T 1 and/or T 2. Measurements to evaluate attacks. We conduct a month- long measurement to demonstrate the attack effect of 210k open recursive resolvers and test 41 public resolvers. Disclosure and mitigation. We report vulnerabilities to all affected vendors and discuss 6 mitigation approaches to addressing P HOENIX DOMAIN attacks with them. II. B ACKGROUND In this section, we overview the DNS resolution process and domain name delegation [94], [95]. Then, we explain DNS cache update policies. Finally, we describe domain name revo- cation process and Ghost Domain that breaks its guarantees. A. DNS Overview DNS namespace and resolution. DNS partitions the domain namespace into a hierarchical structure, with the higher and lower levels called parent and child. As shown in Figure 1 right, at the top of the hierarchy is the DNS root zone. Below the DNS root zone is a series of Top-Level Domains (TLDs), such as .com, .net, and .org. Under TLDs, Second- Level Domains (SLDs) are managed by registrars, such as GoDaddy [53] and Verisign [144], and open to registration. As an example, the TLD and SLD of www.example.com are .com and example.com. Most DNS queries generated from clients are processed by recursive resolvers first. To resolve a DNS request, the 1 PHOENIX DOMAIN : https://phoenixdomain.net/. 2"
+      },
+      {
+        "source": "selected",
+        "value": "In this paper, we propose PHOENIX DOMAIN, a general and novel attack that allows adversaries to maintain the revoked malicious domain continuously resolvable at scale, which enables an old, mitigated attack, Ghost Domain. PHOENIX DOMAIN has two variations and affects all mainstream DNS software and public DNS resolvers overall because it does not violate any DNS specifications and best security practices. The attack is made possible through systematically \"reverse engineer\" the cache operations of 8 DNS implementations, and new attack surfaces are revealed in the domain name delegation processes. We select 41 well-known public DNS resolvers and prove that all surveyed DNS services are vulnerable to PHOENIX DOMAIN, including Google Public DNS and Cloudflare DNS. Extensive measurement studies are performed with 210k stable and distributed DNS recursive resolvers, and results show that even after one month from domain name revocation and cache expiration, more than 25% of recursive resolvers can still resolve it. The proposed attack provides an opportunity for adversaries to evade the security practices of malicious domain take-down. We have reported discovered vulnerabilities to all affected vendors and suggested 6 types of mitigation approaches to them. Until now, 7 DNS software providers and 15 resolver vendors, including BIND, Unbound, Google, and Cloudflare, have confirmed the vulnerabilities, and some of them are implementing and publishing mitigation patches according to our suggestions. In addition, 9 CVE numbers have been assigned. The study calls for standardization to address the issue of how to revoke domain names securely and maintain cache consistency."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Xiang Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Baojun Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xuesong Bai",
+          "email": "xuesong.bai@uci.edu",
+          "orcid": "",
+          "affiliations": [
+            "Irvine , University of California, QI"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Mingming Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Qifan Zhang",
+          "email": "qifan.zhang@uci.edu",
+          "orcid": "",
+          "affiliations": [
+            "Irvine , University of California, QI"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Zhou Li",
+          "email": "zhou.li@uci.edu",
+          "orcid": "",
+          "affiliations": [
+            "Irvine , University of California, QI"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Haixin Duan",
+          "email": "duanhx@tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Zhongguancun Laboratory, ANXIN Technology Research Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Qi Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Zhongguancun Laboratory, ANXIN Technology Research Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Xiang Li",
+          "email": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Baojun Liu",
+          "email": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Xuesong Bai",
+          "email": "xuesong.bai@uci.edu",
+          "affiliations": [
+            "University of California, Irvine"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Mingming Zhang",
+          "email": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Qifan Zhang",
+          "email": "qifan.zhang@uci.edu",
+          "affiliations": [
+            "University of California, Irvine"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Zhou Li",
+          "email": "zhou.li@uci.edu",
+          "affiliations": [
+            "University of California, Irvine"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Haixin Duan",
+          "email": "duanhx@tsinghua.edu.cn",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "Zhongguancun Laboratory"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Qi Li",
+          "email": "qli01@tsinghua.edu.cn",
+          "affiliations": [
+            "Tsinghua University",
+            "Zhongguancun Laboratory"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 127,
+      "author_count": 8,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Mingming Zhang",
+          "block_id": "pdf:p1:b8",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Mingming Zhang",
+          "affiliation_raw": "Tsinghua University, University of California, Irvine QI-ANXIN Technology Research Institute,",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b8",
+          "affiliation_block_ids": [
+            "pdf:p1:b14",
+            "pdf:p1:b16",
+            "pdf:p1:b19"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 14.806,
+          "center_distance": 62.683,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Ghost Domain Reloaded: Vulnerable Links in Domain Name Delegation and Revocation",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/ghost-domain-reloaded-vulnerable-links-in-domain-name-delegation-and-revocation/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Xiang Li",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Baojun Liu",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Xuesong Bai",
+          "affiliations": [
+            "University of California, Irvine"
+          ]
+        },
+        {
+          "name": "Mingming Zhang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Qifan Zhang",
+          "affiliations": [
+            "University of California, Irvine"
+          ]
+        },
+        {
+          "name": "Zhou Li",
+          "affiliations": [
+            "University of California, Irvine"
+          ]
+        },
+        {
+          "name": "Haixin Duan",
+          "affiliations": [
+            "Tsinghua University; QI-ANXIN Technology Research Institute; Zhongguancun Laboratory"
+          ]
+        },
+        {
+          "name": "Qi Li",
+          "affiliations": [
+            "Tsinghua University; Zhongguancun Laboratory"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Haixin Duan",
+      "field": "email",
+      "restored_value": "duanhx@tsinghua.edu.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

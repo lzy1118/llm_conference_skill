@@ -1,0 +1,141 @@
+{
+  "paper_id": "007_smaug_modular_augmentation_of_llvm_for_mpc",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Smaug: Modular Augmentation of LLVM for MPC"
+      },
+      {
+        "source": "selected",
+        "value": "Smaug: Modular Augmentation of LLVM for MPC"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Secure multi-party computation (MPC) is a crucial tool for privacy-preserving computation, but it is getting increasingly complicated due to recent advancements and optimizations. Programming tools for MPC allow programmers to develop MPC applications without mastering all cryptography. However, most existing MPC programming tools fail to attract real users due to the lack of documentation, maintenance, and the ability to compose with legacy codebases. In this work, we build Smaug, a modular extension of LLVM. Smaug seamlessly brings all LLVM support to MPC programmers, including error messaging, documentation, code optimization, and frontend support to compile from various languages to LLVM intermediate representation (IR). Smaug can efficiently convert non-oblivious LLVM IR to their oblivious counterparts while applying popular optimizations as LLVM code transformations. With benchmarks written in C++ and Rust and backends for Yao and GMW protocols, we observe that Smaug performs as well as (and sometimes much better than) prior tools using domain-specific languages with similar backends. Finally, we use Smaug to compile open-source projects that implement Minesweeper and Blackjack, producing usable twoparty games with ease."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Secure multi-party computation (MPC) is a crucial tool for privacy-preserving computation, but it is getting in- creasingly complicated due to recent advancements and opti- mizations. Programming tools for MPC allow programmers to develop MPC applications without mastering all cryptography. However, most existing MPC programming tools fail to attract real users due to the lack of documentation, maintenance, and the ability to compose with legacy codebases. In this work, we build Smaug, a modular extension of LLVM. Smaug seamlessly brings all LLVM support to MPC programmers, including error messaging, documentation, code optimization, and frontend support to compile from various languages to LLVM intermediate representation (IR). Smaug can efficiently convert non-oblivious LLVM IR to their oblivious counterparts while applying popular optimizations as LLVM code trans- formations. With benchmarks written in C++ and Rust and backends for Yao and GMW protocols, we observe that Smaug performs as well as (and sometimes much better than) prior tools using domain-specific languages with similar backends. Finally, we use Smaug to compile open-source projects that implement Minesweeper and Blackjack, producing usable two- party games with ease. 1. Introduction Secure multi-party computation (MPC) allows multiple parties to jointly evaluate a function while keeping their individual inputs private. Due to the complexity of MPC protocols, one important task is to build tools that can facilitate the development of MPC-based applications. This is often a complicated task. First, programs executed in MPC must be trace and data oblivious, meaning that the program counter and data access shall not reveal parties' private information. Second, the cost model of MPC differs from standard hardware, e.g., x86; thus, different optimizations are needed to enjoy the state-of-the-art MPC optimizations. There have been various approaches to reduce programmers' burden when handling these difficulties. 1) Bring Y our Own Machine (BYOM). The most generic approach is to work at the assembly level. These works implement backends that can securely emulate the exe- cution of assembly code directly [ 1], [ 2], [ 3], [ 4]. In this approach, the programmer can use any existing language and compiler to obtain the assembly code of the program, and then execute it on MPC-emulated backends. The overhead for programmers is minimal - they do not even need to know that the code will be executed over MPC. However, the execution overhead is often high because the backend must hide the instruction type and data access in each cycle. In particular, this approach requires using oblivious RAM (ORAM) to emulate every instruction, leading to high overhead. 2) Bring Y our Own Compiler (BYOC). There are also works that implement their own compilers but use syntax from existing languages [ 5], [ 6], [ 7], [ 8], [ 9]. Such an approach allows the programmer to keep using their favorite languages; the custom-built compiler would transform the source program to something the MPC backends can use, bypassing legacy compiler toolchains and machine abstractions altogether. This approach is often more efficient than BYOM, as the compiler can use program structures to optimize the MPC execution. However, it has some other drawbacks. First, many com- pilers can only handle toy examples rather than large projects and do not emit any error messages/hints about compilation errors. This is because most academic-built compilers do not have the resources to support a compiler toolchain. In addition, it is challenging to integrate MPC code with cleartext code, even if they are in the same language. The MPC code is compiled to cryptographic backends, while cleartext code is compiled normally. 3) Bring Y our Own Language (BYOL).Many prior works focus on designing a domain-specific language [ 10], [11], [12], [ 13], [ 14] or additional language syntax [ 15], [ 16], [17], and an associated toolchain such that the program- mers can learn and use. This approach has the best flexibility in designing annotations and syntax to capture the program's structure. However, the programmers have to learn new language features, and it also has drawbacks similar to BYOC since existing compilers and machine abstractions are bypassed in this case as well. There are also other frameworks [ 18], [ 19], [ 20], [ 21] that build “libraries” for programmers to use, but they push even more burden on programmers to figure out how to convert the program to something in the library calls while ensuring obliviousness and high efficiency. What About LLVM? As the most popular compiler infras- tructure, LL VM appears to be a great candidate for building a compiler toolchain for MPC. Indeed, it has been discussed by multiple prior works but only on why LL VM is not suit- able. It turns out that directly reusing the LL VM framework *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ 3BEIJLB(BSH6OEFSMJDFOTFUP*&&& %0*41 is challenging. For example, COMBINE [ 8] argued that im- portant information is missing for φinstruction, something in the LL VM control flow graph (CFG) to handle conditional statements. They also argued that the complexity of LL VM makes it challenging to perform control-dependent analysis. Heldmann et al. [ 7] adapted LL VM to output circuits for MPC applications but requires that all conditional statements be independent of any private information, bypassing the φ instruction issue mentioned above. Keller [ 3] uses LL VM to parse the source language but adopts the BYOM method to execute the LL VM-IR. In this paper, we defy this common belief by presenting Smaug, an augmentation of LL VM for integrated programming support of MPC applications. 1.1. Features of Smaug Smaug is implemented completely as a set of modules of LL VM - when MPC flags are disabled, the tool compiles normal programs as usual. This is achieved by collecting MPC-related information and performing MPC-related code transformation as “LL VM passes” on the code. Smaug achieves a trifecta of key features by extending LL VM in a modular way rather than building an independent compiler. 1) Inheriting support for LLVM toolchain. The core of LL VM focuses on optimizing LL VM-IR itself, but many industry-grade compiler frontends can compile to LL VM-IR, most notably clang and rustc.B y working on top of LL VM-IR directly, Smaug inher- its from existing LL VM frontends to support almost any language. At the same time, Smaug can produce meaningful compile-error messages/hints just like other industry-grade compilers. 2) Modular integration of MPC and legacy libraries. By producing valid LL VM-IR, where crypto operations are LL VM function calls, Smaug allows linking these func- tions to MPC implementations using an existing linker (e.g., GNU ld). Similarly, any custom optimizations, e.g., table lookups, can be integrated seamlessly. This also means that the dynamic interpretation of the MPC program is done at the native-code level. An additional benefit of extending LL VM is that we allow program- mers to use legacy libraries (e.g., sqlite) with MPC components seamlessly in one executable. This was only possible with a library-based approach. 3) Repurposing LLVM optimization for MPC. Since Smaug is an LL VM module, we have access to exist- ing LL VM optimization modules, many of which are beneficial to MPC. This includes dead-code elimina- tion, CFG simplification, optimizations for vectorization, which minimizes circuit depth, and analysis passes like memory dependence analysis and loop analysis, which help minimize the effort of writing custom optimiza- tion passes. Although some prior works manually im- plemented a subset of them, no framework implements all since they don't build on top of each other. Basing Smaug on LL VM means we can support all of them simultaneously and enjoy all careful optimizations from the LL VM code base. Our implementation will be made available at Smaug 1 so that other researchers can add more optimizations; LL VM helps with this goal as it provides a modular infrastructure for extension. 1.2. Technical Contributions Fully integrating with LL VM is challenging, and we make the following contributions to achieve the best MPC efficiency without burdening the programmers. Toolchain overview. The core principle of our approach is to use the LL VM-IR as the only intermediate representation throughout the compilation and execution. This way, we can fully enjoy all the benefits of the LL VM toolchain. A program in an existing language will first be converted to LL VM-IR using any compiler frontend. From this, we run some code transformations provided by LL VM and ones provided by Smaug to make the program oblivious and optimized towards MPC (e.g., depth reduction). Finally, we have a valid LL VM IR that contains both cleartext and private computation. From here, we use existing compiler linkers to link cleartext function/library calls to their object files and link MPC operations to existing libraries. Supporting mixed branching. The LL VM optimization passes can extensively alter the CFG, resulting in CFGs with goto statements under private branches, which cannot be easily handled by prior approaches. We design an efficient transformation that can handle such cases even within nested branches, where some have public conditions and some have private conditions. Since all loop syntax (i.e., for, while, do-while loops) are the same within LL VM-IR, as a by-product, we are able to efficiently support all loops recognized by LL VM as long as the number of iterations does not depend on the private values. MPC optimizations as LLVM passes. To demonstrate the generality of LL VM in the context of MPC, we implement a variety of optimizations that are suitable for MPC. These optimizations either do not require any extra annotation from programmers or only require adding annotations that already appear in existing compilers. In particular, we implement several optimizations from prior works [ 22], [ 23], [ 8] for circuit size and depth minimization. We demonstrate that by utilizing the extensive analysis modules provided by LL VM, we can implement these optimizations with reduced effort and achieve comparable or better performance. Further, this shows that any future work on circuit optimization for MPC can seamlessly add custom transformation modules to Smaug and use the existing analysis modules in order to minimize development effort. Comparison with prior works. We compare the perfor- mance of Smaug with COMBINE [ 8], CBMC-GC [ 5], MP-SPDZ [ 14], and Obliv-C [ 16]. During the compilation of the benchmarks, Smaug uses computational resources comparable to Obliv-C (which fully relies on the program- mers in optimizing the circuit) and orders of magnitude less time and memory than the other prior works. Additionally, the resulting programs for Smaug either outperform prior 1. https://github.com/radhika1601/smaug"
+      },
+      {
+        "source": "selected",
+        "value": "Secure multi-party computation (MPC) is a crucial tool for privacy-preserving computation, but it is getting increasingly complicated due to recent advancements and optimizations. Programming tools for MPC allow programmers to develop MPC applications without mastering all cryptography. However, most existing MPC programming tools fail to attract real users due to the lack of documentation, maintenance, and the ability to compose with legacy codebases. In this work, we build Smaug, a modular extension of LLVM. Smaug seamlessly brings all LLVM support to MPC programmers, including error messaging, documentation, code optimization, and frontend support to compile from various languages to LLVM intermediate representation (IR). Smaug can efficiently convert non-oblivious LLVM IR to their oblivious counterparts while applying popular optimizations as LLVM code transformations. With benchmarks written in C++ and Rust and backends for Yao and GMW protocols, we observe that Smaug performs as well as (and sometimes much better than) prior tools using domain-specific languages with similar backends. Finally, we use Smaug to compile open-source projects that implement Minesweeper and Blackjack, producing usable twoparty games with ease."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Radhika Garg",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Xiao Wang",
+          "email": "wangxiao@northwestern.edu",
+          "orcid": "",
+          "affiliations": [
+            "Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Radhika Garg",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Xiao Wang",
+          "email": "wangxiao@northwestern.edu",
+          "orcid": "",
+          "affiliations": [
+            "Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 9,
+      "author_count": 2,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Smaug: Modular Augmentation of LLVM for MPC",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Radhika Garg",
+          "affiliations": [
+            "Northwestern University"
+          ]
+        },
+        {
+          "name": "Xiao Wang",
+          "affiliations": [
+            "Northwestern University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

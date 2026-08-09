@@ -1,0 +1,330 @@
+{
+  "paper_id": "218_securing_graph_neural_networks_in_mlaas_a_comprehensive_realization_of_query_based_integrity_verification",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Securing Graph Neural Networks in MLaaS: A Comprehensive Realization of Query-based Integrity Verification"
+      },
+      {
+        "source": "selected",
+        "value": "Securing Graph Neural Networks in MLaaS: A Comprehensive Realization of Query-based Integrity Verification"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The deployment of Graph Neural Networks (GNNs) within Machine Learning as a Service (MLaaS) has opened up new attack surfaces and an escalation in security concerns regarding model-centric attacks. These attacks can directly manipulate the GNN model parameters during serving, causing incorrect predictions and posing substantial threats to essential GNN applications. Traditional integrity verification methods falter in this context due to the limitations imposed by MLaaS and the distinct characteristics of GNN models. In this research, we introduce a groundbreaking approach to protect GNN models in MLaaS from model-centric attacks. Our approach includes a comprehensive verification schema for GNN's integrity, taking into account both transductive and inductive GNNs, and accommodating varying pre-deployment knowledge of the models. We propose a query-based verification technique, fortified with innovative node fingerprint generation algorithms. To deal with advanced attackers who know our mechanisms in advance, we introduce randomized fingerprint nodes within our design. The experimental evaluation demonstrates that our method can detect five representative adversarial model-centric attacks, displaying 2 to 4 times greater efficiency compared to baselines."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The deployment of Graph Neural Networks (GNNs) within Machine Learning as a Service (MLaaS) has opened up new attack surfaces and an escalation in security concerns regarding model-centric attacks. These attacks can directly manipulate the GNN model parameters during serving, causing incorrect predictions and posing substantial threats to essential GNN applications. Traditional integrity verification methods falter in this context due to the limitations imposed by MLaaS and the distinct characteristics of GNN models. In this research, we introduce a groundbreaking approach to protect GNN models in MLaaS from model-centric attacks. Our approach includes a comprehensive verification schema for GNN's integrity, taking into account both transductive and inductive GNNs, and accommodating varying pre-deployment knowledge of the models. We propose a query-based veri- fication technique, fortified with innovative node fingerprint generation algorithms. To deal with advanced attackers who know our mechanisms in advance, we introduce randomized fingerprint nodes within our design. The experimental evalua- tion demonstrates that our method can detect five representa- tive adversarial model-centric attacks, displaying 2 to 4 times greater efficiency compared to baselines. 1. Introduction Graph Neural Networks (GNNs) have drawn consider- able attention due to their demonstrated ability to analyze graph data [1, 2]. They are designed to effectively perform graph-related prediction tasks, and have achieved state-of- the-art performance in a diverse array of applications such as e-commence networks [3], anomaly detection [4-6], and healthcare [7-10]. Because of their increasing popularity, many Machine Learning as a Service (MLaaS) platforms offered by cloud service providers have integrated GNN development tools for conveniently launching GNN services (e.g., AWS integrated DGL [11], Microsoft Azure incorpo- rated Spektral [12], and Google Vertex AI used Neo4j [13]). Despite the convenience and low cost of model deployment, graph-based MLaaS is also facing critical security concerns. Among others, adversarial attacks are known to be able to deduce the performance of GNNs. In the context of lo- cally deployed GNNs, the limited attack surface has directed the majority of research towards the protection of these networks against data-centric attacks [14-19] (e.g., evasion attacks that alter the inference graph or poisoning attacks that modify the training graph). Currently, model-centric attacks [20-22] (e.g., bit-flipping that manipulates the GNN model parameters) are less significant and can often be mitigated through local verifying and careful monitoring of the model inference process. Nonetheless, the landscape shifts when GNNs are de- ployed to MLaaS platforms. Firstly, outsourcing GNNs to the cloud encounters practical attack surfaces that largely amplify the risk of model-centric attacks. Specifically, MLaaS stores GNN models in their cloud storage sys- tems [11], making them susceptible to long-standing threats inherent to cloud computing, such as misconfiguaration [23, 24], insufficient access management [25-27], and Bit-flip at- tacks [20-22], thereby rendering model-centric attacks more applicable. Furthermore, GNNs located within cloud storage environments are stripped of those local protective measures that require direct access to the deployed models [28, 29]. Due to security concerns, the model owner typically lacks such access within the bounds of MLaaS. A real-life illustration of this issue can be found in the collaboration between the American Heart Association and Amazon for cardiovascular disease [30]. GNNs, designed to analyze proteomic data, can be deployed through Amazon's MLaaS platform, named SageMaker, and stored in the cloud within an S3 bucket as its MLaaS pipeline [11]. Unfortu- nately, the S3 storage system has faced both external and internal threats [31-38]. If an attacker were to manipulate the GNN models during the model serving process (e.g., be- fore loading from S3), it could lead to incorrect assessments of cardiovascular disease risks or inappropriate responses to treatments and undermine the accuracy of diagnoses and treatment plans [30]. Research Gap. While the security risk associated with GNN models stored within MLaaS is apparent, current studies are inadequate to address them. Traditional software security so- lutions for integrity verification (e.g., cryptographic digests) 1This work was done when Bang Wu was at Monash University. 2534 DOI 10.1109/SP54263.2024.00110 require the verifier to access and control the data directly and validate the digests during runtime, which is not applicable within MLaaS. In addition, these verification methods done by the MLaaS servers assume that MLaaS is trusted, which does not align with our above considerations regarding non-trusted cloud environments. Moreover, existing defenses against adversarial attacks in GNNs [28, 29] are used to protect locally deployed GNNs against data-centric attacks, rendering them ill-equipped to counter model-centric attacks in the untrusted cloud environments. To fill this gap, our study presents the first systematic investigation of protecting GNNs deployed in MLaaS envi- ronments against model-centric attacks through verification of model integrity during GNN serving. We consider GNNs in node classification tasks as the case study, i.e., a basic yet widely-adopted learning task for GNNs [39]. We employ a query-based verification mechanism that requires only query access to the targeted GNN model during the serving phase. The core concept involves probing the deployed GNN models with a series of carefully designed node queries and analyzing their responses to assess the integrity of the GNN model. Responses that do not match the expected predictions indicate that the integrity of the GNN models has been compromised. Challenges. Developing a comprehensive integrity verifi- cation method to protect GNNs in MLaaS environments against model-centric attacks presents a nontrivial task. First, outsourcing of GNNs via MLaaS introduces specific chal- lenges. C1) Lack of Direct Access : The interaction between the verifier and the server is limited through APIs provided by MLaaS, meaning that the verifier may not have access to the exact model parameters or internal representations during model inference. Thus, our verification can only rely on the basic APIs for GNN serving (i.e., prediction APIs). C2) Diversity of Query APIs : These prediction APIs also vary across different GNN settings. Depending on whether GNNs operate in transductive or inductive settings, each setting dictates different inference processes, leading MLaaS to publish diverse query APIs during service (e.g., queries to transductive GNNs are typically restricted to node IDs, while those to inductive GNNs may involve new inference graphs). Therefore, our verification should be considerate of and adaptable to the varying settings of GNNs. Furthermore, the verification of GNN models also intro- duces unique challenges, revealing that existing studies on DNNs may not be applicable to GNNs. C3) Unique Model Architecture: GNN models typically have fewer layers (e.g., two layers to prevent over-smoothing [1, 40]) compared to other DNNs (e.g., CNNs in computer vision). This distinc- tive structure affects the activation of neurons by queries and introduces diverse focuses on verification design strategies. C4) Graph-Structured Inputs: Unlike DNNs that operate on Euclidean data, GNNs analyze graph-structured data, where a prediction is influenced not only by its node features but also by the graph structure and its neighbors. Thus, our verification needs to accommodate the graph structure. In summary, our Research Question is: “How to design a comprehensive GNN integrity verification schema that addresses the limited and varying capabilities of MLaaS ver- ifiers, while also accounting for the unique characteristics of GNNs?” Our Contributions. To address these challenges, we make the following technical contributions. Firstly, we direct our attention to the model-centric attacks problem for the GNNs deployed within MLaaS, and propose a comprehensive in- tegrity verification framework against these attacks. Our approach adopts a query-based integrity verification work- flow, which is suitable for limited model access in MLaaS (C1). Additionally, to adaptively deal with different query APIs ( C2), we delineate four distinct verification types, each accommodating differing access to the deployed model under transductive/inductive settings, as well as full/limited verifier's knowledge of the GNN models. Secondly, recognizing a gap in existing research, we in- troduce new designs to generate verification queries for each of our proposed verification types. Within the transductive setting, where queries are limited to node IDs, we generate queries by selecting nodes that more effectively fingerprint the targeted GNN model. Two fingerprint score functions are defined for verifiers with either limited or full knowledge of the model. They are designed to gauge the influence of GNN model parameters on predictions ( C3) related to a potential verification node and its neighbors ( C4). Conversely, in the inductive setting, where queries may contain node IDs and inference graphs, we introduce two fingerprint node genera- tion methods. These methods construct optimized fingerprint node features and connections among neighboring nodes, grounded in the previously defined fingerprint scores. In addition, we enhance our design's robustness by con- sidering an adaptive attacker seeking to identify and bypass our verification. We inject randomness into the selection of nodes and the construction of fingerprints complicating attackers' efforts to locate true fingerprint nodes, and thus forcing them to respond accurately to avoid detection. In summary: • We are the first to highlight the problem of model- centric attacks that add adversarial perturbations in GNN models within MLaaS, and introduce a compre- hensive framework with a query-based integrity verifi- cation workflow, suitable for the limited model access inherent in MLaaS. • We propose four unique verification methods and cor- responding novel node fingerprint generation algo- rithms adapting to various GNN settings (transduc- tive/inductive) and verifier's capabilities (full/limited knowledge about the GNN model). • We further consider adaptive attackers who are aware of the verification algorithms, and mitigate this potential vulnerability by implementing randomized node finger- printing. • Through rigorous testing on four real-world datasets against five practical model-centric attacks, our pro- posed methods can successfully detect all these attacks while being 2-4 times more efficient than baseline designs. 2535"
+      },
+      {
+        "source": "selected",
+        "value": "The deployment of Graph Neural Networks (GNNs) within Machine Learning as a Service (MLaaS) has opened up new attack surfaces and an escalation in security concerns regarding model-centric attacks. These attacks can directly manipulate the GNN model parameters during serving, causing incorrect predictions and posing substantial threats to essential GNN applications. Traditional integrity verification methods falter in this context due to the limitations imposed by MLaaS and the distinct characteristics of GNN models. In this research, we introduce a groundbreaking approach to protect GNN models in MLaaS from model-centric attacks. Our approach includes a comprehensive verification schema for GNN's integrity, taking into account both transductive and inductive GNNs, and accommodating varying pre-deployment knowledge of the models. We propose a query-based verification technique, fortified with innovative node fingerprint generation algorithms. To deal with advanced attackers who know our mechanisms in advance, we introduce randomized fingerprint nodes within our design. The experimental evaluation demonstrates that our method can detect five representative adversarial model-centric attacks, displaying 2 to 4 times greater efficiency compared to baselines."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Bang Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Monash University, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Xingliang Yuan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Monash University, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Shuo Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Shanghai Jiao Tong University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Qi Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Minhui Xue",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Shirui Pan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Griffith University, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Csiro's Data61",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Australia",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Bang Wu",
+          "email": "",
+          "affiliations": [
+            "Monash University, Australia ‡Shanghai Jiao Tong University, China §Tsinghua University, China ¶Griffith University, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Xingliang Yuan",
+          "email": "",
+          "affiliations": [
+            "Monash University, Australia ‡Shanghai Jiao Tong University, China §Tsinghua University, China ¶Griffith University, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Shuo Wang",
+          "email": "",
+          "affiliations": [
+            "Monash University, Australia ‡Shanghai Jiao Tong University, China §Tsinghua University, China ¶Griffith University, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Qi Li",
+          "email": "",
+          "affiliations": [
+            "Monash University, Australia ‡Shanghai Jiao Tong University, China §Tsinghua University, China ¶Griffith University, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Minhui Xue",
+          "email": "",
+          "affiliations": [
+            "Monash University, Australia ‡Shanghai Jiao Tong University, China §Tsinghua University, China ¶Griffith University, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Shirui Pan",
+          "email": "",
+          "affiliations": [
+            "Monash University, Australia ‡Shanghai Jiao Tong University, China §Tsinghua University, China ¶Griffith University, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "CSIRO's Data",
+          "email": "",
+          "affiliations": [
+            "Monash University, Australia ‡Shanghai Jiao Tong University, China §Tsinghua University, China ¶Griffith University, Australia"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 106,
+      "author_count": 7,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 4,
+          "author": "Minhui Xue",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Shirui Pan",
+          "block_id": "pdf:p1:b104",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 4,
+          "author": "Minhui Xue",
+          "affiliation_raw": "CSIRO's Data61, Australia; Monash University, Australia Shanghai Jiao Tong University, China Tsinghua University, China Griffith University, Australia",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b9",
+            "pdf:p1:b11",
+            "pdf:p1:b13",
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 71.238,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "author_sequence_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Securing Graph Neural Networks in MLaaS: A Comprehensive Realisation of Query-based Integrity Verification",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Bang Wu",
+          "affiliations": [
+            "CSIRO's Data61/Monash University"
+          ]
+        },
+        {
+          "name": "Xingliang Yuan",
+          "affiliations": [
+            "Monash University"
+          ]
+        },
+        {
+          "name": "Shuo Wang",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ]
+        },
+        {
+          "name": "Qi Li",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Minhui Xue",
+          "affiliations": [
+            "CSIRO's Data61"
+          ]
+        },
+        {
+          "name": "Shirui Pan",
+          "affiliations": [
+            "Griffith University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

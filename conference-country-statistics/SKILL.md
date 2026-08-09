@@ -1,8 +1,7 @@
 ---
 name: conference-country-statistics
-description: Generate country-level statistics from normalized conference author-affiliation datasets. Use when the user needs country counts, shares, trends, rankings, or comparisons across conferences, years, and conference families.
+description: Generate country-level statistics and country or region paper-detail queries from normalized conference author-affiliation datasets. Use when the user needs country counts, shares, trends, rankings, comparisons, or the papers, authors, and institutions associated with a selected country or region.
 license: MIT
-compatibility: Requires Python 3.10+ and normalized conference data with country fields or resolvable institution-country mappings.
 metadata:
   author: llm-conference-skill
   version: "1.0"
@@ -42,7 +41,6 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 如果 `country` 缺失，应先通过机构维表或仓库中的覆盖规则文件补全，再进行统计。
 
-不要优先依赖任何美国机构子集文件。本 skill 的正式输入契约是“作者-机构-国家”长表，而不是美国机构切片。
 
 ## 核心指标
 
@@ -62,6 +60,26 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 详细聚合规则见 [国家指标参考](references/country_metrics.md)。
 
 ## 工作流程
+
+### 国家或地区论文明细查询
+
+当用户查询某个国家或地区关联的论文、作者和机构时，运行
+`scripts/query_country_papers.py`，并遵循以下规则：
+
+1. 从标准化的 `author_affiliation_facts.csv` 查询，按规范化后的国家组成项匹配；复合国家先按可靠身份拆分。
+2. 先应用用户指定的会议和年份过滤条件，再筛选目标国家或地区的事实行。
+3. 按 `paper_key` 对论文去重，并从每篇命中论文的全部事实行重建完整、有序的作者列表。
+4. 单独输出与目标国家或地区关联的作者和机构，并在作者明细中保留作者对应的机构；不要把论文的全部作者都归入目标国家或地区。
+5. 按 `institution_key` 去重机构；显示名称优先使用 `canonical_institution_name`，缺失时再使用 `inst`。
+6. 保留国际合作背景，并区分“论文被该国家或地区参与”和“作者或机构归属于该国家或地区”。
+7. 在摘要中报告输入事实行数、过滤后事实行数、命中事实行数和去重论文数。
+
+脚本稳定输出：
+
+- `country_papers.csv`
+- `country_authors.csv`
+- `country_institutions.csv`
+- `country_query_summary.json`
 
 ### 第 1 步：定义分析范围
 
@@ -135,6 +153,14 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 1. 国家论文参与度按“每篇论文在每个出现国家计一次”计算
 2. 作者参与度按作者-论文记录计数
 3. 机构数量按标准化后的去重机构计数
+
+### 复合机构与国家标签
+
+如果机构或国家字段包含多个组成项（例如 `Institution A | Institution B` 或
+`China | Germany`），先按分隔符拆分。组成项有可靠标准化身份或能与输入中的
+已知单项标签对齐时，分别计入展示、排名和明细；无法确认的组成项视为残片并
+丢弃，不能把整个复合标签作为一个国家或机构统计。每篇论文在每个已确认国家
+中最多计数一次。
 
 ## 常见问题
 

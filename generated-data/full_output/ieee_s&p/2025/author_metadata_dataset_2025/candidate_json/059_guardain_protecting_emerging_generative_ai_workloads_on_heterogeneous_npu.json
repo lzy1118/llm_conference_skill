@@ -1,0 +1,203 @@
+{
+  "paper_id": "059_guardain_protecting_emerging_generative_ai_workloads_on_heterogeneous_npu",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "GUARDAIN: Protecting Emerging Generative AI Workloads on Heterogeneous NPU"
+      },
+      {
+        "source": "selected",
+        "value": "GUARDAIN: Protecting Emerging Generative AI Workloads on Heterogeneous NPU"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Driven by recent advances in large language models (LLMs), generative AI applications have become the dominant workload for the modern cloud. Specialized hardware accelerators, such as GPUs, NPUs, and TPUs, play a key role in AI adoption due to their superior performance over general-purpose CPUs. AI models and the data are often highly sensitive and come from mutually distrusting parties. Existing industry-standard CPU-based TEEs, such as Intel SGX or AMD SEV, do not adequately protect these accelerators. Device-TEEs like Nvidia-CC only address tightly coupled CPU-GPU systems with a proprietary solution requiring TEE on the host CPU side. On the other hand, existing academic proposals target specific CPU-TEE platforms. To address this gap, we propose GUARDAIN, a confidential computing architecture for discrete NPU devices that requires no trust in the host system. GUARDAIN secures data, model parameters, and operator binaries through authenticated encryption. GUARDAIN uses delegation-based memory semantics to ensure isolation from the host software stack, while task attestation guarantees strong model integrity. Our GUARDAIN implementation and evaluation with state-of-the-art LLMs such as Llama2 and Llama3 shows that GUARDAIN introduces minimal overhead with no changes in the AI software stack. 4155 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Driven by recent advances in large language models (LLMs), generative AI applications have become the domi- nant workload for the modern cloud. Specialized hardware accelerators, such as GPUs, NPUs, and TPUs, play a key role in AI adoption due to their superior performance over general-purpose CPUs. AI models and the data are often highly sensitive and come from mutually distrusting parties. Exist- ing industry-standard CPU-based TEEs, such as Intel SGX or AMD SEV , do not adequately protect these accelerators. Device-TEEs like Nvidia-CC only address tightly coupled CPU- GPU systems with a proprietary solution requiring TEE on the host CPU side. On the other hand, existing academic proposals target specific CPU-TEE platforms. To address this gap, we propose G UARD AI N, a confidential computing architecture for discrete NPU devices that requires no trust in the host system. G UARD AI N secures data, model parameters, and operator binaries through authenticated en- cryption. G UARD AI N uses delegation-based memory semantics to ensure isolation from the host software stack, while task attestation guarantees strong model integrity. Our G UARD AI N implementation and evaluation with state-of-the-art LLMs such as Llama2 and Llama3 shows that G UARD AI N introduces minimal overhead with no changes in the AI software stack. 1. Introduction Generative AI (GenAI) has gained momentum, with large language models (LLMs) being used in applications, such as chatbots [ 1], image and video generation [ 2], [ 3], and code completion [ 4]. Major cloud providers offer AI- centric services [ 5], [ 6], [ 7], [ 8], that typically utilize spe- cialized accelerators such as GPUs, NPUs, and TPUs. Security concerns. GenAI brings numerous security chal- lenges in cloud environments. The massive data and compu- tational resources for training LLMs make them exceedingly expensive [9] and model providers' prime intellectual prop- erties. Additionally, users' queries to LLMs often contain sensitive information such as health data, personal informa- tion, or business secrets [ 10]. In a typical cloud deployment setting, there are three mutually distrusting parties: (1) the model provider who develops and owns the AI model, (2) the data provider who delivers their data to the model for †Joint first authors. *Work done while the author was at Huawei Zurich Research Center. processing, and (3) the cloud provider who owns the com- puting infrastructure where the model runs. In this context, the model and data need protection from the cloud provider and the corresponding software stack. Gap in prior work. Existing CPU-based trusted execution environments (TEE) [ 11], [ 12], [ 13], [ 14] isolates secure applications or enclaves from a malicious privileged soft- ware stack, such as the OS or the hypervisor. In addition, memory encryption protects untrusted DRAM and the sys- tem bus. Besides CPUs, various works have proposed TEEs on devices such as GPUs [ 15], [ 16], [ 17], IPUs [ 18]o r FPGAs [ 19], [ 20], [ 21]. Some [ 22], [ 23], [ 24], [ 25], [ 26] also extend CPU-TEE's security primitives to accelerators. However, with a few exceptions [ 18], [ 20], existing pro- posals require a CPU-TEE, which increases the Trusted Computing Base (TCB). Besides increasing TCB, CPU- TEE security guarantees can be undermined by side-channel attacks [ 27], [ 28], [ 29], [ 30], [ 31]. Additionally, solutions requiring a confidential VM (C-VM), such as CCA and SEV , further increase the TCB by trusting the C-VM OS. Several proposals focus solely on integrated GPUs [ 23], [25], [26]o r NPUs [24], [32], a more straightforward setting that does not consider PCIe communication or separate memory spaces from the CPU. Placing a part of the driver inside a high- privilege trusted security monitor [ 24], [ 25], [ 33] offloads critical security decisions such as memory allocation for tasks and binaries, memory sharing, and access control to a trusted entity. Such designs expand the TCB and do not fit well in a scenario where the host is fully malicious. While a proposal on Graphcore IPU [ 18] supports a TEE-less host, it lacks a modern AI software stack with interactive sessions and necessitates extensive hardware modifications. Finally, almost all the existing TEE proposals consider older CNN-based AI models or evaluate using operators such as matrix multiplication or SVD, which have a small memory footprint. Therefore, these solutions do not scale to prac- tical LLMs with large memory footprints and low latency response requirements. Our contribution. We design G UARD AI N, a confidential computing solution for discrete NPUs without relying on a CPU-TEE. The TCB of G UARD AI N consists solely of the NPU itself, while the entire host is untrusted. The hardware root of trust (HW-RoT) in the NPU facilitates attestation and key derivation to establish separate secure channels between the model and the data provider. Measured boot ensures the 4155 DOI 10.1109/SP61157.2025.00221 NPU boots with the correct firmware signed by the hard- ware manufacturer. GUARD AIN accepts fully encrypted data and models from the (mutually-distrusting) data and model provider. During inference, the NPU removes all the DMA mapping from the host's virtual address space (by remov- ing SMMU entries) to prevent malicious DMA operations from accessing the model, data, and workspace (operator execution space). Data and model decryption begin once the memory has been unmapped. The results are encrypted before the host maps back the corresponding memory. The NPU runtime creates tasks from the AI model that speci- fies the order of operator execution (e.g., ReLU → matrix multiplication → SoftMax) and memory operation (such as DMA copy from host to device). The malicious host can inject tasks (e.g., performing a DMA copy) into the model to compromise the confidentiality of the data and model. G UARD AIN attests to the integrity of the model computation before the execution begins. It provides isolation and end- to-end encryption without introducing changes to the AI software stack, such as PyTorch. Therefore, G UARD AI N enables AI programmers to support confidential computing without modifying existing codebases. We prototype G UARD AI N on a Huawei Ascend 910A, a state-of-the-art NPU, by modifying its firmware. We demonstrate G UARD AI N on training and inference work- loads and evaluate it with state-of-the-art transformer- based LLMs such as GPT-neo-125M, Llama-2-7B (Base and Chat), Llama-3-8B (Base and Instruct), Llama-2- 13B-instruct, Llama3-ChatQA-1.5-8B, and CodeLlama-7B- Instruct, for chat, sentence, and code completion. Our eval- uation shows that G UARD AI N introduces minimal perfor- mance loss during the inference pass (0.91% in GPT-neo- 125M and 0.028% in Llama3-Chat-QA-1.5-8B model, both with 2K input sequence size) and one-time set-up. Simi- larly, G UARD AIN introduces minimal overhead in training: 3.39×10−4% in ResNet152 (CNN) with batch size 256 and 0.16% in NanoGPT-162M (LLM). Although our proposal focuses on a specific NPU implementation, our design phi- losophy extends to other AI accelerators, such as GPUs and TPUs, that exhibit task-based model execution. In summary, we make the following contributions: (1) Identify design principles for NPU-based confiden- tial computing. We identify security properties to protect data and models from untrusted host and cloud. Specifically, we design building blocks for confidential computing on an NPU that prevent a privileged host from accessing data and models on the NPU and change their memory mapping during inference and training. (2) System design. Building on these design principles, we develop G UARD AI N for discrete NPUs and analyze its security against malicious hosts and cloud providers. (3) End-to-end evaluation. We implement a G UARD AI N prototype based on Huawei 910A NPU, evaluate it with state-of-the-art LLMs, and show that G UARD AI N intro- duces minimal overhead in both inference and training with an unmodified AI software stack. Ascend 910A NPU SoC TLB MMU1 AI CPU PCIe Module TLB SMMU1 HBM AI CORE TLB SMMU2 Task SchedulerTLB MMU2 DDR SDMATLB SMMU3 Control CPU TLB MMU3 PCIe ModuleTLB SMMU0 DDR CPU TLB MMU0 Host CPU SoC NPU V A - 8THost V A - 256T SVM 0x100000000000ULL Figure 1. An Ascend 910A SoC's high-level architecture and the shared virtual memory with a 64-bit host CPU. 2. Background: AI Accelerators AI-accelerators and Task-based Execution. State-of-the- art high-performance AI accelerators (e.g., NVIDIA [ 15], [34], GroqChip [ 35], and Huawei discrete NPUs [ 36]) have converged on similar heterogeneous system designs. These devices are attached to a host via a bus (for example, PCIe), feature multiple computing units for different operations, and include high-bandwidth memory (HBM). The device drivers handle memory management and communication with the device. Besides the hardware architecture, the software stacks have converged, with the task-based mode being established as the de facto standard for AI applica- tions. It breaks a large computation into a series of tasks (commonly referred to as kernels or operators) arranged in a dependency graph. Given a high-level representation of the computation (model), the accelerator's runtime builds and optimizes the graph. It divides the graph into different independent streams, which list interdependent tasks. Each stream has at least one submission queue, allowing a high level of parallelism, as the device can schedule tasks on different queues concurrently. In practice, there are two ways tasks are sent to the device: either one after the other as they become executable ( eager mode ) or all at once ( dynamo or graph mode ). While the low-level implementation and design vary between vendors, the computation paradigm and software architectures described above are not unique to a single vendor. Therefore, while we build our prototype on the Huawei Ascend 910A NPU, the design of G UARD AIN can be ported to any accelerator relying on a task-based execution model. The following section will give further details about our specific architecture. Ascend 910A. Huawei Ascend 910 NPU SoC is a state- of-the-art AI SoC for training and inference acceleration on large data centers and clouds. All the components of the SoC are connected via an internal bus, as shown in Fig. 1 . The SoC has two types of computation cores that execute AI tasks. Four AI CPU cores are general-purpose Huawei Taishan (ARM A73 profile) with hardware cryptographic extensions. Thirty-two AI Cores are based on the Huawei DaVinci [ 37] architecture optimized for executing neural network operations. The control CPU is a Taishan core that runs the NPU firmware and manages the PCIe interface. 4156"
+      },
+      {
+        "source": "selected",
+        "value": "Driven by recent advances in large language models (LLMs), generative AI applications have become the dominant workload for the modern cloud. Specialized hardware accelerators, such as GPUs, NPUs, and TPUs, play a key role in AI adoption due to their superior performance over general-purpose CPUs. AI models and the data are often highly sensitive and come from mutually distrusting parties. Existing industry-standard CPU-based TEEs, such as Intel SGX or AMD SEV, do not adequately protect these accelerators. Device-TEEs like Nvidia-CC only address tightly coupled CPU-GPU systems with a proprietary solution requiring TEE on the host CPU side. On the other hand, existing academic proposals target specific CPU-TEE platforms. To address this gap, we propose GUARDAIN, a confidential computing architecture for discrete NPU devices that requires no trust in the host system. GUARDAIN secures data, model parameters, and operator binaries through authenticated encryption. GUARDAIN uses delegation-based memory semantics to ensure isolation from the host software stack, while task attestation guarantees strong model integrity. Our GUARDAIN implementation and evaluation with state-of-the-art LLMs such as Llama2 and Llama3 shows that GUARDAIN introduces minimal overhead with no changes in the AI software stack. 4155 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Aritra Dhar",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Clément Thorens",
+          "email": "clement.thorens@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Lara Magdalena Lazier",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Lukas Cavigelli",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Aritra Dhar",
+          "email": "aritra.dhar@huawei.com",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Clément Thorens",
+          "email": "clement.thorens@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Lara Magdalena Lazier",
+          "email": "lara.magdalena.lazier2@huawei.com",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Lukas Cavigelli",
+          "email": "lukas.cavigelli@huawei.com",
+          "orcid": "",
+          "affiliations": [
+            "Computing System Labs, Huawei Zurich Research Center"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 16,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "GuardAIn: Protecting Emerging Generative AI Workloads on Heterogeneous NPU",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Aritra Dhar",
+          "affiliations": [
+            "Huawei Zurich Research Center"
+          ]
+        },
+        {
+          "name": "Clément Thorens",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Lara Magdalena Lazier",
+          "affiliations": [
+            "Huawei Zurich Research Center"
+          ]
+        },
+        {
+          "name": "Lukas Cavigelli",
+          "affiliations": [
+            "Huawei Zurich Research Center"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

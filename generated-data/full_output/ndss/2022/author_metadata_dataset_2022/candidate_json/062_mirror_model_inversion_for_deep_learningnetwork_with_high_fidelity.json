@@ -1,0 +1,334 @@
+{
+  "paper_id": "062_mirror_model_inversion_for_deep_learningnetwork_with_high_fidelity",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "MIRROR: Model Inversion for Deep Learning Network with High Fidelity"
+      },
+      {
+        "source": "selected",
+        "value": "MIRROR: Model Inversion for Deep Learning Network with High Fidelity"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Model inversion reverse-engineers input samples from a given model, and hence poses serious threats to information confidentiality. We propose a novel inversion technique based on StyleGAN, whose generator has a special architecture that forces the decomposition of an input to styles of various granularities such that the model can learn them separately in training. During sample generation, the generator transforms a latent value to parameters controlling these styles to compose a sample. In our inversion, given a target label of some subject model to invert (e.g., a private face based identity recognition model), our technique leverages a StyleGAN trained on public data from the same domain (e.g., a public human face dataset), uses the gradient descent or genetic search algorithm, together with distribution based clipping, to find a proper parameterization of the styles such that the generated sample is correctly classified to the target label (by the subject model) and recognized by humans. The results show that our inverted samples have high fidelity, substantially better than those by existing state-of-the-art techniques."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Model inversion reverse-engineers input samples from a given model, and hence poses serious threats to infor- mation confidentiality. We propose a novel inversion technique based on StyleGAN, whose generator has a special architecture that forces the decomposition of an input to styles of various granularities such that the model can learn them separately in training. During sample generation, the generator transforms a latent value to parameters controlling these styles to compose a sample. In our inversion, given a target label of some subject model to invert (e.g., a private face based identity recognition model), our technique leverages a StyleGAN trained on public data from the same domain (e.g., a public human face dataset), uses the gradient descent or genetic search algorithm, together with distribution based clipping, to find a proper parameteri- zation of the styles such that the generated sample is correctly classified to the target label (by the subject model) and recognized by humans. The results show that our inverted samples have high fidelity, substantially better than those by existing state-of-the-art techniques. I. I NTRODUCTION Given a deep learning (DL) model, model inversion aims to generate samples for a label of interest. It often assumes knowl- edge of the subject model's application domain, for example, face recognition, but no information of individual labels or no availability of training samples. White-box model inversion assumes the model internals, e.g., gradients, are accessible, whereas black-box inversion considers the subject model a black-box, e.g., when it is hosted online as a service. Model inversion may disclose critical information of the target model and labels, causing serious privacy leakage. For example, if the attacker successfully inverts a face recognition model used in access control, he could disguise himself as the inverted person, causing devastating security breach. While model inversion for general machine learning mod- els has a long history [23], [22], [61], [28], [73], [69], DL model inversion is of particular importance due to the rapidly growing applications of these models in security-critical tasks. Early model inversion work such as [22] directly leverages gradient back-propagation to mutate a random input such that the subject model classifies the mutated input to the AMI @CCS'19Figure 14 GMI @CVPR'20Figure 2 DeepInversion @CVPR'20MIA @CCS'15Figure 1,10 Fig. 1: Inversion results of existing methods from their original papers or the official GitHub repository. In each set, the left image is the target person and the right one is the inverted image. target label. The leftmost set in Figure 1 shows two sample inversion results from the original paper [22] for a neural network without hidden layers. Many different methods have been proposed ever since. The two state-of-the-art white- box methods are DeepInversion [69] and GMI [73]. The former is based on the observation that many models have batch normalization (BN) layers that record the means and variances of internal feature maps (for the training dataset), which are leveraged to normalize activation values for better training/classification performance. DeepInversion enforces a mutated input to follow the recorded distribution in all the BN layers. This provides strong regulation during inversion. The rightmost set in Figure 1 shows two inverted samples from their official GitHub repository for a ResNet50v1.5 model trained on ImageNet [46]. Observe that the samples have many high-fidelity details of the target label. In contrast, GMI leverages a GAN to invert models. Instead of mutating input, it mutates the latent value that is fed to the generator of the GAN to generate the sample. Gradients are back-propagated from the subject model to the generated input (by the GAN) and further to the latent value. Since GAN can ensure the naturalness of generated samples, GMI produces good quality inversion results as demonstrated by the third set in Figure 1, which shows the inverted samples from the original paper. AMI [65] is the state-of-the-art black-box method. It leverages an auxiliary dataset to learn a generator that can generate samples based on prediction scores of the target model. The second set in Figure 1 shows two samples from the original paper. Observe that the inversion quality degrades a bit due to its black-box nature. More discussion of related work can be found in Section VI. While existing techniques have made substantial progress, there is still lots of room to improve. Specifically, from the samples in Figure 1, one can observe that while DeepInversion can have high fidelity features, these features are often out Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24335 www.ndss-symposium.org of place. This is because although BN layers record statistics for individual feature maps, they do not provide enough constraints across features, e.g., their relative locations. In addition, some of the details may not be that realistic as it is not like GAN, which is trained to capture natural distributions of features in all aspects. GMI shows great potential. However, it only supports low-resolution inversion. According to our experience, when the resolution becomes higher, the latent space is too sparse such that direct optimization in the space becomes under-constrained. In addition, the latent space of regular GANs is known to have substantial entanglement [34], meaning features do not have locality. As such, it becomes difficult for the optimization to find a good minimal. In Section III, we will discuss in details the limitations of the state-of-the-art solutions. We propose a new GAN based inversion technique. We observe there are a number of prominent challenges in using GANs for model inversion. We find the entanglement in the latent space makes it not an ideal space for optimization, especially when the space is sparse. A plausible idea of using the discriminator of GAN, which is supposed to distinguish generated samples and natural samples, to ensure naturalness of inversion results is problematic as the discriminator is closely coupled with the corresponding generator and cannot serve as a general classifier of naturalness. We hence propose to use a StyleGAN generator, which generates a realistic sample from a latent value controlling the parameterized re- composition of a set of nicely decomposed features/styles. The decomposition is enforced in training by the structure of StyleGAN (to enable re-composition in generation). During inversion, given a subject model (e.g., a private face based identity recognition system) and a StyleGAN pre-trained on public data from the domain of the subject model (e.g., public face dataset), gradient back-propagation or a genetic algorithm can be used to search for the best parameterization for the StyleGAN generator that can lead to a generated sample caus- ing the subject model and humans to classify to the target label. To improve the image quality , we further propose to regulate the optimization/search in an auxiliary space in the StyleGAN that follows a multi-variate Gaussian (MVG) distribution. To improve fidelity (i.e., the inverted images should resemble the target label), we utilize random drop-out to mitigate feature overfitting that commonly exists in subject models. Our contributions are summarized as follows. • We study challenges in GAN-based model inversion. • We propose to use StyleGAN for model inversion. Our inversion method features additional regulation in an auxiliary space and the support for both white-box and black-box settings. In the black-box setting, instead of using gradients, we use a genetic algorithm to search for minimals. • We develop a novel random drop-out method to miti- gate feature outfitting in the subject model that could degrade inversion fidelity. • We explore a large design space of GAN-based and StyleGAN-based inversion and report our findings. • We build a prototype MIRROR (M odel I nveRsion for deep leaR ning NetwOR k) in PyTorch. Our evaluation on 6 models and 3 widely used face datasets shows our approach can invert models with high fidelity, generating samples that closely resemble the target labels. Our user study shows that on average 88.4% users prefer our inversion results to those by existing techniques. When mixing the inverted image of a person with a set of images that closely resemble the person, 89.29% users can correctly select the inverted image from the others. Our quantitative analysis shows that the inverted samples have on average 15x better generalizability compared to existing state-of-the-art methods, meaning that the inverted samples have 15x times better classification accuracy (to the target label) by other models different from the subject models. We also test our black-box approach on two commercial services: the Azure face recognition service [1] and Clarifai [2] . Our approach achieves 100% effective- ness (i.e., the inverted samples are 100% classified to the target labels by the subject model) and 50% + generalizability (50% + by another model), while the state-of-the-art black-box method has close to 0 ef- fectiveness and generalizability. Moreover, MIRROR outperforms existing methods in a number of image quality metrics. Besides face recognition models, we also show MIRROR can produce high quality inver- sion results on other datasets (e.g., cars and cats) and models. Our approach can successfully attack models trained with several existing defense methods includ- ing adversarial training against adversarial samples, information regularization against model inversion and differential privacy against membership inference. MIRROR will be open-sourced upon publication on our project page [7] . Threat Model. Our threat model is consistent with that in existing works [73], [65], [69]. We assume attackers know the application domain of the subject model and there is public data available for the domain. Note that the public data may not overlap at all with the private data used to train the subject model. The assumption is reasonable as real-world applications of DL models are likely rooted at data from the physical world. Attackers can hence sample from the physical world to support their StyleGAN training. In the white-box setting, we assume attackers have access to model internals. But they have no other information such as label specific information or specific training data. In the black-box setting, they do not have the access to model. The subject models are normally trained without specific hardening ( e.g., to prevent inversion). Although we demonstrate that MIRROR is resilient to existing hardening methods, how to better defend model inversion will be our future work. II. B ACKGROUND :S TYLE GAN S StyleGAN was originally proposed in [34] and later im- proved in [35]. While generators in traditional GANs directly map latent vectors to samples, generators in StyleGANs first map an initial latent vector to an intermediate latent vector which is further transformed (via simple functions) to styles at different granularities. These styles shape an average sample denoted by a constant input to the convolutional layers (e.g., an average face) to a specific sample (e.g., a face with 2"
+      },
+      {
+        "source": "selected",
+        "value": "Model inversion reverse-engineers input samples from a given model, and hence poses serious threats to information confidentiality. We propose a novel inversion technique based on StyleGAN, whose generator has a special architecture that forces the decomposition of an input to styles of various granularities such that the model can learn them separately in training. During sample generation, the generator transforms a latent value to parameters controlling these styles to compose a sample. In our inversion, given a target label of some subject model to invert (e.g., a private face based identity recognition model), our technique leverages a StyleGAN trained on public data from the same domain (e.g., a public human face dataset), uses the gradient descent or genetic search algorithm, together with distribution based clipping, to find a proper parameterization of the styles such that the generated sample is correctly classified to the target label (by the subject model) and recognized by humans. The results show that our inverted samples have high fidelity, substantially better than those by existing state-of-the-art techniques."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Shengwei An",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Guanhong Tao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Qiuling Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yingqi Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Guangyu Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yuan Yao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA",
+            "State Key Laboratory for Novel Software Technology, Nanjing University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Jingwei Xu",
+          "email": "jingweix@nju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "State Key Laboratory for Novel Software Technology, Nanjing University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Xiangyu Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Shengwei An",
+          "email": "an93@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Guanhong Tao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Qiuling Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yingqi Liu",
+          "email": "liu1751@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Guangyu Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yuan Yao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA",
+            "State Key Laboratory for Novel Software Technology, Nanjing University, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Jingwei Xu",
+          "email": "jingweix@nju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "State Key Laboratory for Novel Software Technology, Nanjing University, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Xiangyu Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, Purdue University, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 30,
+      "author_count": 8,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "MIRROR: Model Inversion for Deep Learning Network with High Fidelity",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/mirror-model-inversion-for-deep-learning-network-with-high-fidelity/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Shengwei An",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Guanhong Tao",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Qiuling Xu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Yingqi Liu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Guangyu Shen",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Yuan Yao",
+          "affiliations": [
+            "Nanjing University"
+          ]
+        },
+        {
+          "name": "Jingwei Xu",
+          "affiliations": [
+            "Nanjing University"
+          ]
+        },
+        {
+          "name": "Xiangyu Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 7,
+      "country_values_restored": 8,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

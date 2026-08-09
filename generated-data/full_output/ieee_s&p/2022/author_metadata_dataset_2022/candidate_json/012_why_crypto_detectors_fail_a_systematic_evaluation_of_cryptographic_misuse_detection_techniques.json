@@ -1,0 +1,333 @@
+{
+  "paper_id": "012_why_crypto_detectors_fail_a_systematic_evaluation_of_cryptographic_misuse_detection_techniques",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Why Crypto-detectors Fail: A Systematic Evaluation of Cryptographic Misuse Detection Techniques"
+      },
+      {
+        "source": "selected",
+        "value": "Why Crypto-detectors Fail: A Systematic Evaluation of Cryptographic Misuse Detection Techniques"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The correct use of cryptography is central to ensuring data security in modern software systems. Hence, several academic and commercial static analysis tools have been developed for detecting and mitigating crypto-API misuse. While developers are optimistically adopting these crypto-API misuse detectors (or crypto-detectors) in their software development cycles, this momentum must be accompanied by a rigorous understanding of their effectiveness at finding crypto-API misuse in practice. This paper presents the MASC framework, which enables a systematic and data-driven evaluation of crypto-detectors using mutation testing. We ground MASC in a comprehensive view of the problem space by developing a data-driven taxonomy of existing crypto-API misuse, containing 105 misuse cases organized among nine semantic clusters. We develop 12 generalizable usagebased mutation operators and three mutation scopes that can expressively instantiate thousands of compilable variants of the misuse cases for thoroughly evaluating crypto-detectors. Using MASC, we evaluate nine major crypto-detectors and discover 19 unique, undocumented flaws that severely impact the ability of crypto-detectors to discover misuses in practice. We conclude with a discussion on the diverse perspectives that influence the design of crypto-detectors and future directions towards building security-focused crypto-detectors by design."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The correct use of cryptography is central to en- suring data security in modern software systems. Hence, sev- eral academic and commercial static analysis tools have been developed for detecting and mitigating crypto-API misuse. While developers are optimistically adopting these crypto-API misuse detectors (or crypto-detectors) in their software development cycles, this momentum must be accompanied by a rigorous understanding of their effectiveness at finding crypto-API misuse in practice. This paper presents the MASC framework, which enables a systematic and data-driven evaluation of crypto-detectors using mutation testing. We ground MASC in a comprehensive view of the problem space by developing a data-driven taxonomy of existing crypto-API misuse, containing 105 misuse cases organized among nine semantic clusters. We develop 12 generalizable usage- based mutation operators and three mutation scopes that can expressively instantiate thousands of compilable variants of the misuse cases for thoroughly evaluating crypto-detectors. Using MASC, we evaluate nine major crypto-detectors and discover 19 unique, undocumented flaws that severely impact the ability of crypto-detectors to discover misuses in practice. We conclude with a discussion on the diverse perspectives that influence the design of crypto-detectors and future directions towards building security-focused crypto-detectors by design. I. I NTRODUCTION Effective cryptography is critical in ensuring the security of confidential data in modern software. However, ensuring the correct use of cryptographic primitives has historically been a hard problem, whether we consider the vulnerable banking systems from Anderson's seminal work [1], or the widespread misuse of cryptographic APIs ( i.e., crypto-APIs ) in mobile and Web apps that can lead to the compromise of confidential financial or medical data and even the integrity of IoT de- vices [2]-[8]. In response, security researchers have developed a wide array of techniques and tools for detecting crypto-API misuse [2]-[4], [9]-[17] that can be integrated into the software development cycle, thereby preventing vulnerabilities at the source. These crypto-API misuse detectors, or crypto-detectors, play a crucial role in the security of end-user software. Crypto-detectors have been independently used by developers for decades [18]. They are integrated into IDEs ( e.g., the CogniCrypt plugin for Eclipse [19]), incorporated in the internal testing suites oforganizations ( e.g., Cryptoguard [3], integrated into Oracle's testing suite [20]), or are currently targeted for commercialization and widespread deployment [3], [21]. In fact, several crypto-detectors are also being formally provisioned by code hosting services as a way of allowing developers to ensure compliance with data security standards and security best-practices (e.g., Github's CodeScan initiative [22]). Thus, the importance of crypto-detectors in ensuring data security in modern Web and mobile software cannot be overstated, as key stakeholders ( i.e., researchers, code-hosting services, app markets, and developers) are increasingly reliant on them. However, what is concerning is that while stakeholders are optimistically adopting crypto-detectors, we know very little regarding their actual effectiveness at finding crypto-API misuse. That is, beyond manually-curated benchmarks, there is no approach for systematically evaluating crypto-detectors. This example in Listing 1 illustrates the gravity of this problem: String algorithm = \" DES \" ; Cipher cipher = Cipher . getInstance ( algorithm ) ; Listing 1. Instantiating “DES” as a cipher instance. In this example, we define DES as our algorithm of choice, and instantiate it using the Cipher.getInstance(<parameter>) API. Given that DES is not secure, one would expect any crypto-detector to detect this relatively straightforward misuse. However, two very popular crypto-detectors, i.e., ToolX 1 (used by over 3k+ open source Java projects), and QARK [23] (promoted by LinkedIn and recommended in security testing books [24]-[26]), are unable to detect this trivial misuse case as we discuss later in the paper. Further, one might consider manually-curated benchmarks ( e.g., CryptoAPIBench [27], or the OWASP Benchmark [28]) as practical and sufficient for evaluating crypto-detectors to uncover such issues. However, given the scale and diversity of crypto protocols, APIs, and their potential misuse, benchmarks may be incomplete, incorrect, and impractical to maintain; e.g., the OW ASP benchmark considered using ECB mode with AES as secure until it was reported in March 2020 [29]. Thus, it is imperative to address this problem through a reliable and evolving evaluation technique that scales to the volume and diversity of crypto-API misuse. In this paper, we propose the first systematic, data-driven framework that leverages the well-founded approach of Muta- tion Analysis for evaluating Static Crypto-API misuse detectors - the MASC framework, pronounced as mask. Stakeholders can use MASC in a manner similar to the typical use of mutation analysis in software testing: MASC mutates Android/Java apps by seeding them with mutants, i.e., code snippets exhibiting 1We have anonymized this tool in the paper as requested by its developers. 614 DOI 10.1109/SP46214.2022.00024 crypto-API misuse. These mutated apps are then analyzed with the crypto-detector that is the target of the evaluation, resulting in mutants that are undetected, which when analyzed further reveal design or implementation-level flaws in the crypto-detector. To enable this workflow for practical and effective evaluation of crypto-detectors, MASC addresses three key research challenges (RCs) arising from the unique scale and complexity of the problem domain of crypto-API misuse: RC1: Taming the Complexity of Crypto-API Misuse - An approach that effectively evaluates crypto-detectors must com- prehensively express ( i.e., test with) relevant misuse cases across all existing crypto-APIs , which is challenging as crypto- APIs are as vast as the primitives they enable. For instance, APIs express the initialization of secure random numbers, cre- ation of ciphers for encryption/decryption, computing message authentication codes (MACs), and higher-level abstractions such as certificate and hostname verification for SSL/TLS. RC2: Instantiating Realistic Misuse Case Variations - To evaluate crypto-detectors, code instances of crypto-API misuse must be seeded into apps for analysis. However, simply injecting misuse identified in the wild verbatim may not lead to a robust analysis, as it does not express the variations with which developers may use such APIs. Strategic and expressive instantiation of misuse cases is critical for an effective evaluation, as even subtle variations may evade detection, and hence lead to the discovery of flaws ( e.g., passing DES as a variable instead of a constant in Listing 1). RC3: Scaling the Analysis - Efficiently creating and seeding large numbers of compilable mutants without significant manual intervention is critical for identifying as many flaws in crypto- detectors as possible. Thus, the resultant framework must efficiently scale to thousands of tests ( i.e., mutants). To address these research challenges, this paper makes the following major contributions: • Crypto-API Misuse Taxonomy: We construct the first comprehensive taxonomy of crypto-API misuse cases (105 cases, grouped into nine clusters), using a data- driven process that systematically identifies, studies, and extracts misuse cases from academic and industrial sources published over the last 20 years. The taxonomy provides a broad view of the problem space, and forms the core building block for MASC's approach, enabling it to be grounded in real misuse cases observed in the wild ( RC1). • Crypto-Mutation Operators and Scopes: We contextu- alize mutation testing for evaluating crypto-detectors by designing abstractions that allow us to instantiate the misuse cases from the taxonomy to create a diverse array of feasible ( i.e., compilable ) mutants. We begin by formulating a threat model consisting of 3 adversary- types that represent the threat conditions that crypto- detectors may face in practice. We then design usage- based mutation operators , i.e., general operators that leverage the common usage characteristics of diverse crypto-APIs, to expressively instantiate misuse cases from the taxonomy (addresses RC2). Similarly, we also design the novel abstraction of mutation scopes for seeding mutants of variable fidelity to realistic API-use and threats. • The MASC Framework: We implement the MASC frame- work for evaluating Java-based crypto-detectors, including 12 mutation operators that can express a majority of the cases in our taxonomy, and 3 mutation scopes. We implement the underlying static analysis to automatically instantiate thousands of compilable mutants, with manual effort limited to configuring the mutation operators with values signifying the misuse ( RC3). • Empirical Evaluation of Crypto-Detectors: We evaluate 9 major crypto-detectors using 20, 303 mutants generated by MASC, and reveal 19 previously unknown flaws (several of which are design-level). A majority of these discoveries of flaws in individual detectors ( i.e., 45/76 or 59.2%) are due to mutation (vs. being unable to detect the base/verbatim instantiations of the misuse case). Through the study of open source apps, we demonstrate that the flaws uncovered by MASC are serious and would impact real systems . Finally, we disclose our findings to the designers/maintainers of the affected crypto-detectors, and further leverage these communication channels to obtain their perspectives on the flaws. These perspectives allow us to present a balanced discussion on the factors influencing the current design and testing of crypto-detectors, as well as a path forward towards more robust tool. Artifact Release: To foster further research in the eval- uation and development of effective cryptographic misuse detection techniques, and in turn, more secure software, we have released all code and data associated with this paper [30]. II. M OTIVATION AND BACKGROUND Insecure use of cryptographic APIs is the second most common cause of software vulnerabilities after data leaks [31]. To preempt vulnerabilities before software release, non-experts such as software developers or quality assurance teams are likely to use crypto-API misuse detectors (or crypto-detectors) as a part of the Continuous Integration/Continuous Delivery (CI/CD) pipeline ( e.g., Xanitizer [12] and ShiftLeft [16] used in GitHub Code Scan [22]), quality assurance suites ( e.g., SWAMP [32]) or IDEs ( e.g., CogniCrypt [9]). Thus, the inability of a crypto-detector to flag an instance of a misuse that it claims to detect directly impacts the security of end- user software. We illustrate this problem with a motivating example, followed by a threat model that describes the potential adversarial conditions a crypto-detector may face in the wild. A. Motivating Example Consider Alice, a Java developer who uses CryptoGuard [3], a state-of-the-art crypto-detector, for identifying cryptographic vulnerabilities in her software before release. In one of her apps, Alice decides to use the DES cipher, as follows: Cipher cipher = Cipher . getInstance ( \" des \" ) ; Listing 2. Instantiating DES as a cipher instance in lower case. 615"
+      },
+      {
+        "source": "selected",
+        "value": "The correct use of cryptography is central to ensuring data security in modern software systems. Hence, several academic and commercial static analysis tools have been developed for detecting and mitigating crypto-API misuse. While developers are optimistically adopting these crypto-API misuse detectors (or crypto-detectors) in their software development cycles, this momentum must be accompanied by a rigorous understanding of their effectiveness at finding crypto-API misuse in practice. This paper presents the MASC framework, which enables a systematic and data-driven evaluation of crypto-detectors using mutation testing. We ground MASC in a comprehensive view of the problem space by developing a data-driven taxonomy of existing crypto-API misuse, containing 105 misuse cases organized among nine semantic clusters. We develop 12 generalizable usagebased mutation operators and three mutation scopes that can expressively instantiate thousands of compilable variants of the misuse cases for thoroughly evaluating crypto-detectors. Using MASC, we evaluate nine major crypto-detectors and discover 19 unique, undocumented flaws that severely impact the ability of crypto-detectors to discover misuses in practice. We conclude with a discussion on the diverse perspectives that influence the design of crypto-detectors and future directions towards building security-focused crypto-detectors by design."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Amit Seal",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "William & Mary, Williamsburg, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Nathan Cooper",
+          "email": "nacooper01@email.",
+          "orcid": "",
+          "affiliations": [
+            "William & Mary, Williamsburg, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Kaushal Kafle",
+          "email": "kkafle@email.",
+          "orcid": "",
+          "affiliations": [
+            "William & Mary, Williamsburg, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Kevin Moran",
+          "email": "kpmoran@gmu.edu",
+          "orcid": "",
+          "affiliations": [
+            "George Mason University, Fairfax, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Denys Poshyvanyk",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "William & Mary, Williamsburg, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Adwait Nadkarni",
+          "email": "nadkarni@cs.wm.edu",
+          "orcid": "",
+          "affiliations": [
+            "William & Mary, Williamsburg, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Amit Seal Ami",
+          "email": "",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Nathan Cooper",
+          "email": "nacooper01@email.",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Kaushal Kafle",
+          "email": "kkafle@email.",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Kevin Moran",
+          "email": "kpmoran@gmu.edu",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Denys Poshyvanyk",
+          "email": "",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Adwait Nadkarni",
+          "email": "nadkarni@cs.wm.edu",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "William Mary",
+          "email": "",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "V A",
+          "email": "",
+          "affiliations": [
+            "George Mason University, Fairfax, V A, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 140,
+      "author_count": 8,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 5,
+          "author": "Adwait Nadkarni",
+          "block_id": "pdf:p1:b11",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Why Crypto-detectors Fail: A Systematic Evaluation of Cryptographic Misuse Detection Techniques",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Amit Seal Ami",
+          "affiliations": [
+            "William & Mary"
+          ]
+        },
+        {
+          "name": "Nathan Cooper",
+          "affiliations": [
+            "William & Mary"
+          ]
+        },
+        {
+          "name": "Kaushal Kafle",
+          "affiliations": [
+            "William & Mary"
+          ]
+        },
+        {
+          "name": "Kevin Moran",
+          "affiliations": [
+            "George Mason University"
+          ]
+        },
+        {
+          "name": "Denys Poshyvanyk",
+          "affiliations": [
+            "William & Mary"
+          ]
+        },
+        {
+          "name": "Adwait Nadkarni",
+          "affiliations": [
+            "William & Mary"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Nathan Cooper",
+      "field": "email",
+      "restored_value": "nacooper01@email.",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Kaushal Kafle",
+      "field": "email",
+      "restored_value": "kkafle@email.",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Kevin Moran",
+      "field": "email",
+      "restored_value": "kpmoran@gmu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Adwait Nadkarni",
+      "field": "email",
+      "restored_value": "nadkarni@cs.wm.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

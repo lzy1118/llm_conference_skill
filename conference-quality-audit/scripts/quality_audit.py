@@ -14,6 +14,11 @@ ANALYSIS_EXPECTED_FILES = {
     "trends": [Path("trends/trend_summary.csv"), Path("trends/trend_report.md")],
     "collaboration": [Path("collaboration/collaboration_edges.csv"), Path("collaboration/collaboration_report.md")],
 }
+NON_COUNTING_INSTITUTION_SOURCES = {
+    "secondary_unit_only",
+    "unresolved_composite_fragment",
+    "independent_researcher_default",
+}
 
 
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
@@ -40,6 +45,13 @@ def add_finding(findings: list[dict[str, object]], severity: str, code: str, mes
 def audit_normalized_rows(rows: list[dict[str, str]], findings: list[dict[str, object]]) -> dict[str, object]:
     required_fields = ("paper_key", "conference", "year", "name", "inst")
     missing_counts = {field: sum(1 for row in rows if not row.get(field, "")) for field in required_fields}
+    intentional_empty_institution_rows = sum(
+        1
+        for row in rows
+        if not row.get("inst", "")
+        and row.get("institution_source", "") in NON_COUNTING_INSTITUTION_SOURCES
+    )
+    missing_counts["inst"] -= intentional_empty_institution_rows
     unknown_country_rows = sum(1 for row in rows if row.get("country") == "Unknown")
     missing_author_key_rows = sum(1 for row in rows if not row.get("author_key", ""))
 
@@ -51,8 +63,10 @@ def audit_normalized_rows(rows: list[dict[str, str]], findings: list[dict[str, o
         institution_key = row.get("institution_key", "")
         if institution_name and institution_key:
             institution_name_to_keys[institution_name].add(institution_key)
-        confidence = parse_confidence(row.get("classification_confidence", ""))
         raw_confidence = row.get("classification_confidence", "")
+        confidence = parse_confidence(raw_confidence)
+        if raw_confidence.strip().casefold() in {"high", "unknown", "structural"}:
+            continue
         if raw_confidence and confidence is None:
             invalid_confidence_rows += 1
         elif confidence is not None and confidence < 0.8:
@@ -79,6 +93,7 @@ def audit_normalized_rows(rows: list[dict[str, str]], findings: list[dict[str, o
         "missing_required_counts": missing_counts,
         "unknown_country_rows": unknown_country_rows,
         "missing_author_key_rows": missing_author_key_rows,
+        "intentional_empty_institution_rows": intentional_empty_institution_rows,
         "low_confidence_rows": low_confidence_rows,
         "invalid_confidence_rows": invalid_confidence_rows,
         "duplicate_institution_display_names": duplicate_display_names,

@@ -1,0 +1,149 @@
+{
+  "paper_id": "055_syn_proof_of_work_improving_volumetric_dos_resilience_in_tcp",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SYN Proof-of-Work: Improving Volumetric DoS Resilience in TCP"
+      },
+      {
+        "source": "selected",
+        "value": "SYN Proof-of-Work: Improving Volumetric DoS Resilience in TCP"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "This paper presents and evaluates SYN PoW, a novel approach to mitigating TCP SYN flooding attacks using miniature proofs-of-work. SYN Floods have been a common threat on the Internet for decades, and have increased dramatically in both scale and frequency in recent years. Currently, SYN Cookies are widely deployed as a mitigation against this threat, but as we demonstrate they scale poorly with the volume of attack and can be detrimental to performance. SYN PoW plays a similar role, but with several key advantages: (1) it protects bandwidth by dropping malicious SYNs without sending SYN-ACKs in response; (2) it facilitates in-network verification, enabling middleboxes to detect and drop malicious packets before they reach their target; (3) it shifts the primary cost burden of mitigation from attack victims to attackers themselves; and (4) it protects against spoofing attacks without requiring source address validation. We explain how proofs-ofwork can be added to SYN packets in a way that complies with the current TCP standard, and demonstrate how SYN PoW outperforms SYN Cookies under high-volume SYN floods in controlled testbed experiments."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "This paper presents and evaluates SYN PoW, a novel approach to mitigating TCP SYN flooding attacks using minia- ture proofs-of-work. SYN Floods have been a common threat on the Internet for decades, and have increased dramatically in both scale and frequency in recent years. Currently, SYN Cookies are widely deployed as a mitigation against this threat, but as we demonstrate they scale poorly with the volume of attack and can be detrimental to performance. SYN PoW plays a similar role, but with several key advantages: (1) it protects bandwidth by dropping malicious SYNs without sending SYN-ACKs in response; (2) it facilitates in-network verification, enabling middleboxes to detect and drop malicious packets before they reach their target; (3) it shifts the primary cost burden of mitigation from attack victims to attackers themselves; and (4) it protects against spoofing attacks without requiring source address validation. We explain how proofs-of- work can be added to SYN packets in a way that complies with the current TCP standard, and demonstrate how SYN PoW outperforms SYN Cookies under high-volume SYN floods in controlled testbed experiments. 1. Introduction The open nature of the Internet creates an inherent vulnerability to volumetric Denial-of-Service attacks. To provide a publicly accessible service, one must be open to receiving traffic from unknown and untrusted sources. Each packet requires some amount of bandwidth, memory, and computational resources to process, so a sufficiently large volume of otherwise innocuous traffic is capable of render- ing a service unavailable to its users. Over the past decade, such volumetric attacks have increased dramatically in both scale and frequency, with thousands of daily incidents and peak flood rates in excess of 1 terabit per second. [2], [11], [22], [23] V arious mechanisms have been developed for establish- ing trust, but often these require the service operator to expend additional resources, which further degrades their capacity to serve legitimate clients during an attack. For example, SYN Cookies (discussed further in §2.2) aim to mitigate spoofed-source TCP SYN floods through a chal- lenge/response protocol, but constructing challenges and verifying responses consumes computational resources, and responding to spurious packets with those challenges con- sumes excessive bandwidth as well. The ideal mitigation against volumetric attacks should: (1) minimize overhead for receivers, (2) maximize the diffi- culty of generating an attack, and (3) facilitate early drops of malicious traffic to reduce downstream resource exhaustion. In this paper we present SYN Proof-of-Work (SYN PoW), a novel DoS mitigation designed specifically to meet these criteria. Through controlled testbed experimentation, we evaluate both the efficacy of this approach at mitigating SYN flooding attacks as well as its overhead outside periods of attack, in comparison with SYN Cookies. We find that the overhead of both approaches is negligible, that SYN PoW consistently demonstrates better efficacy than SYN Cookies, and that SYN Cookies can actually be detrimental to performance under high-volume floods. 1.1. Contributions The key contributions of this paper are: 1) The presentation of SYN PoW, a novel DoS mitiga- tion designed specifically for volumetric TCP SYN floods. 2) An empirical analysis comparing the efficacy and overhead of SYN PoW with that of the existing SYN Cookies approach. 1.2. Paper Structure The remainder of this paper is structured as follows. §2 Provides background information on SYN Flooding attacks, the existing SYN Cookies mitigation, and prior efforts at using proof-of-work systems for DoS mitigation. §3 presents our SYN PoW mitigation, from a high level overview of the intuition behind the design down to technical intricacies of its implementation. We lay out our experimental method- ology and the metrics used for evaluating our mitigation in §4, and present results from our experiments in §5. We then discuss possible extensions to this mitigation and other opportunities for future work in this domain in §6, before finally concluding with a summary of our findings in §7. *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ 4BNVFM%F-BVHIUFS6OEFSMJDFOTFUP*&&& %0*41 2. Background This section presents relevant background information and discusses prior work in this area. We first describe the threat of SYN flooding attacks in §2.1. With respect to existing approaches to mitigation of volumetric SYN flood attacks, two general approaches appear in the literature. The first is one of several forms of challenges issued to the senders of traffic by the potential victim. Probably the most widely known and used is the SYN Cookies approach, discussed in §2.2. This involves little or no work on the part of the originators of traffic, but rather simply a continuation of the exchange. In a related but more challenging approach, the potential victim challenges the original sender with a puzzle or proof-of-work, leading to expenditure of work. This approach, discussed in §2.3, is more similar to our approach, but in our case the sender must meet the challenge up front, and therefore is unlikely to be able to send initially without expending the work. More recently, there is also starting to be work on utilizing machine learning and other forms of statistical analysis to identify attack traffic. This approach, discussed in §2.4, brings with it a different set of limitations, but at least in some cases enables mitigation inside the network, rather than only at the ends as with cookies and puzzles. We will briefly consider each of these and how they relate to our work, but have limitations that our work overcomes. 2.1. SYN Flood Attacks TCP SYN Floods have been a known threat since the 1990s [9], and remain among the most common forms of DoS attacks [2], [11], [22], [23]. They exploit a vulnerability in the 3-way handshake procedure used to establish new TCP connections. Under normal operation, that handshake works as follows: 1) The client sends a SYN packet 2) The server allocates state for the connection and responds with a SYN-ACK packet 3) The client responds with an ACK packet In a SYN Flood the attacker simply repeats the first step as quickly as possible, sending a large volume of SYN packets without waiting for any SYN-ACK responses and without sending any ACKs. As a result, the server is left with a large number of “half-open” connections (one per SYN). These bogus connections eventually exhaust the server's limited memory resources and prevent it from servicing legitimate clients. Such attacks often make use of source address spoofing, whereby the attacker generates SYNs with source IP ad- dresses it does not actually own. This spoofing serves mul- tiple purposes. First, it makes identifying the attacker more difficult by concealing the true source of traffic. Second, it allows the attacker to force allocation of additional server resources, compared to a flood with a single IP address in which the server could rate-limit that source and restrict it to a single connection. Third, it causes the server to send SYN- ACK packets to devices other than the attack source. This leaves more bandwidth available to attackers for sending SYNs. In some cases spoofing is also used to perpetrate reflection attacks, wherein attackers spoof the address of a specific target and use the server to flood that target with SYN-ACKs. In this work however we limit our scope to focus solely on direct attacks, wherein the destination of the SYN is the primary victim. In recent years there has been a dramatic rise in the scale of SYN floods, some of which comprise hundreds of millions of packets per second. In addition to draining con- nection state resources, these volumetric floods also exhaust bandwidth resources at and en route to the victim. This is further compounded by the server's SYN-ACK responses, each of which consumes an amount of bandwidth roughly equivalent to that of its corresponding SYN, effectively dou- bling the attack's volume. A successful mitigation against SYN Floods must protect not only the server's connection state, but also the network's bandwidth resources. 2.2. SYN Cookies SYN Cookies [3] are a widely utilized mitigation against SYN Floods. Their design predates modern volumetric floods, and as such they offer protection only for server connection state and not for network bandwidth. SYN Cook- ies lack any official standard and may be implemented differently by different servers, but their basic operation works as follows: 1) Upon receiving a SYN packet, the server constructs a cryptographic state cookie containing necessary information about the pending connection. 2) The server encodes this cookie in the Sequence Number field of its SYN-ACK. Upon sending the SYN-ACK it deletes any local state for the connec- tion. 3) The client naturally echoes this cookie back to the server in its ACK. If it receives a SYN-ACK with a sequence number of n, its ACK will contain an Acknowledgment Number of n +1 . 4) The server extracts its cookie from the ACK by subtracting 1 from the Acknowledgment Number. It verifies the cookie's authenticity, reconstructs the necessary information that was encoded from the SYN, and finally allocates state for the connection. The key concept of this mitigation is that an attacker spoofing its source address will be unable to receive any SYN-ACKs and therefore unable to receive or echo back the server's state cookies. The server then avoids allocating any state until it has confirmed the legitimacy of the sender's source address. There is little prior work on measuring the efficacy of this appraoch - the most robust analysis we are aware of is a 2020 pre-print from Scholz et al. [19]. As that paper and our experiments both demonstrate, SYN Cookies are effective against low-rate attacks but scale poorly to modern volumetric floods, for two reasons. The"
+      },
+      {
+        "source": "selected",
+        "value": "This paper presents and evaluates SYN PoW, a novel approach to mitigating TCP SYN flooding attacks using miniature proofs-of-work. SYN Floods have been a common threat on the Internet for decades, and have increased dramatically in both scale and frequency in recent years. Currently, SYN Cookies are widely deployed as a mitigation against this threat, but as we demonstrate they scale poorly with the volume of attack and can be detrimental to performance. SYN PoW plays a similar role, but with several key advantages: (1) it protects bandwidth by dropping malicious SYNs without sending SYN-ACKs in response; (2) it facilitates in-network verification, enabling middleboxes to detect and drop malicious packets before they reach their target; (3) it shifts the primary cost burden of mitigation from attack victims to attackers themselves; and (4) it protects against spoofing attacks without requiring source address validation. We explain how proofs-ofwork can be added to SYN packets in a way that complies with the current TCP standard, and demonstrate how SYN PoW outperforms SYN Cookies under high-volume SYN floods in controlled testbed experiments."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Samuel Delaughter",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UCSD CAIDA, MIT CSAIL"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Karen Sollins",
+          "email": "sollins@csail.mit.edu",
+          "orcid": "",
+          "affiliations": [
+            "UCSD CAIDA, MIT CSAIL"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Samuel DeLaughter",
+          "email": "",
+          "affiliations": [
+            "UCSD CAIDA / MIT CSAIL"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Karen Sollins",
+          "email": "sollins@csail.mit.edu",
+          "affiliations": [
+            "MIT CSAIL"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 8,
+      "author_count": 2,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SYN Proof-of-Work: Improving Volumetric DoS Resilience in TCP",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Samuel DeLaughter",
+          "affiliations": [
+            "MIT",
+            "UCSD"
+          ]
+        },
+        {
+          "name": "Karen Sollins",
+          "affiliations": [
+            "MIT"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Karen Sollins",
+      "field": "email",
+      "restored_value": "sollins@csail.mit.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

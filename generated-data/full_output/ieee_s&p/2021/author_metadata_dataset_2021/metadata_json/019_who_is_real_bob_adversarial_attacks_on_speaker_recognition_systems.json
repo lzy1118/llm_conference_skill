@@ -1,0 +1,2655 @@
+{
+  "title": "Who is Real Bob? Adversarial Attacks on Speaker Recognition Systems",
+  "year": "2021",
+  "abstract": "Speaker recognition (SR) is widely used in our daily life as a biometric authentication or identification mechanism. The popularity of SR brings in serious security concerns, as demonstrated by recent adversarial attacks. However, the impacts of such threats in the practical black-box setting are still open, since current attacks consider the white-box setting only. In this paper, we conduct the first comprehensive and sys- tematic study of the adversarial attacks on SR systems (SRSs) to understand their security weakness in the practical black- box setting. For this purpose, we propose an adversarial attack, named F AKE BOB, to craft adversarial samples. Specifically, we formulate the adversarial sample generation as an optimization problem, incorporated with the confidence of adversarial samples and maximal distortion to balance between the strength and imperceptibility of adversarial voices. One key contribution is to propose a novel algorithm to estimate the score threshold, a feature in SRSs, and use it in the optimization problem to solve the optimization problem. We demonstrate that F AKE BOB achieves 99% targeted attack success rate on both open-source and commercial systems. We further demonstrate that F AKE BOB is also effective on both open-source and commercial systems when playing over the air in the physical world. Moreover, we have conducted a human study which reveals that it is hard for human to differentiate the speakers of the original and adversarial voices. Last but not least, we show that four promising defense methods for adversarial attack from the speech recognition domain become ineffective on SRSs against FAKE BOB, which calls for more effective defense methods. We highlight that our study peeks into the security implications of adversarial attacks on SRSs, and realistically fosters to improve the security robustness of SRSs. I. I NTRODUCTION Speaker recognition [1] is an automated technique to iden- tify a person from utterances which contain audio charac- teristics of the speaker. Speaker recognition systems (SRSs) are ubiquitous in our daily life, ranging from biometric au- thentication [2], forensic tests [3], to personalized service on smart devices [4]. Machine learning techniques are the mainstream method for implementing SRSs [5], however, they are vulnerable to adversarial attacks (e.g., [6], [7], [8]). Hence, it is vital to understand the security implications of SRSs under adversarial attacks. Though the success of adversarial attack on image recog- nition systems has been ported to the speech recognition systems in both the white-box setting (e.g., [9], [10]) and black-box setting (e.g., [11], [12]), relatively little research has been done on SRSs. Essentially, the speech signal of an utterance consists of two major parts: the underlying text and the characteristics of the speaker. To improve the performance, speech recognition will minimize speaker-dependent variations to determine the underlying text or command, whereas speaker recognition will treat the phonetic variations as extraneous noise to determine the source of the speech signal. Thus, adversarial attacks tailored to speech recognition systems may become ineffective on SRSs. An adversarial attack on SRSs aims at crafting a sample from a voice uttered by some source speaker, so that it is mis- classified as one of the enrolled speakers (untargeted attack) or a target speaker (targeted attack) by the system under attack, but still correctly recognized as the source speaker by ordinary users. Though current adversarial attacks on SRSs [13], [14] are promising, they suffer from the following three limitations: (1) They are limited to the white-box setting by assuming the adversary has access to the information of the target SRS. Attacks in a more realistic black-box setting are still open. (2) They only consider either the close-set identification task [13] that always classifies an arbitrary voice as one of the enrolled speakers [15], or the speaker verification task [14] that checks if an input voice is uttered by the unique enrolled speaker or not [16]. Attacks on the open-set identification task [17], which strictly subsumes both close-set identification and speaker verification, are still open. (3) They do not consider over- the-air attacks, hence it is unclear whether their attacks are still effective when playing over the air in the physical world. Therefore, in this work, we investigate the adversarial attack on all the three tasks of SRSs in the practical black-box setting , in an attempt to understand the security weakness of SRSs under adversarial attack in practice. In this work, we focus on the black-box setting, which as- sumes that the adversary can obtain at most the decision result and scores of the enrolled speakers for each input voice. Hence attacks in the black-box setting is more practical yet more challenging than the existing white-box attacks [13], [14]. We emphasize that the scoring and decision-making mech- anisms of SRSs are different among recognition tasks [18]. Particularly, we consider 40 attack scenarios (as demonstrated in Fig. 2) in total differing in attack types (targeted vs. untargeted), attack channels (API vs. over the air), genders of source and target speakers, and SR tasks (cf. §II-B). We demonstrate our attack on 16 representative attack scenarios. 694 DOI 10.1109/SP40001.2021.00004 To launch such a practical attack, two technical challenges need to be addressed: (C1) crafting adversarial samples as less imperceptible as possible in the black-box setting, and (C2) making the attack practical, namely, adversarial samples are effective on an unknown SRS, even when playing over the air in the physical world. In this paper, we propose a practical black-box attack, named F AKE BOB, which is able to overcome these challenges. Specifically, we formulate the adversarial sample generation as an optimization problem. The optimization objective is parameterized by a confidence parameter and the maximal distortion of noise amplitude in L ∞ norm to balance between the strength and imperceptibility of adversarial voices, instead of using noise model [10], [19], [20], due to its device- and background-dependency. We also incorporate the score thresh- old, a key feature in SRSs, into the optimization problem. To solve the optimization problem, we leverage an efficient gra- dient estimation algorithm, i.e., the natural evolution strategy (NES) [21]. However, even with the estimated gradients, none of the existing gradient-based white-box methods (e.g., [22], [23], [10], [24]) can be directly used to attack SRSs. This is due to the score threshold mechanism, where an attack fails if the predicated score is less than the threshold. To this end, we propose a novel algorithm to estimate the threshold, based on which we leverage the Basic Iterative Method (BIM) [23] with estimated gradients to solve the optimization problem. We evaluate F AKE BOB for its attacking capabilities, on 3 SRSs (i.e., ivector-PLDA [25], GMM-UBM [16] and xvector- PLDA [26]) in the popular open-source platform Kaldi [27] in the research community and 2 commercial systems (i.e., Talentedsoft [28] and Microsoft Azure [29]) which are pro- prietary without any publicly available information about the internal design and implementations, hence completely black- box. We evaluate F AKE BOB using 16 representative attack scenarios (out of 40) based on the following five aspects: (1) effectiveness/efficiency, (2) transferability, (3) practicability, (4) imperceptibility, and (5) robustness. The results show that F AKE BOB achieves 99% targeted attack success rate (ASR) on all the tasks of ivector-PLDA, GMM-UBM and xvector-PLDA systems, and 100% ASR on the commercial system Talentedsoft within 2,500 queries on average (cf. §V-B). To demonstrate the transferability, we conduct a comprehensive evaluation of transferability attack on ivector-PLDA, GMM-UBM and xvector-PLDA systems under cross-architecture, cross-dataset, and cross-parameter circumstances and the commercial system Microsoft Azure. F AKE BOB is able to achieve 34%-68% transferability (attack success) rate except for the speaker verification of Microsoft Azure. The transferability rate could be increased by crafting high-confidence adversarial samples at the cost of increasing distortion. To further demonstrate the practicability and im- perceptibility, we launch an over-the-air attack in the physical world and also conduct a human study on the Amazon Mechanical Turk platform [30]. The results indicate that F AKE BOB is effective when playing over the air in the physical world against both the open-source systems and the open-set identification task of Microsoft Azure (cf. §V-D) and it is hard for humans to differentiate the speakers of the original and adversarial voices (cf. §V-E). Finally, we study four defense methods that are reported promising in speech recognition domain: audio squeezing [10], [31], local smoothing [31], quantization [31] and temporal dependency-based detection [31], due to lacking of domain- specific defense solutions for adversarial attack on SRSs. The results demonstrate that these defense methods have limited effects on F AKE BOB, indicating that F AKE BOB is a practical and powerful adversarial attack on SRSs. Our study reveals that the security weakness of SRSs under black-box adversarial attacks. This weakness could lead to lots of serious security implications. For instance, the adversary could launch an adversarial attack (e.g., F AKE BOB) to bypass biometric authentication on the financial transaction [2], [32] and smart devices [4], as well as high-security intelligent voice control systems [33] so that follow-up voice command attacks can be launched, e.g., CommanderSong [10] and hidden voice commands [34]. For the voice-enabled cars using Dragon Drive [33], the attacker could bypass its voice biometrics using F AKE BOB so that command attacks can be launched to control cars. Even for commercial systems, it is a significant threat under such a practical black-box adversarial attack, which calls for more robust SRSs. To shed further light, we discuss the potential mitigation and further attacks to understand the arm race in this topic. In summary, our main contributions are: • To our knowledge, this is the first study of targeted adver- sarial attacks on SRSs in the black-box setting. Our attack is launched by not only using gradient estimation based methods, but also incorporating the score threshold into the adversarial sample generation. The proposed algorithm to estimate the score threshold is unique in SRSs. • Our black-box attack addresses not only the speaker recog- nition tasks considered by existing white-box attacks but also the more general task, open-set identification, which has not been considered by previous adversarial attacks. • Our attack is demonstrated to be effective on the popular open-source systems and commercial system Talentedsoft, transferable and practical on the popular open-source sys- tems and the open-set identification task of Microsoft Azure even when playing over the air in the physical world. • Our attack is robust against four potential defense methods which are reported very promising in speech recognition domain. Our study reveals the security implications of the adversarial attack on SRSs, which calls for more robust SRSs and more effective domain-specific defense methods. For more information of F AKE BOB, please refer to our website [35] which includes voice samples and source code. II. B ACKGROUND In this section, we introduce the preliminaries of speaker recognition systems (SRSs) and the threat model. A. Speaker Recognition System (SRS) Speaker recognition is an automated technique that allows machines to recognize a person's identity based on his/her 695",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Guangke Chen",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "ShanghaiTech University; Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences; University of Chinese Academy of Sciences"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": true,
+      "equal_contribution": true,
+      "corresponding": false
+    },
+    {
+      "order": 1,
+      "name": "Sen Chen",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Tianjin University; Nanyang Technological University"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 2,
+      "name": "Lingling Fan",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Nanyang Technological University"
+      ],
+      "affiliation_source": "author_node",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 3,
+      "name": "Xiaoning Du",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Nanyang Technological University"
+      ],
+      "affiliation_source": "author_node",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 4,
+      "name": "Zhe Zhao",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "ShanghaiTech University"
+      ],
+      "affiliation_source": "author_node",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 5,
+      "name": "Fu Song",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "ShanghaiTech University; Shanghai Engineering Research Center of Intelligent Vision and Imaging"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": true,
+      "equal_contribution": true,
+      "corresponding": false
+    },
+    {
+      "order": 6,
+      "name": "Yang Liu",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Nanyang Technological University"
+      ],
+      "affiliation_source": "author_node",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Guangke Chen",
+    "Fu Song"
+  ],
+  "co_first_authors": [
+    "Guangke Chen",
+    "Fu Song"
+  ],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "ShanghaiTech University; Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences; University of Chinese Academy of Sciences",
+    "ShanghaiTech University; Shanghai Engineering Research Center of Intelligent Vision and Imaging"
+  ],
+  "first_affiliation": "ShanghaiTech University; Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences; University of Chinese Academy of Sciences",
+  "participating_affiliations": [
+    "ShanghaiTech University; Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences; University of Chinese Academy of Sciences",
+    "Tianjin University; Nanyang Technological University",
+    "Nanyang Technological University",
+    "ShanghaiTech University",
+    "ShanghaiTech University; Shanghai Engineering Research Center of Intelligent Vision and Imaging"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Guangke Chen",
+      "affiliation": "ShanghaiTech University; Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences; University of Chinese Academy of Sciences",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Sen Chen",
+      "affiliation": "Tianjin University; Nanyang Technological University",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Lingling Fan",
+      "affiliation": "Nanyang Technological University",
+      "source": "author_node"
+    },
+    {
+      "author": "Xiaoning Du",
+      "affiliation": "Nanyang Technological University",
+      "source": "author_node"
+    },
+    {
+      "author": "Zhe Zhao",
+      "affiliation": "ShanghaiTech University",
+      "source": "author_node"
+    },
+    {
+      "author": "Fu Song",
+      "affiliation": "ShanghaiTech University; Shanghai Engineering Research Center of Intelligent Vision and Imaging",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Yang Liu",
+      "affiliation": "Nanyang Technological University",
+      "source": "author_node"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "Who is Real Bob? Adversarial Attacks on Speaker Recognition Systems"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2021"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Guangke Chen",
+        "order": 0,
+        "email": "",
+        "affiliations": [
+          "ShanghaiTech University",
+          "Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences, University of Chinese Academy of Sciences"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Sen Chen",
+        "order": 1,
+        "email": "",
+        "affiliations": [
+          "Nanyang Technological University",
+          "College of Intelligence and Computing, Shanghai Engineering Research Center of Intelligent Vision, Tianjin University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Lingling Fan",
+        "order": 2,
+        "email": "",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Xiaoning Du",
+        "order": 3,
+        "email": "",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:4",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Zhe Zhao",
+        "order": 4,
+        "email": "",
+        "affiliations": [
+          "ShanghaiTech University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:5",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Fu Song",
+        "order": 5,
+        "email": "",
+        "affiliations": [
+          "ShanghaiTech University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:6",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Yang Liu",
+        "order": 6,
+        "email": "",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Who is Real Bob? Adversarial Attacks on"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Speaker Recognition Systems"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Guangke Chen∗†‡, Sen Chen¶§∥ , Lingling Fan§, Xiaoning Du§, Zhe Zhao∗, Fu Song∗‡‡/Letterand Yang Liu§"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "∗ShanghaiTech University, †Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "‡University of Chinese Academy of Sciences, §Nanyang Technological University"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "¶College of Intelligence and Computing, Tianjin University"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:6",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "‡‡Shanghai Engineering Research Center of Intelligent Vision and Imaging, ∥Co-first Author"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          199.48,
+          762.0,
+          415.48,
+          772.0
+        ],
+        "font_size": 10.0,
+        "raw_text": "2021 IEEE Symposium on Security and Privacy (SP)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          116.107,
+          693.072,
+          133.657,
+          694.072
+        ],
+        "font_size": 1.0,
+        "raw_text": "Who is Real Bob? Adversarial Attacks on",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          173.244,
+          667.563,
+          185.394,
+          668.563
+        ],
+        "font_size": 1.0,
+        "raw_text": "Speaker Recognition Systems",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          153.227,
+          642.482,
+          154.577,
+          643.482
+        ],
+        "font_size": 1.0,
+        "raw_text": "∗†‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          211.06,
+          642.482,
+          212.41,
+          643.482
+        ],
+        "font_size": 1.0,
+        "raw_text": "¶§∥",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          283.404,
+          642.482,
+          284.404,
+          643.482
+        ],
+        "font_size": 1.0,
+        "raw_text": "§",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          346.373,
+          642.482,
+          347.373,
+          643.482
+        ],
+        "font_size": 1.0,
+        "raw_text": "§",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          395.972,
+          642.482,
+          396.972,
+          643.482
+        ],
+        "font_size": 1.0,
+        "raw_text": "∗",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          441.01,
+          642.482,
+          455.826,
+          643.482
+        ],
+        "font_size": 1.0,
+        "raw_text": "∗‡‡ /Letter",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          518.942,
+          642.482,
+          519.942,
+          643.482
+        ],
+        "font_size": 1.0,
+        "raw_text": "§",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          92.483,
+          638.862,
+          97.883,
+          639.862
+        ],
+        "font_size": 1.0,
+        "raw_text": "Guangke Chen",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          165.35,
+          638.862,
+          169.85,
+          639.862
+        ],
+        "font_size": 1.0,
+        "raw_text": ", Sen Chen",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          287.301,
+          638.862,
+          293.151,
+          639.862
+        ],
+        "font_size": 1.0,
+        "raw_text": ", Xiaoning Du",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          350.271,
+          638.862,
+          354.771,
+          639.862
+        ],
+        "font_size": 1.0,
+        "raw_text": ", Zhe Zhao",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          400.299,
+          638.862,
+          404.349,
+          639.862
+        ],
+        "font_size": 1.0,
+        "raw_text": ", Fu Song",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          462.827,
+          638.862,
+          468.227,
+          639.862
+        ],
+        "font_size": 1.0,
+        "raw_text": "and Yang Liu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          75.055,
+          630.758,
+          76.055,
+          631.758
+        ],
+        "font_size": 1.0,
+        "raw_text": "∗",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          79.386,
+          627.452,
+          90.186,
+          628.452
+        ],
+        "font_size": 1.0,
+        "raw_text": "ShanghaiTech University,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          180.935,
+          627.452,
+          220.985,
+          628.452
+        ],
+        "font_size": 1.0,
+        "raw_text": "Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          152.228,
+          619.483,
+          153.228,
+          620.483
+        ],
+        "font_size": 1.0,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          156.126,
+          616.177,
+          175.026,
+          617.177
+        ],
+        "font_size": 1.0,
+        "raw_text": "University of Chinese Academy of Sciences,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          330.865,
+          616.177,
+          345.265,
+          617.177
+        ],
+        "font_size": 1.0,
+        "raw_text": "Nanyang Technological University",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          194.067,
+          608.209,
+          195.067,
+          609.209
+        ],
+        "font_size": 1.0,
+        "raw_text": "¶",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          199.256,
+          604.902,
+          224.906,
+          605.902
+        ],
+        "font_size": 1.0,
+        "raw_text": "College of Intelligence and Computing, Tianjin University",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          131.939,
+          596.934,
+          132.939,
+          597.934
+        ],
+        "font_size": 1.0,
+        "raw_text": "‡‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          139.279,
+          593.627,
+          171.229,
+          594.627
+        ],
+        "font_size": 1.0,
+        "raw_text": "Shanghai Engineering Research Center of Intelligent Vision and Imaging,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          423.032,
+          593.627,
+          429.782,
+          594.627
+        ],
+        "font_size": 1.0,
+        "raw_text": "Co-first Author",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          79.953,
+          562.207,
+          83.553,
+          563.207
+        ],
+        "font_size": 1.0,
+        "raw_text": "Abstract",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          108.225,
+          562.207,
+          132.075,
+          563.207
+        ],
+        "font_size": 1.0,
+        "raw_text": "-Speaker recognition (SR) is widely used in our daily",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          562.199,
+          339.273,
+          563.199
+        ],
+        "font_size": 1.0,
+        "raw_text": "utterance consists of two major parts: the underlying text and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          553.097,
+          99.192,
+          554.097
+        ],
+        "font_size": 1.0,
+        "raw_text": "life as a biometric authentication or identification mechanism.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          551.266,
+          339.723,
+          552.266
+        ],
+        "font_size": 1.0,
+        "raw_text": "the characteristics of the speaker. To improve the performance,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          543.986,
+          97.842,
+          544.986
+        ],
+        "font_size": 1.0,
+        "raw_text": "The popularity of SR brings in serious security concerns, as",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          540.333,
+          338.823,
+          541.333
+        ],
+        "font_size": 1.0,
+        "raw_text": "speech recognition will minimize speaker-dependent variations",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          534.875,
+          99.642,
+          535.875
+        ],
+        "font_size": 1.0,
+        "raw_text": "demonstrated by recent adversarial attacks. However, the impacts",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          529.399,
+          338.373,
+          530.399
+        ],
+        "font_size": 1.0,
+        "raw_text": "to determine the underlying text or command, whereas speaker",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          525.764,
+          100.542,
+          526.764
+        ],
+        "font_size": 1.0,
+        "raw_text": "of such threats in the practical black-box setting are still open,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          518.465,
+          338.373,
+          519.465
+        ],
+        "font_size": 1.0,
+        "raw_text": "recognition will treat the phonetic variations as extraneous",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          516.653,
+          96.942,
+          517.653
+        ],
+        "font_size": 1.0,
+        "raw_text": "since current attacks consider the white-box setting only.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          507.531,
+          337.023,
+          508.531
+        ],
+        "font_size": 1.0,
+        "raw_text": "noise to determine the source of the speech signal. Thus,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          79.954,
+          507.426,
+          106.054,
+          508.426
+        ],
+        "font_size": 1.0,
+        "raw_text": "In this paper, we conduct the first comprehensive and sys-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          498.315,
+          98.292,
+          499.315
+        ],
+        "font_size": 1.0,
+        "raw_text": "tematic study of the adversarial attacks on SR systems (SRSs)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          496.596,
+          339.273,
+          497.596
+        ],
+        "font_size": 1.0,
+        "raw_text": "adversarial attacks tailored to speech recognition systems may",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          489.203,
+          98.292,
+          490.203
+        ],
+        "font_size": 1.0,
+        "raw_text": "to understand their security weakness in the practical black-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          485.662,
+          323.523,
+          486.662
+        ],
+        "font_size": 1.0,
+        "raw_text": "become ineffective on SRSs.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          480.093,
+          99.642,
+          481.093
+        ],
+        "font_size": 1.0,
+        "raw_text": "box setting. For this purpose, we propose an adversarial attack,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          320.484,
+          474.729,
+          345.234,
+          475.729
+        ],
+        "font_size": 1.0,
+        "raw_text": "An adversarial attack on SRSs aims at crafting a sample",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          470.981,
+          73.992,
+          471.981
+        ],
+        "font_size": 1.0,
+        "raw_text": "named F",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          124.181,
+          470.981,
+          155.866,
+          471.981
+        ],
+        "font_size": 1.0,
+        "raw_text": "OB , to craft adversarial samples. Specifically, we",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          463.795,
+          339.723,
+          464.795
+        ],
+        "font_size": 1.0,
+        "raw_text": "from a voice uttered by some source speaker, so that it is mis-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.843,
+          461.87,
+          98.743,
+          462.87
+        ],
+        "font_size": 1.0,
+        "raw_text": "formulate the adversarial sample generation as an optimization",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          452.861,
+          340.623,
+          453.861
+        ],
+        "font_size": 1.0,
+        "raw_text": "classified as one of the enrolled speakers (untargeted attack) or",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.843,
+          452.76,
+          99.643,
+          453.76
+        ],
+        "font_size": 1.0,
+        "raw_text": "problem, incorporated with the confidence of adversarial samples",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.843,
+          443.648,
+          96.943,
+          444.648
+        ],
+        "font_size": 1.0,
+        "raw_text": "and maximal distortion to balance between the strength and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          441.926,
+          339.273,
+          442.926
+        ],
+        "font_size": 1.0,
+        "raw_text": "a target speaker (targeted attack) by the system under attack,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.843,
+          434.538,
+          99.193,
+          435.538
+        ],
+        "font_size": 1.0,
+        "raw_text": "imperceptibility of adversarial voices. One key contribution is",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          430.992,
+          340.173,
+          431.992
+        ],
+        "font_size": 1.0,
+        "raw_text": "but still correctly recognized as the source speaker by ordinary",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.843,
+          425.426,
+          98.293,
+          426.426
+        ],
+        "font_size": 1.0,
+        "raw_text": "to propose a novel algorithm to estimate the score threshold,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          420.058,
+          338.373,
+          421.058
+        ],
+        "font_size": 1.0,
+        "raw_text": "users. Though current adversarial attacks on SRSs [13], [14]",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.843,
+          416.315,
+          97.843,
+          417.315
+        ],
+        "font_size": 1.0,
+        "raw_text": "a feature in SRSs, and use it in the optimization problem to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          409.124,
+          340.173,
+          410.124
+        ],
+        "font_size": 1.0,
+        "raw_text": "are promising, they suffer from the following three limitations:",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.843,
+          407.204,
+          94.693,
+          408.204
+        ],
+        "font_size": 1.0,
+        "raw_text": "solve the optimization problem. We demonstrate that F",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          290.355,
+          407.204,
+          291.355,
+          408.204
+        ],
+        "font_size": 1.0,
+        "raw_text": "OB",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          398.189,
+          338.823,
+          399.189
+        ],
+        "font_size": 1.0,
+        "raw_text": "(1) They are limited to the white-box setting by assuming the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          398.092,
+          98.291,
+          399.092
+        ],
+        "font_size": 1.0,
+        "raw_text": "achieves 99% targeted attack success rate on both open-source",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          290.355,
+          388.982,
+          291.355,
+          389.982
+        ],
+        "font_size": 1.0,
+        "raw_text": "OB",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          388.981,
+          94.691,
+          389.981
+        ],
+        "font_size": 1.0,
+        "raw_text": "and commercial systems. We further demonstrate that F",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          387.254,
+          337.473,
+          388.254
+        ],
+        "font_size": 1.0,
+        "raw_text": "adversary has access to the information of the target SRS.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          379.871,
+          97.841,
+          380.871
+        ],
+        "font_size": 1.0,
+        "raw_text": "is also effective on both open-source and commercial systems",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          376.321,
+          340.623,
+          377.321
+        ],
+        "font_size": 1.0,
+        "raw_text": "Attacks in a more realistic black-box setting are still open. (2)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          370.76,
+          96.941,
+          371.76
+        ],
+        "font_size": 1.0,
+        "raw_text": "when playing over the air in the physical world. Moreover,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          365.387,
+          340.173,
+          366.387
+        ],
+        "font_size": 1.0,
+        "raw_text": "They only consider either the close-set identification task [13]",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          361.649,
+          96.041,
+          362.649
+        ],
+        "font_size": 1.0,
+        "raw_text": "we have conducted a human study which reveals that it is",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          354.454,
+          340.173,
+          355.454
+        ],
+        "font_size": 1.0,
+        "raw_text": "that always classifies an arbitrary voice as one of the enrolled",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          352.538,
+          97.841,
+          353.538
+        ],
+        "font_size": 1.0,
+        "raw_text": "hard for human to differentiate the speakers of the original",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          343.521,
+          340.173,
+          344.521
+        ],
+        "font_size": 1.0,
+        "raw_text": "speakers [15], or the speaker verification task [14] that checks",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          343.427,
+          98.291,
+          344.427
+        ],
+        "font_size": 1.0,
+        "raw_text": "and adversarial voices. Last but not least, we show that four",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          334.316,
+          96.492,
+          335.316
+        ],
+        "font_size": 1.0,
+        "raw_text": "promising defense methods for adversarial attack from the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          332.588,
+          339.273,
+          333.588
+        ],
+        "font_size": 1.0,
+        "raw_text": "if an input voice is uttered by the unique enrolled speaker or",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.841,
+          325.205,
+          97.841,
+          326.205
+        ],
+        "font_size": 1.0,
+        "raw_text": "speech recognition domain become ineffective on SRSs against",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          321.653,
+          340.623,
+          322.653
+        ],
+        "font_size": 1.0,
+        "raw_text": "not [16]. Attacks on the open-set identification task [17], which",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          71.046,
+          316.093,
+          130.6,
+          317.093
+        ],
+        "font_size": 1.0,
+        "raw_text": "F AKE OB , which calls for more effective defense methods. We",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          310.718,
+          337.923,
+          311.718
+        ],
+        "font_size": 1.0,
+        "raw_text": "strictly subsumes both close-set identification and speaker",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          306.982,
+          99.642,
+          307.982
+        ],
+        "font_size": 1.0,
+        "raw_text": "highlight that our study peeks into the security implications of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          299.785,
+          338.373,
+          300.785
+        ],
+        "font_size": 1.0,
+        "raw_text": "verification, are still open. (3) They do not consider over-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          297.871,
+          100.092,
+          298.871
+        ],
+        "font_size": 1.0,
+        "raw_text": "adversarial attacks on SRSs, and realistically fosters to improve",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          288.852,
+          339.273,
+          289.852
+        ],
+        "font_size": 1.0,
+        "raw_text": "the-air attacks, hence it is unclear whether their attacks are",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          288.76,
+          85.242,
+          289.76
+        ],
+        "font_size": 1.0,
+        "raw_text": "the security robustness of SRSs.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          277.919,
+          340.173,
+          278.919
+        ],
+        "font_size": 1.0,
+        "raw_text": "still effective when playing over the air in the physical world.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          150.089,
+          270.691,
+          151.889,
+          271.691
+        ],
+        "font_size": 1.0,
+        "raw_text": "I. I",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          266.986,
+          322.173,
+          267.986
+        ],
+        "font_size": 1.0,
+        "raw_text": "Therefore, in this work,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          79.953,
+          256.191,
+          106.053,
+          257.191
+        ],
+        "font_size": 1.0,
+        "raw_text": "Speaker recognition [1] is an automated technique to iden-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          256.051,
+          340.623,
+          257.051
+        ],
+        "font_size": 1.0,
+        "raw_text": "on all the three tasks of SRSs in the practical black-box setting",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          245.258,
+          96.492,
+          246.258
+        ],
+        "font_size": 1.0,
+        "raw_text": "tify a person from utterances which contain audio charac-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          245.117,
+          337.023,
+          246.117
+        ],
+        "font_size": 1.0,
+        "raw_text": "in an attempt to understand the security weakness of SRSs",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          234.325,
+          97.842,
+          235.325
+        ],
+        "font_size": 1.0,
+        "raw_text": "teristics of the speaker. Speaker recognition systems (SRSs)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          234.184,
+          328.023,
+          235.184
+        ],
+        "font_size": 1.0,
+        "raw_text": "under adversarial attack in practice.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          223.391,
+          97.842,
+          224.391
+        ],
+        "font_size": 1.0,
+        "raw_text": "are ubiquitous in our daily life, ranging from biometric au-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          320.484,
+          223.251,
+          346.584,
+          224.251
+        ],
+        "font_size": 1.0,
+        "raw_text": "In this work, we focus on the black-box setting, which as-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          212.458,
+          98.292,
+          213.458
+        ],
+        "font_size": 1.0,
+        "raw_text": "thentication [2], forensic tests [3], to personalized service",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          212.318,
+          339.723,
+          213.318
+        ],
+        "font_size": 1.0,
+        "raw_text": "sumes that the adversary can obtain at most the decision result",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          201.524,
+          96.492,
+          202.524
+        ],
+        "font_size": 1.0,
+        "raw_text": "on smart devices [4]. Machine learning techniques are the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b102",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          201.384,
+          339.723,
+          202.384
+        ],
+        "font_size": 1.0,
+        "raw_text": "and scores of the enrolled speakers for each input voice. Hence",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b103",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          190.589,
+          96.942,
+          191.589
+        ],
+        "font_size": 1.0,
+        "raw_text": "mainstream method for implementing SRSs [5], however, they",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b104",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          190.45,
+          337.923,
+          191.45
+        ],
+        "font_size": 1.0,
+        "raw_text": "attacks in the black-box setting is more practical yet more",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b105",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          179.656,
+          100.992,
+          180.656
+        ],
+        "font_size": 1.0,
+        "raw_text": "are vulnerable to adversarial attacks (e.g., [6], [7], [8]). Hence,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b106",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          179.516,
+          337.923,
+          180.516
+        ],
+        "font_size": 1.0,
+        "raw_text": "challenging than the existing white-box attacks [13], [14].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b107",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          17.6,
+          177.144,
+          460.4,
+          185.144
+        ],
+        "font_size": 8.0,
+        "raw_text": "2021 IEEE Symposium on Security and Privacy (SP) | 978-1-7281-8934-5/21/$31.00 ©2021 IEEE | DOI: 10.1109/SP40001.2021.00004",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b108",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          168.723,
+          100.092,
+          169.723
+        ],
+        "font_size": 1.0,
+        "raw_text": "it is vital to understand the security implications of SRSs under",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b109",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          168.583,
+          336.123,
+          169.583
+        ],
+        "font_size": 1.0,
+        "raw_text": "We emphasize that the scoring and decision-making mech-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b110",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          157.789,
+          79.842,
+          158.789
+        ],
+        "font_size": 1.0,
+        "raw_text": "adversarial attacks.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b111",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          157.649,
+          337.473,
+          158.649
+        ],
+        "font_size": 1.0,
+        "raw_text": "anisms of SRSs are different among recognition tasks [18].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b112",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          79.953,
+          146.74,
+          105.153,
+          147.74
+        ],
+        "font_size": 1.0,
+        "raw_text": "Though the success of adversarial attack on image recog-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b113",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          146.716,
+          339.273,
+          147.716
+        ],
+        "font_size": 1.0,
+        "raw_text": "Particularly, we consider 40 attack scenarios (as demonstrated",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b114",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          135.805,
+          96.042,
+          136.805
+        ],
+        "font_size": 1.0,
+        "raw_text": "nition systems has been ported to the speech recognition",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b115",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          135.781,
+          337.923,
+          136.781
+        ],
+        "font_size": 1.0,
+        "raw_text": "in Fig. 2) in total differing in attack types (targeted vs.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b116",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          124.872,
+          97.392,
+          125.872
+        ],
+        "font_size": 1.0,
+        "raw_text": "systems in both the white-box setting (e.g., [9], [10]) and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b117",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          124.847,
+          338.373,
+          125.847
+        ],
+        "font_size": 1.0,
+        "raw_text": "untargeted), attack channels (API vs. over the air), genders",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b118",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          113.938,
+          99.642,
+          114.938
+        ],
+        "font_size": 1.0,
+        "raw_text": "black-box setting (e.g., [11], [12]), relatively little research",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b119",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.373,
+          113.914,
+          332.973,
+          114.914
+        ],
+        "font_size": 1.0,
+        "raw_text": "of source and target speakers, and SR tasks (cf.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b120",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          504.608,
+          113.914,
+          508.658,
+          114.914
+        ],
+        "font_size": 1.0,
+        "raw_text": "II-B). We",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b121",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          70.842,
+          103.004,
+          97.392,
+          104.004
+        ],
+        "font_size": 1.0,
+        "raw_text": "has been done on SRSs. Essentially, the speech signal of an",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b122",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.372,
+          102.98,
+          338.822,
+          103.98
+        ],
+        "font_size": 1.0,
+        "raw_text": "demonstrate our attack on 16 representative attack scenarios.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b123",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          38.0,
+          204.4,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "© 2021, Guangke Chen. Under license to IEEE.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b124",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          300.0,
+          38.0,
+          310.8,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "694",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b125",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          30.0,
+          154.0,
+          38.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "DOI 10.1109/SP40001.2021.00004",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b126",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          86.179,
+          21.908,
+          514.579,
+          28.908
+        ],
+        "font_size": 7.0,
+        "raw_text": "Authorized licensed use limited to: Yanshan University. Downloaded on June 24,2026 at 03:15:00 UTC from IEEE Xplore. Restrictions apply.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b127",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          0.0,
+          0.0,
+          16.65,
+          1.0
+        ],
+        "font_size": 1.0,
+        "raw_text": ", Lingling Fan † § ∥ AKE B AKE B AKE B B NTRODUCTION we investigate the adversarial attack , §",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Speaker recognition (SR) is widely used in our daily life as a biometric authentication or identification mechanism. The popularity of SR brings in serious security concerns, as demonstrated by recent adversarial attacks. However, the impacts of such threats in the practical black-box setting are still open, since current attacks consider the white-box setting only. In this paper, we conduct the first comprehensive and sys- tematic study of the adversarial attacks on SR systems (SRSs) to understand their security weakness in the practical black- box setting. For this purpose, we propose an adversarial attack, named F AKE BOB, to craft adversarial samples. Specifically, we formulate the adversarial sample generation as an optimization problem, incorporated with the confidence of adversarial samples and maximal distortion to balance between the strength and imperceptibility of adversarial voices. One key contribution is to propose a novel algorithm to estimate the score threshold, a feature in SRSs, and use it in the optimization problem to solve the optimization problem. We demonstrate that F AKE BOB achieves 99% targeted attack success rate on both open-source and commercial systems. We further demonstrate that F AKE BOB is also effective on both open-source and commercial systems when playing over the air in the physical world. Moreover, we have conducted a human study which reveals that it is hard for human to differentiate the speakers of the original and adversarial voices. Last but not least, we show that four promising defense methods for adversarial attack from the speech recognition domain become ineffective on SRSs against FAKE BOB, which calls for more effective defense methods. We highlight that our study peeks into the security implications of adversarial attacks on SRSs, and realistically fosters to improve the security robustness of SRSs. I. I NTRODUCTION Speaker recognition [1] is an automated technique to iden- tify a person from utterances which contain audio charac- teristics of the speaker. Speaker recognition systems (SRSs) are ubiquitous in our daily life, ranging from biometric au- thentication [2], forensic tests [3], to personalized service on smart devices [4]. Machine learning techniques are the mainstream method for implementing SRSs [5], however, they are vulnerable to adversarial attacks (e.g., [6], [7], [8]). Hence, it is vital to understand the security implications of SRSs under adversarial attacks. Though the success of adversarial attack on image recog- nition systems has been ported to the speech recognition systems in both the white-box setting (e.g., [9], [10]) and black-box setting (e.g., [11], [12]), relatively little research has been done on SRSs. Essentially, the speech signal of an utterance consists of two major parts: the underlying text and the characteristics of the speaker. To improve the performance, speech recognition will minimize speaker-dependent variations to determine the underlying text or command, whereas speaker recognition will treat the phonetic variations as extraneous noise to determine the source of the speech signal. Thus, adversarial attacks tailored to speech recognition systems may become ineffective on SRSs. An adversarial attack on SRSs aims at crafting a sample from a voice uttered by some source speaker, so that it is mis- classified as one of the enrolled speakers (untargeted attack) or a target speaker (targeted attack) by the system under attack, but still correctly recognized as the source speaker by ordinary users. Though current adversarial attacks on SRSs [13], [14] are promising, they suffer from the following three limitations: (1) They are limited to the white-box setting by assuming the adversary has access to the information of the target SRS. Attacks in a more realistic black-box setting are still open. (2) They only consider either the close-set identification task [13] that always classifies an arbitrary voice as one of the enrolled speakers [15], or the speaker verification task [14] that checks if an input voice is uttered by the unique enrolled speaker or not [16]. Attacks on the open-set identification task [17], which strictly subsumes both close-set identification and speaker verification, are still open. (3) They do not consider over- the-air attacks, hence it is unclear whether their attacks are still effective when playing over the air in the physical world. Therefore, in this work, we investigate the adversarial attack on all the three tasks of SRSs in the practical black-box setting , in an attempt to understand the security weakness of SRSs under adversarial attack in practice. In this work, we focus on the black-box setting, which as- sumes that the adversary can obtain at most the decision result and scores of the enrolled speakers for each input voice. Hence attacks in the black-box setting is more practical yet more challenging than the existing white-box attacks [13], [14]. We emphasize that the scoring and decision-making mech- anisms of SRSs are different among recognition tasks [18]. Particularly, we consider 40 attack scenarios (as demonstrated in Fig. 2) in total differing in attack types (targeted vs. untargeted), attack channels (API vs. over the air), genders of source and target speakers, and SR tasks (cf. §II-B). We demonstrate our attack on 16 representative attack scenarios. 694 DOI 10.1109/SP40001.2021.00004 To launch such a practical attack, two technical challenges need to be addressed: (C1) crafting adversarial samples as less imperceptible as possible in the black-box setting, and (C2) making the attack practical, namely, adversarial samples are effective on an unknown SRS, even when playing over the air in the physical world. In this paper, we propose a practical black-box attack, named F AKE BOB, which is able to overcome these challenges. Specifically, we formulate the adversarial sample generation as an optimization problem. The optimization objective is parameterized by a confidence parameter and the maximal distortion of noise amplitude in L ∞ norm to balance between the strength and imperceptibility of adversarial voices, instead of using noise model [10], [19], [20], due to its device- and background-dependency. We also incorporate the score thresh- old, a key feature in SRSs, into the optimization problem. To solve the optimization problem, we leverage an efficient gra- dient estimation algorithm, i.e., the natural evolution strategy (NES) [21]. However, even with the estimated gradients, none of the existing gradient-based white-box methods (e.g., [22], [23], [10], [24]) can be directly used to attack SRSs. This is due to the score threshold mechanism, where an attack fails if the predicated score is less than the threshold. To this end, we propose a novel algorithm to estimate the threshold, based on which we leverage the Basic Iterative Method (BIM) [23] with estimated gradients to solve the optimization problem. We evaluate F AKE BOB for its attacking capabilities, on 3 SRSs (i.e., ivector-PLDA [25], GMM-UBM [16] and xvector- PLDA [26]) in the popular open-source platform Kaldi [27] in the research community and 2 commercial systems (i.e., Talentedsoft [28] and Microsoft Azure [29]) which are pro- prietary without any publicly available information about the internal design and implementations, hence completely black- box. We evaluate F AKE BOB using 16 representative attack scenarios (out of 40) based on the following five aspects: (1) effectiveness/efficiency, (2) transferability, (3) practicability, (4) imperceptibility, and (5) robustness. The results show that F AKE BOB achieves 99% targeted attack success rate (ASR) on all the tasks of ivector-PLDA, GMM-UBM and xvector-PLDA systems, and 100% ASR on the commercial system Talentedsoft within 2,500 queries on average (cf. §V-B). To demonstrate the transferability, we conduct a comprehensive evaluation of transferability attack on ivector-PLDA, GMM-UBM and xvector-PLDA systems under cross-architecture, cross-dataset, and cross-parameter circumstances and the commercial system Microsoft Azure. F AKE BOB is able to achieve 34%-68% transferability (attack success) rate except for the speaker verification of Microsoft Azure. The transferability rate could be increased by crafting high-confidence adversarial samples at the cost of increasing distortion. To further demonstrate the practicability and im- perceptibility, we launch an over-the-air attack in the physical world and also conduct a human study on the Amazon Mechanical Turk platform [30]. The results indicate that F AKE BOB is effective when playing over the air in the physical world against both the open-source systems and the open-set identification task of Microsoft Azure (cf. §V-D) and it is hard for humans to differentiate the speakers of the original and adversarial voices (cf. §V-E). Finally, we study four defense methods that are reported promising in speech recognition domain: audio squeezing [10], [31], local smoothing [31], quantization [31] and temporal dependency-based detection [31], due to lacking of domain- specific defense solutions for adversarial attack on SRSs. The results demonstrate that these defense methods have limited effects on F AKE BOB, indicating that F AKE BOB is a practical and powerful adversarial attack on SRSs. Our study reveals that the security weakness of SRSs under black-box adversarial attacks. This weakness could lead to lots of serious security implications. For instance, the adversary could launch an adversarial attack (e.g., F AKE BOB) to bypass biometric authentication on the financial transaction [2], [32] and smart devices [4], as well as high-security intelligent voice control systems [33] so that follow-up voice command attacks can be launched, e.g., CommanderSong [10] and hidden voice commands [34]. For the voice-enabled cars using Dragon Drive [33], the attacker could bypass its voice biometrics using F AKE BOB so that command attacks can be launched to control cars. Even for commercial systems, it is a significant threat under such a practical black-box adversarial attack, which calls for more robust SRSs. To shed further light, we discuss the potential mitigation and further attacks to understand the arm race in this topic. In summary, our main contributions are: • To our knowledge, this is the first study of targeted adver- sarial attacks on SRSs in the black-box setting. Our attack is launched by not only using gradient estimation based methods, but also incorporating the score threshold into the adversarial sample generation. The proposed algorithm to estimate the score threshold is unique in SRSs. • Our black-box attack addresses not only the speaker recog- nition tasks considered by existing white-box attacks but also the more general task, open-set identification, which has not been considered by previous adversarial attacks. • Our attack is demonstrated to be effective on the popular open-source systems and commercial system Talentedsoft, transferable and practical on the popular open-source sys- tems and the open-set identification task of Microsoft Azure even when playing over the air in the physical world. • Our attack is robust against four potential defense methods which are reported very promising in speech recognition domain. Our study reveals the security implications of the adversarial attack on SRSs, which calls for more robust SRSs and more effective domain-specific defense methods. For more information of F AKE BOB, please refer to our website [35] which includes voice samples and source code. II. B ACKGROUND In this section, we introduce the preliminaries of speaker recognition systems (SRSs) and the threat model. A. Speaker Recognition System (SRS) Speaker recognition is an automated technique that allows machines to recognize a person's identity based on his/her 695",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "ModDate": "D:20220824234030-04'00'",
+          "IEEE Issue ID": "9519382",
+          "IEEE Publication ID": "9519381",
+          "Title": "Who is Real Bob? Adversarial Attacks on Speaker Recognition Systems",
+          "Producer": "OpenPDF 1.0.0-SNAPSHOT; modified using iText® 7.1.1 ©2000-2018 iText Group NV (AGPL-version)",
+          "CreationDate": "D:20210819010144-04'00'",
+          "Meeting Ending Date": "27 May 2021",
+          "Keywords": "adversarial-attack,speaker-recognition,speaker-identification,speaker-verification",
+          "IEEE Article ID": "9519486",
+          "Subject": "2021 IEEE Symposium on Security and Privacy (SP);2021; ; ;10.1109/SP40001.2021.00004",
+          "Meeting Starting Date": "24 May 2021",
+          "Author": "Guangke Chen"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Guangke Chen",
+        "affiliations": [
+          "ShanghaiTech University; Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences; University of Chinese Academy of Sciences"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Sen Chen",
+        "affiliations": [
+          "Tianjin University; Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Lingling Fan",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Xiaoning Du",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:4",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Zhe Zhao",
+        "affiliations": [
+          "ShanghaiTech University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:5",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Fu Song",
+        "affiliations": [
+          "ShanghaiTech University; Shanghai Engineering Research Center of Intelligent Vision and Imaging"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:6",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Yang Liu",
+        "affiliations": [
+          "Nanyang Technological University"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "Who is Real Bob? Adversarial Attacks on Speaker Recognition Systems"
+        },
+        {
+          "source": "selected",
+          "value": "Who is Real Bob? Adversarial Attacks on Speaker Recognition Systems"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2021"
+        },
+        {
+          "source": "selected",
+          "value": "2021"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Speaker recognition (SR) is widely used in our daily life as a biometric authentication or identification mechanism. The popularity of SR brings in serious security concerns, as demonstrated by recent adversarial attacks. However, the impacts of such threats in the practical black-box setting are still open, since current attacks consider the white-box setting only. In this paper, we conduct the first comprehensive and sys- tematic study of the adversarial attacks on SR systems (SRSs) to understand their security weakness in the practical black- box setting. For this purpose, we propose an adversarial attack, named F AKE BOB, to craft adversarial samples. Specifically, we formulate the adversarial sample generation as an optimization problem, incorporated with the confidence of adversarial samples and maximal distortion to balance between the strength and imperceptibility of adversarial voices. One key contribution is to propose a novel algorithm to estimate the score threshold, a feature in SRSs, and use it in the optimization problem to solve the optimization problem. We demonstrate that F AKE BOB achieves 99% targeted attack success rate on both open-source and commercial systems. We further demonstrate that F AKE BOB is also effective on both open-source and commercial systems when playing over the air in the physical world. Moreover, we have conducted a human study which reveals that it is hard for human to differentiate the speakers of the original and adversarial voices. Last but not least, we show that four promising defense methods for adversarial attack from the speech recognition domain become ineffective on SRSs against FAKE BOB, which calls for more effective defense methods. We highlight that our study peeks into the security implications of adversarial attacks on SRSs, and realistically fosters to improve the security robustness of SRSs. I. I NTRODUCTION Speaker recognition [1] is an automated technique to iden- tify a person from utterances which contain audio charac- teristics of the speaker. Speaker recognition systems (SRSs) are ubiquitous in our daily life, ranging from biometric au- thentication [2], forensic tests [3], to personalized service on smart devices [4]. Machine learning techniques are the mainstream method for implementing SRSs [5], however, they are vulnerable to adversarial attacks (e.g., [6], [7], [8]). Hence, it is vital to understand the security implications of SRSs under adversarial attacks. Though the success of adversarial attack on image recog- nition systems has been ported to the speech recognition systems in both the white-box setting (e.g., [9], [10]) and black-box setting (e.g., [11], [12]), relatively little research has been done on SRSs. Essentially, the speech signal of an utterance consists of two major parts: the underlying text and the characteristics of the speaker. To improve the performance, speech recognition will minimize speaker-dependent variations to determine the underlying text or command, whereas speaker recognition will treat the phonetic variations as extraneous noise to determine the source of the speech signal. Thus, adversarial attacks tailored to speech recognition systems may become ineffective on SRSs. An adversarial attack on SRSs aims at crafting a sample from a voice uttered by some source speaker, so that it is mis- classified as one of the enrolled speakers (untargeted attack) or a target speaker (targeted attack) by the system under attack, but still correctly recognized as the source speaker by ordinary users. Though current adversarial attacks on SRSs [13], [14] are promising, they suffer from the following three limitations: (1) They are limited to the white-box setting by assuming the adversary has access to the information of the target SRS. Attacks in a more realistic black-box setting are still open. (2) They only consider either the close-set identification task [13] that always classifies an arbitrary voice as one of the enrolled speakers [15], or the speaker verification task [14] that checks if an input voice is uttered by the unique enrolled speaker or not [16]. Attacks on the open-set identification task [17], which strictly subsumes both close-set identification and speaker verification, are still open. (3) They do not consider over- the-air attacks, hence it is unclear whether their attacks are still effective when playing over the air in the physical world. Therefore, in this work, we investigate the adversarial attack on all the three tasks of SRSs in the practical black-box setting , in an attempt to understand the security weakness of SRSs under adversarial attack in practice. In this work, we focus on the black-box setting, which as- sumes that the adversary can obtain at most the decision result and scores of the enrolled speakers for each input voice. Hence attacks in the black-box setting is more practical yet more challenging than the existing white-box attacks [13], [14]. We emphasize that the scoring and decision-making mech- anisms of SRSs are different among recognition tasks [18]. Particularly, we consider 40 attack scenarios (as demonstrated in Fig. 2) in total differing in attack types (targeted vs. untargeted), attack channels (API vs. over the air), genders of source and target speakers, and SR tasks (cf. §II-B). We demonstrate our attack on 16 representative attack scenarios. 694 DOI 10.1109/SP40001.2021.00004 To launch such a practical attack, two technical challenges need to be addressed: (C1) crafting adversarial samples as less imperceptible as possible in the black-box setting, and (C2) making the attack practical, namely, adversarial samples are effective on an unknown SRS, even when playing over the air in the physical world. In this paper, we propose a practical black-box attack, named F AKE BOB, which is able to overcome these challenges. Specifically, we formulate the adversarial sample generation as an optimization problem. The optimization objective is parameterized by a confidence parameter and the maximal distortion of noise amplitude in L ∞ norm to balance between the strength and imperceptibility of adversarial voices, instead of using noise model [10], [19], [20], due to its device- and background-dependency. We also incorporate the score thresh- old, a key feature in SRSs, into the optimization problem. To solve the optimization problem, we leverage an efficient gra- dient estimation algorithm, i.e., the natural evolution strategy (NES) [21]. However, even with the estimated gradients, none of the existing gradient-based white-box methods (e.g., [22], [23], [10], [24]) can be directly used to attack SRSs. This is due to the score threshold mechanism, where an attack fails if the predicated score is less than the threshold. To this end, we propose a novel algorithm to estimate the threshold, based on which we leverage the Basic Iterative Method (BIM) [23] with estimated gradients to solve the optimization problem. We evaluate F AKE BOB for its attacking capabilities, on 3 SRSs (i.e., ivector-PLDA [25], GMM-UBM [16] and xvector- PLDA [26]) in the popular open-source platform Kaldi [27] in the research community and 2 commercial systems (i.e., Talentedsoft [28] and Microsoft Azure [29]) which are pro- prietary without any publicly available information about the internal design and implementations, hence completely black- box. We evaluate F AKE BOB using 16 representative attack scenarios (out of 40) based on the following five aspects: (1) effectiveness/efficiency, (2) transferability, (3) practicability, (4) imperceptibility, and (5) robustness. The results show that F AKE BOB achieves 99% targeted attack success rate (ASR) on all the tasks of ivector-PLDA, GMM-UBM and xvector-PLDA systems, and 100% ASR on the commercial system Talentedsoft within 2,500 queries on average (cf. §V-B). To demonstrate the transferability, we conduct a comprehensive evaluation of transferability attack on ivector-PLDA, GMM-UBM and xvector-PLDA systems under cross-architecture, cross-dataset, and cross-parameter circumstances and the commercial system Microsoft Azure. F AKE BOB is able to achieve 34%-68% transferability (attack success) rate except for the speaker verification of Microsoft Azure. The transferability rate could be increased by crafting high-confidence adversarial samples at the cost of increasing distortion. To further demonstrate the practicability and im- perceptibility, we launch an over-the-air attack in the physical world and also conduct a human study on the Amazon Mechanical Turk platform [30]. The results indicate that F AKE BOB is effective when playing over the air in the physical world against both the open-source systems and the open-set identification task of Microsoft Azure (cf. §V-D) and it is hard for humans to differentiate the speakers of the original and adversarial voices (cf. §V-E). Finally, we study four defense methods that are reported promising in speech recognition domain: audio squeezing [10], [31], local smoothing [31], quantization [31] and temporal dependency-based detection [31], due to lacking of domain- specific defense solutions for adversarial attack on SRSs. The results demonstrate that these defense methods have limited effects on F AKE BOB, indicating that F AKE BOB is a practical and powerful adversarial attack on SRSs. Our study reveals that the security weakness of SRSs under black-box adversarial attacks. This weakness could lead to lots of serious security implications. For instance, the adversary could launch an adversarial attack (e.g., F AKE BOB) to bypass biometric authentication on the financial transaction [2], [32] and smart devices [4], as well as high-security intelligent voice control systems [33] so that follow-up voice command attacks can be launched, e.g., CommanderSong [10] and hidden voice commands [34]. For the voice-enabled cars using Dragon Drive [33], the attacker could bypass its voice biometrics using F AKE BOB so that command attacks can be launched to control cars. Even for commercial systems, it is a significant threat under such a practical black-box adversarial attack, which calls for more robust SRSs. To shed further light, we discuss the potential mitigation and further attacks to understand the arm race in this topic. In summary, our main contributions are: • To our knowledge, this is the first study of targeted adver- sarial attacks on SRSs in the black-box setting. Our attack is launched by not only using gradient estimation based methods, but also incorporating the score threshold into the adversarial sample generation. The proposed algorithm to estimate the score threshold is unique in SRSs. • Our black-box attack addresses not only the speaker recog- nition tasks considered by existing white-box attacks but also the more general task, open-set identification, which has not been considered by previous adversarial attacks. • Our attack is demonstrated to be effective on the popular open-source systems and commercial system Talentedsoft, transferable and practical on the popular open-source sys- tems and the open-set identification task of Microsoft Azure even when playing over the air in the physical world. • Our attack is robust against four potential defense methods which are reported very promising in speech recognition domain. Our study reveals the security implications of the adversarial attack on SRSs, which calls for more robust SRSs and more effective domain-specific defense methods. For more information of F AKE BOB, please refer to our website [35] which includes voice samples and source code. II. B ACKGROUND In this section, we introduce the preliminaries of speaker recognition systems (SRSs) and the threat model. A. Speaker Recognition System (SRS) Speaker recognition is an automated technique that allows machines to recognize a person's identity based on his/her 695"
+        },
+        {
+          "source": "selected",
+          "value": "Speaker recognition (SR) is widely used in our daily life as a biometric authentication or identification mechanism. The popularity of SR brings in serious security concerns, as demonstrated by recent adversarial attacks. However, the impacts of such threats in the practical black-box setting are still open, since current attacks consider the white-box setting only. In this paper, we conduct the first comprehensive and sys- tematic study of the adversarial attacks on SR systems (SRSs) to understand their security weakness in the practical black- box setting. For this purpose, we propose an adversarial attack, named F AKE BOB, to craft adversarial samples. Specifically, we formulate the adversarial sample generation as an optimization problem, incorporated with the confidence of adversarial samples and maximal distortion to balance between the strength and imperceptibility of adversarial voices. One key contribution is to propose a novel algorithm to estimate the score threshold, a feature in SRSs, and use it in the optimization problem to solve the optimization problem. We demonstrate that F AKE BOB achieves 99% targeted attack success rate on both open-source and commercial systems. We further demonstrate that F AKE BOB is also effective on both open-source and commercial systems when playing over the air in the physical world. Moreover, we have conducted a human study which reveals that it is hard for human to differentiate the speakers of the original and adversarial voices. Last but not least, we show that four promising defense methods for adversarial attack from the speech recognition domain become ineffective on SRSs against FAKE BOB, which calls for more effective defense methods. We highlight that our study peeks into the security implications of adversarial attacks on SRSs, and realistically fosters to improve the security robustness of SRSs. I. I NTRODUCTION Speaker recognition [1] is an automated technique to iden- tify a person from utterances which contain audio charac- teristics of the speaker. Speaker recognition systems (SRSs) are ubiquitous in our daily life, ranging from biometric au- thentication [2], forensic tests [3], to personalized service on smart devices [4]. Machine learning techniques are the mainstream method for implementing SRSs [5], however, they are vulnerable to adversarial attacks (e.g., [6], [7], [8]). Hence, it is vital to understand the security implications of SRSs under adversarial attacks. Though the success of adversarial attack on image recog- nition systems has been ported to the speech recognition systems in both the white-box setting (e.g., [9], [10]) and black-box setting (e.g., [11], [12]), relatively little research has been done on SRSs. Essentially, the speech signal of an utterance consists of two major parts: the underlying text and the characteristics of the speaker. To improve the performance, speech recognition will minimize speaker-dependent variations to determine the underlying text or command, whereas speaker recognition will treat the phonetic variations as extraneous noise to determine the source of the speech signal. Thus, adversarial attacks tailored to speech recognition systems may become ineffective on SRSs. An adversarial attack on SRSs aims at crafting a sample from a voice uttered by some source speaker, so that it is mis- classified as one of the enrolled speakers (untargeted attack) or a target speaker (targeted attack) by the system under attack, but still correctly recognized as the source speaker by ordinary users. Though current adversarial attacks on SRSs [13], [14] are promising, they suffer from the following three limitations: (1) They are limited to the white-box setting by assuming the adversary has access to the information of the target SRS. Attacks in a more realistic black-box setting are still open. (2) They only consider either the close-set identification task [13] that always classifies an arbitrary voice as one of the enrolled speakers [15], or the speaker verification task [14] that checks if an input voice is uttered by the unique enrolled speaker or not [16]. Attacks on the open-set identification task [17], which strictly subsumes both close-set identification and speaker verification, are still open. (3) They do not consider over- the-air attacks, hence it is unclear whether their attacks are still effective when playing over the air in the physical world. Therefore, in this work, we investigate the adversarial attack on all the three tasks of SRSs in the practical black-box setting , in an attempt to understand the security weakness of SRSs under adversarial attack in practice. In this work, we focus on the black-box setting, which as- sumes that the adversary can obtain at most the decision result and scores of the enrolled speakers for each input voice. Hence attacks in the black-box setting is more practical yet more challenging than the existing white-box attacks [13], [14]. We emphasize that the scoring and decision-making mech- anisms of SRSs are different among recognition tasks [18]. Particularly, we consider 40 attack scenarios (as demonstrated in Fig. 2) in total differing in attack types (targeted vs. untargeted), attack channels (API vs. over the air), genders of source and target speakers, and SR tasks (cf. §II-B). We demonstrate our attack on 16 representative attack scenarios. 694 DOI 10.1109/SP40001.2021.00004 To launch such a practical attack, two technical challenges need to be addressed: (C1) crafting adversarial samples as less imperceptible as possible in the black-box setting, and (C2) making the attack practical, namely, adversarial samples are effective on an unknown SRS, even when playing over the air in the physical world. In this paper, we propose a practical black-box attack, named F AKE BOB, which is able to overcome these challenges. Specifically, we formulate the adversarial sample generation as an optimization problem. The optimization objective is parameterized by a confidence parameter and the maximal distortion of noise amplitude in L ∞ norm to balance between the strength and imperceptibility of adversarial voices, instead of using noise model [10], [19], [20], due to its device- and background-dependency. We also incorporate the score thresh- old, a key feature in SRSs, into the optimization problem. To solve the optimization problem, we leverage an efficient gra- dient estimation algorithm, i.e., the natural evolution strategy (NES) [21]. However, even with the estimated gradients, none of the existing gradient-based white-box methods (e.g., [22], [23], [10], [24]) can be directly used to attack SRSs. This is due to the score threshold mechanism, where an attack fails if the predicated score is less than the threshold. To this end, we propose a novel algorithm to estimate the threshold, based on which we leverage the Basic Iterative Method (BIM) [23] with estimated gradients to solve the optimization problem. We evaluate F AKE BOB for its attacking capabilities, on 3 SRSs (i.e., ivector-PLDA [25], GMM-UBM [16] and xvector- PLDA [26]) in the popular open-source platform Kaldi [27] in the research community and 2 commercial systems (i.e., Talentedsoft [28] and Microsoft Azure [29]) which are pro- prietary without any publicly available information about the internal design and implementations, hence completely black- box. We evaluate F AKE BOB using 16 representative attack scenarios (out of 40) based on the following five aspects: (1) effectiveness/efficiency, (2) transferability, (3) practicability, (4) imperceptibility, and (5) robustness. The results show that F AKE BOB achieves 99% targeted attack success rate (ASR) on all the tasks of ivector-PLDA, GMM-UBM and xvector-PLDA systems, and 100% ASR on the commercial system Talentedsoft within 2,500 queries on average (cf. §V-B). To demonstrate the transferability, we conduct a comprehensive evaluation of transferability attack on ivector-PLDA, GMM-UBM and xvector-PLDA systems under cross-architecture, cross-dataset, and cross-parameter circumstances and the commercial system Microsoft Azure. F AKE BOB is able to achieve 34%-68% transferability (attack success) rate except for the speaker verification of Microsoft Azure. The transferability rate could be increased by crafting high-confidence adversarial samples at the cost of increasing distortion. To further demonstrate the practicability and im- perceptibility, we launch an over-the-air attack in the physical world and also conduct a human study on the Amazon Mechanical Turk platform [30]. The results indicate that F AKE BOB is effective when playing over the air in the physical world against both the open-source systems and the open-set identification task of Microsoft Azure (cf. §V-D) and it is hard for humans to differentiate the speakers of the original and adversarial voices (cf. §V-E). Finally, we study four defense methods that are reported promising in speech recognition domain: audio squeezing [10], [31], local smoothing [31], quantization [31] and temporal dependency-based detection [31], due to lacking of domain- specific defense solutions for adversarial attack on SRSs. The results demonstrate that these defense methods have limited effects on F AKE BOB, indicating that F AKE BOB is a practical and powerful adversarial attack on SRSs. Our study reveals that the security weakness of SRSs under black-box adversarial attacks. This weakness could lead to lots of serious security implications. For instance, the adversary could launch an adversarial attack (e.g., F AKE BOB) to bypass biometric authentication on the financial transaction [2], [32] and smart devices [4], as well as high-security intelligent voice control systems [33] so that follow-up voice command attacks can be launched, e.g., CommanderSong [10] and hidden voice commands [34]. For the voice-enabled cars using Dragon Drive [33], the attacker could bypass its voice biometrics using F AKE BOB so that command attacks can be launched to control cars. Even for commercial systems, it is a significant threat under such a practical black-box adversarial attack, which calls for more robust SRSs. To shed further light, we discuss the potential mitigation and further attacks to understand the arm race in this topic. In summary, our main contributions are: • To our knowledge, this is the first study of targeted adver- sarial attacks on SRSs in the black-box setting. Our attack is launched by not only using gradient estimation based methods, but also incorporating the score threshold into the adversarial sample generation. The proposed algorithm to estimate the score threshold is unique in SRSs. • Our black-box attack addresses not only the speaker recog- nition tasks considered by existing white-box attacks but also the more general task, open-set identification, which has not been considered by previous adversarial attacks. • Our attack is demonstrated to be effective on the popular open-source systems and commercial system Talentedsoft, transferable and practical on the popular open-source sys- tems and the open-set identification task of Microsoft Azure even when playing over the air in the physical world. • Our attack is robust against four potential defense methods which are reported very promising in speech recognition domain. Our study reveals the security implications of the adversarial attack on SRSs, which calls for more robust SRSs and more effective domain-specific defense methods. For more information of F AKE BOB, please refer to our website [35] which includes voice samples and source code. II. B ACKGROUND In this section, we introduce the preliminaries of speaker recognition systems (SRSs) and the threat model. A. Speaker Recognition System (SRS) Speaker recognition is an automated technique that allows machines to recognize a person's identity based on his/her 695"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Guangke Chen",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "ShanghaiTech University",
+              "Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences, University of Chinese Academy of Sciences"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Sen Chen",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University",
+              "College of Intelligence and Computing, Shanghai Engineering Research Center of Intelligent Vision, Tianjin University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Lingling Fan",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Xiaoning Du",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 3
+          },
+          {
+            "order": 4,
+            "name": "Zhe Zhao",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "ShanghaiTech University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 4
+          },
+          {
+            "order": 5,
+            "name": "Fu Song",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "ShanghaiTech University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 5
+          },
+          {
+            "order": 6,
+            "name": "Yang Liu",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 6
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Guangke Chen",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "ShanghaiTech University",
+              "Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences, University of Chinese Academy of Sciences"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": true,
+            "co_first_author": true,
+            "equal_contribution": true,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Sen Chen",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University",
+              "College of Intelligence and Computing, Shanghai Engineering Research Center of Intelligent Vision, Tianjin University"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Lingling Fan",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 3,
+            "name": "Xiaoning Du",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 4,
+            "name": "Zhe Zhao",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "ShanghaiTech University"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 5,
+            "name": "Fu Song",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "ShanghaiTech University"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": true,
+            "co_first_author": true,
+            "equal_contribution": true,
+            "corresponding": false
+          },
+          {
+            "order": 6,
+            "name": "Yang Liu",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Nanyang Technological University"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 27,
+        "author_count": 7,
+        "matched_author_count": 0,
+        "exact_author_match_count": 0,
+        "dominant_author_font_size": 0.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 7,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "Who is Real Bob? Adversarial Attacks on Speaker Recognition Systems",
+        "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Guangke Chen",
+            "affiliations": [
+              "ShanghaiTech University; Shanghai Institute of Microsystem and Information Technology, Chinese Academy of Sciences; University of Chinese Academy of Sciences"
+            ]
+          },
+          {
+            "name": "Sen Chen",
+            "affiliations": [
+              "Tianjin University; Nanyang Technological University"
+            ]
+          },
+          {
+            "name": "Lingling Fan",
+            "affiliations": [
+              "Nanyang Technological University"
+            ]
+          },
+          {
+            "name": "Xiaoning Du",
+            "affiliations": [
+              "Nanyang Technological University"
+            ]
+          },
+          {
+            "name": "Zhe Zhao",
+            "affiliations": [
+              "ShanghaiTech University"
+            ]
+          },
+          {
+            "name": "Fu Song",
+            "affiliations": [
+              "ShanghaiTech University; Shanghai Engineering Research Center of Intelligent Vision and Imaging"
+            ]
+          },
+          {
+            "name": "Yang Liu",
+            "affiliations": [
+              "Nanyang Technological University"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      },
+      {
+        "action": "reject_author_list_rebuild",
+        "stage": "conference_strategy",
+        "field": "authors",
+        "baseline_count": 7,
+        "proposed_count": 7,
+        "retained_count": 5,
+        "reason": "clean_baseline_author_list_would_be_mostly_lost"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      }
+    ]
+  }
+}

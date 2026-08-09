@@ -1,0 +1,288 @@
+{
+  "paper_id": "007_mega_malleable_encryption_goes_awry",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "MEGA: Malleable Encryption Goes Awry"
+      },
+      {
+        "source": "selected",
+        "value": "MEGA: Malleable Encryption Goes Awry"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "MEGA is a leading cloud storage platform with more than 250 million users and 1000 Petabytes of stored data. MEGA claims to offer user-controlled, end-to-end security. This is achieved by having all data encryption and decryption operations done on MEGA clients, under the control of keys that are only available to those clients. This is intended to protect MEGA users from attacks by MEGA itself, or by adversaries who have taken control of MEGA's infrastructure. We provide a detailed analysis of MEGA's use of cryptography in such a malicious server setting. We present five distinct attacks against MEGA, which together allow for a full compromise of the confidentiality of user files. Additionally, the integrity of user data is damaged to the extent that an attacker can insert malicious files of their choice which pass all authenticity checks of the client. We built proof-of-concept versions of all the attacks. Four of the five attacks are eminently practical. They have all been responsibly disclosed to MEGA and remediation is underway. Taken together, our attacks highlight significant shortcomings in MEGA's cryptographic architecture. We present immediately deployable countermeasures, as well as longer-term recommendations. We also provide a broader discussion of the challenges of cryptographic deployment at massive scale under strong threat models. 146 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "MEGA is a leading cloud storage platform with more than 250 million users and 1000 Petabytes of stored data. MEGA claims to offer user-controlled, end-to-end security. This is achieved by having all data encryption and decryption operations done on MEGA clients, under the control of keys that are only available to those clients. This is intended to protect MEGA users from attacks by MEGA itself, or by adversaries who have taken control of MEGA's infrastructure. We provide a detailed analysis of MEGA's use of cryptography in such a malicious server setting. We present five distinct attacks against MEGA, which together allow for a full compromise of the confidentiality of user files. Additionally, the integrity of user data is damaged to the extent that an attacker can insert malicious files of their choice which pass all authenticity checks of the client. We built proof-of-concept versions of all the attacks. Four of the five attacks are eminently practical. They have all been responsibly disclosed to MEGA and remediation is underway. Taken together, our attacks highlight significant shortcomings in MEGA's cryptographic architecture. We present immediately deployable countermeasures, as well as longer-term recommen- dations. We also provide a broader discussion of the challenges of cryptographic deployment at massive scale under strong threat models. I. I NTRODUCTION The cloud - for outsourcing of both computation and data storage - has become a very popular approach to address scaling and management problems in IT. This applies to both enterprise and consumer domains. In the latter case, the market offers a myriad of different cloud services, with products having different combinations of storage, computation and collaboration features, and making a range of security and privacy claims. The consumer storage market alone was valued at USD 13.6 billion in 2021. 1 As a prominent example, MEGA 2 is a cloud storage and collaboration platform founded in 2013 offering “secure stor- age and communication” services. With over 250 million reg- istered users, 10 million daily active users [1] and 1000 PB of stored data [2], MEGA is a significant player in the consumer domain. What sets them apart from their competitors such as DropBox, Google Drive, iCloud and Microsoft OneDrive is the claimed security guarantees: MEGA advertise themselves as “the privacy company” and promise user-controlled end-to- end encryption (UCE). UCE refers to the fact that data uploaded to the MEGA cloud is encrypted, and that only the user who owns the 1https://dataintelo.com/report/consumer-cloud-storage-services-market/. 2https://mega.io/ data has access to the key (derived from the user's password) needed to decrypt. Thus, MEGA's main selling point is confidentiality of user data even against MEGA themselves, as showcased in the following quote from their website [3]: “MEGA does not have access to your password or your data. Using a strong and unique password will ensure that your data is protected from being hacked and gives you total confidence that your information will remain just that - yours.” This implies a threat model in which the service provider itself should be considered potentially adversarial, and yet the service should remain secure. All the service is then trusted for is availability. This adversarial model provides an interesting setting for cryptanalysis: not only does the adversary have access to encrypted user keys and data, it can also interact with users through legitimate channels during steps like user authentication and file access. This may seem a very strong adversarial model. However, we stress that it is consistent with the security claims made by MEGA themselves. Moreover, we must consider the pos- sibility that even if MEGA is not adversarial, their systems may have been compromised by malicious third parties, for example nation state security agencies or hacking groups, who wish to gain access to users' data and files. Indeed, the sheer size of MEGA - and the likelihood of it attracting users who wish to protect highly sensitive data precisely because of the security the service claims to offer - surely make MEGA an attractive target. Additionally, UCE should ensure that MEGA cannot be coerced into revealing user data, e.g. through subpoenas, since they are technically unable to do so. In this work, we review the security of MEGA in this threat model and find significant issues in how it uses cryptography. These lead to devastating attacks on the confidentiality and integrity of user data in the MEGA cloud. A. The MEGA Key Hierarchy MEGA's approach to UCE begins with the user password, PW, which acts as the root of the key hierarchy depicted in Figure 1. The MEGA client derives an authentication key and an encryption key from the password. The authentication key is used to identify users to MEGA. The encryption key encrypts a randomly generated master key, which in turn encrypts other key material of the user. Every account has a set of asymmetric keys: an RSA key pair for sharing data, a Curve25519 key pair for exchanging chat keys for MEGA's 146 DOI 10.1109/SP46215.2023.00026 RSA Share Key Curve25519 Chat Key Ed25519 Sign Key Sym. Chat Keys legacy Node Keys Master Key PW Auth. Key Enc. Key Sign Encrypt HKDF Legend: sharing Fig. 1. MEGA's key hierarchy. The master key encrypts the share, chat, sign and node keys using AES-ECB. chat functionality, and an Ed25519 key pair for signing the other keys. Furthermore, the client generates a new key for every file or folder (collectively referred to as nodes) uploaded by the user. All keys are encrypted by the client with the master key using AES-ECB and then stored on MEGA's servers to support access from multiple devices. A user on a new device can enter their password, authenticate to MEGA, fetch the encrypted key material, and decrypt it with the encryption key derived from the password. B. Trivial Attacks The above description of MEGA's key hierarchy immedi- ately leads to a trivial attack. MEGA could mount dictionary attacks on user passwords using data revealed in the authen- tication protocol (in which the authentication key is sent to the MEGA server). This attack is mitigated by users choosing strong passwords and by MEGA imposing a suitable password policy. Moreover, another trivial attack is that MEGA could in- troduce malicious code to their web clients. This could be used to exfiltrate the user password or keys to the MEGA servers. MEGA provides a browser extension - including signed updates - which avoids loading code dynamically and instead runs it locally. This, to some extent, addresses this code integrity issue. We do not consider these attacks any further in this paper, since they are both mitigated in the MEGA service. C. Contributions We present a series of five attacks on the key hierarchy of MEGA. The first two attacks exploit the lack of integrity protection of ciphertexts containing keys (henceforth referred to as key ciphertexts), and allow full compromise of all user keys encrypted with the master key, leading to a complete break of data confidentiality in the MEGA system. The next two attacks breach the integrity of file ciphertexts and allow a malicious service provider to insert chosen files into users' cloud storage. The last attack is a Bleichenbacher-style attack against MEGA's RSA encryption mechanism. It is applicable in a slightly weaker attack model than our first four attacks. We have developed proof-of-concept (PoC) implementations for all five attacks. We briefly present each attack next. 1) RSA Key Recovery Attack. Using the session ID ex- change at the start of a client connection to MEGA, a malicious service provider can recover a user's private RSA share key (used to share file and folder keys) over 512 login attempts. When the RSA key has been com- promised by the attacker, the confidentiality and integrity of all node keys shared with the victim is lost. Our attack exploits the lack of integrity protection of the encrypted RSA key and properties of the RSA-CRT implementation used by MEGA clients to build an oracle that leaks one bit of information per login attempt about a factor of the RSA modulus. It combines this novel attack vector with known lattice techniques to accelerate the attack. 2) Plaintext Recovery Attack. Building on the previous vulnerability, the malicious service provider can recover any plaintext encrypted with AES-ECB under a user's master key. This includes all node keys used for encrypt- ing files and folders (including unshared ones not affected by the previous attack), as well as the private Ed25519 signature and Curve25519 chat key. As a consequence, the confidentiality of all user data protected by these keys, such as files and chat messages, is lost. This attack exploits MEGA's reuse of the master key and the use of RSA-CRT, in combination with the abilities of the adversary to manipulate key ciphertexts and choose plaintexts used in the authentication protocol. We believe it to be an entirely novel kind of attack. 3) Two Integrity Attacks. We present two attacks with which a malicious service provider can break the integrity of the file encryption scheme and insert arbitrary files into the user's file storage which pass the authenticity checks during decryption. This enables framing of the user by inserting controversial, illegal, or compromising material into their file storage. The attacks are non-trivial because the adversary cannot properly encrypt node keys without access to the user's master key. The first attack uses the previous plaintext recovery attack to obtain a suitable node key and then constructs an encrypted file. The user cannot demonstrate that they did not upload the forged data because the files and keys are indistinguishable from genuinely uploaded ones. The second integrity attack does not require that the attacker has access to a decryption oracle for AES-ECB under the master key. Instead, it exploits a fundamental problem with the method used by MEGA to “obfuscate” file and folder keys before encryption. It needs only knowledge of a single AES block and its AES-ECB encryption under the user's master key to create a forgery that is difficult to detect. 4) RSA Decryption Attack. The RSA encryption used to exchange chat keys as a legacy fallback is vulner- able to a novel variant of Bleichenbacher's attack on PKCS#1 v1.5 padding [4]. This attack allows for the decryption of RSA ciphertexts containing chat and node keys. This is already implied by the key recovery attack in point 1, but this attack requires a weaker adversary 147"
+      },
+      {
+        "source": "selected",
+        "value": "MEGA is a leading cloud storage platform with more than 250 million users and 1000 Petabytes of stored data. MEGA claims to offer user-controlled, end-to-end security. This is achieved by having all data encryption and decryption operations done on MEGA clients, under the control of keys that are only available to those clients. This is intended to protect MEGA users from attacks by MEGA itself, or by adversaries who have taken control of MEGA's infrastructure. We provide a detailed analysis of MEGA's use of cryptography in such a malicious server setting. We present five distinct attacks against MEGA, which together allow for a full compromise of the confidentiality of user files. Additionally, the integrity of user data is damaged to the extent that an attacker can insert malicious files of their choice which pass all authenticity checks of the client. We built proof-of-concept versions of all the attacks. Four of the five attacks are eminently practical. They have all been responsibly disclosed to MEGA and remediation is underway. Taken together, our attacks highlight significant shortcomings in MEGA's cryptographic architecture. We present immediately deployable countermeasures, as well as longer-term recommendations. We also provide a broader discussion of the challenges of cryptographic deployment at massive scale under strong threat models. 146 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Matilda Backendal",
+          "email": "mbackendal@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Miro Haller",
+          "email": "miro.haller@alumni.ethz.ch",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Kenneth GPaterson",
+          "email": "kenny.paterson@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Auth Key",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Enc Key",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "ETH Zurich Zurich, Switzerland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "ETH Zurich Zurich, Switzerland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "ETH Zurich Zurich, Switzerland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Matilda Backendal",
+          "email": "mbackendal@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Miro Haller",
+          "email": "miro.haller@alumni.ethz.ch",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Kenneth GPaterson",
+          "email": "kenny.paterson@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 116,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Matilda Backendal",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Miro Haller",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Kenneth GPaterson",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Matilda Backendal",
+          "affiliation_raw": "ETH Zurich Zurich, Switzerland",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5",
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b11"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 3.407,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Miro Haller",
+          "affiliation_raw": "ETH Zurich Zurich, Switzerland",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6",
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b9",
+            "pdf:p1:b12"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 2.733,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Kenneth GPaterson",
+          "affiliation_raw": "ETH Zurich Zurich, Switzerland",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b10",
+            "pdf:p1:b13"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 2.762,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "MEGA: Malleable Encryption Goes Awry",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Matilda Backendal",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Haller Miro",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Kenneth G. Paterson",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

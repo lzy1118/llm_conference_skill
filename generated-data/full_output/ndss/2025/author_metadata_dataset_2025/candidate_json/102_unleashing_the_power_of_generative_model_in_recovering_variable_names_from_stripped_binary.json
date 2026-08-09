@@ -1,0 +1,422 @@
+{
+  "paper_id": "102_unleashing_the_power_of_generative_model_in_recovering_variable_names_from_stripped_binary",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Unleashing the Power of Generative Model in Recovering Variable Names from Stripped Binary"
+      },
+      {
+        "source": "selected",
+        "value": "Unleashing the Power of Generative Model in Recovering Variable Names from Stripped Binary"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Decompilation aims to recover the source code form of a binary executable. It has many security applications, such as malware analysis, vulnerability detection, and code hardening. A prominent challenge in decompilation is to recover variable names. We propose a novel technique that leverages the strengths of generative models while mitigating model biases. We build a prototype, GENNM, from pre-trained generative models CodeGemma-2B, CodeLlama-7B, and CodeLlama-34B. We finetune GENNM on decompiled functions and teach models to leverage contextual information. GENNM includes names from callers and callees while querying a function, providing rich contextual information within the model's input token limitation. We mitigate model biases by aligning the output distribution of models with symbol preferences of developers. Our results show that GENNM improves the state-of-the-art name recovery precision by 5.6-11.4 percentage points on two commonly used datasets and improves the state-of-the-art by 32% (from 17.3% to 22.8%) in the most challenging setup where ground-truth variable names are not seen in the training dataset."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Decompilation aims to recover the source code form of a binary executable. It has many security applications, such as malware analysis, vulnerability detection, and code hardening. A prominent challenge in decompilation is to recover variable names. We propose a novel technique that leverages the strengths of generative models while mitigating model biases. We build a prototype, GENNM, from pre-trained generative models CodeGemma-2B, CodeLlama-7B, and CodeLlama-34B. We fine- tune GENNM on decompiled functions and teach models to leverage contextual information. GENNM includes names from callers and callees while querying a function, providing rich contextual information within the model's input token limitation. We mitigate model biases by aligning the output distribution of models with symbol preferences of developers. Our results show that GENNM improves the state-of-the-art name recovery precision by 5.6-11.4 percentage points on two commonly used datasets and improves the state-of-the-art by 32% (from 17.3% to 22.8%) in the most challenging setup where ground-truth variable names are not seen in the training dataset. I. I NTRODUCTION Deployed software often has the form of binary executable. Understanding these prevalent binaries is essential for various security and safety aspects of software, including conduct- ing security assessments of contemporary devices such as home automation systems [4], [24] and autopilot technol- ogy [61], maintaining and hardening legacy software [13], [41], [12], detecting vulnerabilities in commercial-off-the-shelf software [68], [37], [64], [57], [63], and analyzing malware that threatens our daily lives [67], [55], [5]. A significant chal- lenge, however, is presented by the fact that most of these bina- ries are shipped without source code, making them extremely difficult to comprehend. To bridge this gap, reverse engi- neering techniques have emerged to recover source-code-level details. Over the past decade, techniques like disassembly [7], [47], [42], [2], [70], function boundary identification [3], type inference [38], [53], [36], [54], [71], [46], recovery of high- level abstractions [52], [32], [65], code structure [6], and data structures [52] have advanced significantly. Despite these successes, a crucial step of reverse- engineering pipelines, namely recovering variable names, re- mains inadequately addressed. Recovering names from fully stripped binary programs entails an in-depth understanding of both machine semantics , concerning data-flow and control- flow, and descriptive semantics , reflecting how the code is understood by human developers. This duality poses a signif- icant challenge for conventional analysis methods [10], [69] that primarily focus on machine semantics, resulting in the failure of recovering meaningful variable names. Recent work in renaming variables benefits from advances in machine learning models [35], [15], [45]. They formulate the problem as a classification task (a.k.a., a closed-vocabulary sequence labeling task). In the training stage, a model learns a set of variable names, i.e., the vocabulary. In the inference stage, it takes as input a decompiled function, and predicts the name for each variable by picking one from the vocabulary. Although such methods have achieved good results, their generality is limited due to the following reasons. (1) A classification model can only predict names within its training vocabulary. (2) Variable name distributions are largely biased, and it is challenging to train a good classifier on biased distributions [25], [29]. (3) Existing methods process one function at a time, due to models' input size limits or model capacity, missing important contextual information. In particular, a classification model can only select names from the training vocabulary. It cannot “invent” new names based on program contexts. Consequently, the state-of-the-art model achieves a precision of less than 10% for variables whose ground-truth names are not in the training dataset (see Section VI-D). Moreover, distributions of variable names are biased. For example, in datasets constructed from GitHub repositories [15] or Linux packages [45], more than 50% of names appear less than 2 times, whereas 0.1% of names appear over 1,000 times. A typical classification loss that maximizes the probability of selecting the ground-truth names would undesirably emphasize the frequent names. As a result, the performance of classification model degrades by 57.5% (from 31.8% to 13.5%) for names rarely present in the training dataset (see Section VI-D). Finally, most existing models used in reverse engineering have a limited input window and hence analyze individual decompiled functions independently, missing important information in the calling context. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240276 www.ndss-symposium.org To address the challenges, we propose GENNM as a system- atic solution to recovering names from fully stripped binaries. GENNM leverages a generative code language model fine- tuned with contextual information and symbol preferences. It composes variable names from tokens, and thus has better chance to generalize to rarely present or even unseen names. Intuitively, a human developer seldom considers complex variable names as an atomic word. Instead, she understands it as a composition of several keywords. For example, a rare name ip hdrlen is composed from three frequent sub- words: ip, header, and length. The generative nature of model thus naturally aligns with the cognitive model of a human developer. Our evaluation results in Section VI-D show that more than 95% rare names are composed from commonly appeared tokens. To leverage the power of a generative model, a typical fine- tuning technique such as that in DIRE [35] and ReSym [62] simply guides a model to predict names from individual binary functions. Consequently, the trained model has limited knowledge about how to leverage contextual information. Nevertheless, information from the calling context plays a crucial role in understanding binary programs, as the absence of meaningful function names hinders the model's ability to deduce the semantics of calling contexts. We thus propose a novel context-aware fine-tuning paradigm that teaches a model to reason a binary function with both the function body and the information from its calling contexts. The model thus can learn the relation between names of local variables and names in the calling contexts. Moreover, we formulate the implicit biases in the training dataset as misalignment between data frequencies and symbol preference of developers. Symbol preference denotes that a developer prefers one name over another in a specific program context. For example, in the context of network programming, a developer typically names the data sent over network as packet instead of array, although array may be a more frequent name in the whole dataset. We therefore propose an additional training stage named SYMbol Preference Op- timization (SymPO) to explicitly guide our model to pick the preferred name over the sub-optimal ones under given program contexts. We design the inference stage of G ENNM as an iterative process. It is inspired by recent studies on human reverse engineering [40], [11], which emphasize the practice of in- specting all functions in a breadth-first manner, followed by iterative refinement. Initially, G ENNM generates variable names for each function based on local context (i.e., the function body). Next, we traverse the program call graph to propagate contextual information from each function to its caller and callee functions, aligning with the training objective. Inspired by previous work [62], we leverage program analysis and majority voting to pick the final name across different iterations. We summarize our contributions as follows: • We propose a novel context-aware fine-tuning paradigm that teaches a model to leverage contextual information when reasoning a decompiled function. • We encode the symbol preference for variable names in the training pipeline, guiding the model to select names relevant to program context with higher probabilities. • We design an iterative inference process aligned with the way human reverse engineers leverage contextual information. • We develop a prototype G ENNM (Unleashing the Power of Generative Model in Recovering Variable Names from Stripped Binary) 1. G ENNM improves the name recovery accuracy over the state-of-the-art techniques [45], [62] by 5.6-11.4 percentage points on two commonly used datasets with the most challenging setup. On challenging cases where the ground-truth names are not seen dur- ing training, G ENNM improves over the state-of-the-art techniques [45], [62] by 168% (8.5% versus 22.8%) and 32% (17.3% versus 22.8%), respectively. II. M OTIVATION AND OVERVIEW We use a motivating example to illustrate the limitations of the state-of-the-art technique for renaming decompiled variables. Following this, we demonstrate our method. A. Motivating Example Fig. 1a shows our motivating example, which is adapted from the function send packet() in an exploit for CVE- 2018-4407 [17]. The function sends a TCP packet that triggers a buffer-overflow vulnerability. The code snippet in Fig. 1a illustrates the logic to initialize the IP packet header (ip hdr, lines 4-7) and compute the checksum for the TCP packet (line 9). We show the corresponding decompiled code in Fig. 1b. Each line in the decompiled code is aligned with the related source code line, and the corresponding variables are high- lighted with the same colors. For variables s and n in the decompiled code, the decompiler (IDA-Pro [31] in this case) synthesizes their names based on calls to library functions and the types of the two variables. Although synthesized names may help understanding (e.g., n may indicate the length of some buffer), they can hardly reflect the context and are hence much less informative than the original symbol names. For example, the source code variable related to n is ip hdrlen, which denotes the length of the IP packet header. The syn- thesized name n fails to reflect this information. Similarly, the variable name v29 is simply a placeholder name that is not meaningful. In both cases, the variable names in the decompiled code cannot reflect similar semantics to their source code counterparts. The goal of variable name recovery is hence to generate meaningful names for variables with placeholder names or names synthesized from library functions. 1Available at https://doi.org/10.5281/zenodo.14220042 2"
+      },
+      {
+        "source": "selected",
+        "value": "Decompilation aims to recover the source code form of a binary executable. It has many security applications, such as malware analysis, vulnerability detection, and code hardening. A prominent challenge in decompilation is to recover variable names. We propose a novel technique that leverages the strengths of generative models while mitigating model biases. We build a prototype, GENNM, from pre-trained generative models CodeGemma-2B, CodeLlama-7B, and CodeLlama-34B. We finetune GENNM on decompiled functions and teach models to leverage contextual information. GENNM includes names from callers and callees while querying a function, providing rich contextual information within the model's input token limitation. We mitigate model biases by aligning the output distribution of models with symbol preferences of developers. Our results show that GENNM improves the state-of-the-art name recovery precision by 5.6-11.4 percentage points on two commonly used datasets and improves the state-of-the-art by 32% (from 17.3% to 22.8%) in the most challenging setup where ground-truth variable names are not seen in the training dataset."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Xiangzhe Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zian Su",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ziyang Huang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Shiwei Feng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yapeng Ye",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Nan Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Danning Xie",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Siyuan Cheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Lin Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Xiangzhe Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zian Su",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Ziyang Huang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Shiwei Feng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yapeng Ye",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Nan Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Danning Xie",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Siyuan Cheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Lin Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 96,
+      "author_count": 11,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 11,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Unleashing the Power of Generative Model in Recovering Variable Names from Stripped Binary",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/unleashing-the-power-of-generative-model-in-recovering-variable-names-from-stripped-binary/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Xiangzhe Xu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Zhuo Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Zian Su",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Ziyang Huang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Shiwei Feng",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Yapeng Ye",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Nan Jiang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Danning Xie",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Siyuan Cheng",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Lin Tan",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Xiangyu Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

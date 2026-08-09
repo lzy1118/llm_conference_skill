@@ -1,0 +1,371 @@
+{
+  "paper_id": "146_connecting_the_extra_dots_contexts_correlating_external_information_about_point_of_interest_for_attack_investigation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "CONnecting The EXtra doTS (CONTEXTS): Correlating External Information about Point of Interest for Attack Investigation"
+      },
+      {
+        "source": "selected",
+        "value": "CONnecting The EXtra doTS (CONTEXTS): Correlating External Information about Point of Interest for Attack Investigation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Provenance analysis is one of the go-to solutions today for human analysts to investigate security incidents. To assist analysts in managing the sheer size of provenance graphs, many pruning solutions have been proposed. Such solutions rely on graph-theory features, anomaly detection, and other techniques to identify nodes and edges that are irrelevant to the detected incident. Despite differences in their methodologies, those solutions typically share a common approach when it comes to the detected incident, i.e., they merely regard the incident as an abstract starting point, without tapping into it further. However, we observe that this may lead to missed opportunities for pruning, since the incident is typically associated with external information, e.g., knowledge about the exploit or the vulnerability, which may provide extra contextual insights for effective pruning. Based on such an observation, we propose CONTEXTS, a solution that complements existing pruning approaches by leveraging external information about the incident. Specifically, the solution extracts contextual information from external sources, maps such information to provenance graph nodes, and then correlates those nodes to form a subgraph relevant to the incident. Our implementation and experiments based on real-world attacks demonstrate its effectiveness, e.g., working as the pre-processor of an existing pruning approach, it helps to reduce the false positives from more than 150k to less than ten, and as a standalone pruning solution, CONTEXTS achieves 100% TPR for 19 out of 20 attacks, with an FPR below 0.6% for 16 out of 20 attacks. Finally, its real-world practicality is illustrated through a user study where 94.4% of participants agreed with its usefulness in attack investigation. 130 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Provenance analysis is one of the go-to solutions today for human analysts to investigate security incidents. To assist analysts in managing the sheer size of provenance graphs, many pruning solutions have been proposed. Such solutions rely on graph-theory features, anomaly detection, and other techniques to identify nodes and edges that are irrelevant to the detected incident. Despite differences in their methodologies, those solutions typically share a common approach when it comes to the detected incident, i.e., they merely regard the in- cident as an abstract starting point, without tapping into it fur- ther. However, we observe that this may lead to missed oppor- tunities for pruning, since the incident is typically associated with external information, e.g., knowledge about the exploit or the vulnerability, which may provide extra contextual insights for effective pruning. Based on such an observation, we propose CONTEXTS , a solution that complements existing pruning ap- proaches by leveraging external information about the incident. Specifically, the solution extracts contextual information from external sources, maps such information to provenance graph nodes, and then correlates those nodes to form a subgraph relevant to the incident. Our implementation and experiments based on real-world attacks demonstrate its effectiveness, e.g., working as the pre-processor of an existing pruning approach, it helps to reduce the false positives from more than 150k to less than ten, and as a standalone pruning solution, C ONTEXTS achieves 100% TPR for 19 out of 20 attacks, with an FPR below 0.6% for 16 out of 20 attacks. Finally, its real-world practicality is illustrated through a user study where 94.4% of participants agreed with its usefulness in attack investigation. 1. Introduction Investigating a detected security incident to identify the attacker's activities is usually a prerequisite for understanding the root cause and consequently deploying mitigation solutions. To this end, system auditing tools (e.g., [1], [2]) provide necessary inputs such as system logs, although those tools typically lack an explicit representation of the dependency between logged activities [3]. To address Corresponding authors. this, provenance analysis provides an established solution for identifying the causal relationships between logged activities in the form of a graph, namely, provenance graph (PG). PGs have seen various applications in security, such as attack detection [4], [5], [6], threat hunting [7], [8], and forensic analysis [9], [10], [11], [12], [13]. In particular, to assist analysts in attack investigation, the fine-grained node/edge-level anomaly detection approaches [14], [15] reconstruct APTs by connecting the identified anomalous nodes or edges, while the threat hunting approaches [8], [16], [17], [18] search PGs for predefined sequences of signatures (a.k.a. Indication of Compromise). Other approaches focus on in-depth analysis of individual alerts to identify the underlying vulnerabilities [9], [10], [11], [19], [20]. These latter approaches typically consider the alert as a Point of Interest (POI) to extract a dependency graph from the PG, either by identifying paths leading to the POI (e.g., [10], [19], [20], [21]) or through backward/forward searches from the POI (e.g., [3], [9], [12], [22], [23]). A key challenge here is that the extracted dependency graph is usually still too large for human analysts to under- stand. Therefore, a crucial next step is to prune the depen- dency graph, e.g., based on anomaly scores [9], [10], [12], [13], data flows [9], [12], [19], [23], node degrees [9], [10], [12], merging parallel edges [10], [19], [20], [22], and aggre- gating nodes [20], [24]. However, existing studies indicate that those pruning solutions may face various challenges in practice: (i) A backward search may cause dependency ex- plosion [22], [25], whereas limiting paths to specific lengths may lead to missing activities in the dependency graph [10], [21]. (ii) The accuracy of anomaly scores inherently relies on the completeness of benign activities used for training [9], [20]. (iii) Graph-theory features may not capture the se- mantics of attacks [19], [20]. (iv) Many approaches require numerous traversals of large dependency graphs, which may become computationally expensive for large PGs [25]. Our key observation is that, despite the differences in their methodologies, existing pruning methods mostly adopt a similar approach when it comes to the POI, i.e., regarding the POI as an abstract node(s) in the PG . However, this may lead to missed opportunities for pruning since it ignores the fact that, external to the provenance graph, the incident 130 DOI 10.1109/SP61157.2025.00113 alert behind the POI is typically associated with external information from various sources, e.g., knowledge about the attack captured in the detection rule that generates the alert, or knowledge about the exploited vulnerability. Such information can usually provide extra contextual insights to enable additional pruning, as demonstrated in our work. Based on this observation, we propose C ONTEXTS , a solution that can enhance existing provenance-based attack investigation approaches through providing additional pruning capabilities. Our key idea is threefold. First, in addition to regarding the POI as a starting point, we tap into it further by collecting external information from various sources about the incident alert behind the POI. Second, the collected information is then mapped to the PG to establish additional points of interest, namely, waypoints. Third, as the original POI and the waypoints represent different perspectives of the same attack (e.g., knowledge about the exploit versus knowledge about the vulnerability), correlating them in the PG may achieve a “triangulation” effect to effectively narrow down the scope of investigation to a smaller subgraph containing relevant nodes and edges. More specifically, C ONTEXTS first builds a knowledge base offline to store external information related to known alerts. Second, upon receiving an incident alert, it automatically extracts the related external information from the knowledge base, and generates queries to label corresponding PG nodes as the POI and waypoints. Third, to correlate those labeled nodes, it leverages both graph-theoretic techniques such as path finding and vicinity expansion, and semantic approaches such as retrieving process nodes' ancestor/descendant hierarchy, and limiting the expansion at frequent system activities. We focus on vulnerabilities affecting the kernel and its associated utilities in this paper due to their relative importance and the need highlighted in recent works [26], [27], although the methodology is applicable to other types of vulnerabilities. In summary, our main contributions are as follows. • We address the research gap that external information about the detected incident is not leveraged in existing prun- ing approaches. By leveraging such external information in a systematic way, C ONTEXTS can work as both a stand- alone solution for attack investigation, and a pre-processor to provide significantly smaller inputs (than original PGs) to existing pruning solutions for enhancing their effectiveness. • We provide detailed methodology for C ONTEXTS to (i) build its knowledge base of external information, (ii) map such information to PG elements, (iii) correlate those PG elements to form the output subgraph, (iv) apply the output subgraph for attack investigation, root cause derivation, and enriching intrusion detection system (IDS) rule-sets. • We implement and evaluate C ONTEXTS based on real-world security incidents. Our experiments demonstrate that it can significantly improve the effectiveness of existing pruning approaches, e.g., reducing the number of false pos- itives from thousands to less than 50 in all cases. Addition- ally, as a standalone pruning solution, C ONTEXTS achieves 100% TPR for 19 out of 20 attacks, with an FPR below 0.6% for 16 out of 20 attacks. Furthermore, its performance is robust against noises in the PG, e.g., the number of edges in the output subgraph remains below 200 as the PG size increases by thirty times (with more than 180,000 edges). Finally, our user study shows its real-world practicality, where the participants reported with an average certainty of 4.85 (out of 5) that C ONTEXTS is effective in reducing the scope of analysis, and 94.4% reported C ONTEXTS helped them to identify the most relevant attack activities. 2. Preliminaries This section provides an example and our threat model. 2.1. Motivating Example Figure 1 illustrates the challenges faced by existing pruning solutions (left) and our key ideas (right). Attack Description. For simplicity, this example relies on a simple attack scenario (more complex scenarios are discussed in Section 4.2.2). This attack scenario assumes a setuid bit set alert is generated by the exploitation of CVE-2022-0847 (i.e., Dirty Pipe, a local privilege escalation vulnerability in the Linux kernel [28], [29]). The vulnera- bility enables writing to memory pages in the page cache that are linked to read-only files, which should normally be immutable. To exploit the vulnerability, the attacker fills a Linux pipe to set the PIPE_BUF_MERGE flag, then empties the pipe and replaces it with their intended data. When the splice system call merges the page caches, the flag causes the new data to be merged into the original read-only file. Exploiting this vulnerability, an attacker can replace the con- tent of a setuid bit-enabled binary (e.g., the passwd util- ity) with his/her own shellcode to obtain the root access [30]. Challenges Faced by Existing Approaches. Even to investigate such a simple attack, the analyst may face a fairly large PG (illustrated on the left side of Figure 1), since the attack-related activities may be hidden inside thousands of system calls generated by system auditing tools such as Sysdig [2] and Strace [1]. Therefore, most provenance analysis solutions employ one or more pruning techniques to reduce the scope of analysis, although with limitations. First, the V-shape gray shade in the figure illustrates that searching backward from the POI can lead to a large number of false dependencies [22], as illustrated by white nodes inside the V-shape. Second, the nodes with numbers inside illustrate anomaly score-based techniques, which inherently relies on the completeness of training data, a condition that is typically difficult to ensure due to diverse system behaviors [9], [20]. Third, as illustrated by a white node connected to many edges, the degree of node and other generic graph-theory features may not capture the attack semantics, and thus can be inaccurate [19], [20]. Fourth, the dashed line shows that searching for connected paths of specific lengths can miss an attack-related node (i.e., the black node above the dashed line) because it is located beyond the specified path length [9], [12]. 131"
+      },
+      {
+        "source": "selected",
+        "value": "Provenance analysis is one of the go-to solutions today for human analysts to investigate security incidents. To assist analysts in managing the sheer size of provenance graphs, many pruning solutions have been proposed. Such solutions rely on graph-theory features, anomaly detection, and other techniques to identify nodes and edges that are irrelevant to the detected incident. Despite differences in their methodologies, those solutions typically share a common approach when it comes to the detected incident, i.e., they merely regard the incident as an abstract starting point, without tapping into it further. However, we observe that this may lead to missed opportunities for pruning, since the incident is typically associated with external information, e.g., knowledge about the exploit or the vulnerability, which may provide extra contextual insights for effective pruning. Based on such an observation, we propose CONTEXTS, a solution that complements existing pruning approaches by leveraging external information about the incident. Specifically, the solution extracts contextual information from external sources, maps such information to provenance graph nodes, and then correlates those nodes to form a subgraph relevant to the incident. Our implementation and experiments based on real-world attacks demonstrate its effectiveness, e.g., working as the pre-processor of an existing pruning approach, it helps to reduce the false positives from more than 150k to less than ten, and as a standalone pruning solution, CONTEXTS achieves 100% TPR for 19 out of 20 attacks, with an FPR below 0.6% for 16 out of 20 attacks. Finally, its real-world practicality is illustrated through a user study where 94.4% of participants agreed with its usefulness in attack investigation. 130 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sareh Mohammadi",
+          "email": "sareh.mohammadi@concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Hugo Kermabon-Bobinnec",
+          "email": "hugo.kermabonbobinnec@concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Azadeh Tabiban",
+          "email": "azadeh.tabiban@umanitoba.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Manitoba, Winnipeg, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Lingyu Wang",
+          "email": "lingyu.wang@concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Navarro Múnera",
+          "email": "tomas.navarromunera@concordia.ca",
+          "orcid": "",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yosr Jarraya",
+          "email": "yosr.jarraya@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research, Montreal, Canada"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sareh Mohammadi",
+          "email": "sareh.mohammadi@concordia.ca",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Hugo Kermabon-Bobinnec",
+          "email": "hugo.kermabonbobinnec@concordia.ca",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Azadeh Tabiban",
+          "email": "azadeh.tabiban@umanitoba.ca",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Lingyu Wang",
+          "email": "lingyu.wang@concordia.ca",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yosr Jarraya",
+          "email": "yosr.jarraya@ericsson.com",
+          "affiliations": [
+            "CIISE, Concordia University, Montreal, Canada"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 113,
+      "author_count": 5,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.2,
+        "candidates": [
+          {
+            "name": "ON T",
+            "block_id": "pdf:p1:b2",
+            "font_size": 11.2,
+            "support_ids": []
+          },
+          {
+            "name": ", Hugo Kermabon-Bobinnec",
+            "block_id": "pdf:p1:b7",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b19"
+            ]
+          },
+          {
+            "name": "Sareh Mohammadi",
+            "block_id": "pdf:p1:b9",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b19"
+            ]
+          },
+          {
+            "name": ", Azadeh Tabiban , Lingyu Wang",
+            "block_id": "pdf:p1:b12",
+            "font_size": 11.0,
+            "support_ids": []
+          }
+        ],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Sareh Mohammadi",
+          "block_id": "pdf:p1:b9",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Hugo Kermabon-Bobinnec",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Sareh Mohammadi",
+          "affiliation_raw": "CIISE, Concordia University, Montreal, Canada, { lingyu.wang, tomas.navarromunera } @concordia.ca",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b9",
+          "affiliation_block_ids": [
+            "pdf:p1:b19",
+            "pdf:p1:b21"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 25.421,
+          "center_distance": 69.728,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Hugo Kermabon-Bobinnec",
+          "affiliation_raw": "Tom´as Navarro M ´unera , Yosr Jarraya; CIISE, Concordia University, Montreal, Canada, { lingyu.wang, tomas.navarromunera } @concordia.ca",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b16",
+            "pdf:p1:b19",
+            "pdf:p1:b21"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 16.88,
+          "center_distance": 50.624,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "CONnecting The EXtra doTS (CONTEXTS): Correlating External Information about Point of Interest for Attack Investigation",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sareh Mohammadi",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ]
+        },
+        {
+          "name": "Hugo Kermabon-Bobinnec",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ]
+        },
+        {
+          "name": "Azadeh Tabiban",
+          "affiliations": [
+            "Department of Computer Science, University of Manitoba"
+          ]
+        },
+        {
+          "name": "Lingyu Wang",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ]
+        },
+        {
+          "name": "Tomás Navarro Múnera",
+          "affiliations": [
+            "CIISE, Concordia University"
+          ]
+        },
+        {
+          "name": "Yosr Jarraya",
+          "affiliations": [
+            "Ericsson Security Research, Ericsson, Canada"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sareh Mohammadi",
+      "field": "email",
+      "restored_value": "sareh.mohammadi@concordia.ca",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Hugo Kermabon-Bobinnec",
+      "field": "email",
+      "restored_value": "hugo.kermabonbobinnec@concordia.ca",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Azadeh Tabiban",
+      "field": "email",
+      "restored_value": "azadeh.tabiban@umanitoba.ca",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Lingyu Wang",
+      "field": "email",
+      "restored_value": "lingyu.wang@concordia.ca",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yosr Jarraya",
+      "field": "email",
+      "restored_value": "yosr.jarraya@ericsson.com",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 5,
+      "country_values_restored": 5,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

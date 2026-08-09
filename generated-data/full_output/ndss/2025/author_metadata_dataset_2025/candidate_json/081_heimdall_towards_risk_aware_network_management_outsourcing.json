@@ -1,0 +1,742 @@
+{
+  "paper_id": "081_heimdall_towards_risk_aware_network_management_outsourcing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Heimdall: Towards Risk-Aware Network Management Outsourcing"
+      },
+      {
+        "source": "selected",
+        "value": "Heimdall: Towards Risk-Aware Network Management Outsourcing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Enterprises are increasingly outsourcing network management (e.g., troubleshooting routing issues) to reduce cost and improve efficiency, either by hiring third-party contractors or by outsourcing to third-party vendors. Unfortunately, recent events have shown that this outsourcing model has become a new source of network incidents in customer networks. In this work, we argue that a risk-aware outsourcing approach is needed that enables customers to measure and assess risk transparently and make informed decisions to minimize harm. We first concretely define the notion of risk in the context of outsourced network management and then present an endto-end framework, called Heimdall, which enables enterprises to assess, monitor, and respond to risk. Heimdall automatically builds a dependency graph to accurately assess the risk of an outsourced task, and uses a fine-grained reference monitor to monitor and mitigate potential risks during operation. Our expert validation results show that Heimdall effectively controls risk for outsourced network operations, resolving 92% of practical issues at the minimal risk level while incurring only a marginal timing overhead of approximately 7%."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Enterprises are increasingly outsourcing network management (e.g., troubleshooting routing issues) to reduce cost and improve efficiency, either by hiring third-party contractors or by outsourcing to third-party vendors. Unfortunately, recent events have shown that this outsourcing model has become a new source of network incidents in customer networks. In this work, we argue that a risk-aware outsourcing approach is needed that enables customers to measure and assess risk transparently and make informed decisions to minimize harm. We first concretely define the notion of risk in the context of outsourced network management and then present an end- to-end framework, called Heimdall, which enables enterprises to assess, monitor, and respond to risk. Heimdall automatically builds a dependency graph to accurately assess the risk of an outsourced task, and uses a fine-grained reference monitor to monitor and mitigate potential risks during operation. Our expert validation results show that Heimdall effectively controls risk for outsourced network operations, resolving 92% of practical issues at the minimal risk level while incurring only a marginal timing overhead of approximately 7%. I. I NTRODUCTION Enterprises are increasingly outsourcing network manage- ment to third-parties, such as contractors and managed ser- vice providers (MSPs) (e.g., [15], [19], [17], [16], [18]). The third-party technician (referred to as technician for the rest of our paper) monitors a client's network and provides management functions such as configuring access control rules, troubleshooting routing issues, and monitoring bandwidth us- age. The market for network management outsourcing is rapidly expanding (projected to grow to USD 309.4 billion by 2025 [20]) as they reduce operational expenses compared to in-house IT teams. Although outsourcing management is economically attrac- tive, the current operating model poses significant security risks. In many cases, the technician is granted admin privileges. This power fundamentally violates the zero-trust poilcy [23], posing a risk that can lead to harmful configuration changes that can result in critical security incidents [2], [14], [29] and large-scale network outages [10], [21], [4], [7], [1], [28]. To enforce zero-trust policy for customers without com- promising on the economic advantages, what we ideally need is risk-aware network management outsourcing, akin to other aspects such as investment risk, supply-chain risk, and liability risk [67]. That is, enterprise customers should be informed and take steps to mitigate associated risks in network management outsourcing workflows before harm occurs. For example, dur- ing resolving a routing issue, if the third-party technician issues potentially dangerous operations, we should proactively assess the risk, notify the enterprise, and also provide the necessary tools to assess the situation, and decide whether this should be allowed (with audits) or blocked. Drawing a parallel to well-known risk management frame- works [67], we argue that outsourced network management needs to include three essential components: (i) Risk Definition which clearly defines what constitutes a risk in network management; (ii) Risk Assessment to measure and evaluate the risk based on the definition; and (iii) Risk Monitoring and Response to continuously monitor the situation and execute a response plan for any identified risk. To the best of our knowledge, the network management outsourcing problem has been largely ignored in the research literature, and few if any efforts have systematically tried to define, assess, and monitor risks in outsourced network management. 1 Our goal in this work is to build a practical risk- management framework for outsourced network management workflows. To this end, we design Heimdall, a framework to enable customers to make risk-based decisions for outsourced network management. We start by reporting on a survey we conducted with a leading hyperscaler network to understand the types and frequency of outsourced tasks within their operations (§II-B). Building on this valuable information, we focus on risks involving the modification of router configura- tions. Notably, this category represents a substantial portion of their outsourcing activities and exhibits a high frequency, 1Our workshop paper [62] highlighted the security risks associated with MSPs but failed to provide a concrete solution. In particular, we did not provide a concrete basis to quantify risk or a practical implementation for risk management. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230043 www.ndss-symposium.org with potentially tens of thousands of occurrences each day (Table I). We believe that the design principles and foundations underlying Heimdall can be applied to other types of tasks (e.g., modifying hardware or software) as well, but defer this for future work. We address three key challenges in designing Heimdall: 1. Defining risk quantitatively based on network impact on assets: We introduce a new risk definition for evaluating a tech- nician's operations, specifically by assessing its network impact on an organization's assets. This approach draws on the well- established understanding that assets are the primary concerns of an enterprise, as they provide the resources necessary for the business to operate and achieve its goals [68], [67], [55], [48]. The only additional information required is the value and location of each asset within an organization, which often has been tracked by widely-used asset management software [3], [12], [13]. Compared to prior approaches that rely on the user to provide risk information or historical data [31], [76], [39], [73], [65], our approach significantly simplifies the information and expertise required to assess risk. 2. Assessing risk using an accurate dependency graph: To assess risk, we present a novel approach where we formulate the network as a risk dependency graph of fine-grained network configuration blocks and assets. This graph captures how modi- fying each configuration block affects a group of assets, through a chain of dependency edges. Building accurate dependencies is very challenging as network components interact in complex ways, and these interactions are hardly being captured by prior static analysis-based approaches [35], [36]. Our key idea is to track the relations from configuration blocks to forwarding tables and then analyze how forwarding tables control different assets. Reasoning the generation of forwarding tables enables a more precise dependency model and can be applied across various configuration types. 3. Monitoring risk via a fine-grained reference monitor: Instead of using simulation or emulation tools [63], [26], we allow the technician to directly operate on customer networks and use a centralized reference monitor [69] to mediate all oper- ations. Before granting any access or executing any operations on customer devices, the reference monitor examines the risk assessment and takes appropriate actions to address risks based on the user-specified policy. Compared to existing router built-in privilege control mechanisms (e.g., Cisco [25] ), our centralized reference monitor provides fine-grained control (per operation), and flexibly supports various user-defined risk response policies. We build an end-to-end system, which to the best of our knowledge is the first prototype designed to mitigate the risks of outsourced network management. To assess the risk control capabilities and overhead of Heimdall in practice, we invited 10 network experts from our university's network vendor to participate in the evaluation and resolve 33 practical tickets. This evaluation generated 99 ticket resolution records during 41 hours operation of the system. Our results show that experts using Heimdall can resolve 92% issues without exceeding the risk of the root cause block (namely the lowest intended risk level), while incurring a fairly low procedural overhead of 7.4% on average. We also evaluate Heimdall using a ticket database including ∼3000 synthetic tickets generated across eight diverse networks. Our results show that Heimdall can Outsourced Tasks Frequency (/day) Outsource Reason Access Type Troubleshooting 104 Costs Virtual Network turn-up and upgrade 103 Costs Physical, Virtual Hardware repair and replacement 103 Geo-proximity Physical Fiber leasing and maintenance 102 Geo-proximity Physical, Virtual TABLE I: Network outsourcing scenarios in practice based on a hyperscaler network survey reduce 80% risk in a large network and 50% risk in a small network for 50% tickets. This paper makes the following contributions: • We are the first to quantitatively define risk for outsourced network operations, providing a guideline for the field (§III) • We design a novel risk dependency graph that accurately assesses the risk of modifying router configurations. (§IV) • We develop an end-to-end risk-aware outsourcing prototype and demonstrate its effectiveness in mitigating risk by using it to resolve practical network issues. (§V, §VI) Ethics: This work does not raise any ethical issues. All network configurations are anonymized. Evaluation results are based on GNS3. No production network is affected. II. B ACKGROUND AND MOTIVATION In this section, we first provide a background of outsourced network tasks. Then, we motivate risk-aware network manage- ment and propose our threat model in the given background. A. Background on Outsourcing Outsourcing network management is a common solution for enterprises to reduce cost and improve efficiency. Two typical types of outsourcing cases include: 1) Hiring third- party contractors: Large companies hire third-party contractors to do specific network tasks (details in §II-B) to utilize their expertise and save costs; 2) Outsourcing to third-party vendors: To reduce cost, small to medium-sized companies outsource their network management to third-party vendors (e.g., MSP) instead of hiring additional employees. For example, the cam- pus network we consulted comprises approximately 400 net- work devices. Of these, 75%-primarily access switches-are outsourced to third-party vendors for configuration tasks such as VLAN ports and DHCP snooping. Most outsourced tasks consist of a three-step workflow [8], [11], [22]: (1) Customer creates a new ticket which typically includes information such as the request description, group, impact, urgency, priority, and the assets affected; (2) The ticket is sent to outsourced technician and is then categorized based on its type and priority; and (3) To resolve the ticket, the technician provides services by remotely accessing one or more customers' network devices with admin access, which enables the technician to issue both normal and privileged commands on these customer devices. After finishing the task, the technician documents their changes and closes the ticket. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Enterprises are increasingly outsourcing network management (e.g., troubleshooting routing issues) to reduce cost and improve efficiency, either by hiring third-party contractors or by outsourcing to third-party vendors. Unfortunately, recent events have shown that this outsourcing model has become a new source of network incidents in customer networks. In this work, we argue that a risk-aware outsourcing approach is needed that enables customers to measure and assess risk transparently and make informed decisions to minimize harm. We first concretely define the notion of risk in the context of outsourced network management and then present an endto-end framework, called Heimdall, which enables enterprises to assess, monitor, and respond to risk. Heimdall automatically builds a dependency graph to accurately assess the risk of an outsourced task, and uses a fine-grained reference monitor to monitor and mitigate potential risks during operation. Our expert validation results show that Heimdall effectively controls risk for outsourced network operations, resolving 92% of practical issues at the minimal risk level while incurring only a marginal timing overhead of approximately 7%."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yuejie Wang",
+          "email": "yuejiewang@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Qiutong Men",
+          "email": "qiutong.m@nyu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yongting Chen",
+          "email": "yongting@nyu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jiajin Liu",
+          "email": "jiajinliu@nyu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Gengyu Chen",
+          "email": "gengyuc@andrew.cmu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Ying Zhang",
+          "email": "zhangying@meta.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Guyue Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Vyas Sekar",
+          "email": "vsekar@andrew.cmu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Peking University, New York University, Shanghai"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University, Shanghai"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Carnegie Mellon University, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yuejie Wang",
+          "email": "yuejiewang@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Peking University"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Qiutong Men",
+          "email": "qiutong.m@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yongting Chen",
+          "email": "yongting@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University Shanghai"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jiajin Liu",
+          "email": "jiajinliu@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University Shanghai"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Gengyu Chen",
+          "email": "gengyuc@andrew.cmu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Carnegie Mellon University"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Ying Zhang",
+          "email": "zhangying@meta.com",
+          "orcid": "",
+          "affiliations": [
+            "Meta"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Guyue Liu",
+          "email": "guyue@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Peking University"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Vyas Sekar",
+          "email": "vsekar@andrew.cmu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Carnegie Mellon University"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 104,
+      "author_count": 8,
+      "matched_author_count": 8,
+      "exact_author_match_count": 8,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.0,
+        "candidates": [
+          {
+            "name": "Yuejie Wang",
+            "block_id": "pdfplumber:p1:b2",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b6",
+              "pdfplumber:p1:b10"
+            ]
+          },
+          {
+            "name": "Qiutong Men",
+            "block_id": "pdfplumber:p1:b3",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b7",
+              "pdfplumber:p1:b11"
+            ]
+          },
+          {
+            "name": "Yongting Chen",
+            "block_id": "pdfplumber:p1:b4",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b8",
+              "pdfplumber:p1:b12"
+            ]
+          },
+          {
+            "name": "Jiajin Liu",
+            "block_id": "pdfplumber:p1:b5",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b9",
+              "pdfplumber:p1:b13"
+            ]
+          },
+          {
+            "name": "Gengyu Chen",
+            "block_id": "pdfplumber:p1:b14",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b18",
+              "pdfplumber:p1:b22"
+            ]
+          },
+          {
+            "name": "Ying Zhang",
+            "block_id": "pdfplumber:p1:b15",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b19",
+              "pdfplumber:p1:b23"
+            ]
+          },
+          {
+            "name": "Guyue Liu",
+            "block_id": "pdfplumber:p1:b16",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b20",
+              "pdfplumber:p1:b24"
+            ]
+          },
+          {
+            "name": "Vyas Sekar",
+            "block_id": "pdfplumber:p1:b17",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b21",
+              "pdfplumber:p1:b25"
+            ]
+          }
+        ],
+        "fully_supported": true,
+        "anchored_existing_count": 8
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Yuejie Wang",
+          "block_id": "pdfplumber:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Qiutong Men",
+          "block_id": "pdfplumber:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Yongting Chen",
+          "block_id": "pdfplumber:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Jiajin Liu",
+          "block_id": "pdfplumber:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Gengyu Chen",
+          "block_id": "pdfplumber:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Ying Zhang",
+          "block_id": "pdfplumber:p1:b15",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Guyue Liu",
+          "block_id": "pdfplumber:p1:b16",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 7,
+          "author": "Vyas Sekar",
+          "block_id": "pdfplumber:p1:b17",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Yuejie Wang",
+          "affiliation_raw": "Peking University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b2",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b6"
+          ],
+          "email_raw": "yuejiewang@pku.edu.cn",
+          "email_block_ids": [
+            "pdfplumber:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 1,
+          "author": "Qiutong Men",
+          "affiliation_raw": "New York University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b3",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b7"
+          ],
+          "email_raw": "qiutong.m@nyu.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 2,
+          "author": "Yongting Chen",
+          "affiliation_raw": "New York University Shanghai",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b4",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b8"
+          ],
+          "email_raw": "yongting@nyu.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b12"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 3,
+          "author": "Jiajin Liu",
+          "affiliation_raw": "New York University Shanghai",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b5",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b9"
+          ],
+          "email_raw": "jiajinliu@nyu.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b13"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.001,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 4,
+          "author": "Gengyu Chen",
+          "affiliation_raw": "Carnegie Mellon University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b14",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b18"
+          ],
+          "email_raw": "gengyuc@andrew.cmu.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b22"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.001,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 5,
+          "author": "Ying Zhang",
+          "affiliation_raw": "Meta",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b15",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b19"
+          ],
+          "email_raw": "zhangying@meta.com",
+          "email_block_ids": [
+            "pdfplumber:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 6,
+          "author": "Guyue Liu",
+          "affiliation_raw": "Peking University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b16",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b20"
+          ],
+          "email_raw": "guyue@pku.edu.cn",
+          "email_block_ids": [
+            "pdfplumber:p1:b24"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 7,
+          "author": "Vyas Sekar",
+          "affiliation_raw": "Carnegie Mellon University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b17",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b21"
+          ],
+          "email_raw": "vsekar@andrew.cmu.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b25"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.001,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Heimdall: Towards Risk-Aware Network Management Outsourcing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/heimdall-towards-risk-aware-network-management-outsourcing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yuejie Wang",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Qiutong Men",
+          "affiliations": [
+            "New York University"
+          ]
+        },
+        {
+          "name": "Yongting Chen",
+          "affiliations": [
+            "New York University Shanghai"
+          ]
+        },
+        {
+          "name": "Jiajin Liu",
+          "affiliations": [
+            "New York University Shanghai"
+          ]
+        },
+        {
+          "name": "Gengyu Chen",
+          "affiliations": [
+            "Carnegie Mellon University"
+          ]
+        },
+        {
+          "name": "Ying Zhang",
+          "affiliations": [
+            "Meta"
+          ]
+        },
+        {
+          "name": "Guyue Liu",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Vyas Sekar",
+          "affiliations": [
+            "Carnegie Mellon University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Yuejie Wang",
+      "field": "affiliations",
+      "selected_value": [
+        "Peking University"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b6"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Qiutong Men",
+      "field": "affiliations",
+      "selected_value": [
+        "New York University"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b7"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Yongting Chen",
+      "field": "affiliations",
+      "selected_value": [
+        "New York University Shanghai"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b8"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Jiajin Liu",
+      "field": "affiliations",
+      "selected_value": [
+        "New York University Shanghai"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b9"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Gengyu Chen",
+      "field": "affiliations",
+      "selected_value": [
+        "Carnegie Mellon University"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b18"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Ying Zhang",
+      "field": "affiliations",
+      "selected_value": [
+        "Meta"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b19"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Guyue Liu",
+      "field": "affiliations",
+      "selected_value": [
+        "Peking University"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b20"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Vyas Sekar",
+      "field": "affiliations",
+      "selected_value": [
+        "Carnegie Mellon University"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b21"
+      ],
+      "validation_evidence_ids": []
+    }
+  ]
+}

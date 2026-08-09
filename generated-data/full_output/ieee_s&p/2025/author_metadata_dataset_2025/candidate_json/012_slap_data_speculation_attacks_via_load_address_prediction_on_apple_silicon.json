@@ -1,0 +1,201 @@
+{
+  "paper_id": "012_slap_data_speculation_attacks_via_load_address_prediction_on_apple_silicon",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SLAP: Data Speculation Attacks via Load Address Prediction on Apple Silicon"
+      },
+      {
+        "source": "selected",
+        "value": "SLAP: Data Speculation Attacks via Load Address Prediction on Apple Silicon"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Since Spectre's initial disclosure in 2018, the difficulty of mitigating speculative execution attacks completely in hardware has led to the proliferation of several new variants and attack surfaces in the past six years. Most of the progeny build on top of the original Spectre attack's key insight, namely that CPUs can execute the wrong control flow transiently and disclose secrets through side-channel traces when attempting to alleviate control hazards, such as conditional or indirect branches and return statements. In this paper we go beyond (speculatively) affecting control flow, and present a new data speculation primitive that stems from microarchitectural optimizations designed to alleviate data hazards. More specifically, we show that Apple CPUs are equipped with a Load Address Predictor (LAP). The LAP monitors past addresses from the same load instruction to speculatively load a predicted address, which may incorrectly point to secrets at rest (i.e., never architecturally read by the CPU). Once the secret is retrieved, the LAP allows for a large speculation window that suffices for an adversary to compute on the secret, such as leaking it over a covert channel. We demonstrate the LAP's presence on recent Apple CPUs, such as the M2, A15, and newer models. We then evaluate the LAP's implications on security by showing its capabilities to read out-of-bounds, speculatively invoke rogue functions, break ASLR, and compromise the Safari web browser. Here, we leverage the LAP to disclose sensitive cross-site data (such as inbox content from Gmail) to a remote web-based adversary."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Since Spectre's initial disclosure in 2018, the diffi- culty of mitigating speculative execution attacks completely in hardware has led to the proliferation of several new variants and attack surfaces in the past six years. Most of the progeny build on top of the original Spectre attack's key insight, namely that CPUs can execute the wrong control flow transiently and disclose secrets through side-channel traces when attempting to alleviate control hazards, such as conditional or indirect branches and return statements. In this paper we go beyond (speculatively) affecting control flow, and present a new data speculation primitive that stems from microarchitectural optimizations designed to alleviate data hazards. More specifically, we show that Apple CPUs are equipped with a Load Address Predictor (LAP). The LAP monitors past addresses from the same load instruction to speculatively load a predicted address, which may incorrectly point to secrets at rest (i.e., never architecturally read by the CPU). Once the secret is retrieved, the LAP allows for a large speculation window that suffices for an adversary to compute on the secret, such as leaking it over a covert channel. We demonstrate the LAP's presence on recent Apple CPUs, such as the M2, A15, and newer models. We then evaluate the LAP's implications on security by showing its capabilities to read out-of-bounds, speculatively invoke rogue functions, break ASLR, and compromise the Safari web browser . Here, we leverage the LAP to disclose sensitive cross-site data (such as inbox content from Gmail) to a remote web-based adversary. 1. Introduction From the turn of the decade, there is a pivotal change in the desktop computing market. Whereas x86 CPUs from Intel and AMD had dominated the heavyweight CPU market in the past, new lineages from Apple and Qualcomm using the ARM architecture are emerging in market share. Over the past few years, they have become formidable competitors to the x86-based landscape, bringing equivalent or often better performance at a fraction of the power consumption. Another change brought about in recent computer tech- nology is the rise of transient execution attacks (e.g., Spec- tre [33] and Meltdown [ 36]), which exploit speculative and out-of-order execution to leak information across security domains [16, 31, 33, 34, 36, 40, 54, 61, 62, 64, 65, 66, 70, 71]. That is, nearly all currently known Spectre variants rely on the CPU speculating on control hazards, encompassing if-statements, indirect jumps, returns, and loops, specula- tively diverting the CPU's control flow into code gadgets benefitting the attacker. Finally, Spectre has impacted nearly all modern heavyweight CPU designs, including recent gen- erations released by Intel, AMD, Apple and other vendors. Next, to further increase performance, computer archi- tects proposed speculating on data flows in addition to control flow, aiming to alleviate data hazards encountered during software execution [ 35, 47, 48, 56, 57, 69]. Here, rather then waiting for the hazard to resolve, the CPU attempts to predict the value of the data being accessed and proceeds execution of younger instructions using the predicted value. While some forms of such data specu- lation have been observed in the wild, mainly through data-dependent hardware prefetchers [ 18, 67], store-to-load forwarding prediction [26], or floating point issues [ 52, 58], much remains to be done to fully characterize all forms of data speculation present on modern CPU platforms. Thus, in this paper, we ask the following questions. Are there additional data speculation mechanisms present on modern CPUs? If so, what are the security implications of such speculation? 1.1. Our Contributions In this paper, we answer the first question in the affir- mative. More specifically, to the best of our knowledge, we document the first existence in the wild of a Load Address Predictor (LAP), where the CPU predicts addresses of load instructions based on prior addresses it had observed. In case the predicted address is cached, the CPU speculatively loads from the predicted address as opposed to the address originally intended by the program. Once the value from the predicted address is fetched, the CPU computes on it transiently using arbitrary instructions that are downstream in program code. Moreover, the speculation window is large enough for the value to be transmitted using microarchi- tectural side channels. Finally, we show that the LAP is present on Apple's M2-M4 CPUs for Macs and iPads, and the closely related A15-A17 CPUs for iPhones. Next, tackling the second question, we show the LAP is exploitable and results in grave security consequences. We first introduce Spectre-LAP, a transient 64-bit out-of-bounds read primitive that founds a new lineage of speculative exe- cution attacks on data flows. Building on this, we introduce *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ +BTPO,JN6OEFSMJDFOTFUP*&&& %0*41 SLAP, an end-to-end attack on Apple's Safari web browser capable of disclosing email content and browsing behavior from an arbitrary target webpage to a remote adversary. Discovering and Reverse Engineering the LAP . We start by analyzing the CPU's behavior on load instructions that cannot be reordered, due to them having a read-after-write dependency. On the M1 CPU, we observe no difference in runtime whether the load addresses increment in strides or not. However, we observe a drastic speedup on the M2 and M3 CPUs only when the load's addresses are striding, whereas their runtime to execute the non-striding loads is similar to the M1. From this, we show that the LAP mechanism is present on recent Apple CPUs. Next, to reverse engineer the LAP, we design a primitive that lets us observe its speculative behavior by causing a misprediction and then recovering side-channel traces of the resulting transient execution. Using this primitive, we identify that the LAP needs to be trained on 500 or more striding loads to activate reliably. When the LAP does acti- vate, it speculatively loads from its predicted address, rather than the address dictated by the program. In turn, when the value from the predicted address arrives, we observe that the CPU opens a deep speculation window (up to 600 cycles), during which arbitrary computation can be performed on the value. This window allows us to leak the contents of LAP- predicted addresses via microarchitectural covert channels. Finally, we also observe that the stride must be at most 255 bytes for the LAP to generate predictions, limiting the scope of the LAP's reach to this range. Weaponizing the LAP . Now, we assume there is a secret in the address space which the adversary cannot read. While the speculation window is sufficient to leak the secret value over a cache covert channel in principle, our primitive from before would require the secret to be at most 255 bytes from the last training address in order for the LAP to transiently load it. Therefore, we modify our primitive to read from anywhere in the address space by adding another layer of indirection (i.e., an additional pointer dereference). More specifically, we write the address of the secret at a memory location reachable by the LAP. Then, we trigger an LAP prediction on this memory location, obtaining the secret's address under speculation. We then speculatively dereference this address and leak the secret's value using a microarchitectural covert channel. This forms the basis for Spectre-LAP. In addition, we show that Spectre-LAP can not only divert data flow, but also control flow by branch- ing to functions which never get invoked architecturally. Finally, observing that Spectre-LAP only runs to completion on mapped addresses, we use this phenomenon to defeat Address Space Layout Randomization (ASLR) on macOS. Orchestrating an Attack on Safari. We culminate our findings by investigating the implications of data speculation on web browser security. We port our primitive to mistrain the LAP to JavaScript, where we discover that Safari's JavaScript engine exhibits behaviors that are favorable for mistraining when dealing with string objects. This results in a gadget that can disclose the content of out-of-bounds JavaScript strings. However, as JavaScript's lack of pointers precludes us from using another level of indirection, the reach of our LAP gadget is again limited to read 255 bytes. We sidestep this limitation by devising a new memory massaging technique against Safari's allocator, which lands cross-origin DOM strings from the target webpage into the attacker's window. Finally, we orchestrate SLAP end-to-end, causing the LAP to disclose sensitive content from Gmail, Amazon, and Reddit when the target is authenticated. Summary of Contributions. We contribute the following: • We investigate the data speculation mechanisms on Apple CPUs, discovering the LAP's presence on recent genera- tions. Next, we reverse engineer the LAP's training and activation criteria ( Section 4). • We demonstrate that speculation using the LAP can be weaponized to achieve out-of-bounds reads anywhere in the 64-bit address space, divert control flow under spec- ulation, and break ASLR on macOS ( Section 5). • We build an out-of-bounds read primitive in the Safari web browser which subverts Safari's sandboxing and side-channel countermeasures, leaking cross-origin con- tent from sensitive websites ( Section 6). 1.2. Responsible Disclosure We disclosed our results to Apple on May 24, 2024. Apple's Product Security Team have acknowledged our report and proof-of-concept code, requesting an extended embargo beyond the 90-day window. At the time of writing, Apple did not share any schedule regarding mitigation plans concerning the results presented in this paper. 2. Background Cache Organization on Apple Silicon. Like most vendors, Apple CPUs use small on-chip buffers named caches to reduce the disparity in speed between the core and mem- ory subsystem. In addition, they feature a heterogeneous core design with Performance (P) cores and Efficiency (E) cores [ 5]. Both types of cores have private L1 caches and shared L2 caches within a cluster of the same core type. The caches are set-associative: they are partitioned into multiple cache sets using part of the memory address, and data from that address can fit into any of the cache ways in that set, where each way contains a cache line. Side-Channel Attacks on Caches. As the cache is shared across all processes, an adversary on the same system can measure the latency to certain data to gain inferences about the secret-dependent activity of a target process. Broadly, the plethora of prior work can be bifurcated into F LUSH + RELOAD [24, 25, 73], where the adversary times the access to shared data, and P RIME +PROBE [21, 27, 30, 38, 44, 49, 51, 63, 68], where they time accesses to their own data which shares a cache set with the target's data. Control Hazards and Speculative Execution. To im- prove performance, nearly all modern CPUs execute code out of program order, especially in terms of control flow. To avoid stalling when the correct control flow from a"
+      },
+      {
+        "source": "selected",
+        "value": "Since Spectre's initial disclosure in 2018, the difficulty of mitigating speculative execution attacks completely in hardware has led to the proliferation of several new variants and attack surfaces in the past six years. Most of the progeny build on top of the original Spectre attack's key insight, namely that CPUs can execute the wrong control flow transiently and disclose secrets through side-channel traces when attempting to alleviate control hazards, such as conditional or indirect branches and return statements. In this paper we go beyond (speculatively) affecting control flow, and present a new data speculation primitive that stems from microarchitectural optimizations designed to alleviate data hazards. More specifically, we show that Apple CPUs are equipped with a Load Address Predictor (LAP). The LAP monitors past addresses from the same load instruction to speculatively load a predicted address, which may incorrectly point to secrets at rest (i.e., never architecturally read by the CPU). Once the secret is retrieved, the LAP allows for a large speculation window that suffices for an adversary to compute on the secret, such as leaking it over a covert channel. We demonstrate the LAP's presence on recent Apple CPUs, such as the M2, A15, and newer models. We then evaluate the LAP's implications on security by showing its capabilities to read out-of-bounds, speculatively invoke rogue functions, break ASLR, and compromise the Safari web browser. Here, we leverage the LAP to disclose sensitive cross-site data (such as inbox content from Gmail) to a remote web-based adversary."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jason Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Georgia Tech",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Daniel Genkin",
+          "email": "genkin@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yuval Yarom",
+          "email": "yuval.yarom@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jason Kim",
+          "email": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Daniel Genkin",
+          "email": "genkin@gatech.edu",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yuval Yarom",
+          "email": "yuval.yarom@rub.de",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 11,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SLAP: Data Speculation Attacks via Load Address Prediction on Apple Silicon",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jason Kim",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Daniel Genkin",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Yuval Yarom",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jason Kim",
+      "field": "affiliations",
+      "restored_value": [
+        "Ruhr University Bochum"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Daniel Genkin",
+      "field": "affiliations",
+      "restored_value": [
+        "Ruhr University Bochum"
+      ],
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

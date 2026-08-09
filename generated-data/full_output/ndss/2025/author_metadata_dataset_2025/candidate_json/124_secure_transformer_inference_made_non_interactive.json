@@ -1,0 +1,394 @@
+{
+  "paper_id": "124_secure_transformer_inference_made_non_interactive",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Secure Transformer Inference Made Non-interactive"
+      },
+      {
+        "source": "selected",
+        "value": "Secure Transformer Inference Made Non-interactive"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Secure transformer inference has emerged as a prominent research topic following the proliferation of ChatGPT. Existing solutions are typically interactive, involving substantial communication load and numerous interaction rounds between the client and the server. In this paper, we propose NEXUS, the first non-interactive protocol for secure transformer inference. The protocol requires the client to engage in just one round of communication with the server during the whole inference process: submitting an encrypted input and receiving an encrypted result. NEXUS introduces several novel primitives, including SIMD ciphertext compression/decompression, SIMD slot folding, and secure Argmax, which enable it to significantly surpass the state-of-the-art in communication while maintaining comparable runtime. Specifically, it reduces bandwidth consumption by 372.5× compared to BOLT (Oakland '24) and 53.6× compared to Bumblebee (NDSS '25). Furthermore, its non-interactive property allows for optimal hardware acceleration, with the GPU version achieving a 42.3× speedup in runtime. This enables NEXUS to run inference on a BERT-based model in just 37.3 seconds, consuming only 164 MB of bandwidth."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Secure transformer inference has emerged as a prominent research topic following the proliferation of ChatGPT. Existing solutions are typically interactive, involving substantial communication load and numerous interaction rounds between the client and the server. In this paper, we propose NEXUS, the first non-interactive protocol for secure transformer inference. The protocol requires the client to engage in just one round of communication with the server during the whole inference process: submitting an encrypted input and receiving an encrypted result. NEXUS intro- duces several novel primitives, including SIMD ciphertext com- pression/decompression, SIMD slot folding, and secure Argmax, which enable it to significantly surpass the state-of-the-art in communication while maintaining comparable runtime. Specif- ically, it reduces bandwidth consumption by 372.5 × compared to BOLT (Oakland '24) and 53.6 × compared to Bumblebee (NDSS '25). Furthermore, its non-interactive property allows for optimal hardware acceleration, with the GPU version achieving a 42.3× speedup in runtime. This enables NEXUS to run inference on a BERT-based model in just 37.3 seconds, consuming only 164 MB of bandwidth. I. I NTRODUCTION Transformers, such as GPT [48] and BERT [17], have revolutionized the field of artificial intelligence. They excel in a wide range of applications such as language translation, content generation, and question answering. However, these applications often involve the manipulation of sensitive data, leading to growing concerns about user privacy over the years. Recently, OpenAI has developed ChatGPT as an online inference service, along with a public API for developers to easily access the platform by submitting prompts or messages. While this approach is convenient, it poses significant risks to data privacy as the content submitted by the users may sometimes contain private information. Secure inference is a two-party cryptographic protocol enabling model inference to proceed in a manner that the Jian Liu is the corresponding author. server S learns nothing about the input submitted by the clients Cs, and C learns nothing about S's model, except for the inference results. Many such protocols were developed for convolutional neural networks (CNNs) in the past few years [40], [28], [2], [31], and some recent works also started to support transformer-based models [25], [11], [27], [42], [45]. It is noteworthy that most of these protocols are interactive, warranting substantial communication costs and numerous interaction rounds between C and S. For example, the state-of- the-art solution for secure transformer inference, BOLT [45], documents 59.61GB of bandwidth consumption and 10,509 in- teraction rounds for a single inference. Such a substantial com- munication overhead notably contributes to network latency, especially in W AN configurations, and renders conventional hardware acceleration techniques such as GPUs or FPGAs ineffective. In addition, the size of communication payload makes the financial cost of secure inference highly undesirable. According to AWS's pricing standards [1], the cost of each reply token in BOLT [45] is $5.44, which means practical deployment is expensive and infeasible. We emphasize the critical importance of establishing a non-interactive model for secure inference, where C only needs to submit one encrypted input in order to receive an encrypted prediction from S. For scenarios demanding real- time responses, existing secure inference protocols, whether interactive or non-interactive, fail to meet the speed criteria. Nevertheless, non-interactive protocols show promise in meet- ing this criterion when leveraging hardware acceleration [16], [15], [54], [56], [51], [3], [33]. In non-real-time scenarios such as data warehousing and hospital diagnosis, where C can tolerate an extended latency in response, the deployment of non-interactive protocols are attainable, whereas interactive ones are not. This is because interactive protocols necessitate C's computing resources to remain engaged during the waiting period, impeding on C's ability to execute other tasks. In the context of non-interactive secure inference, there are two key differences between transformers and CNN models. 1) Larger scale matrix-matrix multiplications. Prior works on private neural networks, such as Gazalle [31] and Cheetah [28], proposed optimized protocols for se- cure matrix-vector multiplications in the fully-connected layers. However, transformers demand large-scale matrix- matrix multiplications. Previous works [31], [28], [25] compute multiplications via inner dot products, and em- Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230868 www.ndss-symposium.org ploy sparse packing for the resulting ciphertexts in cases of matrix-matrix multiplication. As a result of this tech- nique, the majority of data slots in the ciphertexts are often wasted, which introduces additional communication overhead. Furthermore, the input dimensions of matrices in transformer models are often much higher, leading to increased computational costs as a result of more multiplications being done. Consequently, it is useful to develop a new matrix multiplication protocol that is both time and space-efficient. 2) Higher dimension inputs to Argmax. The last layer of both CNN and transformer is Argmax, whose input is a probability vector with each entry being the probability of an output label candidate ( m labels in total). The inference output is the label with the highest probability. Current state-of-the-art FHE algorithm for Argmax is presented by Phoenix (CCS'22) [30], which demonstrates a computational complexity of O(m). This metric is often considered acceptable in CNN image classification tasks, since the number of labels are typically not very large, e.g. m = 1 , 000 in ImageNet-1k. However, for transformer-based NLP tasks, m equals to the size of the vocabulary, with m reaching 30, 522 in BERT and 128, 256 in Llama-3-8B. It is evident that the existing algorithm is not suitable for transformers, and a solution with lower complexity is needed. A. Our contributions In this paper, we propose NEXUS, which, to the best of our knowledge, is the first non-interactive protocol for secure transformer inference. The protocol design of NEXUS begins with the client encrypting its input using RNS-CKKS fully homomorphic encryption (FHE), enabling the server to evaluate the transformer model on FHE-encrypted data. We summarize our contribution as follows: • Efficient and communication-optimized matrix mul- tiplications. Many previous secure inference protocols such as Gazalle [31], Cheetah [28] and Iron [25] have wasted data slots in their output ciphertexts, which intro- duces unnecessary communication overhead. BumbleBee [42] eliminated wasted slots through ciphertext interleav- ing, but requires more computations to be done. We adopt the ciphertext compression and decompression strategy and take advantage of the special property of the mono- mial (cf. Section-III.B) in our our matrix multiplication algorithm to reduce the communication cost. We also propose an amortization-friendly offline-online computing strategy (cf. Section-III.C) to reduce the computation cost. • Efficient Argmax and other non-linear functions eval- uation. To defend against membership inference attacks [53], [58], [57], a common approach is to output the logits vector after Argmax, which leaks the least infor- mation about the model [53]. For an input of length m (m = 30 , 522 in BERT, m = 128 , 256 in Llama-3- 8B), the state-of-the-art protocol [30] requires m times of S GN operations (cf. Section-II.C) and m times of ciphertext rotations. Our method only requires (log m+1) times of S GN operations and (log m + 1) times of ci- phertext rotations, which brings significant reductions to computation overhead. Additionally, we also implement non-linear functions such as GELU, Softmax, and Layer Normalization using RNS-CKKS. • We provide an end-to-end implementation of NEXUS on both CPU and GPU. Figure-1 illustrates the im- provements made by the proposed protocols compared to the baseline. In summary, compared to the state-of-the-art protocol Bumblebee [42], NEXUS(CPU) is 1.79 × faster in computation, can save 98.1% of the communication overhead, and able to reduces the financial cost by 2.38×. Leveraging the advantage of the non-interactive property of our protocol, we further provide a GPU-accelerated implementation. NEXUS(GPU) improves inference speed by 42.3 × and achieves a financial cost reduction of 17.2×, to only $0.05/token. Our code has been open- sourced at https://github.com/zju-abclab/NEXUS. Figure 1: The overall performance improvements of the pro- posed optimizations on the BERT-base model (128 input tokens, W AN with 100Mbps bandwidth and 80ms latency). The price indicates the financial cost of outputting a word, according to current AWS pricing policy. II. P RELIMINARIES In this section, we provide the necessary preliminaries of this paper. Table I shows the notations that are frequently used. A. Secure inference and threat model Secure inference is a two-party cryptographic protocol that enables model inference between a client C and a server S, while preserving the privacy of both parties' inputs. Similar to previous works [25], [45], [42], we assume C and S are semi-honest adversaries, adhering to the protocol specifications while endeavoring to gather extra information about the trans- former model or the user's data. Additionally, we assume that an adversary is computationally bounded. Formal threat model and security proof are provided in the Appendix-D. B. Transformer Figure 2 shows the structure and workflow of a transformer. It takes an embedding, represented by a matrix, and passes it through an attention layer and a feed forward network. In the end, it outputs a selection vector according to the highest value in the final logits. Layer normalization (LAYERNORM) is applied around each block. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Secure transformer inference has emerged as a prominent research topic following the proliferation of ChatGPT. Existing solutions are typically interactive, involving substantial communication load and numerous interaction rounds between the client and the server. In this paper, we propose NEXUS, the first non-interactive protocol for secure transformer inference. The protocol requires the client to engage in just one round of communication with the server during the whole inference process: submitting an encrypted input and receiving an encrypted result. NEXUS introduces several novel primitives, including SIMD ciphertext compression/decompression, SIMD slot folding, and secure Argmax, which enable it to significantly surpass the state-of-the-art in communication while maintaining comparable runtime. Specifically, it reduces bandwidth consumption by 372.5× compared to BOLT (Oakland '24) and 53.6× compared to Bumblebee (NDSS '25). Furthermore, its non-interactive property allows for optimal hardware acceleration, with the GPU version achieving a 42.3× speedup in runtime. This enables NEXUS to run inference on a BERT-based model in just 37.3 seconds, consuming only 164 MB of bandwidth."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jiawen Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Xinpeng Yang",
+          "email": "yangxinpeng@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Lipeng He",
+          "email": "lipeng.he@uwaterloo.ca",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Kejia Chen",
+          "email": "chenkejia@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Wen-Jie Lu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yinghao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Xiaoyang Hou",
+          "email": "xiaoyanghou@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Jian Liu",
+          "email": "jian.liu@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Kui Ren",
+          "email": "kuiren@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Xiaohu Yang",
+          "email": "yangxh@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jiawen Zhang",
+          "email": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Xinpeng Yang",
+          "email": "yangxinpeng@zju.edu.cn",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Lipeng He",
+          "email": "lipeng.he@uwaterloo.ca",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University",
+            "University of Waterloo"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Kejia Chen",
+          "email": "chenkejia@zju.edu.cn",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Wen-jie Lu",
+          "email": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yinghao Wang",
+          "email": "",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Xiaoyang Hou",
+          "email": "xiaoyanghou@zju.edu.cn",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Jian Liu",
+          "email": "jian.liu@zju.edu.cn",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University",
+            "Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 8,
+          "name": "Kui Ren",
+          "email": "kuiren@zju.edu.cn",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University",
+            "Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Xiaohu Yang",
+          "email": "yangxh@zju.edu.cn",
+          "affiliations": [
+            "The State Key Laboratory of Blockchain and Data Security, Zhejiang University",
+            "Hangzhou High-Tech Zone (Binjiang) Blockchain and Data Security Research Institute"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 101,
+      "author_count": 10,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Secure Transformer Inference Made Non-interactive",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/secure-transformer-inference-made-non-interactive/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jiawen Zhang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Xinpeng Yang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Lipeng He",
+          "affiliations": [
+            "University of Waterloo"
+          ]
+        },
+        {
+          "name": "Kejia Chen",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Wen-jie Lu",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Yinghao Wang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Xiaoyang Hou",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Jian Liu",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Kui Ren",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Xiaohu Yang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xiaohu Yang",
+      "field": "email",
+      "restored_value": "yangxh@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

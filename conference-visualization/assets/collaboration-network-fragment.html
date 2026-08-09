@@ -1,0 +1,251 @@
+<div id="__ROOT_ID__" class="conference-collaboration-network">
+  <style>
+    #__ROOT_ID__ { width: 100%; color: var(--foreground); background: transparent; }
+    #__ROOT_ID__ .network-meta { display: flex; flex-wrap: wrap; gap: 1rem; color: var(--muted-foreground); }
+    #__ROOT_ID__ .network-meta strong { color: var(--foreground); font-weight: 500; }
+    #__ROOT_ID__ .network-stage { position: relative; width: 100%; overflow: hidden; border-block: 1px solid var(--border); }
+    #__ROOT_ID__ .network-chart { display: block; width: 100%; height: auto; min-height: 430px; }
+    #__ROOT_ID__ .network-edge { stroke: var(--border); stroke-opacity: 0.72; transition: opacity 160ms ease, stroke 160ms ease; }
+    #__ROOT_ID__ .network-edge.is-related { stroke: var(--viz-series-3); stroke-opacity: 1; }
+    #__ROOT_ID__ .network-node { fill: var(--viz-series-1); stroke: var(--background); stroke-width: 2; cursor: pointer; transition: opacity 160ms ease, stroke 160ms ease; }
+    #__ROOT_ID__ .network-node.is-secondary { fill: var(--viz-series-2); }
+    #__ROOT_ID__ .network-node.is-selected { stroke: var(--foreground); stroke-width: 3; }
+    #__ROOT_ID__ .network-label { fill: var(--foreground); paint-order: stroke; stroke: var(--background); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+    #__ROOT_ID__ .is-dimmed { opacity: 0.13; }
+    #__ROOT_ID__ .network-tooltip { position: absolute; z-index: 2; max-width: 260px; visibility: hidden; pointer-events: none; }
+    #__ROOT_ID__ .network-selection { min-height: 2.5rem; padding-block: 0.6rem; color: var(--muted-foreground); }
+    #__ROOT_ID__ .network-selection strong { color: var(--foreground); font-weight: 500; }
+    #__ROOT_ID__ .network-table-wrap { margin-top: 0.25rem; }
+    @media (max-width: 480px) {
+      #__ROOT_ID__ .network-chart { min-height: 390px; }
+      #__ROOT_ID__ .network-meta { gap: 0.65rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #__ROOT_ID__ .network-edge,
+      #__ROOT_ID__ .network-node { transition: none; }
+    }
+  </style>
+  <div class="viz-row">
+    <div class="network-meta" aria-label="网络概览">
+      __PAPER_STAT__
+      <span><strong>__NODE_COUNT__</strong> 个节点</span>
+      <span><strong>__EDGE_COUNT__</strong> 条合作边</span>
+      <span><strong>__REPEATED_EDGE_COUNT__</strong> 条重复合作边</span>
+    </div>
+    <div class="viz-controls" role="group" aria-label="最少共同论文数">
+      __THRESHOLD_BUTTONS__
+    </div>
+  </div>
+  <div class="network-stage">
+    <svg class="network-chart" viewBox="0 0 1000 560" role="img" aria-labelledby="__ROOT_ID__-title __ROOT_ID__-desc">
+      <title id="__ROOT_ID__-title">__ACCESSIBLE_TITLE__</title>
+      <desc id="__ROOT_ID__-desc">节点大小表示合作强度，连线粗细表示共同论文数。默认显示至少 __DEFAULT_THRESHOLD__ 篇共同论文的合作。</desc>
+      <g class="network-edges"></g>
+      <g class="network-nodes"></g>
+      <g class="network-labels"></g>
+    </svg>
+    <div class="tooltip network-tooltip" role="status"></div>
+  </div>
+  <div class="network-selection" aria-live="polite"></div>
+  <div class="table-responsive network-table-wrap">
+    <table class="table table-sm">
+      <thead>
+        <tr><th>#</th><th>合作实体</th><th class="text-end">共同论文</th><th class="text-end">会议数</th><th>年份</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <script>
+  (() => {
+    const root = document.getElementById('__ROOT_ID__');
+    if (!root) return;
+    const nodes = __NODES_JSON__;
+    const edges = __EDGES_JSON__;
+    const labelIds = new Set(__LABEL_IDS_JSON__);
+    const ns = 'http://www.w3.org/2000/svg';
+    const edgeLayer = root.querySelector('.network-edges');
+    const nodeLayer = root.querySelector('.network-nodes');
+    const labelLayer = root.querySelector('.network-labels');
+    const tooltip = root.querySelector('.network-tooltip');
+    const selection = root.querySelector('.network-selection');
+    const tableBody = root.querySelector('tbody');
+    let threshold = __DEFAULT_THRESHOLD__;
+    let selected = null;
+
+    const make = (tag, attrs = {}) => {
+      const element = document.createElementNS(ns, tag);
+      Object.entries(attrs).forEach(([key, value]) => element.setAttribute(key, value));
+      return element;
+    };
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[character]);
+    const radius = id => 5 + Math.sqrt(nodes[id][1]) * 2.1;
+
+    function calculateLayout(activeIds, visibleEdges) {
+      const positioned = activeIds.map((id, index) => ({
+        id,
+        x: 500 + 220 * Math.cos(index / activeIds.length * Math.PI * 2),
+        y: 278 + 205 * Math.sin(index / activeIds.length * Math.PI * 2),
+        vx: 0,
+        vy: 0
+      }));
+      const byId = new Map(positioned.map(node => [node.id, node]));
+      for (let step = 0; step < 280; step += 1) {
+        const alpha = 1 - step / 280;
+        for (let left = 0; left < positioned.length; left += 1) {
+          for (let right = left + 1; right < positioned.length; right += 1) {
+            const a = positioned[left];
+            const b = positioned[right];
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const distance2 = Math.max(100, dx * dx + dy * dy);
+            const force = 6800 / distance2;
+            a.vx += dx * force / distance2;
+            a.vy += dy * force / distance2;
+            b.vx -= dx * force / distance2;
+            b.vy -= dy * force / distance2;
+          }
+        }
+        visibleEdges.forEach(edge => {
+          const a = byId.get(edge[0]);
+          const b = byId.get(edge[1]);
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const distance = Math.max(1, Math.hypot(dx, dy));
+          const target = 118 - Math.min(edge[2], 12) * 3;
+          const force = (distance - target) * 0.0028 * (0.4 + alpha);
+          a.vx += dx / distance * force;
+          a.vy += dy / distance * force;
+          b.vx -= dx / distance * force;
+          b.vy -= dy / distance * force;
+        });
+        positioned.forEach(node => {
+          node.vx += (500 - node.x) * 0.0009;
+          node.vy += (278 - node.y) * 0.0009;
+          node.vx *= 0.78;
+          node.vy *= 0.78;
+          node.x = Math.max(45, Math.min(955, node.x + node.vx));
+          node.y = Math.max(38, Math.min(522, node.y + node.vy));
+        });
+      }
+      return byId;
+    }
+
+    function setFocus(id) {
+      selected = id;
+      const neighbors = new Set(id === null ? [] : [id]);
+      const related = edges
+        .filter(edge => edge[2] >= threshold && (edge[0] === id || edge[1] === id))
+        .sort((a, b) => b[2] - a[2]);
+      related.forEach(edge => {
+        neighbors.add(edge[0]);
+        neighbors.add(edge[1]);
+      });
+      root.querySelectorAll('.network-node').forEach(element => {
+        const nodeId = Number(element.dataset.id);
+        element.classList.toggle('is-dimmed', id !== null && !neighbors.has(nodeId));
+        element.classList.toggle('is-selected', nodeId === id);
+      });
+      root.querySelectorAll('.network-label').forEach(element => {
+        element.classList.toggle('is-dimmed', id !== null && !neighbors.has(Number(element.dataset.id)));
+      });
+      root.querySelectorAll('.network-edge').forEach(element => {
+        const hit = id !== null && (Number(element.dataset.left) === id || Number(element.dataset.right) === id);
+        element.classList.toggle('is-dimmed', id !== null && !hit);
+        element.classList.toggle('is-related', hit);
+      });
+      if (id === null) {
+        selection.textContent = '点选节点可查看当前阈值下的主要合作关系。';
+        return;
+      }
+      const strongest = related[0];
+      const partnerId = strongest ? (strongest[0] === id ? strongest[1] : strongest[0]) : null;
+      selection.innerHTML = '<strong>' + escapeHtml(nodes[id][0]) + '</strong>：合作强度 ' + nodes[id][1] +
+        '，当前可见合作伙伴 ' + related.length +
+        (strongest ? '；最强合作为 ' + escapeHtml(nodes[partnerId][0]) + '（' + strongest[2] + ' 篇）' : '');
+    }
+
+    function showTooltip(id, circle) {
+      tooltip.innerHTML = '<strong>' + escapeHtml(nodes[id][0]) + '</strong><br>合作强度 ' + nodes[id][1] +
+        ' · 合作伙伴 ' + nodes[id][2];
+      tooltip.style.visibility = 'visible';
+      const stageBox = root.querySelector('.network-stage').getBoundingClientRect();
+      const circleBox = circle.getBoundingClientRect();
+      const left = Math.min(stageBox.width - 270, Math.max(0, circleBox.left - stageBox.left + circleBox.width));
+      const top = Math.min(stageBox.height - 80, Math.max(0, circleBox.top - stageBox.top + circleBox.height));
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = top + 'px';
+    }
+
+    function render() {
+      selected = null;
+      edgeLayer.replaceChildren();
+      nodeLayer.replaceChildren();
+      labelLayer.replaceChildren();
+      const visibleEdges = edges.filter(edge => edge[2] >= threshold);
+      const activeIds = [...new Set(visibleEdges.flatMap(edge => [edge[0], edge[1]]))];
+      const positions = calculateLayout(activeIds, visibleEdges);
+      visibleEdges.forEach(edge => {
+        const left = positions.get(edge[0]);
+        const right = positions.get(edge[1]);
+        const line = make('line', {
+          x1: left.x,
+          y1: left.y,
+          x2: right.x,
+          y2: right.y,
+          'stroke-width': 1 + Math.min(edge[2], 12) * 0.7,
+          class: 'network-edge'
+        });
+        line.dataset.left = edge[0];
+        line.dataset.right = edge[1];
+        edgeLayer.append(line);
+      });
+      activeIds.forEach(id => {
+        const position = positions.get(id);
+        const circle = make('circle', {
+          cx: position.x,
+          cy: position.y,
+          r: radius(id),
+          class: 'network-node' + (labelIds.has(id) ? '' : ' is-secondary'),
+          'aria-label': nodes[id][0] + '，合作强度 ' + nodes[id][1]
+        });
+        circle.dataset.id = id;
+        circle.addEventListener('pointerenter', () => showTooltip(id, circle));
+        circle.addEventListener('pointerleave', () => { tooltip.style.visibility = 'hidden'; });
+        circle.addEventListener('click', () => setFocus(selected === id ? null : id));
+        nodeLayer.append(circle);
+        if (labelIds.has(id)) {
+          const label = make('text', {
+            x: position.x + radius(id) + 4,
+            y: position.y + 4,
+            class: 'network-label text-small'
+          });
+          label.dataset.id = id;
+          label.textContent = nodes[id][0];
+          labelLayer.append(label);
+        }
+      });
+      selection.textContent = '当前显示 ' + activeIds.length + ' 个节点、' + visibleEdges.length + ' 条合作边；点选节点可查看主要合作关系。';
+      root.querySelectorAll('[data-threshold]').forEach(button => {
+        button.setAttribute('aria-pressed', String(Number(button.dataset.threshold) === threshold));
+      });
+    }
+
+    edges.slice(0, __TOP_EDGE_COUNT__).forEach((edge, index) => {
+      const row = document.createElement('tr');
+      const years = edge[4] === edge[5] ? edge[4] : edge[4] + '–' + edge[5];
+      row.innerHTML = '<td>' + (index + 1) + '</td><td>' + escapeHtml(nodes[edge[0]][0]) + ' ↔ ' + escapeHtml(nodes[edge[1]][0]) +
+        '</td><td class="text-end">' + edge[2] + '</td><td class="text-end">' + edge[3] + '</td><td>' + years + '</td>';
+      tableBody.append(row);
+    });
+    root.querySelectorAll('[data-threshold]').forEach(button => {
+      button.addEventListener('click', () => {
+        threshold = Number(button.dataset.threshold);
+        render();
+      });
+    });
+    render();
+  })();
+  </script>
+</div>

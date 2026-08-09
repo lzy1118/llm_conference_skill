@@ -1,0 +1,524 @@
+{
+  "paper_id": "249_securely_fine_tuning_pre_trained_encoders_against_adversarial_examples",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Securely Fine-tuning Pre-trained Encoders Against Adversarial Examples"
+      },
+      {
+        "source": "selected",
+        "value": "Securely Fine-tuning Pre-trained Encoders Against Adversarial Examples"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "With the evolution of self-supervised learning, the pre-training paradigm has emerged as a predominant solution within the deep learning landscape. Model providers furnish pre-trained encoders designed to function as versatile feature extractors, enabling downstream users to harness the benefits of expansive models with minimal effort through finetuning. Nevertheless, recent works have exposed a vulnerability in pre-trained encoders, highlighting their susceptibility to downstream-agnostic adversarial examples (DAEs) meticulously crafted by attackers. The lingering question pertains to the feasibility of fortifying the robustness of downstream models against DAEs, particularly in scenarios where the pre-trained encoders are publicly accessible to the attackers. In this paper, we initially delve into existing defensive mechanisms against adversarial examples within the pretraining paradigm. Our findings reveal that the failure of current defenses stems from the domain shift between pretraining data and downstream tasks, as well as the sensitivity of encoder parameters. In response to these challenges, we propose Genetic Evolution-Nurtured Adversarial Fine-tuning (Gen-AF), a two-stage adversarial fine-tuning approach aimed at enhancing the robustness of downstream models. Gen-AF employs a genetic-directed dual-track adversarial fine-tuning strategy in its first stage to effectively inherit the pre-trained encoder. This involves optimizing the pre-trained encoder and classifier separately while incorporating genetic regularization to preserve the model's topology. In the second stage, Gen-AF assesses the robust sensitivity of each layer and creates a dictionary, based on which the top-k robust redundant layers are selected with the remaining layers held fixed. Upon this foundation, we conduct evolutionary adaptability finetuning to further enhance the model's generalizability. Our extensive experiments, conducted across ten self-supervised training methods and six datasets, demonstrate that Gen-AF attains high testing accuracy and robust testing accuracy against state-of-the-art DAEs. 3015 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "With the evolution of self-supervised learning, the pre-training paradigm has emerged as a predominant solution within the deep learning landscape. Model providers furnish pre-trained encoders designed to function as versatile feature extractors, enabling downstream users to harness the bene- fits of expansive models with minimal effort through fine- tuning. Nevertheless, recent works have exposed a vulnerability in pre-trained encoders, highlighting their susceptibility to downstream-agnostic adversarial examples (DAEs) meticulously crafted by attackers. The lingering question pertains to the feasibility of fortifying the robustness of downstream models against DAEs, particularly in scenarios where the pre-trained encoders are publicly accessible to the attackers. In this paper, we initially delve into existing defensive mechanisms against adversarial examples within the pre- training paradigm. Our findings reveal that the failure of current defenses stems from the domain shift between pre- training data and downstream tasks, as well as the sensitivity of encoder parameters. In response to these challenges, we propose Genetic E volution-Nurtured A dversarial F ine-tuning (Gen-AF), a two-stage adversarial fine-tuning approach aimed at enhancing the robustness of downstream models. Gen-AF employs a genetic-directed dual-track adversarial fine-tuning strategy in its first stage to effectively inherit the pre-trained encoder. This involves optimizing the pre-trained encoder and classifier separately while incorporating genetic regularization to preserve the model's topology. In the second stage, Gen- AF assesses the robust sensitivity of each layer and creates a dictionary, based on which the top-k robust redundant layers are selected with the remaining layers held fixed. Upon this foundation, we conduct evolutionary adaptability fine- tuning to further enhance the model's generalizability. Our extensive experiments, conducted across ten self-supervised training methods and six datasets, demonstrate that Gen- AF attains high testing accuracy and robust testing accuracy against state-of-the-art DAEs. 1. Introduction With triumphs of deep learning, researchers are dedi- cated to training models with strong performance to address the multifaceted challenges in the real world. However, constructing a capable model requires substantial labeled datasets and expensive computational resources, which sig- nificantly hinders their applications. Recently, the emergence of large pre-trained encoder ( e.g., GPT [ 7], SimCLR [ 13], CLIP [54]) has significantly alleviated resource constraints, which are trained by model providers ( e.g., Google, Meta, and OpenAI) through self-supervised learning (SSL) meth- ods. Fine-tuning the pre-trained encoder, which enjoys pow- erful feature extraction prowess and knowledge transfer aptitude, is emerging as a new deep learning paradigm. For example, the CLIP provided by OpenAI has facili- tated the flourishing of downstream tasks like Semantic Segmentation [77], Video Processing [ 55], 3D Point Cloud Classification [32]. However, recent works have uncovered the potential security risks of pre-trained encoders [ 4, 33, 41, 57, 76]. PoisonedEncoder [ 41] injects crafted poisoned examples into the unlabeled pre-training data such that the target downstream classifiers inheriting the poisoned encoder will misclassify certain samples into target class. In a similar vein, BadEncoder [ 33] embeds a backdoor by fine-tuning a pre-trained encoder and subsequently disseminates the back- doored pre-trained encoder on third-party platforms ( e.g., GitHub, Hugging Face). Any downstream model utilizing this encoder can be activated through a carefully designed trigger by an attacker for malicious purposes. While these backdoor attacks appear concerning, defense strategies are straightforward and easy-to-deploy, such as cleaning pre- training datasets or avoiding downloading from untrusted sources. Unlike backdoor attacks occurring in the training phase, adversarial attacks [8, 23, 73] stemming from the model's in- 3015 DOI 10.1109/SP54263.2024.00182 task1task2…… Downstream model Pre-trained encoder Robustness up!Adversary finetune Figure 1: Overview of downstream users mitigating DAEs herent vulnerabilities [23] occur during the inference phase and are more threatening. Latest works [4, 75, 76] have successfully utilized a publicly available pre-trained encoder to craft downstream-agnostic adversarial examples (DAEs) to fool downstream tasks. Specifically, PAP [4] leverages the stability of shallow layers in a pre-trained encoder to design pre-trained perturbations for attacking downstream models after fine-tuning. AdvEncoder [76] utilizes a frequency- based generative framework to craft DAEs. These works demonstrate that, despite the lack of knowledge about the pre-training dataset and downstream tasks, attackers can still craft highly effective adversarial examples to compromise all the downstream tasks based on publicly available pre-trained encoders. This poses an intriguing problem: Is it feasible to conduct a secure fine-tuning of a pre-trained encoder to develop downstream models with resilience against DAEs, especially when the attacker possesses knowledge of the pre- trained encoder? Notably, there are many solutions in effectively detecting adversarial examples like [40, 61, 68]. They are orthogonal to our design goals and can be easily integrated. In this study, we start by examining existing defenses against adversarial examples to gauge their effectiveness in the pre-training paradigm. Our goal is to uncover the challenges in dealing with DAEs, as illustrated in Figure 1. Through extensive experiments on four kinds of defense methods, we find that none of them effectively counter recently proposed DAEs. We owe this to two key char- acteristics of pre-training: 1) The domain shift, caused by the distinct training data types between pre-training and downstream fine-tuning, makes it harder for the model to differentiate between benign examples and DAEs due to reduced diversity in the feature space. 2) The high sensitivity of pre-trained encoder, caused by catastrophic knowledge forgetting (i.e., loss oforiginal feature extraction capability), significantly constrains the ability of the defender as achiev- ing optimal model generalization is more desired. This puts us into a “pre-training dilemma” situation. To address the aforementioned challenges, we present the inaugural downstream method, Genetic Evolution- Nurtured Adversarial Fine-tuning (Gen-AF) . Our objec- tive is to enhance the robustness of downstream models while preserving the inherent generalization capabilities of the pre-trained encoder. Gen-AF operates through a two- stage adversarial fine-tuning approach, comprising genetic- driven dual-track adversarial fine-tuning and evolutionary adaptability fine-tuning. In the first stage, to seamlessly inherit the pre-trained encoder, we introduce a bilevel- optimizer collaborative strategy. This strategy optimizes the parameters of the pre-trained encoder and the classifier separately, assigning a minimal learning rate for the pre- trained encoder and a standard learning rate for the classifier. Additionally, to counteract the potential reduction in model generalization during adversarial training, we implement genetic regularization. This technique maintains the relative positional relationships of natural samples within the rep- resentation space, thereby preserving the model's inherent generalization capacity. Moving to the second stage, our aim is to retain the robust-sensitive layers trained adver- sarially while fine-tuning the robust-redundant layers. We construct a sensitivity dictionary for each network layer of the downstream model and select the top-k layers with the lowest robustness, keeping the remaining layers fixed. Subsequently, we undertake standard fine-tuning training for the selected layers to enhance the overall generalization of the downstream model. Notably, in contrast to existing adversarial training meth- ods [3, 52, 65, 71] that aim to strike a balance between robustness and generalization during adversarial training from scratch, Gen-AF is dedicated to preserving the original generalization inherent in the pre-trained encoder ( i.e., fea- ture extraction capability) while enhancing the robustness of downstream models. Additionally, Gen-AF and these adversarial self-supervised pre-training methods [34, 35, 70] operate in parallel and can be readily integrated, as shown in Sec. 4.6. We verify the performance of Gen-AF against five state-of-the-art (SOTA) universal adversarial attacks designed for pre-trained encoders, across ten popular SSL training methods, two pre-training datasets, and six down- stream datasets. The results demonstrate that our method can effectively defend against DAEs, achieving a well-balanced trade-off between robustness and generalization. Our main contributions are summarized as follows: • We extensively investigate existing defenses in the pre- trained paradigm and offer a comprehensive under- standing in mitigating DAEs. • We design the first genetic evolution-nurtured adversar- ial fine-tuning to bolster the robustness of downstream models while simultaneously maintaining the general- ization ability inheriting from the pre-trained encoder. • Our extensive experiments on ten self-supervised train- ing methods and six datasets show that Gen-AF achieves high testing accuracy and robust testing accu- racy against SOTA DAEs. The results also demonstrate that Gen-AF can defend against backdoor attacks tar- geting pre-trained encoders without any modifications. 2. Preliminaries 2.1. Threat Model We evaluate the security risks of pre-trained models from the perspectives of attackers and downstream task 3016"
+      },
+      {
+        "source": "selected",
+        "value": "With the evolution of self-supervised learning, the pre-training paradigm has emerged as a predominant solution within the deep learning landscape. Model providers furnish pre-trained encoders designed to function as versatile feature extractors, enabling downstream users to harness the benefits of expansive models with minimal effort through finetuning. Nevertheless, recent works have exposed a vulnerability in pre-trained encoders, highlighting their susceptibility to downstream-agnostic adversarial examples (DAEs) meticulously crafted by attackers. The lingering question pertains to the feasibility of fortifying the robustness of downstream models against DAEs, particularly in scenarios where the pre-trained encoders are publicly accessible to the attackers. In this paper, we initially delve into existing defensive mechanisms against adversarial examples within the pretraining paradigm. Our findings reveal that the failure of current defenses stems from the domain shift between pretraining data and downstream tasks, as well as the sensitivity of encoder parameters. In response to these challenges, we propose Genetic Evolution-Nurtured Adversarial Fine-tuning (Gen-AF), a two-stage adversarial fine-tuning approach aimed at enhancing the robustness of downstream models. Gen-AF employs a genetic-directed dual-track adversarial fine-tuning strategy in its first stage to effectively inherit the pre-trained encoder. This involves optimizing the pre-trained encoder and classifier separately while incorporating genetic regularization to preserve the model's topology. In the second stage, Gen-AF assesses the robust sensitivity of each layer and creates a dictionary, based on which the top-k robust redundant layers are selected with the remaining layers held fixed. Upon this foundation, we conduct evolutionary adaptability finetuning to further enhance the model's generalizability. Our extensive experiments, conducted across ten self-supervised training methods and six datasets, demonstrate that Gen-AF attains high testing accuracy and robust testing accuracy against state-of-the-art DAEs. 3015 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ziqi Zhou",
+          "email": "zhouziqi@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security",
+            "School of Computer Science and Technology, Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Minghui Li",
+          "email": "minghuili@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Software Engineering, School of Cyber Science and Engineering, School of Information and Communication Technology, Huazhong University of Science and Technology, Griffith University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Wei Liu",
+          "email": "weiliu73@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Shengshan Hu",
+          "email": "hushengshan@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yechao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Wei Wan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Lulu Xue",
+          "email": "lluxue@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Yu Leo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Dezhong Yao",
+          "email": "dyao@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security",
+            "School of Computer Science and Technology, Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Hai Jin",
+          "email": "hjin@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security",
+            "School of Computer Science and Technology, Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ziqi Zhou",
+          "email": "zhouziqi@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security",
+            "School of Computer Science and Technology, Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Minghui Li",
+          "email": "minghuili@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Software Engineering, School of Cyber Science and Engineering, School of Information and Communication Technology, Huazhong University of Science and Technology, Griffith University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Wei Liu",
+          "email": "weiliu73@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Shengshan Hu",
+          "email": "hushengshan@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yechao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Wei Wan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Lulu Xue",
+          "email": "lluxue@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Yu Leo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Dezhong Yao",
+          "email": "dyao@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security",
+            "School of Computer Science and Technology, Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Hai Jin",
+          "email": "hjin@hust.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "National Engineering Research Center for Big Data Technology and System",
+            "Services Computing Technology and System Lab 3 Cluster and Grid Computing Lab 4 Hubei Engineering Research Center on Big Data Security 5 Hubei Key Laboratory of Distributed System Security",
+            "School of Computer Science and Technology, Huazhong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 121,
+      "author_count": 10,
+      "matched_author_count": 5,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Shengshan Hu",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Yechao Zhang",
+          "block_id": "pdf:p1:b8",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Wei Wan",
+          "block_id": "pdf:p1:b13",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Lulu Xue",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 9,
+          "author": "Hai Jin",
+          "block_id": "pdf:p1:b16",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Shengshan Hu",
+          "affiliation_raw": ", Leo Yu Zhang , Dezhong Yao; National Engineering Research Center for Big Data Technology and System Services Computing Technology and System Lab Hubei Engineering Research Center on Big Data Security",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b15",
+            "pdf:p1:b18",
+            "pdf:p1:b20",
+            "pdf:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.071,
+          "center_distance": 18.401,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Wei Wan",
+          "affiliation_raw": "Services Computing Technology and System Lab Hubei Engineering Research Center on Big Data Security",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b13",
+          "affiliation_block_ids": [
+            "pdf:p1:b20",
+            "pdf:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 26.142,
+          "center_distance": 94.287,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 6,
+          "author": "Lulu Xue",
+          "affiliation_raw": "Services Computing Technology and System Lab Hubei Engineering Research Center on Big Data Security",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b20",
+            "pdf:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 26.142,
+          "center_distance": 19.743,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 9,
+          "author": "Hai Jin",
+          "affiliation_raw": "Cluster and Grid Computing Lab Hubei Key Laboratory of Distributed System Security",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b16",
+          "affiliation_block_ids": [
+            "pdf:p1:b21",
+            "pdf:p1:b24"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 26.142,
+          "center_distance": 26.594,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Securely Fine-tuning Pre-trained Encoders Against Adversarial Examples",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ziqi Zhou",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Minghui Li",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Wei Liu",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Shengshan Hu",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Yechao Zhang",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Wei Wan",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Lulu Xue",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Leo Yu Zhang",
+          "affiliations": [
+            "Griffith University"
+          ]
+        },
+        {
+          "name": "Dezhong Yao",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Hai Jin",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 10,
+      "proposed_count": 10,
+      "retained_count": 9,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

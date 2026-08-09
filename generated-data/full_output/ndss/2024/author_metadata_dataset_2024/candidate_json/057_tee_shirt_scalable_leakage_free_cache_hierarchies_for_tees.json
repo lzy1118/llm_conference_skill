@@ -1,0 +1,329 @@
+{
+  "paper_id": "057_tee_shirt_scalable_leakage_free_cache_hierarchies_for_tees",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "TEE-SHirT: Scalable Leakage-Free Cache Hierarchies for TEEs"
+      },
+      {
+        "source": "selected",
+        "value": "TEE-SHirT: Scalable Leakage-Free Cache Hierarchies for TEEs"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Protection of cache hierarchies from side-channel attacks is critical for building secure systems, particularly the ones using Trusted Execution Environments (TEEs). In this paper, we consider the problem of efficient and secure fine-grained partitioning of cache hierarchies and propose a framework, called Secure Hierarchies for TEEs (TEE-SHirT). In the context of a three-level cache system, TEE-SHirT consists of partitioned shared last-level cache, partitioned private L2 caches, and nonpartitioned L1 caches that are flushed on context switches and system calls. Efficient and correct partitioning requires careful design. Towards this goal, TEE-SHirT makes three contributions: 1) we demonstrate how the hardware structures used for holding cache partitioning metadata can be effectively virtualized to avoid flushing of cache partition content on context switches and system calls; 2) we show how to support multi-threaded enclaves in TEE-SHirT, addressing the issues of coherency and consistency that arise with both intra-core and inter-core data sharing; 3) we develop a formal security model for TEE-SHirT to rigorously reason about the security of our design."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Protection of cache hierarchies from side-channel attacks is critical for building secure systems, particularly the ones using Trusted Execution Environments (TEEs). In this pa- per, we consider the problem of efficient and secure fine-grained partitioning of cache hierarchies and propose a framework, called Secure Hierarchies for TEEs (TEE-SHirT). In the context of a three-level cache system, TEE-SHirT consists of partitioned shared last-level cache, partitioned private L2 caches, and non- partitioned L1 caches that are flushed on context switches and system calls. Efficient and correct partitioning requires careful design. Towards this goal, TEE-SHirT makes three contributions: 1) we demonstrate how the hardware structures used for holding cache partitioning metadata can be effectively virtualized to avoid flushing of cache partition content on context switches and system calls; 2) we show how to support multi-threaded enclaves in TEE- SHirT, addressing the issues of coherency and consistency that arise with both intra-core and inter-core data sharing; 3) we develop a formal security model for TEE-SHirT to rigorously reason about the security of our design. I. I NTRODUCTION Cache hierarchies are the target of many recent side-channel attacks that leak critical information from systems [4], [11], [19], [29]-[31], [36], [43], [45], [49]-[52], [59], [64], [65], [70], [72], [74]. These attacks enable a malicious process to infer secret information about a victim process by observing the performance of its memory accesses as they interact with a shared cache. Side-channel information leakage also enables dangerous transient execution attacks [42], [43], [64], [70], where the attacker forces speculatively accessed secrets to be exposed through cache side-channels. Cache-based side- channel attacks also compromise Trusted Execution Environ- ments (TEEs) such as Intel SGX [17]. While TEEs provide logical isolation, they are still vulnerable due to the physical sharing of resources. Indeed, a number of recent cache-based attacks have been demonstrated against SGX [11], [19], [29], [50], [51], [64]. It is therefore critical to integrate leakage-free cache hierarchies into TEEs, augmenting the logical isolation with physical isolation to eliminate side-channel leakage. In this paper, we investigate cache partitioning mechanisms for TEE systems with the goal of protecting the entire cache hierarchy, and not just a single cache level. Cache partitioning is a principled approach to security that physically isolates applications from each other eliminating leakage due to con- tention on shared resources. Since cache partitions belong- ing to different applications (or enclaves in TEE systems) are isolated, the behavior of the victim process does not impact any cache-related observations by attackers, making attacks impossible. Existing secure cache partitioning schemes consider only a single level of caches, either private upper- level caches [23] or shared LLC [41], [44], [56], [63]. These schemes partition caches by ways [23], [41], sets [21], [56], or both [63]. Without loss of generality, we study fine-grained approaches that partition caches by both ways and sets [63]. Various levels of the cache hierarchy require different approaches to achieve security. It has been established that cache partitioning is an effective approach for shared last-level caches [56], [63]. At the same time, prior research demon- strated that L1-caches can be flushed on context switches to prevent leakage with minimal loss in performance [28]. In this paper, we also make a case that private L2 caches have to be partitioned, and present TEE-SHirT, a security framework for multi-level cache hierarchies that combines a shared partitioned LLC, private partitioned L2 caches, and private L1 caches that are flushed on context switches and sys- tem calls. Partitioning private caches introduces performance, consistency, and coherence challenges, especially with multi- threaded workloads. To ensure high performance, correctness, and security of the entire memory hierarchy with TEE-SHirT, this paper makes the following key contributions. First, to avoid scalability limitations due to the limited capacity of cache partitioning logic, we propose to virtualize the cache partitioning metadata to enable partitions to be tracked and maintained even when their respective enclave is not actively running. Specifically, we integrate cache par- titioning metadata into an enclave context that can be saved and restored on context switches using mechanisms available in Intel SGX. We augment existing SGX data structures to include information about cache partitioning metadata, making partitioned caches an integral part of the SGX ecosystem. Once this support is established, the number of enclaves simultaneously sharing the cache space is limited only by Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.24390 www.ndss-symposium.org L1 Cache ... Threads Cores Coherent On-Chip Interconnect LLC - L3 Cache Memory Management Unit ... T o Off-Chip Memory... L2 Cache L1 Cache L2 Cache L1 Cache L2 Cache Threads Threads Fig. 1: A conventional 3-level cache hierarchy. the total cache capacity, and not by the number of physical instances of hardware structures used to support partitioning. Second, we address new consistency and coherence prob- lems with multi-threaded enclaves when they use multiple levels of partitioned caches. When multiple threads of an enclave are scheduled on the same core, multiple partitions (one for each thread) for the same enclave can be formed within a single private L2 cache. Maintaining coherence of data within the same cache is not supported by traditional cache coherence protocols since they assume that at most a single copy of a cache line exists in each cache. Furthermore, it can also be possible that some private caches can maintain the most recent copy of shared data, but the partitioning metadata of the enclave that produced this data while executing on that core is currently context-switched out. In this case, the cache coherence protocol would be missing the metadata to perform the cache query correctly and will need to be augmented.We describe our solutions to both of these problems to provide a coherent and consistent memory system in the presence of shared and private partitioned caches. Third, we prove security guarantees of TEE-SHirT through a formal security analysis that is based on cache-aware and enclave-aware operational semantics to account for the alloca- tion across multiple levels of cache. Our analysis accounts for enclave behavior in a variety of settings, including enclave creation and destruction, and a full consideration of cache coherence and context switch. We evaluated the performance of TEE-SHirT using various benchmarks, including MiBench [34], SPEC2017 [12], and WolfSSL [2] functions, using gem5 [7] cycle-accurate microar- chitectural simulator. To estimate the area overhead of TEE- SHirT, we implemented parts of our design within the open- source cache subsystem of the open ESP project [46]. We integrated a prototype of TEE-SHirT with a 4-core CPU in an open-source System on Chip (SoC) platform, demonstrating an overhead of less than 2% relative to the baseline system. II. B ACKGROUND AND THREAT MODEL In this section, we provide background on modern cache hierarchies and the concept of cache partitioning for security, overview relevant components of Intel SGX's ecosystem, and describe our threat model. A. Cache Hierarchies Figure 1 shows a typical three-level cache hierarchy of a modern CPU. Each core has private L1 and L2 caches, and the L3 cache (also called LLC interchangeably) is shared among T ag Set Index Offst. CPT Partition Idx Way Mask New T ag Cache Lines Partition Offset 1 1 1 0x T ag Matching Cache Partition ...... ...... ...... ...... Fig. 2: Enclave address remapping in partitioned caches all cores/threads running in the system. This is representative of recent designs from major CPU manufacturers [13], [24], [35], [38], [61]. While L1 and L2 caches can be shared by threads simultaneously running on the same core in a simultaneously multithreaded (SMT) processor, we do not consider SMT in this paper - it is often disabled for security. However, even if SMT is used, private caches can be statically partitioned by ways across threads to provide isolation. Note that the number of simultaneous threads is typically smaller than the number of cache ways at the levels of private caches. If such provisions are implemented, then the rest of our design applies even to SMT systems (each thread works within its own partition). In some designs, L2 caches are shared by multiple neighboring cores. While we do not explicitly evaluate such systems (due to the limitation of our gem5-based simulation infrastructure), our partitioning principles apply to them as well. B. Partitioned Caches for Security We consider TEE-SHirT in the context of hardware- supported cache partitioning schemes, in particular in the context of Composable Cachelets [63]. The key idea is to create isolated cache partitions (CPs) for each enclave running on a TEE system. Each CP is composed of the number of consecutive sets and one or more ways. At a high level, a hardware component is added to the cache circuitry to control accesses to CPs. This component is called the Cache Partition Table (CPT) and it holds the metadata related to cache partitions. Specifically, this metadata includes the mappings between the original set indices to the indices within allocated CPs, and the way mask to indicate which cache ways belong to this partition. This information is maintained at the granularity of partition sizes in terms of the number of sets. By going through the CPT, the original memory address generated by an enclave can be remapped to a cache location within the allocated CP. Figure 2 shows the address remapping mechanism for cache accesses from enclaves. Entries of the CPT are accessed with the higher bits of the set index. The accessed CPT entry's partition index points to a group of sets that belong to the enclave's CP. Depending on the desired partition size and shape, one or more of the CPT entries can be established by an enclave, thus appropriately deflecting the initial addresses to physical cache indexes within the boundary of the allocated CP. The set index's lower bits are used as partition offset , where they point to the specific set within the CP. The way 2"
+      },
+      {
+        "source": "selected",
+        "value": "Protection of cache hierarchies from side-channel attacks is critical for building secure systems, particularly the ones using Trusted Execution Environments (TEEs). In this paper, we consider the problem of efficient and secure fine-grained partitioning of cache hierarchies and propose a framework, called Secure Hierarchies for TEEs (TEE-SHirT). In the context of a three-level cache system, TEE-SHirT consists of partitioned shared last-level cache, partitioned private L2 caches, and nonpartitioned L1 caches that are flushed on context switches and system calls. Efficient and correct partitioning requires careful design. Towards this goal, TEE-SHirT makes three contributions: 1) we demonstrate how the hardware structures used for holding cache partitioning metadata can be effectively virtualized to avoid flushing of cache partition content on context switches and system calls; 2) we show how to support multi-threaded enclaves in TEE-SHirT, addressing the issues of coherency and consistency that arise with both intra-core and inter-core data sharing; 3) we develop a formal security model for TEE-SHirT to rigorously reason about the security of our design."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kerem Arıkan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Abraham Farrell",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Williams Zhang Cen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jack Mcmahon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Barry Williams",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yu David Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Nael Abu-Ghazaleh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Dmitry Ponomarev",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kerem Arıkan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Abraham Farrell",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Williams Zhang Cen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jack Mcmahon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Barry Williams",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yu David Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Nael Abu-Ghazaleh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Dmitry Ponomarev",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Binghamton University University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 97,
+      "author_count": 8,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "TEE-SHirT: Scalable Leakage-Free Cache Hierarchies for TEEs",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/tee-shirt-scalable-leakage-free-cache-hierarchies-for-tees/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kerem Arikan",
+          "affiliations": [
+            "Binghamton University"
+          ]
+        },
+        {
+          "name": "Abraham Farrell",
+          "affiliations": [
+            "Binghamton University"
+          ]
+        },
+        {
+          "name": "Williams Zhang Cen",
+          "affiliations": [
+            "Binghamton University"
+          ]
+        },
+        {
+          "name": "Jack McMahon",
+          "affiliations": [
+            "Binghamton University"
+          ]
+        },
+        {
+          "name": "Barry Williams",
+          "affiliations": [
+            "Binghamton University"
+          ]
+        },
+        {
+          "name": "Yu David Liu",
+          "affiliations": [
+            "Binghamton University"
+          ]
+        },
+        {
+          "name": "Nael Abu-Ghazaleh",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Dmitry Ponomarev",
+          "affiliations": [
+            "Binghamton University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

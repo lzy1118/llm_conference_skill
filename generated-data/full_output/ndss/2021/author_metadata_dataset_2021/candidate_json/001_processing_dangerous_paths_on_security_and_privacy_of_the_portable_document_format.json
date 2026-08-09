@@ -1,0 +1,323 @@
+{
+  "paper_id": "001_processing_dangerous_paths_on_security_and_privacy_of_the_portable_document_format",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Processing Dangerous Paths -On Security and Privacy of the Portable Document Format"
+      },
+      {
+        "source": "selected",
+        "value": "Processing Dangerous Paths -On Security and Privacy of the Portable Document Format"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "PDF is the de-facto standard for document exchange. It is common to open PDF files from potentially untrusted sources such as email attachments or downloaded from the Internet. In this work, we perform an in-depth analysis of the capabilities of malicious PDF documents. Instead of focusing on implementation bugs, we abuse legitimate features of the PDF standard itself by systematically identifying dangerous paths in the PDF file structure. These dangerous paths lead to attacks that we categorize into four generic classes: (1) Denial-of-Service attacks affecting the host that processes the document. (2) Information disclosure attacks leaking personal data out of the victim's computer. (3) Data manipulation on the victim's system. (4) Code execution on the victim's machine. An evaluation of 28 popular PDF processing applications shows that 26 of them are vulnerable at least one attack. Finally, we propose a methodology to protect against attacks based on PDF features systematically."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "PDF is the de-facto standard for document ex- change. It is common to open PDF files from potentially untrusted sources such as email attachments or downloaded from the Internet. In this work, we perform an in-depth analysis of the capabilities of malicious PDF documents. Instead of focusing on implementation bugs, we abuse legitimate features of the PDF standard itself by systematically identifying dangerous paths in the PDF file structure. These dangerous paths lead to attacks that we categorize into four generic classes: (1) Denial-of- Service attacks affecting the host that processes the document. (2) Information disclosure attacks leaking personal data out of the victim's computer. (3) Data manipulation on the victim's system. (4) Code execution on the victim's machine. An evaluation of 28 popular PDF processing applications shows that 26 of them are vulnerable at least one attack. Finally, we propose a methodology to protect against attacks based on PDF features systematically. I. I NTRODUCTION The Portable Document Format (PDF) is arguably the most widely used data format for office document exchange. While the total number of PDF files is impossible to guess, Adobe announced that 250 billion documents have been opened by Adobe products in 2018 [59]. Being true or not, PDF documents are heavily used in business to business as well as consumer use cases. Exchanging, creating, and archiving invoices and contracts, submitting scientific papers, or collab- orating and reviewing texts, are only some scenarios which are hardly imaginable without PDF. The advantage of using PDF over other document formats, such as Microsoft Word, is its availability on all platforms, including mobile and web. PDF processors are even used on the server-side. For example, uploaded PDF files are converted into images to preview them in forums, wikis, or cloud storage. Modern printers also directly support native PDF processing without the requirement for printer drivers to convert input files to a special data format understood by the printer. A. Powerful Document Features JavaScript [2], up to form fields [6]. A PDF document can be updated or annotated without losing previous revisions [7] and define specific actions [4], for example, to display a specific page once the viewer opens the document. On top of this, PDF is enriched with different data formats which can be embedded into documents, such as XML [8], or Flash [3]. Each of the formats has its strengths, but allowing their inclusion also enables their weaknesses and concerns. In this work, we analyze the security of native PDF functions. B. Security and Privacy Threats We present a systematic and structured analysis of standard PDF features relevant for the security and privacy of users. Even though PDF is a relatively old and well-established data format, our study reveals novel insights regarding the abuse of dangerous features, which are induced by opening a malicious PDF document. We categorize our attacks into four classes: 1) Denial-of-Service (DoS) attacks affecting the processing application and the host on which the PDF file is opened. 2) Information disclosure attacks leak personal data from the victim's computer to the attacker, such as PDF document form data, local files on disk, or NTLM user credentials. 3) Data manipulation attacks modify PDF form values, write local files on the host system, or mask the displayed content of a document based on the opening application. 4) Execution of code on the victim's machine, by silently launching an executable, embedded within the document. C. Responsible Disclosure We reported our attacks and findings to the affected vendors and proposed appropriate countermeasures, resulting in CVE- 2020-28352, CVE-2020-28353, CVE-2020-28354, CVE-2020-28355, CVE-2020-28356, CVE-2020-28357, CVE-2020-28358, CVE-2020- 28359, CVE-2020-28410, CVE-2020-28411, and CVE-2020-28412. While it is possible to mitigate most of the attacks on the implementation-level, all of them are based on legitimate features defined in the PDF standard. To sustainably eliminate the root cause of these vulnerabilities in future implementation, the authors recommend to remove dangerous functionality from the PDF specification or add proper implementation advice to its security considerations. D. Contributions Our contributions can be summarized as follows: • We present a systematic analysis on the security of native PDF features. Therefore, we distillate dangerous paths from the 1300-page PDF specification. (section V) Introduced in 1993 by Adobe, PDF was designed to provide a consistent representation of documents, independent of the platform. It supports numerous advanced features, ranging from cryptography to calculation logic [44], 3D animations [5], Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23109 www.ndss-symposium.org • Based on this methodology, we craft our attack vectors, resulting in an overall of 209 different attack variants that can be generalized into four attack classes. (section VI) • We evaluate 28 popular PDF viewers and show that 26 of them are vulnerable to at least one attack. (section VII) • We present techniques for JavaScript-based fingerprinting of PDF viewers and bypassing Digital Rights Management, and discuss the consequences of hidden data added by legitimate PDF editors to every document. (section VIII) • We discuss countermeasures for PDF implementations as well as the specification, and propose a methodology to systematically protect against attack variants. (section IX) • We release our comprehensive suite of malicious PDF files which can be used by developers to test their software. 1 II. PDF B ASICS This section briefly introduces the PDF document structure. For reasons of clarity, we only describe the building blocks relevant for understanding the attacks of this paper. A. Basic Blocks A PDF document consists of four basic sections: 1) A header defining the PDF document version ( 1.1 to 2.0). 2) A body containing the content, a bundle of PDF objects. 3) An index table with references to each object in the body. 4) A trailer defining the root element of the document and a reference to the index table. The most important section is the body which contains the PDF objects - the actual content of the document. An object can, for example, define a headline, a text block, or an image. 1 10 0 obj 2 << /Length 10 >> % stream length 3 stream % start of the stream 4 Content % content (e.g., text, image, font, file) 5 endstream % end of the stream 6 endobj Listing 1. PDF object 10, including a 10-byte content stream. Every object is enclosed by the delimiters obj and endobj and has has an identifier. In Listing 1, the object's identifier is 10 with generation number 0. Content can be provided as a string, or - as shown in Listing 1 - as a stream enclosed by stream and endstream. It can be pref- aced with additional information, such as encoding or length. Streams can optionally be compressed. Many documents use FlatDecode for this purpose, meaning that the zlib Deflate algorithm is used. B. PDF Forms With PDF version 1.2, Adobe introduced AcroForms in 1996. Similarly to HTML forms, AcroForms allow to define input fields, checkboxes, and buttons. The user-input can either be stored directly into the document (using incremental updates) or be submitted to a dedicated server. In the latter case, AcroForms use the Forms Data Format (FDF), which is based on raw PDF objects, for transmitting the data. 1Our test suite of PDF documents can be found at https://pdf-insecurity. org/download/pdf-dangerous-paths/exploits-and-helper-scripts.zip. C. Actions & JavaScript The PDF specification defines multiple Actions for various purposes. These actions can be used, for example, to navigate to a certain page in the document ( GoTo action). Actions are often combined with form elements or Annotations (e.g., click- able hyperlinks referencing a website are technically realized by combining a Link annotation with a URI action). However, actions can also be set to trigger automatically based on various events such as opening, printing, or closing the document. A special action in PDF is the execution of JavaScript code. Adobe defined a basic set of functions [2], but PDF applica- tions often choose to implement a subset of Adobe's standard as well as to extend their feature set with proprietary functions (see section VIII). JavaScript provides a huge flexibility for documents, for example, complex input validation of forms or changing their values depending on specific conditions. 11 0 obj 2<< /Type /Catalog % the first processed PDF object 3/OpenAction << % action executed after opening file 4/Type /Action % definition of the action 5/S /JavaScript % this is a Javascript action 6/JS ( JavaScript code ) >> % JavaScript code 7>> 8endobj Listing 2. PDF document executing JavaScript after opening (excerpt). In Listing 2, an example of a PDF action containing JavaScript is shown. The document Catalog, which is the first processed object in a PDF document, contains the entry OpenAction. The OpenAction event defines an action which is executed directly after the document is being opened. In the given example, the JavaScript code defined in Line 6 will be executed. D. PDF File Handles A file handle (or PDF File Specification) is a multi-purpose object that can be either an embedded file (i.e., a data stream within the document), a local file on disk, a remote URL, or a network share, depending on given parameters and context. File handles define the targets of many PDF actions such as where to submit form data to (via SubmitForm action) or which hyperlinks to follow in a document (via URI or GoToR action). III. R ELATED WORK PDF documents have been considered as relatively secure against malware and other security threats until 2001 [56], when the Peachy virus misused PDF features to run malicious VBScript [57]. In the following years, PDF malware grew to an importance, mostly based on implementation bugs in viewer applications [58, 52]. During this period, PDF malware focused mainly on abusing JavaScript. To estimate the importance of JavaScript-based vulnerabilities in PDF documents we filtered the CVE database for entries relating to 28 PDF processing applications. Since 2003, there are 1325 relevant CVE IDs, of which 73 lead to code execution - the rest being DoS, data leakage, or other vulnerabilities. Of all PDF-related CVE IDs, 138 entries are due to JavaScript. 2 Laskov et al. [34] outline two classes of JavaScript PDF exploits: either the JavaScript 2The total number of JavaScript related issues may be higher because JavaScript engine bugs usually do not get separate CVE IDs for integrators. 2"
+      },
+      {
+        "source": "selected",
+        "value": "PDF is the de-facto standard for document exchange. It is common to open PDF files from potentially untrusted sources such as email attachments or downloaded from the Internet. In this work, we perform an in-depth analysis of the capabilities of malicious PDF documents. Instead of focusing on implementation bugs, we abuse legitimate features of the PDF standard itself by systematically identifying dangerous paths in the PDF file structure. These dangerous paths lead to attacks that we categorize into four generic classes: (1) Denial-of-Service attacks affecting the host that processes the document. (2) Information disclosure attacks leaking personal data out of the victim's computer. (3) Data manipulation on the victim's system. (4) Code execution on the victim's machine. An evaluation of 28 popular PDF processing applications shows that 26 of them are vulnerable at least one attack. Finally, we propose a methodology to protect against attacks based on PDF features systematically."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jens Müller",
+          "email": "jens.a.mueller@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Dominik Noss",
+          "email": "dominik.noss@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Christian Mainka",
+          "email": "christian.mainka@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Vladislav Mladenov",
+          "email": "vladislav.mladenov@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Jörg Schwenk",
+          "email": "joerg.schwenk@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jens Müller",
+          "email": "jens.a.mueller@rub.de",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Dominik Noss",
+          "email": "dominik.noss@rub.de",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Christian Mainka",
+          "email": "christian.mainka@rub.de",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Vladislav Mladenov",
+          "email": "vladislav.mladenov@rub.de",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Jörg Schwenk",
+          "email": "joerg.schwenk@rub.de",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 108,
+      "author_count": 5,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Jens Müller",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Dominik Noss",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Jörg Schwenk",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Jens Müller",
+          "affiliation_raw": "Ruhr University Bochum Ruhr University Bochum",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "email_raw": "jens.a.mueller@rub.de",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 11.613,
+          "center_distance": 48.493,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Dominik Noss",
+          "affiliation_raw": "Ruhr University Bochum Ruhr University Bochum",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "email_raw": "jens.a.mueller@rub.de",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 11.613,
+          "center_distance": 48.535,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Jörg Schwenk",
+          "affiliation_raw": "Ruhr University Bochum",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "email_raw": "joerg.schwenk@rub.de",
+          "email_block_ids": [
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 11.613,
+          "center_distance": 0.773,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Processing Dangerous Paths – On Security and Privacy of the Portable Document Format",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/processing-dangerous-paths-on-security-and-privacy-of-the-portable-document-format/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jens Müller",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ]
+        },
+        {
+          "name": "Dominik Noss",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ]
+        },
+        {
+          "name": "Christian Mainka",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ]
+        },
+        {
+          "name": "Vladislav Mladenov",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ]
+        },
+        {
+          "name": "Jörg Schwenk",
+          "affiliations": [
+            "Ruhr University Bochum"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jens Müller",
+      "field": "email",
+      "restored_value": "jens.a.mueller@rub.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jörg Schwenk",
+      "field": "email",
+      "restored_value": "joerg.schwenk@rub.de",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

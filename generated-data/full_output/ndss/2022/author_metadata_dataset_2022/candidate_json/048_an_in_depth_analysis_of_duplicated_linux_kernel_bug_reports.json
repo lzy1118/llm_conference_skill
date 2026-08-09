@@ -1,0 +1,286 @@
+{
+  "paper_id": "048_an_in_depth_analysis_of_duplicated_linux_kernel_bug_reports",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "An In-depth Analysis of Duplicated Linux Kernel Bug Reports"
+      },
+      {
+        "source": "selected",
+        "value": "An In-depth Analysis of Duplicated Linux Kernel Bug Reports"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "In the past three years, the continuous fuzzing projects Syzkaller and Syzbot have achieved great success in detecting kernel vulnerabilities, finding more kernel bugs than those found in the past 20 years. However, a side effect of continuous fuzzing is that it generates an excessive number of crash reports, many of which are \"duplicated\" reports caused by the same bug. While Syzbot uses a simple heuristic to group (deduplicate) reports, we find that it is often inaccurate. In this paper, we empirically analyze the duplicated kernel bug reports to understand: (1) the prevalence of duplication; (2) the potential costs introduced by duplication; and (3) the key causes behind the duplication problem. We collected all of the fixed kernel bugs from September 2017 to November 2020, including 3.24 million crash reports grouped by Syzbot under 2,526 bug reports (identified by unique bug titles). We found the bug reports indeed had duplication: 47.1% of the 2,526 bug reports are duplicated with one or more other reports. By analyzing the metadata of these reports, we found undetected duplication introduced extra costs in terms of time and developer efforts. Then we organized Linux kernel experts to analyze a sample of duplicated bugs (375 bug reports, unique 120 bugs) and identified 6 key contributing factors to the duplication. Based on these empirical findings, we proposed and prototyped actionable strategies for bug deduplication. After confirming their effectiveness using a ground-truth dataset, we further applied our methods and identified previously unknown duplication cases among open bugs."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "In the past three years, the continuous fuzzing projects Syzkaller and Syzbot have achieved great success in detecting kernel vulnerabilities, finding more kernel bugs than those found in the past 20 years. However, a side effect of continuous fuzzing is that it generates an excessive number of crash reports, many of which are “duplicated” reports caused by the same bug. While Syzbot uses a simple heuristic to group (deduplicate) reports, we find that it is often inaccurate. In this paper, we empirically analyze the duplicated kernel bug reports to understand: (1) the prevalence of duplication; (2) the potential costs introduced by duplication; and (3) the key causes behind the duplication problem. We collected all of the fixed kernel bugs from September 2017 to November 2020, including 3.24 million crash reports grouped by Syzbot under 2,526 bug reports (identified by unique bug titles). We found the bug reports indeed had duplication: 47.1% of the 2,526 bug reports are duplicated with one or more other reports. By analyzing the metadata of these reports, we found undetected duplication introduced extra costs in terms of time and developer efforts. Then we organized Linux kernel experts to analyze a sample of duplicated bugs (375 bug reports, unique 120 bugs) and identified 6 key contributing factors to the duplication. Based on these empirical findings, we proposed and prototyped actionable strategies for bug deduplication. After confirming their effectiveness using a ground-truth dataset, we further applied our methods and identified previously unknown duplication cases among open bugs. I. I NTRODUCTION Kernel is the most important software component of an operating system (OS), the security of which determines the security of the entire OS and user applications. Vulnerabilities in kernel programs are often considered to be more severe than those in user programs [26]. Due to the high privilege of kernel programs, they have been an attractive target of major attacks, with well-known examples such as WannaCry [11], DirtyCow [8], and BleedingTooth [13]. To proactively detect and patch kernel vulnerabilities, the security community has investigated significant efforts. These efforts include both developing more advanced fuzzing tools to detect new vulnerabilities [4], [67], [51] and organizing security analysts and kernel developers to analyze the reported bugs and develop patches. The progress of kernel bug detection has been slow in the past 20 years until recently when Google initialized Syzkaller [73] and Syzbot [74] projects in 2016. These are open-source projects that automatically and continuously fuzz main Linux kernel branches to find bugs. In addition to the ad- vanced fuzzing techniques (Syzkaller), another key advantage is that the system (Syzbot) produces standard crash reports and structured information fields (e.g., vulnerable kernel versions, kennel configurations), which makes it easier for security analysts to reproduce bugs and analyze root causes. These efforts have been vastly successful. As of November 2020, the system has found 3,736 kernel bugs in just three years, which is more than the total number of kernel bugs identified in the past 20 years before Syzkaller [31]. Bug Report Duplication Problem. While continual fuzzing of Syzbot has significantly improved the efficiency of kernel bug discovery, it also produces an excessive amount of crash reports. In the past three years, Syzbot has generated over 10 million crash reports, the vast majority of which are “duplicated”, meaning that the crashes are triggered by the same bugs. Considering that security analysts need to manually analyze these reports to assess the severity of the bug and pinpoint the root cause, it is highly desirable to group the crash reports caused by the same bug together. Currently, Syzbot relies on a simple heuristic to perform deduplication: if the crashes share the same crash function and crash type , then they will be grouped under the same bug report, sharing the same bug title. Unfortunately, this heuristic-based deduplication method is not accurate. Anecdotally on Syzbot dashboard, we have observed that certain crash reports caused by the same bug were not successfully grouped together (because they have different crash functions or crash types). As a result, the bug reports about the same bug were treated as new (different) bugs, and then were assigned to different analysts. On one hand, multiple groups of analysts working on the same bug in parallel without communicating with each other leads to inefficiency (i.e., redundant manual effort). On the other hand, Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24159 www.ndss-symposium.org a limited view of the diverse bug behaviors of the same bug may lead to incomplete patches [21]. Goals and Approaches. In this paper, we empirically analyze the duplicated kernel bug reports from Syzbot. We define duplicated bug reports as those that share the same root cause. Our goal is to understand: (1) the prevalence of duplication; (2) potential costs introduced by duplication; and (3) the causing factors to the report duplication. Based on the insights obtained from the empirical analysis, we further explore low- cost solutions for bug deduplication. A key challenge in our study is to obtain the “ground-truth” for bug report duplication. While this challenge is difficult to resolve for open bugs that are currently being analyzed by developers, we could group bugs that are already fixed. The idea is to link bug reports based on their “patches” - if multiple bug reports are fixed/closed by the same patch, these bugs are highly likely to be the same bug. After this initial grouping, we then manually analyze the bugs to confirm duplication based on root causes. In this work, we have collected all of the fixed kernel bugs reported on Syzbot from September 2017 to November 2020. This includes 2,526 bug reports and over 3.24 million crash reports. Based on their patches, we group these bug reports into 1,686 unique kernel bug groups. Out of the 2,526 bug reports, 1,191 (47.1%) are duplicated with one or more other reports. We answer the first two questions by analyzing the ground- truth bug groups. We observe that kernel bugs already take a long time to fix, even without duplication (the median open time is 70 days). Bug groups with duplication take an even longer time to close. Even after the first bug in the group is fixed, the other duplicated bugs will remain open for extra time, consuming valuable resources (e.g., developers' time). Also, not too surprisingly, bug groups with duplication involve more developers in the bug fixing process. To answer the third question, the most effective approach is to manually analyze these kernel bugs. To ensure the reliability of results, we have organized security experts and developed rigorous analysis procedures (including peer-reviews). We se- lect 120 bug groups that Syzbot failed to detect the duplication (120/351 = 34.2%). Under the guidance of an approved IRB protocol, 5 Linux kernel experts are organized to set up the environments, reproduce the reported bugs, and analyze the code changes and the developer's notes to figure out the causes of bug duplication. In total, we collectively identify 6 main contributing factors include different inputs, thread interleaving, memory dynamics, kernel versions and branches, different sanitizers, and inline function. Based on the empirical findings, we propose and proto- type five actionable strategies for bug deduplication during reporting time. For instance, we enhance the existing memory quarantine mechanism and replace the slab allocator with the slub allocator in the tested kernel to eliminate the influence of memory layout dynamics. Then we swap and run the PoC programs from potentially duplicated bug reports to observe their behaviors (i.e., mitigating the influence of kernel implementation and function inline). We inject delay to the kernel source code and run the PoC programs multiple times to fully expose the possible thread interleaving. To rule out the influence of different sanitizers, we run the PoC programs with the same sanitizer configuration. Finally, we compute the similarity of PoC programs using a customized Levenshtein distance to handle the different behaviors caused by input differences. We evaluate these strategies with our ground-truth dataset and show that they can effectively identify duplicated bug report pairs, with a true positive rate of 80% and a false positive rate of 0.01%. Among the proposed techniques, the technique that handles “different inputs” is the only source of false positives, and the other four techniques are false-positive- free by design. We further apply our techniques to the real- world open bugs and confirm that they can identify previously unknown bug duplication cases. From both fixed and open bugs, we have found cases where the developers were misled to produce incomplete patches due to a limited view of the diverse bug behaviors. Contributions. In summary, we have three key contributions: • First, we empirically analyze duplicated reports of Linux kernel bugs, and identify the limitations of existing dedupli- cation heuristics. We show that the undetected duplication introduces extra costs (time and developer efforts) and even produces incorrect patches. • Second, we organize Linux kernel experts to perform an in- depth analysis of duplicated bug reports. We identify six key contributing factors to duplication. • Third, we propose and prototype a series of strategies to alleviate the bug duplication problem. We evaluate them against both ground-truth data and current open bugs to demonstrate their effectiveness. To facilitate future works, we will release our code and dataset with this paper. Our work provides new insights into the causing factors of kernel bug deduplication, and introduces an initial solution. We have shared our results and findings with the Syzkaller and Syzbot teams (and some kernel developers), and have received positive feedback. In the end of the paper, we discuss the open challenges to kernel bug deduplication. We believe further research is needed in order to fully address the problem. II. B ACKGROUND AND MOTIVATION In this section, we describe the background of kernel fuzzing and bug reports, and introduce Syzkaller and Syzbot. Then we describe our problem setup and research goals. Syzkaller: Kernel Fuzzing to Detect Bugs. To harden the security of kernel programs, the security community has de- veloped fuzzing tools to discover kernel bugs [73], [4], [67], [51]. Among existing fuzzers, Syzkaller [73] is by far the most successful efforts in practice. Syzkaller is an open-source project initiated by Google in 2016 (popularized in 2017). As (2,526 of them are now patched) in just three years, which is more than the total number of kernel bugs identified in the past 20 years before Syzkaller [31] . Syzkaller has several advanced designs. First, it leverages a declarative description of syscall interface to manipulate programs (sequences of syscalls), and uses code coverage feedback as guidance to explore all the kernel code space. Second, syzkaller leverages the fault injection mechanism [3] 2"
+      },
+      {
+        "source": "selected",
+        "value": "In the past three years, the continuous fuzzing projects Syzkaller and Syzbot have achieved great success in detecting kernel vulnerabilities, finding more kernel bugs than those found in the past 20 years. However, a side effect of continuous fuzzing is that it generates an excessive number of crash reports, many of which are \"duplicated\" reports caused by the same bug. While Syzbot uses a simple heuristic to group (deduplicate) reports, we find that it is often inaccurate. In this paper, we empirically analyze the duplicated kernel bug reports to understand: (1) the prevalence of duplication; (2) the potential costs introduced by duplication; and (3) the key causes behind the duplication problem. We collected all of the fixed kernel bugs from September 2017 to November 2020, including 3.24 million crash reports grouped by Syzbot under 2,526 bug reports (identified by unique bug titles). We found the bug reports indeed had duplication: 47.1% of the 2,526 bug reports are duplicated with one or more other reports. By analyzing the metadata of these reports, we found undetected duplication introduced extra costs in terms of time and developer efforts. Then we organized Linux kernel experts to analyze a sample of duplicated bugs (375 bug reports, unique 120 bugs) and identified 6 key contributing factors to the duplication. Based on these empirical findings, we proposed and prototyped actionable strategies for bug deduplication. After confirming their effectiveness using a ground-truth dataset, we further applied our methods and identified previously unknown duplication cases among open bugs."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Dongliang Mu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Cyber Science and Engineering, Huazhong University of Science and Technology University of Illinois at Urbana-Champaign Urbana, George Washington University",
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yuhang Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yueqi Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Zhenpeng Lin",
+          "email": "zplin@psu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Chensheng Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Xinyu Xing",
+          "email": "xinyu.xing@northwestern.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Gang Wang",
+          "email": "gangw@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Dongliang Mu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Cyber Science and Engineering, Huazhong University of Science and Technology University of Illinois at Urbana-Champaign Urbana, George Washington University",
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yuhang Wu",
+          "email": "yuhang@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yueqi Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zhenpeng Lin",
+          "email": "zplin@psu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Chensheng Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University Northwestern University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Xinyu Xing",
+          "email": "xinyu.xing@northwestern.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Gang Wang",
+          "email": "gangw@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 114,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "An In-depth Analysis of Duplicated Linux Kernel Bug Reports",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-246/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Dongliang Mu",
+          "affiliations": [
+            "Huazhong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Yuhang Wu",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Yueqi Chen",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Zhenpeng Lin",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Chensheng Yu",
+          "affiliations": [
+            "George Washington University"
+          ]
+        },
+        {
+          "name": "Xinyu Xing",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Gang Wang",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

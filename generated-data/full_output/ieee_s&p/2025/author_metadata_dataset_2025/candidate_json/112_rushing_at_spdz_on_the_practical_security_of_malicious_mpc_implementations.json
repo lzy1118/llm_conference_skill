@@ -1,0 +1,241 @@
+{
+  "paper_id": "112_rushing_at_spdz_on_the_practical_security_of_malicious_mpc_implementations",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Rushing at SPDZ: On the Practical Security of Malicious MPC Implementations"
+      },
+      {
+        "source": "selected",
+        "value": "Rushing at SPDZ: On the Practical Security of Malicious MPC Implementations"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Secure multi-party computation (MPC) enables parties to compute a function over private inputs while maintaining confidentiality. Although MPC has advanced significantly and attracts a growing industry interest, open-source implementations are still at an early stage, with no productionready code and a poor understanding of their actual security guarantees. In this work, we study the real-world security of modern MPC implementations, focusing on the SPDZ protocol (Damgård et al., CRYPTO 2012, ESORICS 2013), which provides security against malicious adversaries when all-but-one of the participants may be corrupted. We identify a novel type of MAC key leakage in the MAC check protocol of SPDZ, which can be exploited in concurrent, multi-threaded settings, compromising output integrity and, in some cases, input privacy. In our analysis of three SPDZ implementations (MP-SPDZ, SCALE-MAMBA, and FRESCO), two are vulnerable to this attack, while we also uncover further issues and vulnerabilities with all implementations. We propose mitigation strategies and some recommendations for researchers, developers and users, which we hope can bring more awareness to these issues and avoid them reoccurring in future. 2491 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Secure multi-party computation (MPC) enables par- ties to compute a function over private inputs while maintain- ing confidentiality. Although MPC has advanced significantly and attracts a growing industry interest, open-source imple- mentations are still at an early stage, with no production- ready code and a poor understanding of their actual security guarantees. In this work, we study the real-world security of mod- ern MPC implementations, focusing on the SPDZ protocol vides security against malicious adversaries when all-but-one of the participants may be corrupted. We identify a novel type of MAC key leakage in the MAC check protocol of SPDZ, which can be exploited in concurrent, multi-threaded settings, com- promising output integrity and, in some cases, input privacy. In our analysis of three SPDZ implementations (MP-SPDZ, SCALE-MAMBA, and FRESCO), two are vulnerable to this attack, while we also uncover further issues and vulnerabilities with all implementations. We propose mitigation strategies and some recommendations for researchers, developers and users, which we hope can bring more awareness to these issues and avoid them reoccurring in future. 1. Introduction Secure multiparty computation (MPC) allows mutually distrusting parties to compute a public function of their private inputs while hiding their inputs from each other. In recent years, MPC has gained interest due to its ability to add privacy to virtually any computation, including privacy-preserving machine learning [1], secure auctions [2], collaborative statistics, protecting cryptographic keys and more [3]. Academic prototype implementations have come a long way to demonstrate the feasibility of executing MPC proto- cols in many different contexts, from humble beginnings like the Fairplay compiler [4] to highly optimized and practically efficient, modern MPC compilers such as MP-SPDZ [5]. There is now a growing interest in MPC from industry, from both large and small companies, as evidenced by the range of partners in the MPC Alliance 1. While the only publicly 1. https://www.mpcalliance.org/ available MPC implementations are currently prototypes that do not claim to be production-ready, we expect them to form the basis of future production implementations due to the inherent complexity of MPC protocols. As a result, MPC is on the verge of transitioning from academic prototypes to production-ready implementations. To achieve the desired efficiency, implementations heavily rely on optimization techniques such as multi-threading. Modern MPC protocol designs are usually accompa- nied by a formal security analysis. However, as is typical with complex, state-of-the-art cryptographic protocols, im- plementations are difficult to get right and may not always strictly follow the original specification. This could be for various reasons, including ambiguities in protocol descrip- tions in research papers, programming errors, or a perceived need for new optimizations not covered by the original security analysis. The situation is complicated further by the complexity of MPC protocols, which involve many rounds of communication and often use a large number of cryptographic building blocks such as oblivious transfer, commitment, zero-knowledge proofs, and homomorphic en- cryption. In this work, we therefore ask the question: How secure are today's MPC implementations in practice, and what are the likely pitfalls? While there is some literature on side-channel and fault attacks on MPC protocols [6], [7], [8], to the best of our knowledge, there have been no prior, in-depth studies of the real-world security of general-purpose implementations in the standard attack models which the protocols were explicitly designed to withstand. While MPC is a broad field and we cannot hope to provide satisfactory answers immediately, we initiate the study of this topic by focusing on protocols in the malicious security model with a dishonest majority, where up to n −1 out of n parties can be actively corrupted by an adversary. This focus is motivated by the fact that maliciously secure protocols are highly desirable for their strong security guar- antees, but at the same time, are typically more complex and challenging to implement securely. This is reflected, for instance, in the multitude of attacks on zero-knowledge proof implementations [9], [10]. 2491 DOI 10.1109/SP61157.2025.00176 Our Contributions We chose to focus our attention on implementations of SPDZ [11], [12], a popular family of maliciously secure MPC protocols in the dishonest majority setting. SPDZ is divided into two phases: a preprocessing phase, where the parties generate correlated randomness, and an online phase, where the actual computation takes place. We focus on the online phase, as it is a much simpler protocol that doesn't rely on too many building blocks. Furthermore, even without a preprocessing protocol, the online phase is still useful in a setting with a non-colluding dealer party, who is trusted to generate and distribute the correlated randomness. MAC Key Leakage in SPDZ. Our main contribution is to identify a previously unknown type of leakage in the SPDZ protocol: An attacker can take advantage of the MAC check protocol to learn the global MAC key used to authenticate secret shared values, at the cost of aborting the protocol ex- ecution. Note that our findings do not contradict the existing SPDZ security analysis, and we discuss how the leakage is in fact implictly permitted by existing MPC security models. In a nutshell, the leakage cannot be exploited in a sequential execution, the standard model for the security analysis of cryptographic protocols. Attacking integrity and privacy via MAC key leakage. While this leakage does not impact the security of SPDZ as described in the literature, we observe that it can be exploited in concurrent implementations that use multi- threading as an optimization 2. In particular, an implementa- tion where two different threads are simultaneously running an instance of the MAC check protocol may be vulnerable, and this would allow a malicious party running a modified version of the prescribed binary, to fully control the outputs of the computation in one thread, breaking output integrity. In some instances, this can also violate input privacy. Such a scenario could arise, for instance, in an application where parties perform queries to a secret database, or private order matching in a financial market. These use-cases are likely to benefit from multi-threading in order to parallelize the processing of queries or orders. Survey of SPDZ Implementation Security. With our vulnerability in mind, we survey the main existing SPDZ implementations. We identify three implementations that are currently in use (MP-SPDZ [5], SCALE-MAMBA [13] and FRESCO [14]) and demonstrate that two out of three are vulnerable to this attack. Furthermore, we discovered additional vulnerabilities and programming errors in all three implementations. These include the absence of MAC checks, inappropriate use of hash-based commitments, and other weaknesses that can potentially lead to unintended consequences for users. 2. Similar concerns hold for cooperative multitasking as well, but we focus on multi-threading for the remainder of this work. Disclosure. We notified the developers of the affected implementations of the vulnerabilities. The issues in MP- SPDZ and FRESCO have subsequently been patched; we present the attacks on the unpatched versions. The SCALE- MAMBA framework is no longer actively maintained, and has not been patched. Mitigation. We discuss various mitigations for the SPDZ- specific vulnerabilities, including simple programming fixes, design choices and protocol modifications. We also conclude by making some recommendations for MPC researchers, developers and users. Follow-Up: Collecting MPC Implementation Pitfalls. As a result of discussions around this work during the RWMPC 2025 workshop, a collection of known pitfalls in MPC has been initiated 3. Beyond the pitfalls discussed in this work, the collection currently includes mistakes in instantiating common network assumptions and improper use of various cryptographic primitives. 1.1. Related Work While we are not aware of any other work that analyses the security of real-world MPC implementations in the standard attacker model, there are a number of works that consider side-channel attacks not covered by the standard security analysis that accompanies modern MPC protocols. Levi and Hazay [6] demonstrated that the FreeXOR opti- mization [15] for garbled circuits [16] is almost trivially vulnerable to side-channel attacks. Hashemi et al. further reported timing side channel attacks on garbled circuit pro- tocols [7] as well as fault attacks on secure two-party neural network inference based on garbled circuits [8], while Shen and Jin demonstrated a side-channel attack on the encryption scheme used in garbled circuit protocols [17]. At the same time, related types of cryptographic proto- cols that are already in production such as zero-knowledge proofs and threshold signing or key generation protocols have been the subject of some scrutiny. David et al. [18] reviewed a proposed MPC ceremony for distributed RSA key generation, and discovered a number of implementation issues that could have led to severe vulnerabilities in a deployment. Multiple threshold ECDSA implementations have been found vulnerable to selective abort attacks, which have some similarity to our MAC key leakage attack: van de Pol [19] reports a selective abort attack on a threshold ECDSA implementation based on oblivious transfer exten- sion; Makriyannis, Yomtov and Galansky [20] report another selective abort attack on real-world deployments of Lindell's two-party threshold ECDSA protocol [21]. A difference to our attack is that in both of the above attacks, only 1 bit of information is leaked after each selective abort, so the attacker must be able to abort many times without being detected to gain a significant advantage. On the other hand, 3. https://github.com/rot256/mpc-pitfalls 2492"
+      },
+      {
+        "source": "selected",
+        "value": "Secure multi-party computation (MPC) enables parties to compute a function over private inputs while maintaining confidentiality. Although MPC has advanced significantly and attracts a growing industry interest, open-source implementations are still at an early stage, with no productionready code and a poor understanding of their actual security guarantees. In this work, we study the real-world security of modern MPC implementations, focusing on the SPDZ protocol (Damgård et al., CRYPTO 2012, ESORICS 2013), which provides security against malicious adversaries when all-but-one of the participants may be corrupted. We identify a novel type of MAC key leakage in the MAC check protocol of SPDZ, which can be exploited in concurrent, multi-threaded settings, compromising output integrity and, in some cases, input privacy. In our analysis of three SPDZ implementations (MP-SPDZ, SCALE-MAMBA, and FRESCO), two are vulnerable to this attack, while we also uncover further issues and vulnerabilities with all implementations. We propose mitigation strategies and some recommendations for researchers, developers and users, which we hope can bring more awareness to these issues and avoid them reoccurring in future. 2491 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Alexander Kyster",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University, Denmark"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Frederik Huss Nielsen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University, Denmark"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Sabine Oechsner",
+          "email": "s.a.oechsner@vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Peter Scholl",
+          "email": "peter.scholl@cs.au.dk",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University, Denmark"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Alexander Kyster",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University, Denmark †Vrije Universiteit Amsterdam, The, Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Frederik Huss Nielsen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University, Denmark †Vrije Universiteit Amsterdam, The, Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Sabine Oechsner",
+          "email": "s.a.oechsner@vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University, Denmark †Vrije Universiteit Amsterdam, The, Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Peter Scholl",
+          "email": "peter.scholl@cs.au.dk",
+          "orcid": "",
+          "affiliations": [
+            "Aarhus University, Denmark †Vrije Universiteit Amsterdam, The, Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 105,
+      "author_count": 4,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 2,
+          "author": "Sabine Oechsner",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Peter Scholl",
+          "block_id": "pdf:p1:b3",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 2,
+          "author": "Sabine Oechsner",
+          "affiliation_raw": "Aarhus University, Denmark",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 52.569,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Rushing at SPDZ: On the Practical Security of Malicious MPC Implementations",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Alexander Kyster",
+          "affiliations": [
+            "Aarhus University"
+          ]
+        },
+        {
+          "name": "Frederik Huss Nielsen",
+          "affiliations": [
+            "Aarhus University"
+          ]
+        },
+        {
+          "name": "Sabine Oechsner",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Peter Scholl",
+          "affiliations": [
+            "Aarhus University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 4,
+      "country_values_restored": 4,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

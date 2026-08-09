@@ -1,0 +1,273 @@
+{
+  "paper_id": "007_breaking_and_fixing_virtual_channels_domino_attack_and_donner",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Breaking and Fixing Virtual Channels: Domino Attack and Donner Lukas Aumayr"
+      },
+      {
+        "source": "selected",
+        "value": "Breaking and Fixing Virtual Channels: Domino Attack and Donner Lukas Aumayr"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Payment channel networks (PCNs) mitigate the scalability issues of current decentralized cryptocurrencies. They allow for arbitrarily many payments between users connected through a path of intermediate payment channels, while requiring interacting with the blockchain only to open and close the channels. Unfortunately, PCNs are (i) tailored to payments, excluding more complex smart contract functionalities, such as the oracleenabling Discreet Log Contracts and (ii) their need for active participation from intermediaries may make payments unreliable, slower, expensive, and privacy-invasive. Virtual channels are among the most promising techniques to mitigate these issues, allowing two endpoints of a path to create a direct channel over the intermediaries without any interaction with the blockchain. After such a virtual channel is constructed, (i) the endpoints can use this direct channel for applications other than payments and (ii) the intermediaries are no longer involved in updates. In this work, we first introduce the Domino attack, a new DoS/griefing style attack that leverages virtual channels to destruct the PCN itself and is inherent to the design adopted by the existing Bitcoin-compatible virtual channels. We then demonstrate its severity by a quantitative analysis on a snapshot of the Lightning Network (LN), the most widely deployed PCN at present. We finally discuss other serious drawbacks of existing virtual channel designs, such as the support for only a single intermediary, a latency and blockchain overhead linear in the path length, or a non-constant storage overhead per user. We then present Donner, the first virtual channel construction that overcomes the shortcomings above, by relying on a novel design paradigm. We formally define and prove security and privacy properties in the Universal Composability framework. Our evaluation shows that Donner is efficient, reduces the onchain number of transactions for disputes from linear in the path length to a single one, which is the key to prevent Domino attacks, and reduces the storage overhead from logarithmic in the path length to constant. Donner is Bitcoin-compatible and can be easily integrated in the LN."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Payment channel networks (PCNs) mitigate the scalability issues of current decentralized cryptocurrencies. They allow for arbitrarily many payments between users connected through a path of intermediate payment channels, while requiring interacting with the blockchain only to open and close the chan- nels. Unfortunately, PCNs are (i) tailored to payments, excluding more complex smart contract functionalities, such as the oracle- enabling Discreet Log Contracts and (ii) their need for active participation from intermediaries may make payments unreliable, slower, expensive, and privacy-invasive. Virtual channels are among the most promising techniques to mitigate these issues, allowing two endpoints of a path to create a direct channel over the intermediaries without any interaction with the blockchain. After such a virtual channel is constructed, (i) the endpoints can use this direct channel for applications other than payments and (ii) the intermediaries are no longer involved in updates. In this work, we first introduce the Domino attack, a new DoS/griefing style attack that leverages virtual channels to destruct the PCN itself and is inherent to the design adopted by the existing Bitcoin-compatible virtual channels. We then demonstrate its severity by a quantitative analysis on a snapshot of the Lightning Network (LN), the most widely deployed PCN at present. We finally discuss other serious drawbacks of existing virtual channel designs, such as the support for only a single intermediary, a latency and blockchain overhead linear in the path length, or a non-constant storage overhead per user. We then present Donner, the first virtual channel construction that overcomes the shortcomings above, by relying on a novel design paradigm. We formally define and prove security and privacy properties in the Universal Composability framework. Our evaluation shows that Donner is efficient, reduces the on- chain number of transactions for disputes from linear in the path length to a single one, which is the key to prevent Domino attacks, and reduces the storage overhead from logarithmic in the path length to constant. Donner is Bitcoin-compatible and can be easily integrated in the LN. I. I NTRODUCTION Payment channels (PCs) have emerged as one of the most promising solutions to the limited transaction throughput of permissionless blockchains, with the Lightning Network [32] being the most popular realization thereof in Bitcoin. A PC enables arbitrarily many payments between two users while requiring to commit only two transactions to the ledger: one to open and another to close the channel. Aside from payments, several applications proposed so far benefit from the scalability gains of 2-party PCs [11], [12], [18]. Recent work [8] has further shown how to lift any operation supported by the underlying blockchain to the off-chain setting, thereby further expanding the class of supported off-chain applications. Creating PCs between all pairs of users (i.e., a clique) is economically infeasible, as users must lock coins for each PC and funding occurs on-chain. On-demand creation of PCs with any potential partner is also infeasible due to the need for on- chain transactions for opening and closing each channel, which results in on-chain fees, long confirmation times (around 1h in Bitcoin) and again impacts the blockchain throughput. As a result, single PCs are instead linked together to form PCNs, using paths of PCs to connect two users instead of opening a PC between them. The interactions of PCN users can be classified into synchronization protocols and virtual channels. Synchronization protocols. Synchronization protocols [9], [22], [28]-[30], [32] allow a sender to pay a receiver when they are connected by a path of PCs, atomically updating the balance of all PCs along the path. Although some of these synchronization protocols are deployed in practice (e.g., for multi-hop payments in the Lightning Network), there are several drawbacks: (i, online assumption) they require users in the path to be online; (ii, reliability) each intermediate user must participate, making the payment less reliable; (iii, cost) each intermediate charges a fee per synchronization round; (iv, latency) the latency of the application increases along with the number of intermediaries (e.g., in the Lightning Network up to one day latency per channel); (v, privacy) intermediaries are aware of every single operation; and (vi, efficiency) they can handle only a limited number of simultaneous payments (e.g., 483 in the Lightning Network) [4]. Finally, and per- haps more importantly, current synchronization protocols are tailored to payments. Supporting 2-party applications (as the ones mentioned before) would require thus to come up with a synchronization protocol for each application. Apart from being a burden, it is not trivial to design such protocols tailored to applications beyond payments, as exemplified by the recent quest in the Bitcoin community about the realization of Discreet Log Contracts across multiple hops [17]. Virtual channels. Virtual channels (VC) [7], [19]-[21], [25], [27], [31] allow two users connected by a path of PCs to estab- lish a direct connection, bypassing intermediaries. Intuitively, a Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24370 www.ndss-symposium.org VC is akin to a PC, but instead of being opened by an on-chain transaction, it is opened off-chain using funds from the path of PCs. Therefore, the opening phase involves all intermediaries, besides the endpoints. Once established, however, updates can proceed without the involvement of any intermediaries. In this manner, VCs overcome the aforementioned drawbacks of synchronization protocols: (i) intermediaries are no longer required to be online; (ii) the reliability of the channel does not depend on intermediaries; (iii) intermediaries do not charge a fee for each usage of the channel (perhaps only once to create and close the VC); (iv) the latency does not depend on intermediaries; (v) intermediaries do not learn each single VC update; (vi) a PC can host several VCs, each of which can be used to dispense up to 483 payments or potentially more VCs, bypassing the limitation on the number of payments in PCNs. Since VCs can be used just as PCs, they constitute the most promising solution to perform repeated transactions as well as applications different from payments (e.g., [11], [12], [18]) between any pair of users connected by a path of PCs. In fact, applications built on top of PCs can be smoothly lifted to VCs, which constitutes a crucial improvement over synchronization protocols.1 For instance, VCs support Discreet Log Contracts [18], an application that has received increased attention lately and that intuitively allows for bets based on attestations from an oracle on real world events. As compared to PCs, VCs offer the same advantages while requiring no on-chain transaction for their setup, thereby dispensing from the associated blockchain delays, on-chain fees, and on-chain footprints. This makes it possible to keep VCs short-lived, to frequently close, open, or extend them based on current needs. For a more detailed discussion see Appendix A. VC constructions are difficult to design, since the balance of honest parties needs to be ensured even in the presence of malicious, and possibly colluding, intermediaries/endpoints. The first constructions have been proposed for blockchains supporting Turing-complete scripting languages based on the account model, like Ethereum [19]-[21]. In such blockchains, VC constructions are somewhat easier to design: For instance, stateful smart contracts can resolve conflicts on the current state of VCs by associating a different version number to each state update and, in case of conflict, by selecting the highest number as the valid state. Indeed, Ethereum-based constructions are based on this idea and do not suffer from the Domino attack presented in this paper. Unfortunately, this reliance on Turing-complete scripting languages makes these constructions incompatible with many of the cryptocurrencies available today, including Bitcoin itself. It is not only of practically relevant, but also theoretically interesting to investigate what is the minimum scripting func- tionalities necessary to design secure VCs. Therefore, a bit later VC constructions have been proposed also for blockchains with a less expressive scripting language and based on the Unspent Transaction Output (UTXO) model (i.e., Bitcoin- compatible) [7], [25], [27]. Throughout the rest of this paper, we investigate VCs built on these blockchains if not specified otherwise. All of these VC constructions share one common design pattern: The VC is funded from all underlying PCs. We refer to this design pattern as rooted VCs and illustrate 1VCs expose all the functionalities of a PC and can be used interchangeably as a building block for off-chain applications, see Section V. TABLE I: Comparison to other multi-hop VC protocols. LVPC [25] Elmo [27] Donner Scripting requirements Bitcoin Bitcoin + Bitcoin ANYPREVOUT Multi-hop ✓ ✓ ✓ Secure against Domino attack ✗ ✗ ✓ Path privacy ✗ ✗ yes Time-based fee model ✓ ✗ ✓ Unlimited lifetime ✗ ✓ ✓ Storage Overhead per party Θ( n)∗ Θ( n3) Θ(1) Off-chain closing ✓ ✗ ✓ Offload: txs on-chain Θ( n) Θ( n) 1 Offload: time delay Θ( n)∗ Θ( n)∗ 1 ∗ by synchronizing all channels, this time can be only Θ(log(n)). it on a high level in Figure 1(a.1). Because VCs are, unlike PCs, not funded on-chain, they rely on an operation called offloading, which transforms a VC to a PC. This is important for honest users so they can enforce their balance in case the other user misbehaves: first transforming the VC to a PC by putting the VC funding on-chain, and second using the means provided by the PC to enforce their balance. Rooted designs enable both endpoints to offload the VC, but because they are funded by all underlying PCs, every underlying PC has to be closed on-chain (see Figure 1(a.2)). Conceptual advancements in this work. We show that rooted VCs are by design prone to severe drawbacks including the Domino attack (see Section III), a new DoS/griefing style attack in which (i) a malicious intermediary of a VC or (ii) an attacker establishing a VC with itself over a number of honest PCs can close the whole path of underlying PCs and bring them on-chain. Not only are all existing Bitcoin- compatible VC constructions affected by this attack, in fact the ideal functionalities against which they are proven secure do permit this attack, but also this attack is so severe that it can potentially shut down the underlying PCN, as we show in Section III-C. As a result, we argue that none of the existing Bitcoin-compatible VC constructions should be deployed in practice. Furthermore, the rooted design allows adversaries to learn the identity of participants other than their direct neighbors, thereby breaking what we call path privacy (see Section III-D). Given these security and privacy shortcomings, we introduce a paradigm shift towards the design of non-rooted VCs, based on two fundamental ingredients. First, instead of being rooted, the VC is funded indepen- dently from the underlying PCs, by one of the VC endpoints. The underlying PCs are used to lock up some funds (or collateral) that are paid to the honest VC endpoint if the other VC endpoint misbehaves. We illustrate this concept on a high level in Figure 1(b.1). In contrast to rooted designs, VCs can be offloaded without having to close the underlying PCs, which is the key to prevent Domino attacks. Since the VC is only funded by one endpoint, only this funding endpoint has the means of transforming the VC to a PC (offload). Subsequently, the other one cannot get their money via offloading in case of misbehavior. This issue is solved by compensating the non-funding endpoint in case the funding endpoint has not"
+      },
+      {
+        "source": "selected",
+        "value": "Payment channel networks (PCNs) mitigate the scalability issues of current decentralized cryptocurrencies. They allow for arbitrarily many payments between users connected through a path of intermediate payment channels, while requiring interacting with the blockchain only to open and close the channels. Unfortunately, PCNs are (i) tailored to payments, excluding more complex smart contract functionalities, such as the oracleenabling Discreet Log Contracts and (ii) their need for active participation from intermediaries may make payments unreliable, slower, expensive, and privacy-invasive. Virtual channels are among the most promising techniques to mitigate these issues, allowing two endpoints of a path to create a direct channel over the intermediaries without any interaction with the blockchain. After such a virtual channel is constructed, (i) the endpoints can use this direct channel for applications other than payments and (ii) the intermediaries are no longer involved in updates. In this work, we first introduce the Domino attack, a new DoS/griefing style attack that leverages virtual channels to destruct the PCN itself and is inherent to the design adopted by the existing Bitcoin-compatible virtual channels. We then demonstrate its severity by a quantitative analysis on a snapshot of the Lightning Network (LN), the most widely deployed PCN at present. We finally discuss other serious drawbacks of existing virtual channel designs, such as the support for only a single intermediary, a latency and blockchain overhead linear in the path length, or a non-constant storage overhead per user. We then present Donner, the first virtual channel construction that overcomes the shortcomings above, by relying on a novel design paradigm. We formally define and prove security and privacy properties in the Universal Composability framework. Our evaluation shows that Donner is efficient, reduces the onchain number of transactions for disputes from linear in the path length to a single one, which is the key to prevent Domino attacks, and reduces the storage overhead from logarithmic in the path length to constant. Donner is Bitcoin-compatible and can be easily integrated in the LN."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "T UWien",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things, IMDEA Software Institute, Purdue University, Wien, Supra TU"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Pedro Moreno-Sanchez",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things, IMDEA Software Institute, Purdue University, Wien, Supra TU"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Aniket Kate",
+          "email": "aniket@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things, IMDEA Software Institute, Purdue University, Wien, Supra TU"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Matteo Maffei",
+          "email": "matteo.maffei@tuwien.ac.at",
+          "orcid": "",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things, IMDEA Software Institute, Purdue University, Wien, Supra TU"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Pedro Moreno-Sanchez",
+          "email": "pedro.moreno@imdea.org",
+          "orcid": "",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things, IMDEA Software Institute, Purdue University, Wien, Supra TU"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Aniket Kate",
+          "email": "aniket@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things, IMDEA Software Institute, Purdue University, Wien, Supra TU"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Matteo Maffei",
+          "email": "matteo.maffei@tuwien.ac.at",
+          "orcid": "",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things, IMDEA Software Institute, Purdue University, Wien, Supra TU"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 113,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Pedro Moreno-Sanchez",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Aniket Kate",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Matteo Maffei",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Pedro Moreno-Sanchez",
+          "affiliation_raw": "IMDEA Software Institute Purdue University / Supra",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "email_raw": "lukas.aumayr@tuwien.ac.at",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 65.286,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Aniket Kate",
+          "affiliation_raw": "IMDEA Software Institute Purdue University / Supra",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "email_raw": "aniket@purdue.edu",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 57.644,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Matteo Maffei",
+          "affiliation_raw": "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things / TU Wien",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b11",
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 2.714,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Breaking and Fixing Virtual Channels: Domino Attack and Donner",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/breaking-and-fixing-virtual-channels-domino-attack-and-donner/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Lukas Aumayr",
+          "affiliations": [
+            "TU Wien"
+          ]
+        },
+        {
+          "name": "Pedro Moreno-Sanchez",
+          "affiliations": [
+            "IMDEA Software Institute"
+          ]
+        },
+        {
+          "name": "Aniket Kate",
+          "affiliations": [
+            "Purdue University / Supra"
+          ]
+        },
+        {
+          "name": "Matteo Maffei",
+          "affiliations": [
+            "Christian Doppler Laboratory Blockchain Technologies for the Internet of Things / TU Wien"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "remove_organization_author",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "removed_name": "T UWien"
+    }
+  ]
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -27,16 +28,91 @@ def write_rows(path: Path, rows: list[dict[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def load_institution_registry(path: Path) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+    """读取机构维表，提供按 institution_id 和 institution_key 的规范映射。"""
+    by_id: dict[str, dict[str, str]] = {}
+    by_key: dict[str, dict[str, str]] = {}
+    if not path.exists():
+        return by_id, by_key
+    with path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            institution_id = (row.get("institution_id", "") or "").strip()
+            institution_key = (row.get("institution_key", "") or "").strip()
+            entry = {
+                "institution_id": institution_id,
+                "institution_key": institution_key,
+                "canonical_name": (row.get("canonical_name", "") or "").strip(),
+                "country": (row.get("country", "") or "").strip(),
+            }
+            if institution_id:
+                by_id[institution_id] = entry
+            if institution_key:
+                by_key[institution_key] = entry
+    return by_id, by_key
+
+
 def split_pipe_values(value: str) -> list[str]:
     """将存储的多值机构字段拆分为规范化列表。"""
-    text = (value or "").replace(" | ", ";")
-    return [part.strip() for part in text.split(";") if part.strip()]
+    return [part.strip() for part in re.split(r"\s*[|;]\s*", value or "") if part.strip()]
+
+
+def country_label_key(value: str) -> str:
+    return " ".join((value or "").casefold().split())
+
+
+def expand_country_record(
+    record: dict[str, str], known_countries: set[str] | None = None
+) -> list[dict[str, str]]:
+    """Expand known-looking country components in a scope record.
+
+    The scope table is already derived from normalized affiliations, so a
+    composite country value is only retained when it has explicit components;
+    each component then receives its own country-level credit.
+    """
+    countries = split_pipe_values(record.get("country", ""))
+    if len(countries) < 2:
+        return [record]
+    if known_countries is not None:
+        countries = [country for country in countries if country_label_key(country) in known_countries]
+    return [dict(record, country=country) for country in dict.fromkeys(countries)] if countries else []
+
+
+def build_known_scope_countries(rows: list[dict[str, str]], scope: str) -> set[str]:
+    known: set[str] = set()
+    for row in rows:
+        for record in iter_scope_records(row, scope):
+            countries = split_pipe_values(record.get("country", ""))
+            if len(countries) == 1 and country_label_key(countries[0]) not in {"", "unknown"}:
+                known.add(country_label_key(countries[0]))
+    return known
 
 
 def normalize_institution_name(name: str, canonical_name: str) -> str:
     """优先使用规范机构名，同时保留可读的展示名称。"""
     preferred = (canonical_name or "").strip() or (name or "").strip()
     return " ".join(preferred.replace("&amp;", "&").split())
+
+
+def canonicalize_record(
+    record: dict[str, str],
+    registry_by_id: dict[str, dict[str, str]],
+    registry_by_key: dict[str, dict[str, str]],
+) -> dict[str, str]:
+    """用机构维表统一机构 id、展示名和国家，避免多值字段错位污染。"""
+    institution_id = (record.get("institution_id", "") or "").strip()
+    institution_key = (record.get("institution_key", "") or "").strip()
+    registry_row = registry_by_id.get(institution_id) or registry_by_key.get(institution_key) or {}
+    canonical_id = (registry_row.get("institution_id", "") or institution_id).strip()
+    canonical_key = (registry_row.get("institution_key", "") or institution_key).strip()
+    canonical_name = (registry_row.get("canonical_name", "") or record.get("canonical_name", "") or record.get("institution_name", "")).strip()
+    country = (registry_row.get("country", "") or record.get("country", "")).strip()
+    return {
+        "institution_name": record.get("institution_name", "") or canonical_name,
+        "institution_key": canonical_key,
+        "institution_id": canonical_id,
+        "canonical_name": canonical_name,
+        "country": country,
+    }
 
 
 def filter_rows(rows: list[dict[str, str]], conference: str | None, year: str | None) -> list[dict[str, str]]:
@@ -82,14 +158,19 @@ def iter_scope_records(row: dict[str, str], scope: str) -> list[dict[str, str]]:
                     if index < len(aligned_countries)
                     else unique_countries[0]
                     if len(unique_countries) == 1
-                    else ""
+                    else ";".join(unique_countries)
                 ),
             }
         )
     return records
 
 
-def aggregate_country(rows: list[dict[str, str]], scope: str) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+def aggregate_country(
+    rows: list[dict[str, str]],
+    scope: str,
+    registry_by_id: dict[str, dict[str, str]] | None = None,
+    registry_by_key: dict[str, dict[str, str]] | None = None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     """按单一口径聚合国家层面的论文、作者和机构数量。"""
     by_country: dict[str, dict[str, object]] = defaultdict(
         lambda: {
@@ -110,31 +191,36 @@ def aggregate_country(rows: list[dict[str, str]], scope: str) -> tuple[list[dict
     total_papers = {row["paper_key"] for row in rows}
     total_authors = {row["author_paper_key"] for row in rows}
 
+    registry_by_id = registry_by_id or {}
+    registry_by_key = registry_by_key or {}
+    known_countries = build_known_scope_countries(rows, scope)
     for row in rows:
         scope_records = iter_scope_records(row, scope)
         author_marker = row["author_paper_key"]
         for record in scope_records:
-            country = record.get("country", "") or "Unknown"
-            inst_key = record.get("institution_key", "") or record.get("institution_name", "")
-            entry = by_country[country]
-            entry["paper_keys"].add(row["paper_key"])
-            entry["author_keys"].add((author_marker, country))
-            if inst_key:
-                entry["institution_keys"].add(inst_key)
-            entry["conferences"].add(row["conference"])
-            entry["years"].add(row["year"])
+            for record in expand_country_record(record, known_countries):
+                record = canonicalize_record(record, registry_by_id, registry_by_key)
+                country = record.get("country", "") or "Unknown"
+                inst_key = record.get("institution_id", "") or record.get("institution_key", "") or record.get("institution_name", "")
+                entry = by_country[country]
+                entry["paper_keys"].add(row["paper_key"])
+                entry["author_keys"].add((author_marker, country))
+                if inst_key:
+                    entry["institution_keys"].add(inst_key)
+                entry["conferences"].add(row["conference"])
+                entry["years"].add(row["year"])
 
-            conf_key = (country, row["conference"])
-            by_conference[conf_key]["paper_keys"].add(row["paper_key"])
-            by_conference[conf_key]["author_keys"].add((author_marker, country))
-            if inst_key:
-                by_conference[conf_key]["institution_keys"].add(inst_key)
+                conf_key = (country, row["conference"])
+                by_conference[conf_key]["paper_keys"].add(row["paper_key"])
+                by_conference[conf_key]["author_keys"].add((author_marker, country))
+                if inst_key:
+                    by_conference[conf_key]["institution_keys"].add(inst_key)
 
-            year_key = (country, row["year"])
-            by_year[year_key]["paper_keys"].add(row["paper_key"])
-            by_year[year_key]["author_keys"].add((author_marker, country))
-            if inst_key:
-                by_year[year_key]["institution_keys"].add(inst_key)
+                year_key = (country, row["year"])
+                by_year[year_key]["paper_keys"].add(row["paper_key"])
+                by_year[year_key]["author_keys"].add((author_marker, country))
+                if inst_key:
+                    by_year[year_key]["institution_keys"].add(inst_key)
 
     total_paper_count = max(len(total_papers), 1)
     total_author_count = max(len(total_authors), 1)
@@ -187,7 +273,12 @@ def aggregate_country(rows: list[dict[str, str]], scope: str) -> tuple[list[dict
     )
 
 
-def aggregate_institutions(rows: list[dict[str, str]], scope: str) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+def aggregate_institutions(
+    rows: list[dict[str, str]],
+    scope: str,
+    registry_by_id: dict[str, dict[str, str]] | None = None,
+    registry_by_key: dict[str, dict[str, str]] | None = None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     """按选定归属口径聚合机构层面的统计结果。"""
     grouped: dict[str, dict[str, object]] = defaultdict(
         lambda: {
@@ -206,9 +297,12 @@ def aggregate_institutions(rows: list[dict[str, str]], scope: str) -> tuple[list
     total_papers = {row["paper_key"] for row in rows}
     total_paper_count = max(len(total_papers), 1)
 
+    registry_by_id = registry_by_id or {}
+    registry_by_key = registry_by_key or {}
     for row in rows:
         scope_records = iter_scope_records(row, scope)
         for record in scope_records:
+            record = canonicalize_record(record, registry_by_id, registry_by_key)
             institution_key = (record.get("institution_id", "") or record.get("institution_key", "") or record.get("institution_name", "")).strip()
             if not institution_key:
                 continue
@@ -349,11 +443,12 @@ def main() -> None:
     args = parser.parse_args()
 
     rows = filter_rows(read_rows(Path(args.input)), args.conference, args.year)
+    registry_by_id, registry_by_key = load_institution_registry(Path(args.input).with_name("institution_dim.csv"))
     base_dir = Path(args.output_dir) / "affiliation_scope"
     results: dict[str, tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]] = {}
     for scope in SCOPE_CHOICES:
-        country_summary, country_by_conference, country_by_year = aggregate_country(rows, scope)
-        institution_summary, institution_by_conference, institution_by_year = aggregate_institutions(rows, scope)
+        country_summary, country_by_conference, country_by_year = aggregate_country(rows, scope, registry_by_id, registry_by_key)
+        institution_summary, institution_by_conference, institution_by_year = aggregate_institutions(rows, scope, registry_by_id, registry_by_key)
         results[scope] = (
             country_summary,
             country_by_conference,

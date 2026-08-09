@@ -1,0 +1,305 @@
+{
+  "paper_id": "057_remote_memory_deduplication_attacks",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Remote Memory-Deduplication Attacks"
+      },
+      {
+        "source": "selected",
+        "value": "Remote Memory-Deduplication Attacks"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Memory utilization can be reduced by merging identical memory blocks into copy-on-write mappings. Previous work showed that this so-called memory deduplication can be exploited in local attacks to break ASLR, spy on other programs, and determine the presence of data, i.e., website images. All these attacks exploit memory deduplication across security domains, which in turn was disabled. However, within a security domain or on an isolated system with no untrusted local access, memory deduplication is still not considered a security risk and was recently re-enabled on Windows by default. In this paper, we present the first fully remote memorydeduplication attacks. Unlike previous attacks, our attacks require no local code execution. Consequently, we can disclose memory contents from a remote server merely by sending and timing HTTP/1 and HTTP/2 network requests. We demonstrate our attacks on deduplication both on Windows and Linux and attack widely used server software such as Memcached and InnoDB. Our side channel leaks up to 34.41 B/h over the internet, making it faster than comparable remote memory-disclosure channels. We showcase our remote memory-deduplication attack in three case studies: First, we show that an attacker can disclose the presence of data in memory on a server running Memcached. We show that this information disclosure channel can also be used for fingerprinting and detect the correct libc version over the internet in 166.51 s. Second, in combination with InnoDB, we present an information disclosure attack to leak MariaDB database records. Third, we demonstrate a fully remote KASLR break in less than 4 minutes allowing to derandomize the kernel image of a virtual machine over the Internet, i.e., 14 network hops away. We conclude that memory deduplication must also be considered a security risk if only applied within a single security domain."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Memory utilization can be reduced by merging identical memory blocks into copy-on-write mappings. Previous work showed that this so-called memory deduplication can be exploited in local attacks to break ASLR, spy on other programs, and determine the presence of data, i.e., website images. All these attacks exploit memory deduplication across security domains, which in turn was disabled. However, within a security domain or on an isolated system with no untrusted local access, memory deduplication is still not considered a security risk and was recently re-enabled on Windows by default. In this paper, we present the first fully remote memory- deduplication attacks. Unlike previous attacks, our attacks re- quire no local code execution. Consequently, we can disclose mem- ory contents from a remote server merely by sending and timing HTTP/1 and HTTP/2 network requests. We demonstrate our attacks on deduplication both on Windows and Linux and attack widely used server software such as Memcached and InnoDB. Our side channel leaks up to 34.41 B/h over the internet, making it faster than comparable remote memory-disclosure channels. We showcase our remote memory-deduplication attack in three case studies: First, we show that an attacker can disclose the presence of data in memory on a server running Memcached. We show that this information disclosure channel can also be used for fingerprinting and detect the correct libc version over the internet in 166.51 s. Second, in combination with InnoDB, we present an information disclosure attack to leak MariaDB database records. Third, we demonstrate a fully remote KASLR break in less than 4 minutes allowing to derandomize the kernel image of a virtual machine over the Internet, i.e., 14 network hops away. We conclude that memory deduplication must also be considered a security risk if only applied within a single security domain. I. I NTRODUCTION Memory deduplication is a widely used technique to reduce memory utilization by detecting physical pages with the same content and merging them. Merged pages are marked as read- only and copy-on-write. If one of the merged pages is mod- ified, a copy-on-write page fault is triggered, and the page is again copied to a new physical location. With the introduction of Windows 8.1, memory deduplication had become a default feature [58]. On Linux, kernel-same-page merging is used by kernel-virtual machines or if the madvise syscall is used with a flag indicating that the page is mergeable. Previous work demonstrated memory-deduplication attacks performed by a local attacker in both local environments (i.e., local native code execution) and the cloud ( i.e., local code execution in a virtual machine) [50], [4] exploiting page combining on Windows and kernel-same-page merging on Linux. Memory-deduplication attacks can detect co-location in the cloud [50], hide communication in virtualized environ- ments [56], [57], fingerprint operating systems [41], fingerprint websites via JavaScript [16] and break ASLR on Linux as well as on Windows by exploiting pages with almost fixed content [4]. Bosman et al. [6] leveraged memory deduplication in combination with Rowhammer to escape from a browser sandbox. Razavi et al. [44] used memory deduplication to facilitate Rowhammer attacks on co-located virtual machines. Palfinger et al. [42] demonstrated that memory deduplication can also be exploited in file systems like ZFS. Lindemann et al. [27] demonstrated efficient fingerprinting via memory dedu- plication in co-located virtual machines. In concurrent work, Kim et al. [22] showed a KASLR break on virtual machines on VMWare ESXi. Following the recommendation of all these attack papers, memory deduplication was disabled on Linux and Windows by default. More recently, vendors switched to more fine-grained security policies. Windows 10, for instance, again enables page combining by default but restricts it to only deduplicate within a security domain but not across security domains, stopping existing attacks. We also observe that the popular Ubuntu 20.04 Linux distribution enables kernel-same-page merging by default for KVM-based virtual machines. Memory- deduplication attacks with local code execution are considered out of scope in their threat model. Systems without local code execution (native or in a virtual machine) for the attacker can still be considered secure with these mitigation strategies. However, it remains unclear whether remote attacks without local code execution are possible. Our work faces three challenges which have to be solved to perform remote memory-deduplication attacks: • C1: Remotely amplify latencies for non-repeatable events. Remote timing attacks require high latencies in the side channel to deal with noisy networks. Page-fault-type in- terrupts cannot be arbitrarily repeated (e.g., for copy-on- write page faults, the page is copied and writeable after the page fault). Hence, existing amplification techniques are not directly applicable. All previous memory deduplication attacks focused on cross-domain deduplication. Deduplication within one do- main is considered secure (Windows re-enabled it for that reason). Intra-domain deduplication is visible outside of the domain if the timing latency is exposed over a web server or public API to the attacker domain. • C2: Trigger and observe copy-on-write pagefaults in a victim domain that shares no memory with any attacker Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.23081 www.ndss-symposium.org domain. All previous memory deduplication attacks require local code execution (in native or sandboxed code). Remote requests are usually not held in memory for a long time. To speed up, the access of frequent data, in-memory caching mechanisms like Memcached are used in websites. • C3: Find remote request paths that do not only keep attacker-controlled data in memory but also provide the attacker with control over alignment and in-memory rep- resentation. To enable byte-by-byte leakage, a target is required that allows alignment changes as described by Bosman et al. [6]. In this paper, we solve the mentioned challenges and demonstrate the first fully remote memory-deduplication attacks, just using requests to an HTTP web server. Our attacks infer timing differences caused by copy-on-write page faults on the server from the latency of network requests and responses. We demonstrate attacks on default-configured and fully updated Windows (native) and Linux (virtual machines) installations using default-configured standard server software such as Memcached. We measure the capacity of our side channel in a remote covert channel scenario and achieve a transmission rate of 302.16 B/h in a local area network and 34.41 B/h over the internet, which is faster than comparable remote memory-disclosure channels (e.g., NetSpectre [48] achieved 7.5 B/h in a local area network). We demonstrate three different remote memory- deduplication attacks, illustrating the potential of our technique. In the first attack, we disclose the presence of data on a remote server running Memcached. The information disclosure works by uploading data blobs into the key-value store, freeing the deduplicated item, getting the same item reassigned, and triggering a copy-on-write page fault by modifying the page's content. We also exploit this information disclosure channel for fingerprinting, i.e., which shared libraries are used on the remote system. Our attack detects the correct libc version over the internet in 166.51 s. In the second attack, we present a fully remote KASLR break on a virtual machine running on a remote cloud machine. By targeting kernel pages that contain kernel addresses but have all remaining bytes of the page fixed, we can successfully derandomize the kernel offset of a Linux virtual machine. We show that we can not only mount this attack in a local area network setting using HTTP/1 but, moreover, leverage HTTP/2 to successfully break KASLR on a server that is 14 network hops away within 4 minutes. We emphasize that vendor responses to local KASLR breaks are often that KASLR is only meant as a mitigation for remote attacks. In a third attack, we disclose database records byte-by- byte from a MariaDB database server with an InnoDB storage engine. Our attack works by crafting requests that create byte misalignments within target pages, allowing byte-wise content guessing. This attack is particularly dangerous as it leaks attacker-unknown memory contents from a remote server, similar as in powerful Spectre attacks [24], [48]. We can leak 1.5 B/h in a local area network. We conclude that memory deduplication must also be considered a security flaw if only applied within a security domain and even if local attackers are excluded from the threat model. As our attacks are full remote attacks, we emphasize that the remote attack vector has to be mitigated as well. Consequently, we responsibly disclosed all of our attacks to the corresponding vendors and work with them on finding mitigations before the public release of this paper. We will open-source our tools on GitHub with the conclusion of the responsible disclosure 1. Responsible Disclosure. We responsibly disclosed our find- ings to Microsoft, Red Hat, Canonical, and AWS, on February 8th, 2021. The issues are tracked under CVE-2021-3714. Contributions. The main contributions of this work are: 1) We present the first fully remote memory-deduplication attacks and show that these must be considered a security flaw even if only applied within a security domain. 2) We show that we can remotely fingerprint shared libraries to infer the exact versions via Memcached in-memory databases. 3) We present a fully remote KASLR break on a Linux virtual machine running in the cloud within only 4 minutes. 4) We demonstrate a fully remote byte-by-byte memory dis- closure attack on a MariaDB database server with an InnoDB storage engine, leaking 1.5 B/h. Outline. The remainder of the paper is organized as follows. In Section II, we provide the required background about mem- ory deduplication and remote timing attacks. In Section III, we state a threat model and provide an attack overview. In Section IV, we present the attack primitives that we use for remote memory-deduplication attacks. In Section VI, we evaluate the performance of our remote memory-deduplication attacks in three case studies on Windows and Linux, targeting Memcached, MariaDB (with InnoDB), and the Linux kernel. In Section VII, we discuss the results and state-of-the-art miti- gations for remote memory-deduplication attacks. We conclude in Section VIII. II. B ACKGROUND In this section, we provide background on memory dedu- plication, memory-deduplication attacks, and remote timing attacks, as well as Address Space Layout Randomization. A. Memory Deduplication Sharing memory is not only crucial for inter-process com- munication but also to reduce memory utilization and cache pressure. Modern operating systems use different techniques to use shared memory whenever possible. For instance, when creating a new process with fork(), the memory is marked as copy-on-write, meaning that it is first shared between parent and child process and only copied ( i.e., duplicated) when one of the processes attempts to write to it. This is implemented by marking the memory read-only and raising a page fault upon a write access. Another example is the loading of any type of file (including, e.g., a program or library binary files). The operating system keeps files in the page cache and maps them into all processes that request access. 1https://github.com/IAIK/Remote-Page-Deduplication-Attacks 2"
+      },
+      {
+        "source": "selected",
+        "value": "Memory utilization can be reduced by merging identical memory blocks into copy-on-write mappings. Previous work showed that this so-called memory deduplication can be exploited in local attacks to break ASLR, spy on other programs, and determine the presence of data, i.e., website images. All these attacks exploit memory deduplication across security domains, which in turn was disabled. However, within a security domain or on an isolated system with no untrusted local access, memory deduplication is still not considered a security risk and was recently re-enabled on Windows by default. In this paper, we present the first fully remote memorydeduplication attacks. Unlike previous attacks, our attacks require no local code execution. Consequently, we can disclose memory contents from a remote server merely by sending and timing HTTP/1 and HTTP/2 network requests. We demonstrate our attacks on deduplication both on Windows and Linux and attack widely used server software such as Memcached and InnoDB. Our side channel leaks up to 34.41 B/h over the internet, making it faster than comparable remote memory-disclosure channels. We showcase our remote memory-deduplication attack in three case studies: First, we show that an attacker can disclose the presence of data in memory on a server running Memcached. We show that this information disclosure channel can also be used for fingerprinting and detect the correct libc version over the internet in 166.51 s. Second, in combination with InnoDB, we present an information disclosure attack to leak MariaDB database records. Third, we demonstrate a fully remote KASLR break in less than 4 minutes allowing to derandomize the kernel image of a virtual machine over the Internet, i.e., 14 network hops away. We conclude that memory deduplication must also be considered a security risk if only applied within a single security domain."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Martin Schwarzl",
+          "email": "martin.schwarzl@iaik.tugraz.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Erik Kraft",
+          "email": "erik.kraft5@gmx.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Moritz Lipp",
+          "email": "moritz.lipp@iaik.tugraz.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Daniel Gruss",
+          "email": "daniel.gruss@iaik.tugraz.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Martin Schwarzl",
+          "email": "martin.schwarzl@iaik.tugraz.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Erik Kraft",
+          "email": "erik.kraft5@gmx.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Moritz Lipp",
+          "email": "moritz.lipp@iaik.tugraz.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Daniel Gruss",
+          "email": "daniel.gruss@iaik.tugraz.at",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 121,
+      "author_count": 4,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Martin Schwarzl",
+          "block_id": "pdf:p1:b1",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Erik Kraft",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Moritz Lipp",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Daniel Gruss",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Martin Schwarzl",
+          "affiliation_raw": "Graz University of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b1",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "email_raw": "martin.schwarzl@iaik.tugraz.at",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.849,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Erik Kraft",
+          "affiliation_raw": "Graz University of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "email_raw": "martin.schwarzl@iaik.tugraz.at",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 0.073,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Moritz Lipp",
+          "affiliation_raw": "Graz University of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "email_raw": "moritz.lipp@iaik.tugraz.at",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.729,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Daniel Gruss",
+          "affiliation_raw": "Graz University of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "email_raw": "moritz.lipp@iaik.tugraz.at",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.389,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Remote Memory-Deduplication Attacks",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-235/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Martin Schwarzl",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        },
+        {
+          "name": "Erik Kraft",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        },
+        {
+          "name": "Moritz Lipp",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        },
+        {
+          "name": "Daniel Gruss",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

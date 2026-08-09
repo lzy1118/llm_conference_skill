@@ -1,0 +1,340 @@
+{
+  "paper_id": "011_prompt_inversion_attack_against_collaborative_inference_of_large_language_models",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Prompt Inversion Attack against Collaborative Inference of Large Language Models"
+      },
+      {
+        "source": "selected",
+        "value": "Prompt Inversion Attack against Collaborative Inference of Large Language Models"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Large language models (LLMs) have been widely applied for their remarkable capability of content generation. However, the practical use of open-source LLMs is hindered by high resource requirements, making deployment expensive and limiting widespread development. The collaborative inference is a promising solution for this problem, in which users collaborate by each hosting a subset of layers and transmitting intermediate activation. Many companies are building collaborative inference platforms to reduce LLM serving costs, leveraging users' underutilized GPUs. Despite widespread interest in collaborative inference within academia and industry, the privacy risks associated with LLM collaborative inference have not been well studied. This is largely because of the challenge posed by inverting LLM activation due to its strong nonlinearity. In this paper, to validate the severity of privacy threats in LLM collaborative inference, we introduce the concept of prompt inversion attack (PIA), where a malicious participant intends to recover the input prompt through the activation transmitted by its previous participant. Specifically, we design a two-stage method to execute this attack. In the first stage, we optimize the input embedding with a constraint term derived from the LLM's embedding matrix to enforce the optimized embedding to be close to the ground truth. In the second stage, we accurately recover discrete tokens by incorporating activation calibration and semantic speculation. Extensive experiments show that our PIA method substantially outperforms existing baselines. For example, our method achieves an 88.4% token accuracy on the Skytrax dataset with the Llama-65B model when inverting the maximum number of transformer layers, while the best baseline method only achieves 22.8% accuracy. The results verify the effectiveness of our PIA attack and highlights its practical threat to LLM collaborative inference systems."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Large language models (LLMs) have been widely applied for their remarkable capability of content generation. However, the practical use of open-source LLMs is hindered by high resource requirements, making deployment expensive and limiting widespread development. The collaborative inference is a promising solution for this problem, in which users collaborate by each hosting a subset of layers and transmitting intermediate activation. Many companies are building collabo- rative inference platforms to reduce LLM serving costs, lever- aging users' underutilized GPUs. Despite widespread interest in collaborative inference within academia and industry, the privacy risks associated with LLM collaborative inference have not been well studied. This is largely because of the challenge posed by inverting LLM activation due to its strong non- linearity. In this paper, to validate the severity of privacy threats in LLM collaborative inference, we introduce the concept of prompt inversion attack (PIA), where a malicious participant intends to recover the input prompt through the activation transmitted by its previous participant. Specifically, we design a two-stage method to execute this attack. In the first stage, we optimize the input embedding with a constraint term derived from the LLM's embedding matrix to enforce the optimized embedding to be close to the ground truth. In the second stage, we accurately recover discrete tokens by incorporating activation calibration and semantic speculation. Extensive experiments show that our PIA method substan- tially outperforms existing baselines. For example, our method achieves an 88.4% token accuracy on the Skytrax dataset with the Llama-65B model when inverting the maximum number of transformer layers, while the best baseline method only achieves 22.8% accuracy. The results verify the effectiveness of our PIA attack and highlights its practical threat to LLM collaborative inference systems. 1. Introduction Large language models (LLMs) ( e.g., GPT-4 [1]), have demonstrated exceptional abilities in various domains. The model scale of LLMs has expanded extensively in recent ∗ The first three authors contributed equally. 1 2 3 ACT ACT Next Token Draft a proposal for company A to setup a factory at location X Draft a plan for company A to build a factory at location X Original Text Recovered Text Model User 1 User 2 User 3 Figure 1: Outline of our attack setting. In collaborative inference, the LLM's transformer blocks are distributed across collaborating participants, each holding a portion of the model. In this figure, 'ACT' represents the intermediate activation transmitted between participants. User 3 is a ma- licious participant who records the intermediate activation received from User 2, completing the computation as usual. After inference, User 3 then attempts to reconstruct the input prompt using the recorded activation. years. Many LLMs with hundreds of billions of param- eters, such as Llama2-70B [2] and OPT-175B [3], have been released. The practical usage of LLMs is hindered by high memory and computational requirements. For instance, OPT-175B demands over 350 GB of GPU memory for infer- ence. Deploying LLMs necessitates many expensive GPUs, making them unaffordable for most developers. This re- quirement heavy burden significantly hinders the widespread deployment of LLMs in practice. Recent studies have been conducted to democratize LLM's access. They can be mainly divided into two cat- egories: offloading and collaborative inference. Offloading- based systems [4], [5], [6] reduce demand on GPU memory by leveraging CPU memory to store model weights that exceed GPU's capacity. However, they suffer from signifi- cant serving latency due to frequent transmission of large model weights ( e.g., gigabytes in size) between CPU and GPU. Collaborative inference [7], [8], [9] is an alternative to offloading, which addresses this challenge. In collaborative inference, participants connect their underutilized GPUs to a pool. Each participant hosts a subset of consecutive LLM layers, receives the preceding layers' activation, computes the hosted layers, and sends the calculated activation to the subsequent participant for follow-up computations. Similar 1695 DOI 10.1109/SP61157.2025.00160 to BitTorrent [10], LLM users benefit from other peoples' GPUs while they can also contribute their own GPUs to the pool. The data transmission volume of collaborative inference is typically orders of magnitude smaller than that of offloading, leading to much lower overhead. Several re- ports [11], [12] have pointed out that collaborative inference can output about five tokens per second, similar to human typing speed, which is acceptable in the real world. Collaborative inference has recently attracted much at- tention from industry and academia [7], [9], [13], [14]. Multiple companies are building collaborative inference platforms to meet the demand for AI computing power. For example, Huggingface [15] and Yandex research [16] built PETALS [7], [8], enabling users to share their under- utilized GPUs through the network to offer people access to cheap computing power. An influential open source project LocalAI [17] also added support to collaborative inference to reduce cost and enhance efficiency [18]. Meanwhile, the startup Nesa [19] has combined collaborative inference with blockchain technology to improve censorship resistance. In academia, extensive research [9], [13], [14], [20] has focused on enhancing the efficiency and scalability of collaborative inference. Additionally, several studies [21], [22], [23] have explored the specific case of LLM collaborative inference in edge cloud environments. However, due to the complex nature of the internet, malicious users are likely to exist. For example, a recent work [24] (ICML'24) studied the risk of poisoning under collaborative fine-tuning. In particular, there are two poten- tial threats collaborative inference systems may encounter: (1) utility threats that a malicious client might intentionally delay processing to increase inference latency or alter the activations sent to subsequent participants, thereby manip- ulating the generated text and (2) privacy threats that in- fer sensitive information from the activation received from the previous participant. This paper mainly focuses on the privacy threats in LLM collaborative inference since input prompts often contain sensitive information ( e.g., personal names and contact details) and high-quality LLM prompts themselves hold significant commercial value [25]. To the best of our knowledge, there is no research regarding the privacy threats in collaborative LLM inference. Nevertheless, we notice that some techniques, including attribute inference attack [26], [27], [28] and embedding inversion attack [29], [30], [31], are closely related to it. These attacks have similar threat models with collaborative inference where the attacker is given embedding/activation. Specifically, attribute inference attacks can accurately infer various sensitive categorized attributes ( e.g., location and gender) from language embedding with high accuracy. How- ever, they are unlikely to practically threaten LLM collab- orative inference , since LLM input prompts are typically long and often contain multiple different values for a single attribute, making the attack results confusing. This naturally mitigates the threat of attribute inference. Embedding inversion attack directly recovers input text from embeddings and has been shown to recover a certain proportion of input from BERT [32] embeddings. However, we reveal that embedding inversion attacks achieve low accuracy in recovering prompts from LLM activations. The fundamental challenge comes from strong non-linearity of LLMs due to deep depth and large size. We discover in our experiments that the non-linearity of LLM strengthens with the increase of model depth. The strong non-linearity leads to the existence of numerous input embedding vec- tors corresponding to similar output activations , most of which map to meaningless text. The recovered results of embedding inversion attacks on LLMs often fall into these local minima. The ineffectiveness of existing attacks towards collaborative LLM inference makes whether these systems are susceptible to privacy threats remains unclear. In this paper, to validate the severity of privacy threats in LLM collaborative inference, we define and reveal the prompt inversion attack (PIA), where a malicious participant intends to recover the input prompt through the activa- tion transmitted by its previous participant. In particular, clients mostly request for open source LLMs or parameter- efficiently fine-tuned LLMs when using collaborative infer- ence in practice. Accordingly, we consider two represen- tative PIA settings: white-box and grey-box. In the white- box setting, the adversary is assumed to have information about all model parameters; while in the grey-box setting, the adversary only knows the parameters of the base model and his own part of fine-tuned weight. Under the white-box setting, we design a two-phase attack pipeline, i.e., constrained optimization with adaptive discretization, to resolve the challenge of numerous seman- tically meaningless local minima due to LLM's strong non- linearity. Specifically, in the first constrained optimization phase, we optimize the input embedding with a constraint term derived from the LLM's embedding matrix. This con- straint enforces the optimized embedding to be close to the ground truth. In the second adaptive discretization phase, we first construct an optimal attack scheme by adaptively recovering tokens based on activation. However, it inevitably has intractable complexity. We accelerate it by reducing the token candidate set based on the previously optimized embedding. Besides, to enhance the readability of recovered text, we design semantic speculation technique based on lan- guage prior. For grey-box PIA, due to the lack of knowledge of LoRA parameters, the attacker has to jointly reconstruct the input prompt and estimate the LoRA parameters. We extend our prior white-box PIA method by developing an alternative optimization-based strategy. Our approach itera- tively optimizes the generated token and LoRA parameters, making PIA feasible under the grey-box setting. To reveal the threats of PIA, we conduct extensive exper- iments on multiple benchmark datasets ( i.e., Skytrax [33], CMS [34], and ECHR [35]) and representative LLMs ( i.e., Llama-2-70B [2], Llama-65B [36], and OPT-66B [3]). In particular, we have two critical observations: (1) PIA could achieve surprisingly high recovery accuracy on LLMs. For example, our method achieves a 88.4% accuracy on the Sky- trax dataset and Llama-65B model for the most challenging last participant setting for four participants, whereas the best baseline method adapted from Li et al. [30] only achieves 1696"
+      },
+      {
+        "source": "selected",
+        "value": "Large language models (LLMs) have been widely applied for their remarkable capability of content generation. However, the practical use of open-source LLMs is hindered by high resource requirements, making deployment expensive and limiting widespread development. The collaborative inference is a promising solution for this problem, in which users collaborate by each hosting a subset of layers and transmitting intermediate activation. Many companies are building collaborative inference platforms to reduce LLM serving costs, leveraging users' underutilized GPUs. Despite widespread interest in collaborative inference within academia and industry, the privacy risks associated with LLM collaborative inference have not been well studied. This is largely because of the challenge posed by inverting LLM activation due to its strong nonlinearity. In this paper, to validate the severity of privacy threats in LLM collaborative inference, we introduce the concept of prompt inversion attack (PIA), where a malicious participant intends to recover the input prompt through the activation transmitted by its previous participant. Specifically, we design a two-stage method to execute this attack. In the first stage, we optimize the input embedding with a constraint term derived from the LLM's embedding matrix to enforce the optimized embedding to be close to the ground truth. In the second stage, we accurately recover discrete tokens by incorporating activation calibration and semantic speculation. Extensive experiments show that our PIA method substantially outperforms existing baselines. For example, our method achieves an 88.4% token accuracy on the Skytrax dataset with the Llama-65B model when inverting the maximum number of transformer layers, while the best baseline method only achieves 22.8% accuracy. The results verify the effectiveness of our PIA attack and highlights its practical threat to LLM collaborative inference systems."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Wenjie Qu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yuguang Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yongji Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UC Berkeley"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Tingsong Xiao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Binhang Yuan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yiming Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Nanyang Technological University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Jiaheng Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Wenjie Qu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yuguang Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yongji Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UC Berkeley"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Tingsong Xiao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Binhang Yuan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yiming Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Nanyang Technological University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Jiaheng Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 123,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Tingsong Xiao",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Tingsong Xiao",
+          "affiliation_raw": "1 National University of Singapore, UC Berkeley, Hong Kong University of Science and Technology,",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b12",
+            "pdf:p1:b14",
+            "pdf:p1:b19"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 82.313,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Prompt Inversion Attack against Collaborative Inference of Large Language Models",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Wenjie Qu",
+          "affiliations": [
+            "National University of Singapore"
+          ]
+        },
+        {
+          "name": "Yuguang Zhou",
+          "affiliations": [
+            "National University of Singapore"
+          ]
+        },
+        {
+          "name": "Yongji Wu",
+          "affiliations": [
+            "Duke University"
+          ]
+        },
+        {
+          "name": "Tingsong Xiao",
+          "affiliations": [
+            "University of Florida"
+          ]
+        },
+        {
+          "name": "Binhang Yuan",
+          "affiliations": [
+            "Hong Kong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Yiming Li",
+          "affiliations": [
+            "Nanyang Technological University"
+          ]
+        },
+        {
+          "name": "Jiaheng Zhang",
+          "affiliations": [
+            "National University of Singapore"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yongji Wu",
+      "field": "affiliations",
+      "restored_value": [
+        "UC Berkeley"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 3,
+      "country_values_restored": 3,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

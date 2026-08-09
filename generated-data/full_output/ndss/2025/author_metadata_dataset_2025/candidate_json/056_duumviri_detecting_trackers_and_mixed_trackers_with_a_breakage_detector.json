@@ -1,0 +1,282 @@
+{
+  "paper_id": "056_duumviri_detecting_trackers_and_mixed_trackers_with_a_breakage_detector",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Duumviri: Detecting Trackers and Mixed Trackers with a Breakage Detector"
+      },
+      {
+        "source": "selected",
+        "value": "Duumviri: Detecting Trackers and Mixed Trackers with a Breakage Detector"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Web tracking harms user privacy. As a result, the use of tracker detection and blocking tools is a common practice among Internet users. However, no such tool can be perfect, and thus there is a trade-off between avoiding breakage (caused by unintentionally blocking some required functionality) and neglecting to block some trackers. State-of-the-art tools usually rely on user reports and developer effort to detect breakages, which can be broadly categorized into two causes: 1) misidentifying non-trackers as trackers, and 2) blocking mixed trackers which blend tracking with functional components. We propose incorporating a machine learning-based breakage detector into the tracker detection pipeline to automatically avoid misidentification of functional resources. For both tracker detection and breakage detection, we propose using differential features that can more clearly elucidate the differences caused by blocking a request. We designed and implemented a prototype of our proposed approach, Duumviri, for non-mixed trackers. We then adopt it to automatically identify mixed trackers, drawing differential features at partial-request granularity. In the case of non-mixed trackers, evaluating Duumviri on 15K pages shows its ability to replicate the labels of human-generated filter lists, EasyPrivacy, with an accuracy of 97.44%. Through a manual analysis, we find that Duumviri can identify previously unreported trackers and its breakage detector can identify overly strict EasyPrivacy rules that cause breakage. In the case of mixed trackers, Duumviri is the first automated mixed tracker detector, and achieves a lower bound accuracy of 74.19%. Duumviri has enabled us to detect and confirm 22 previously unreported unique trackers and 26 unique mixed trackers."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Web tracking harms user privacy. As a result, the use of tracker detection and blocking tools is a common practice among Internet users. However, no such tool can be perfect, and thus there is a trade-off between avoiding breakage (caused by unintentionally blocking some required functionality) and ne- glecting to block some trackers. State-of-the-art tools usually rely on user reports and developer effort to detect breakages, which can be broadly categorized into two causes: 1) misidentifying non-trackers as trackers, and 2) blocking mixed trackers which blend tracking with functional components. We propose incorporating a machine learning-based break- age detector into the tracker detection pipeline to automatically avoid misidentification of functional resources. For both tracker detection and breakage detection, we propose using differential features that can more clearly elucidate the differences caused by blocking a request. We designed and implemented a prototype of our proposed approach, Duumviri, for non-mixed trackers. We then adopt it to automatically identify mixed trackers, drawing differential features at partial-request granularity. In the case of non-mixed trackers, evaluating Duumviri on 15K pages shows its ability to replicate the labels of human-generated filter lists, EasyPrivacy, with an accuracy of 97.44%. Through a manual analysis, we find that Duumviri can identify previously unreported trackers and its breakage detector can identify overly strict EasyPrivacy rules that cause breakage. In the case of mixed trackers, Duumviri is the first automated mixed tracker detector, and achieves a lower bound accuracy of 74.19%. Duumviri has enabled us to detect and confirm 22 previously unreported unique trackers and 26 unique mixed trackers. I. I NTRODUCTION Users navigating the web are constantly being monitored. 95% of 21 million pages contain 3rd-party requests to potential trackers [1]. This extensive tracking results in a significant loss of privacy, as it allows users' sensitive information to be used for targeted advertising [2], behavioral profiling, and sold to third parties without their consent [3]. Therefore, there is a need to identify and block trackers to protect users' privacy. Web trackers come in two types: non-mixed trackers and mixed trackers. Non-mixed trackers send network requests that are purely for the purpose of tracking users. These requests may load tracking code onto the web client or send identifiers and information that enable users to be tracked. Since non- mixed tracker requests only contain tracker data and function- ality, they are relatively easy to identify and block. To make the identification and blocking of trackers harder, trackers can be mixed, meaning that requests made by tracking code contain both tracking and legitimate functionality [4], [5]. Most pre- vious work has focused on non-mixed trackers, and has used on network request features [1], [6], as well as both static [7] and dynamic JavaScript features [8], [9] to identify and block such trackers. More recently, there have also been research proposals to deal with mixed trackers by attempting to identify mixed JavasScripts [10] and block the tracking functionality by disabling the tracking components [11]. In general, an effective tracker detector should have two objectives: 1) maximizing privacy by blocking as many track- ers as possible and 2) minimizing web page breakage. Break- age can occur due to 1) incorrectly classifying non-tracking components as trackers and blocking them and 2) blocking mixed trackers in their entirety, which ends up blocking their functional component. Previous approaches train a single model to detect track- ing without explicitly addressing the issue of breakage. This approach has two drawbacks: 1) The single tracking model must be highly accurate to avoid misidentification. Blocking a misidentified functional request can result in web page breakage. This is quite common-previous single-model ap- proaches [8] can cause breakage on 15% of the sites. 2) They are unable to block mixed trackers as they classify and block the request in its entirety, and thus are not able to block only the tracking component. We explore adding explicit breakage detection into tracker detection. We argue that by explicitly considering the breakage introduced by tracker detection, we can minimize the detection imprecision 1) due to misidentification, where the detector made a false prediction and 2) due to mixed trackers, where the detector made a proper prediction, but still breaks a page. This paper introduces Duumviri, which incorporates two novel mechanisms to address both non-mixed and mixed track- ers. First, as implied by its name 1, Duumviri introduces break- age detection into the tracker detection pipeline. It uses two models instead of one: one for detecting trackers, and the other 1Duumviri is Latin for “two men”, denoting a pair of officials sharing power and duty in ancient Rome. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230267 www.ndss-symposium.org for detecting which requests, if blocked, will lead to web page breakage. This breakage detector can thus detect functional requests that were misclassified as tracking for non-mixed trackers, as well as request that contain both functional and tracking functionality for mixed trackers. Duumviri's models work on differential features, which are derived from experi- mentally blocking requests and comparing the resulting page behavior to that of the original page. Using differential not only enables accurate detection of breakage but also enables Duumviri to detect tracking request fields at partial-request granularity, enabling Duumviri to block tracking functionality without blocking legitimate functionality. In designing Duumviri's breakage detector, we overcame the following challenges: 1) Feature selection. Previous pro- posals [12] lacked the features for accurate breakage detec- tion. We built our features by comprehensively covering the channels of externally-visible events emitted by a web page during rendering, effectively addressing the symptoms of web page breakages [13]. 2) The lack of a dataset of breakages. It is challenging to find relevant breakage samples on live sites. We solved this by leveraging exception rules in filter lists for up-to-date collection of breakage samples that we reconstructed by “flipping” exception rules into block rules. This paper makes the following contributions: • The design and implementation of Duumviri. The introduc- tion of the breakage detector flags the breakage caused by misidentification and blocking mixed trackers, increasing overall accuracy. We designed the detectors to use differ- ential features enabling the blocking of request fields to block mixed trackers without causing breakage. We trained the breakage detector by collecting reconstructable break- age samples and the tracking detector for mixed trackers by collecting mixed request trackers from advanced content blockers such as AdGuard and UbO (Ublock Origin). • An evaluation of Duumviri on non-mixed trackers identifi- cation on 15K pages. Our results show that Duumviri can reproduce the labels from human-generated filter lists with a 97.44% accuracy. Through our manual analysis of the dis- agreements between Duumviri and the filter lists, we found 55% of instances to be previously unreported new trackers. In addition, 10% of analyzed cases are filter list-caused web page breakages that Duumviri's breakage detector found. We have reported 22 cases of confirmed new trackers with 175 occurrences in our dataset and 2 instances of confirmed filter list-caused breakage to the community. • An evaluation of Duumviri on mixed trackers identification . We evaluated Duumviri on all resources that filter lists deemed as non-trackers. Through a manual analysis, we found that Duumviri can achieve a lower bound accuracy of 74.19% in detecting tracking fields. In this process, we found 26 mixed trackers with 83 occurrences in our evalu- ation dataset, which we have reported to the community. Artifacts. Our artifacts are available on GitHub 2 and further discussed in Appendix §D. 2https://github.com/dlgroupuoft/Duumviri-NDSS25 II. B ACKGROUND AND DEFINITIONS We give background information on web trackers and web page breakages. Web Trackers. We adopt a generic definition of web track- ing, which is the process of (re-)identifying users in different computation contexts [14]. The computation contexts can be, and are not limited to, user-specific behavior, same-domain pages, browsing modes (e.g., incognito and regular), sites (i.e., cross-site tracking) and devices (i.e., cross-device tracking). The tracking process involves, at a minimum, two stages: 1) storing a server-known identifier on the client or generating an identifier in the computation context and 2) retrieving the iden- tifier or generating the same identifier in a different context. These two stages of tracking naturally lead to two types of tracking network requests: 1) incoming tracking responses that initiate client-side tracking in one computation context. For instance, a response may contain a set-cookie header that stores a server-generated unique identifier for stateful tracking or JavaScript payload that generates fingerprints for stateless tracking. 2) outgoing tracking requests that contain privacy- sensitive information (e.g., a user identifier) in a different computation context. Such requests inform the tracking server when a specific action is performed by the user. Blocking the network requests in either stage (i.e., a tracking response or a tracking request) prevents tracking. Blocking a tracking response prevents storing identifiers or generating identifiers in one context; blocking a tracking request prevents a server from learning that a specific user in a different com- putation context. Mixed Trackers. Broadly speaking, a mixed tracker is a tracker that also has legitimate functionality. As the tracking process has two stages, each stage leads to a type of mixed trackers: 1) A mixed response tracker contains a response with mixed tracking and legitimate functionality. For instance, a response may contain JavaScript code that handles web page interaction yet also dynamically generates user fingerprints [5]. 2) A mixed request tracker is a request with request fields (e.g., query string parameters, cookies) that have mixed tracking and legitimate functionality. To illustrate, we provide a real-world example: after clicking on a search result on a popular search engine, the page sends one request (URL shown in Listing 1) that redirects the user to the desired page. In the URL, query string parameters goods id and sku id are functional param- eters that redirect to the specific product that the user clicked on, but x ns msclkid is a tracking parameter (assigned by Bing) that records an ID of the click. This example mixed request tracker cannot be blocked in its entirety: doing so (or removing any of the functional parameters) breaks redirection as the request will land on a generic page as opposed to the product the user intends to see. However, removing the only tracking parameter while keeping the others stops tracking while preserving the redirection. Web Page Breakage can occur when 1) privacy developers make mistakes in addressing trackers and 2) erroneously block mixed trackers at the request granularity. Human mistakes can 2"
+      },
+      {
+        "source": "selected",
+        "value": "Web tracking harms user privacy. As a result, the use of tracker detection and blocking tools is a common practice among Internet users. However, no such tool can be perfect, and thus there is a trade-off between avoiding breakage (caused by unintentionally blocking some required functionality) and neglecting to block some trackers. State-of-the-art tools usually rely on user reports and developer effort to detect breakages, which can be broadly categorized into two causes: 1) misidentifying non-trackers as trackers, and 2) blocking mixed trackers which blend tracking with functional components. We propose incorporating a machine learning-based breakage detector into the tracker detection pipeline to automatically avoid misidentification of functional resources. For both tracker detection and breakage detection, we propose using differential features that can more clearly elucidate the differences caused by blocking a request. We designed and implemented a prototype of our proposed approach, Duumviri, for non-mixed trackers. We then adopt it to automatically identify mixed trackers, drawing differential features at partial-request granularity. In the case of non-mixed trackers, evaluating Duumviri on 15K pages shows its ability to replicate the labels of human-generated filter lists, EasyPrivacy, with an accuracy of 97.44%. Through a manual analysis, we find that Duumviri can identify previously unreported trackers and its breakage detector can identify overly strict EasyPrivacy rules that cause breakage. In the case of mixed trackers, Duumviri is the first automated mixed tracker detector, and achieves a lower bound accuracy of 74.19%. Duumviri has enabled us to detect and confirm 22 previously unreported unique trackers and 26 unique mixed trackers."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "He Shuang",
+          "email": "he.shuang@mail.utoronto.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Lianying Zhao",
+          "email": "lianying.zhao@carleton.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "David Lie",
+          "email": "david.lie@utoronto.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "He Shuang",
+          "email": "he.shuang@mail.utoronto.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Lianying Zhao",
+          "email": "lianying.zhao@carleton.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "David Lie",
+          "email": "david.lie@utoronto.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Toronto, Carleton University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 95,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.0,
+        "candidates": [
+          {
+            "name": "He Shuang",
+            "block_id": "pdfplumber:p1:b2",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b5",
+              "pdfplumber:p1:b8"
+            ]
+          },
+          {
+            "name": "Lianying Zhao",
+            "block_id": "pdfplumber:p1:b3",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b6",
+              "pdfplumber:p1:b9"
+            ]
+          },
+          {
+            "name": "David Lie",
+            "block_id": "pdfplumber:p1:b4",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b7",
+              "pdfplumber:p1:b10"
+            ]
+          }
+        ],
+        "fully_supported": true,
+        "anchored_existing_count": 3
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "He Shuang",
+          "block_id": "pdfplumber:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Lianying Zhao",
+          "block_id": "pdfplumber:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "David Lie",
+          "block_id": "pdfplumber:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "He Shuang",
+          "affiliation_raw": "University of Toronto",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b2",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b5"
+          ],
+          "email_raw": "he.shuang@mail.utoronto.ca",
+          "email_block_ids": [
+            "pdfplumber:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.001,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 1,
+          "author": "Lianying Zhao",
+          "affiliation_raw": "Carleton University and University of Toronto",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b3",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b6"
+          ],
+          "email_raw": "lianying.zhao@carleton.ca",
+          "email_block_ids": [
+            "pdfplumber:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 2,
+          "author": "David Lie",
+          "affiliation_raw": "University of Toronto",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b4",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b7"
+          ],
+          "email_raw": "david.lie@utoronto.ca",
+          "email_block_ids": [
+            "pdfplumber:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Duumviri: Detecting Trackers and Mixed Trackers with a Breakage Detector",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/duumviri-detecting-trackers-and-mixed-trackers-with-a-breakage-detector/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "He Shuang",
+          "affiliations": [
+            "University of Toronto"
+          ]
+        },
+        {
+          "name": "Lianying Zhao",
+          "affiliations": [
+            "Carleton University and University of Toronto"
+          ]
+        },
+        {
+          "name": "David Lie",
+          "affiliations": [
+            "University of Toronto"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

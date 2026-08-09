@@ -1,0 +1,327 @@
+{
+  "paper_id": "006_symtcp_eluding_stateful_deep_packet_inspection_with_automated_discrepancy_discovery",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SYMTCP: Eluding Stateful Deep Packet Inspection with Automated Discrepancy Discovery"
+      },
+      {
+        "source": "selected",
+        "value": "SYMTCP: Eluding Stateful Deep Packet Inspection with Automated Discrepancy Discovery"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "A key characteristic of commonly deployed deep packet inspection (DPI) systems is that they implement a simplified state machine of the network stack that often differs from that of endhosts. The discrepancies between the two state machines have been exploited to bypass such DPI based middleboxes. However, most prior approaches to do so rely on manually crafted adversarial packets, which not only are labor-intensive but may not work well across a plurality of DPI-based middleboxes. Our goal in this work is to develop an automated way to craft candidate adversarial packets, targeting TCP implementations in particular. Our approach to achieving this goal hinges on the key insight that while the TCP state machines of DPI implementations are obscure, those of the endhosts are well established. Thus, in our system SYMTCP, using symbolic execution, we systematically explore the TCP implementation of an endhost, identifying candidate packets that can reach critical points in the code (e.g., which causes the packets to be accepted or dropped/ignored); such automatically identified packets are then fed through the DPI middlebox to determine if a discrepancy is induced and the middlebox can be eluded. We find that our approach is extremely effective. It can generate tens of thousands of candidate adversarial packets in less than an hour. When evaluating against multiple state-of-the-art DPI systems such as Zeek and Snort, as well as a state-level censorship system, viz. the Great Firewall of China, we identify not only previously known evasion strategies, but also novel ones that were never previously reported (e.g., involving the urgent pointer). The system can be extended easily towards other combinations of operating systems and DPI middleboxes, and serves as a valuable tool for testing future DPIs' robustness against evasion attempts."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "A key characteristic of commonly deployed deep packet inspection (DPI) systems is that they implement a simpli- fied state machine of the network stack that often differs from that of endhosts. The discrepancies between the two state machines have been exploited to bypass such DPI based middleboxes. However, most prior approaches to do so rely on manually crafted adversarial packets, which not only are labor-intensive but may not work well across a plurality of DPI-based middleboxes. Our goal in this work is to develop an automated way to craft candidate adversarial packets, targeting TCP implementations in particular. Our approach to achieving this goal hinges on the key insight that while the TCP state machines of DPI implementations are obscure, those of the endhosts are well established. Thus, in our system SYMTCP, using symbolic execution, we systematically explore the TCP implementation of an endhost, identifying candidate packets that can reach critical points in the code (e.g., which causes the packets to be accepted or dropped/ignored); such automatically identified packets are then fed through the DPI middlebox to determine if a discrepancy is induced and the middlebox can be eluded. We find that our approach is extremely effective. It can generate tens of thousands of candidate adversarial packets in less than an hour. When evaluating against multiple state-of-the-art DPI systems such as Zeek and Snort, as well as a state-level censorship system, viz. the Great Firewall of China, we identify not only previously known evasion strategies, but also novel ones that were never previously reported (e.g., involving the urgent pointer). The system can be extended easily towards other combinations of operating systems and DPI middleboxes, and serves as a valuable tool for testing future DPIs' robustness against evasion attempts. I. I NTRODUCTION Deep packet inspection (DPI) has become a technology commonly deployed in modern network security infrastruc- tures. By assembling and checking application layer content, DPI enables powerful functionalities that are not present in traditional firewalls. These include malware detection [10], remote exploit prevention [41], phishing attack detection [16], data leakage prevention [46], government network surveil- lance [7], [6], targeted advertising [28], [3], and traffic dif- ferentiation for tiered services [51], [32], [20]. Unfortunately, to assemble application layer content from stateful protocols like TCP, DPI needs to engineer the cor- responding state machine of the protocol. This introduces a fundamental limitation of DPI, which is a susceptibility to protocol ambiguities. In brief, most network protocol specifi- cations (e.g., RFCs for TCP [36]) are written in a natural lan- guage (English), which makes them inherently ambiguous. To make things worse, some parts of the specifications are delib- erately left unspecified, which in turn leads to vendor-specific implementations. Consequently, different network stack imple- mentations (e.g., Windows and Linux) typically have inherent discrepancies in their state machines [42], [13], [38]. In fact, even different versions of the same network stack implemen- tation, can have discrepancies. To ensure low overheads and compatibility with most implementations, DPI middleboxes usually implement their own simplified state machines, which are bound to differ from the ones on endhosts. As pointed out by previous works [37], [48], [29], such discrepancies lead to certain network packets being accept- ed/dropped by either a “DPI middlebox” or the endhost. Exploiting this property, one can use insertion packets (i.e., a packet which is accepted and acted upon by the DPI middlebox to change its state, whereas the remote host drops/ignores it) and evasion packets (i.e., a packet which is ignored by the DPI middlebox but the remote host accepts and acts on it) [37] to mislead the DPI's protocol state machine. Specifically, such packets cause the DPI to enter a different state than the one on the endhost. Consequently, the DPI can no longer faithfully assemble the same application layer content as the endhost, failing to catch any malicious or sensitive payload. To date, research on insertion and evasion packets are based on manually crafting such packets targeting specific DPI middleboxes [37], [48], [29]. Unfortunately, it is a labor- intensive task to analyze each and every middlebox implemen- tation and come up with the corresponding strategies for such adversarial packet generation. One can potentially automate the process by searching through all possible sequences of packets to identify insertion and evasion packets. Unfortunately, the search space is exponentially large, i.e., there are 2160 possi- bilities to cover a 20-byte TCP header of even a single packet, let alone testing a sequence of packets. “Can we develop automated ways to construct packets that can successfully de-synchronize the state of a DPI middlebox from that of a (end) server?” This question is at the crux of the work we target in this paper, answering which not only can help test future generations of DPIs but also help stay on top of the arms race against future censorship technologies. Our Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24083 www.ndss-symposium.org focus here is on TCP, since it is the cornerstone upon which most popular application-layer protocols are built. We develop an approach that is driven by the insight that even though the TCP state machines of DPI middleboxes are obscure, the implementations of TCP on the endhosts are well established (e.g., a very large fraction of the servers run Linux operating systems). Given this, we explore the TCP state machine of endhosts (using symbolic execution) and generate groups of candidate packets based on what critical points and states they can reach, i.e., states where packets are either accepted or dropped/ignored due to various reasons. Next, we perform differential testing by feeding such packets through the DPI middlebox and observe whether they induce any discrepancies, i.e., whether the DPI middlebox can still perform its intended function of identifying connections that contain malicious/sen- sitive payloads. The major contributions of the work are the following: • We formulate the problem of automatically identifying in- sertion and evasion packets by focusing on exploring the TCP state machine on endhosts, and conducting differential testing against blackbox DPIs. • We develop S YMTCP, a complete end-to-end approach to automatically discover discrepancies between any TCP implementation (currently Linux) and a blackbox DPI. We have released the source code of S YMTCP and datasets at https://github.com/seclab-ucr/sym-tcp. • We evaluate our approach against three DPI middleboxes, Zeek, Snort, and Great Firewall of China (GFW), and automatically find numerous evasion opportunities (several are never reported in the literature). The system can extend to other DPIs easily and serves as a useful testing tool against future implementations of DPIs. II. B ACKGROUND In this section, we first provide a brief background on why eluding attacks are possible against DPI. Subsequently, we pro- vide some background on symbolic execution and associated techniques since these are integral to building S YMTCP. A. Eluding Attacks against Deep Packet Inspection DPI is specially designed to examine content related to higher-layers, such as the application layer (e.g., HTTP, IMAP). To examine application-layer payloads, DPI first re- constructs data streams from network packets (TCP packets) captured from an interface. Then it automatically assigns an appropriate protocol parser to parse the raw data stream [19]. Finally, it performs “pattern matching” on the parsed output. To illustrate as an example, consider the common case of"
+      },
+      {
+        "source": "selected",
+        "value": "A key characteristic of commonly deployed deep packet inspection (DPI) systems is that they implement a simplified state machine of the network stack that often differs from that of endhosts. The discrepancies between the two state machines have been exploited to bypass such DPI based middleboxes. However, most prior approaches to do so rely on manually crafted adversarial packets, which not only are labor-intensive but may not work well across a plurality of DPI-based middleboxes. Our goal in this work is to develop an automated way to craft candidate adversarial packets, targeting TCP implementations in particular. Our approach to achieving this goal hinges on the key insight that while the TCP state machines of DPI implementations are obscure, those of the endhosts are well established. Thus, in our system SYMTCP, using symbolic execution, we systematically explore the TCP implementation of an endhost, identifying candidate packets that can reach critical points in the code (e.g., which causes the packets to be accepted or dropped/ignored); such automatically identified packets are then fed through the DPI middlebox to determine if a discrepancy is induced and the middlebox can be eluded. We find that our approach is extremely effective. It can generate tens of thousands of candidate adversarial packets in less than an hour. When evaluating against multiple state-of-the-art DPI systems such as Zeek and Snort, as well as a state-level censorship system, viz. the Great Firewall of China, we identify not only previously known evasion strategies, but also novel ones that were never previously reported (e.g., involving the urgent pointer). The system can be extended easily towards other combinations of operating systems and DPI middleboxes, and serves as a valuable tool for testing future DPIs' robustness against evasion attempts."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zhongjie Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Shitong Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yue Cao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Zhiyun Qian",
+          "email": "zhiyunq@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Chengyu Song",
+          "email": "csong@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Srikanth VKrishnamurthy",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Kevin SChan",
+          "email": "kevin.s.chan.civ@mail.mil",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Tracy DBraun",
+          "email": "tracy.d.braun.civ@mail.mil",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zhongjie Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Shitong Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yue Cao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zhiyun Qian",
+          "email": "zhiyunq@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Chengyu Song",
+          "email": "csong@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Srikanth VKrishnamurthy",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Kevin SChan",
+          "email": "kevin.s.chan.civ@mail.mil",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Tracy DBraun",
+          "email": "tracy.d.braun.civ@mail.mil",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 124,
+      "author_count": 8,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SymTCP: Eluding Stateful Deep Packet Inspection with Automated Discrepancy Discovery",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/symtcp-eluding-stateful-deep-packet-inspection-with-automated-discrepancy-discovery/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zhongjie Wang",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Shitong Zhu",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Yue Cao",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Zhiyun Qian",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Chengyu Song",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Srikanth V. Krishnamurthy",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Kevin S. Chan",
+          "affiliations": [
+            "U.S. Army Research Lab"
+          ]
+        },
+        {
+          "name": "Tracy D. Braun",
+          "affiliations": [
+            "U.S. Army Research Lab"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

@@ -1,0 +1,326 @@
+{
+  "paper_id": "066_more_haste_less_speed_cache_related_security_threats_in_continuous_integration_services",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "More Haste, Less Speed: Cache Related Security Threats in Continuous Integration Services"
+      },
+      {
+        "source": "selected",
+        "value": "More Haste, Less Speed: Cache Related Security Threats in Continuous Integration Services"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Continuous Integration (CI) platforms have widely adopted caching to speed up CI task executions by storing and reusing dependent packages. Unfortunately, CI cache also exposes new attack surfaces when cache objects are shared across trust boundaries. In this paper, we systematically investigate potential security threats of CI cache features in seven mainstream CI platforms (CIPs). We find that existing CIPs have isolation issues in their cache sharing and inheritance strategies, potentially raising cache poisoning and data leakage problems. By exploiting these vulnerable mechanisms, we further uncover four attack vectors enabling attackers to stealthily inject malicious code into the cache or steal sensitive data. Even worse, many CIPs provide vulnerable official cache templates that will mistakenly store and expose sensitive data in the cache by default. To understand the potential impact of our disclosed threats, we develop an analysis tool and conduct a large-scale measurement on open-source repositories. Our measurement results show that many popular repositories are potentially affected by these attacks. We also identify 78 repositories that expose their high-value secrets in cache objects and are at risk of secret leakage. We have duly reported identified vulnerabilities to corresponding stakeholders and received positive responses. 1179 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Continuous Integration (CI) platforms have widely adopted caching to speed up CI task executions by storing and reusing dependent packages. Unfortunately, CI cache also exposes new attack surfaces when cache objects are shared across trust boundaries. In this paper, we systematically investigate potential security threats of CI cache features in seven mainstream CI platforms (CIPs). We find that existing CIPs have isolation issues in their cache sharing and inheritance strategies, potentially raising cache poisoning and data leakage problems. By exploiting these vulnerable mechanisms, we further uncover four attack vectors enabling attackers to stealthily inject malicious code into the cache or steal sensitive data. Even worse, many CIPs provide vulnerable official cache templates that will mistakenly store and expose sensitive data in the cache by default. To understand the potential impact of our disclosed threats, we develop an analysis tool and conduct a large-scale measurement on open-source repositories. Our measurement results show that many popular repositories are potentially affected by these attacks. We also identify 78 repositories that expose their high-value secrets in cache objects and are at risk of secret leakage. We have duly reported identified vulnerabilities to corresponding stakeholders and received positive responses. 1. Introduction Continuous Integration (CI) is a software development practice for automated code build, integration, and testing. CI provides an efficient approach to integrating the work of different developers, greatly simplifies their daily work, and shortens the software development period. It is reported that 70% oforganizations have adopted CI workflow to package and release new software versions [1]. CI's efficiency, particularly task execution efficiency, is one key consideration for developers [2]. One of the most effective ways to make CI tasks faster iscaching [3], which has been widely used and supported by almost all mainstream CI services [4]. For example, CI cache can store dependent packages during the execution of a CI task. Then, subsequent CI tasks can reuse these package files from the cache instead Lingyun Ying is the corresponding author. of re-downloading them from the package registries (e.g., npm and PyPI). As CI plays an important role in software development, its security is essential to ensure software security. If attackers can break the CI workflow, they can inject malicious code into the software package to launch various software supply chain attacks [5], [6], [7]. Moreover, sensitive data (e.g., secrets) is often used and stored in CI. Improperly configured CI with weak isolation mechanisms might leak sensitive data, causing serious security risks [8]. Furthermore, the improper usage of CI cache can also raise severe security threats. For example, if CI caches are not properly separated among different trust levels (e.g., different repositories), attackers can implant malicious code in the shared cache to attack other victim repositories. While extensive research efforts have been conducted on CI security [4], [8], [9], [10], unfortunately, little attention has been paid on cache related security threats in CI services. In this paper, we conduct the first systematic study toward understanding security threats in CI caches. We identify two widely adopted CI caching mechanisms that can potentially lead to serious security risks. The first one is cache sharing: in many CI services, repositories (potentially from different users) might share the same CI cache. A cache object generated by a repository may be used by other repositories. Attackers can initiate a cache poisoning attack by generating a cache object (e.g., package) containing malicious code, which may be injected into victim software without accessing their repositories. The second vulnerable mechanism is cacheinheritance: a forked repository might inherit its parent repository's cache without any configuration needed. Although the inheritance is one-way only (i.e., read- only), it enables a CI task triggered by a pull request from a forked repository to potentially exfiltrate sensitive data (e.g., secrets) from the parent repository. We analyze the cache implementation of seven commonly used CI Platforms (CIPs), comprising three built-in CIPs (GitHub Actions, GitLab CI, and Bitbucket Pipelines) and four independent CIPs (CircleCI, TravisCI, TeamCity, and Jenkins), across three major Code Hosting Platforms (CHPs) (GitHub, GitLab, and Bitbucket). We carefully examine their mechanisms of cache authentication, storage, isolation, and inheritance. We identify four major cache-related security 1179 DOI 10.1109/SP54263.2024.00138 issues in existing CIPs: (1) Improper write-up: a low-level permission CI job (e.g., triggered by a pull request from the forked repository) can potentially poison caches used by high- level permission CI jobs. (2) Improper read-up: a low-level permission CI job can read cache objects sourced from a high-level permission CI job, causing sensitive data leakage. (3) Improper token permission: the token for cache access authentication (i.e., 𝑇𝑐𝑎𝑐ℎ𝑒) may not be properly limited to the cache of the originated repository, leading to privilege escalation. (4) Improper cache eviction: some CIPs might not timely evict cache objects. A cache object will remain valid even after its creator has lost related privileges (e.g., a fired employee or the old owner of a transferred project). This issue potentially allows such attackers to implant malicious code (e.g., a backdoor) in the cache and affect the repository even after they have left. From our analysis, we find that all seven CIPs have problems with their cache isolation strategies. Three CIPs (i.e., GitLab CI, CircieCI, and TravisCI) provide vulnerable official cache templates, which include misconfigured cache rules. These templates will mistakenly store sensitive data in the cache, such as Maven registry login credentials and Cargo registry API tokens. Moreover, we find that many binary tools (e.g.,docker, aws), CI plugins (e.g., docker/login-action), and customized scripts used in CI tasks will also implicitly store secrets to cached files during task execution. Finally, we find that TravisCI and CircleCI use over-privileged𝑇𝑐𝑎𝑐ℎ𝑒. Attackers can steal the 𝑇𝑐𝑎𝑐ℎ𝑒 by initiating a pull request and further manipulate the victim's cache objects directly. Based on these security threats, we further propose four attacks against CI cache, enabling attackers to access unauthorized resources, steal tokens, and implant malicious code into software artifacts. To evaluate the potential impact of our proposed attacks, we design and develop an analysis tool,CAnalyzer, to conduct a large-scale measurement on the three CHPs.CAnalyzer col- lects open-source repositories and their metadata (such as cache usage and permission settings) from CHPs, including data from January 2017 to January 2023. Then it utilizes pre- defined rules to detect potential cache vulnerabilities, such as privilege escalation and cache poisoning.CAnalyzer further uses variable analysis and data flow analysis to find sensitive files (i.e., files containing secrets) in the cache to detect data leakage vulnerabilities. Our measurement results show that 78 repositories leak highly sensitive secrets in the CI cache, such as software sign- ing certificates used to sign database management software with over 100 million downloads, and credentials used to publish popular Docker images with millions of downloads. Besides, many repositories, including some very popular repositories and repositories from large organizations (e.g., Microsoft and Google), are potentially vulnerable to other uncoveredthreats.Wehavedisclosedourfindingstoimpacted stakeholders and received positive feedback. In summary, the major contributions of this work include: ∙ We present the first systematic study on cache-related security threats in CI services. We identify several risks involving cache sharing and isolation and find that existing mainstream CIPs are all susceptible to these security risks, which could result in severe consequences. ∙ We unveil four attack vectors allowing attackers to poison the CI cache, inject malicious code (e.g., a backdoor), and steal high-value sensitive data (e.g.,secrets). We design and develop a fine-grained analysis tool,CAnalyzer, to conduct a large-scale measurement on three widely used CHPs, revealing that our proposed attacks may present significant security risks to CI users. ∙ We have disclosed all our findings to the impacted stake- holders and received positive feedback. 2. Background 2.1. CI Introduction A typical CI workflow involves several independent stakeholders, including code hosting platforms (CHPs), CI platforms (CIPs), and third party services (TPSs). CHPs are widely used to manage source code in repositories. Popular CHPs generally adopt role-based access control to their repositories (e.g., owner and collaborator). CIPs are responsible for executing CI tasks of a repository on runner hosts. A CIP may either be integrated into a CHP (such as GitHub Actions) or exist independently of CHPs (such as CircleCI). Repository owners can configure CI tasks via a configurationfile(e.g., .travis.ymlinTravisCI)oraweb portal (e.g., TeamCity). Two important configurable elements of a CI task include: (1)Execution triggers, which specify the events that will trigger a CI task. For instance, developers can specify a push event or pull request as an execution trigger. (2)Secrets, which can be used to access TPSs during the CI task execution. On most CIPs, the recommended way of using secrets is to define them as key-value pairs on CIP's web portal and use keys instead of values (e.g., plaintext passwords) in the CI task configuration to avoid exposing secrets [11], [12]. According to the CI task model, each CI task consists of a set ofjobs, which further contains a sequence ofsteps. Each step includes one or more commands, such as invoking shell tools. Among them, job is the smallest unit of CI permissions [13], [14]. All steps in the same job have the same permissions, but different jobs of the same CI task may have different permissions. For example, GitHub Actions starts a separate fresh virtual machine for each job and only provides secrets to explicitly specified jobs. 2.2. CI Cache Categories All mainstream CIPs support caching. CI cache can be used in many scenarios, including among (1) different jobs of the same CI task; (2) different CI tasks; and (3) different repositories. There are mainly two cache work modes: proactive cache and passive cache. Proactive Cache. Proactive cache means that developers shouldexplicitlyenablethecachefeature(e.g., ❶inListing1) and specify the cached files bycache rules(i.e., paths) in the CI configuration file (e.g.,❷ and ❺ in Listing 1). At the 1180"
+      },
+      {
+        "source": "selected",
+        "value": "Continuous Integration (CI) platforms have widely adopted caching to speed up CI task executions by storing and reusing dependent packages. Unfortunately, CI cache also exposes new attack surfaces when cache objects are shared across trust boundaries. In this paper, we systematically investigate potential security threats of CI cache features in seven mainstream CI platforms (CIPs). We find that existing CIPs have isolation issues in their cache sharing and inheritance strategies, potentially raising cache poisoning and data leakage problems. By exploiting these vulnerable mechanisms, we further uncover four attack vectors enabling attackers to stealthily inject malicious code into the cache or steal sensitive data. Even worse, many CIPs provide vulnerable official cache templates that will mistakenly store and expose sensitive data in the cache by default. To understand the potential impact of our disclosed threats, we develop an analysis tool and conduct a large-scale measurement on open-source repositories. Our measurement results show that many popular repositories are potentially affected by these attacks. We also identify 78 repositories that expose their high-value secrets in cache objects and are at risk of secret leakage. We have duly reported identified vulnerabilities to corresponding stakeholders and received positive responses. 1179 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yacong Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Lingyun Ying",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute, University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Huajun Chai",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute, University of Delaware"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yingyuan Pu",
+          "email": "puyingyuan@qianxin.com",
+          "orcid": "",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute, University of Delaware"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Haixin Duan",
+          "email": "duanhx@tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Xing Gao",
+          "email": "xgao@udel.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Continuous Integration Services",
+          "email": "",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yacong Gu",
+          "email": "",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Lingyun Ying",
+          "email": "",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 3,
+          "name": "Huajun Chai",
+          "email": "",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yingyuan Pu",
+          "email": "puyingyuan@qianxin.com",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Haixin Duan",
+          "email": "duanhx@tsinghua.edu.cn",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Xing Gao",
+          "email": "xgao@udel.edu",
+          "affiliations": [
+            "Tsinghua University",
+            "QI-ANXIN Technology Research Institute",
+            "University of Delaware",
+            "Tsinghua University-QI-ANXIN Group JCNS"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 117,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 14.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Continuous Integration Services",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "More Haste, Less Speed: Cache Related Security Threats in Continuous Integration Services",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yacong Gu",
+          "affiliations": [
+            "Tsinghua University; Tsinghua University-QI-ANXIN Group JCNS"
+          ]
+        },
+        {
+          "name": "Lingyun Ying",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute"
+          ]
+        },
+        {
+          "name": "Huajun Chai",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute"
+          ]
+        },
+        {
+          "name": "Yingyuan Pu",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute"
+          ]
+        },
+        {
+          "name": "Haixin Duan",
+          "affiliations": [
+            "BNRist & Institute for Network Science and Cyberspace, Tsinghua University; Tsinghua University-QI-ANXIN Group JCNS"
+          ]
+        },
+        {
+          "name": "Xing Gao",
+          "affiliations": [
+            "University of Delaware"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yingyuan Pu",
+      "field": "email",
+      "restored_value": "puyingyuan@qianxin.com",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Haixin Duan",
+      "field": "email",
+      "restored_value": "duanhx@tsinghua.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xing Gao",
+      "field": "email",
+      "restored_value": "xgao@udel.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

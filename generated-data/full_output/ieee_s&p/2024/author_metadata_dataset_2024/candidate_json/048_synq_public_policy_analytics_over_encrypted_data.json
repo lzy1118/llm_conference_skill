@@ -1,0 +1,237 @@
+{
+  "paper_id": "048_synq_public_policy_analytics_over_encrypted_data",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Synq: Public Policy Analytics Over Encrypted Data"
+      },
+      {
+        "source": "selected",
+        "value": "Synq: Public Policy Analytics Over Encrypted Data"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Data analytics is a core part of modern decision making, especially in public policy. However, there exists a tension between data privacy and otherwise socially beneficial analytics when data sources contain personal information. We design Synq, a system that supports analytics over encrypted data while accounting for the usability considerations institutions may have when conducting studies that affect public policy. We specifically use an application-centric approach and model Synq's design requirements from a large-scale series of studies conducted on the opioid epidemic in Massachusetts. We systematize the design considerations of the public policy context and demonstrate how the combination of design considerations that Synq addresses is novel through a survey of the literature. We then present our protocol which combines structured encryption, somewhat homomorphic encryption, and oblivious pseudorandom functions to support a complex query language that includes filtering (retrieving rows by attribute/value pairs), linking (merging rows from different tables that represent the same individual) and aggregate functions (sum, count, average, variance, regression). We formally express the security of our protocol and show that Synq is efficient in practice while satisfying usability considerations that are critical to deployment in the setting of public policy studies. 146 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Data analytics is a core part of modern decision mak- ing, especially in public policy. However, there exists a tension between data privacy and otherwise socially beneficial analytics when data sources contain personal information. We design Synq, a system that supports analytics over encrypted data while accounting for the usability considerations institutions may have when conducting studies that affect public policy. We specifically use an application-centric approach and model Synq's design requirements from a large-scale series of studies conducted on the opioid epidemic in Massachusetts. We sys- tematize the design considerations of the public policy context and demonstrate how the combination of design considerations that Synq addresses is novel through a survey of the literature. We then present our protocol which combines structured encryption, somewhat homomorphic encryption, and oblivious pseudorandom functions to support a complex query language that includes filtering (retrieving rows by attribute/value pairs), linking (merging rows from different tables that represent the same individual) and aggregate functions (sum, count, average, variance, regression). We formally express the security of our protocol and show that Synq is efficient in practice while satisfying usability considerations that are critical to deployment in the setting of public policy studies. 1. Introduction Data analysis is a core part of decision making in almost every facet of society. It is well understood that more data-specifically, relevant data from different sources- leads to more robust and beneficial insights [39], [41], [84]. This understanding explains the prevalence of collaborative, public policy studies where an analyst aggregates data from multiple data owners (e.g., non-profits and government or- ganizations) in a larger dataset to enable more powerful anal- yses [7]. Some studies go further by linking data about the same person from different datasets by matching personal identifiable information (PII) for even more comprehensive analysis. This is commonly implemented via a central- ized, trusted server that aggregates datasets and makes them available to analysts (e.g., [72]). However, PII and other sensitive information (e.g., healthcare diagnoses or visits) are subject to legal safeguards (e.g., HIPAA). Data owners must navigate institutional processes and legal approvals to make such analyses tenable, and these challenges only grow with the number of involved parties [85], [89]. §. Work conducted in part at Brown University. One way to make these studies possible is to design sys- tems that support analytics over encrypted datasets. Several existing systems towards this goal are designed as general- purpose systems (e.g., [12], [77], [87]). Other systems (e.g., [27], [83]) prioritize application-centric design, where a system is designed for the needs and challenges of a specific application setting. In this work, we take an application- centric approach to our system design. Our work was initi- ated by discussions with the Policy Lab at Brown University about balancing privacy concerns with the need for data- driven insights in policymaking [3]. They highlighted a specific public health initiative as a model of the constraints and functionalities to support when designing a system for privacy-preserving analytics used by public institutions. The MA DPH initiative. Our work focuses on the Chapter 55 initiative conducted by the Massachusetts De- partment of Public Health (MA DPH), which produced 23 studies using data from multiple government agencies and public health institutions to better understand the scale of the opioid epidemic in Massachusetts, its underlying causes, and successful interventions for addressing it [72]. Throughout the paper, we provide a running example of how the MA DPH initiative informed our research and how our system can implement the multiple studies involved. Deployment topology. As part of our application-centric approach, we first identified a set of design requirements. In doing so, we discovered a gap in the literature-namely, that the deployment topology and the design considerations required by our specific context had not been identified and appropiately addressed by existing systems. A deployment topology is a configuration of participating parties and the data flow between them. Figure 1 presents a taxonomy of commonly used deployment topologies. For example, (T0) is a simple topology where a data owner uploads data to a server and an analyst later queries the server. Many prior encrypted database systems (e.g., [10], [56], [59], [78]) follow this topology. At the other extreme, the synchronous compute topology (T5) requires all parties to synchronously interact throughout query execution. Other topologies found in prior work include: the analyst com- municates synchronously with a group of servers that hold (outsourced) datasets previously uploaded by data owners (T2); the analyst communicates synchronously with one selected data owner (T3); and the analyst communicates synchronously with all the data owners (T4). With the exception of (T1) and (T2), all the multi-owner topologies require that data owners be online during query computation. 146 DOI 10.1109/SP54263.2024.00085 P S Q (T0) Single-writer. P1 . . . Pn S Q (T1) Centralized compute. P1 . . . Pn S1 . . . Sm Q (T2) Distributed compute. P1 P2 . . . S Q (T3) Selected owner. P1 . . . Pn Q (T4) Iterative compute. P1 . . . Pn Q (T5) Synchronous compute. Figure 1. A taxonomy of deployment topologies. P nodes represent data owners who contribute data. S represent compute servers. Q represents an analyst. Highlighted areas and solid edges denote parts of the topology involved in synchronous computation with Q for queries. Increasing topology numbers roughly correspond to increasing synchronization requirements between the parties (e.g., (T1) has the least synchronization; (T5) has the most). Topology of MA DPH. For the MA DPH initiative, par- ticipating data owners contributed 22 datasets with a diverse set of attributes about individuals in Massachusetts. Datasets were hand-delivered to the DPH on encrypted hard drives which were then semi-manually linked together in plaintext. Finally, records were de-identified and made available to approved analysts. This centralized compute topology (T1) is particularly important in the public policy context, due to a wide variety of reasons that we will examine in Section 2. 1.1. Our Contributions We present Synq, a system which enables complex multi-dataset analyses over encrypted data, accounts for real-world constraints faced by public policy organizations, and guarantees data privacy even when all-but-one of the data owners collude with the server. While Synq was de- signed around the MA DPH context, we demonstrate the potential broader impact of our design by showing howSynq can also enable a privacy-preserving wage equity study [69] outside of the MA DPH initiative in Appendix C. Design considerations. We use application-centric de- sign to understand the usability and expressivity needs of multi-dataset analytics that Synq must satisfy. While we use the MA DPH setting as our primary example, we show that the application-centric approach surfaces concerns relevant for public policy studies at large that are not fully addressed by prior work. We define our design considerations and how they relate to prior work in Sections 2 and 3. Query language. A significant challenge in designing a system for encrypted analytics is determining the appro- priate level of query expressivity. In Section 5, we propose Synq-QL which supports common operations required by public policy studies. Synq-QL is based on a survey of the queries performed in the MA DPH initiative and supports filters, linking records across owners, and aggregations. Protocol design. We propose a new protocol based on structured encryption (STE), somewhat homomorphic encryption (SHE), and oblivious pseudorandom functions (OPRFs). We provide a formal leakage analysis, and prove that our protocol reveals at most this leakage when the server and all-but-one of the data owners are corrupted by a semi- honest adversary. Any adversary who gains access to a copy of the encrypted data structures will only learn cumulative statistics (e.g. the total number of records in each dataset). Therefore, Synq provides better protection against external breaches compared to both plaintext systems and systems based on property-preserving encryption (PPE). Further, since Synq makes black-box use of STE schemes, we can leverage future advances (such as leakage suppression [47], [57]) to improve its security and efficiency. Improved linking. Most prior work that supports record linking uses either a plaintext linking phase, a trusted third party (TTP), or deterministic encryption (DTE). Plaintext linking or the use of a TTP (such as in the MA DPH initiative) requires a significant trust assumption, and DTE reveals all the links in the data to the server at setup time. Synq uses a linking protocol that only reveals a subset of the links to the server at query time . We express this leakage precisely and show that it remains unchanged even when all-but-one of the data owners collude with the server. Evaluation. We implement Synq and perform an empir- ical evaluation that shows its real-world feasibility. 2. Design Considerations Inspired by discussions with the Policy Lab at Brown University and the emerging literature on secure multiparty computation usability (e.g., [66], [67], [69], [90]), we de- veloped design requirements for Synq aimed at supporting the technical and usability needs demonstrated by previous real-world public policy studies-in particular, the MA DPH initiative and a public policy study about wage equity in Boston [69]. In both studies, analysts were able to obtain insight on public policy questions using data from a wide array of institutions (i.e. government, industry, academia, nonprofits, hospitals) while preserving the privacy of the original datasets. We analyzed the documented requirements of these studies, their priorities, and their challenges to come up with the design considerations for Synq in Table 1. Usability. The usability of a technical system is cru- cial to its real-world applicability. Data owners may have non-technical backgrounds [11], may make mistakes dur- ing computation [69], and, most critically from a protocol perspective, may not be able to participate in synchronous computation [51], [85]. For this reason, we identify several considerations which focus on enabling asynchronous par- ticipation by the data owners. We acknowledge that these 147"
+      },
+      {
+        "source": "selected",
+        "value": "Data analytics is a core part of modern decision making, especially in public policy. However, there exists a tension between data privacy and otherwise socially beneficial analytics when data sources contain personal information. We design Synq, a system that supports analytics over encrypted data while accounting for the usability considerations institutions may have when conducting studies that affect public policy. We specifically use an application-centric approach and model Synq's design requirements from a large-scale series of studies conducted on the opioid epidemic in Massachusetts. We systematize the design considerations of the public policy context and demonstrate how the combination of design considerations that Synq addresses is novel through a survey of the literature. We then present our protocol which combines structured encryption, somewhat homomorphic encryption, and oblivious pseudorandom functions to support a complex query language that includes filtering (retrieving rows by attribute/value pairs), linking (merging rows from different tables that represent the same individual) and aggregate functions (sum, count, average, variance, regression). We formally express the security of our protocol and show that Synq is efficient in practice while satisfying usability considerations that are critical to deployment in the setting of public policy studies. 146 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zachary Espiritu",
+          "email": "zachary.espiritu@mongodb.com",
+          "orcid": "",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Marilyn George",
+          "email": "marilyn.george@mongodb.com",
+          "orcid": "",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Seny Kamara",
+          "email": "seny.kamara@mongodb.com",
+          "orcid": "",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Lucy Qin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Mongodb Research",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zachary Espiritu",
+          "email": "zachary.espiritu@mongodb.com",
+          "orcid": "",
+          "affiliations": [
+            "MongoDB Research †Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Marilyn George",
+          "email": "marilyn.george@mongodb.com",
+          "orcid": "",
+          "affiliations": [
+            "MongoDB Research †Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Seny Kamara",
+          "email": "seny.kamara@mongodb.com",
+          "orcid": "",
+          "affiliations": [
+            "MongoDB Research †Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Lucy Qin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "MongoDB Research †Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 114,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Lucy Qin",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Lucy Qin",
+          "affiliation_raw": "Brown University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 65.664,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Synq: Public Policy Analytics Over Encrypted Data",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zachary Espiritu",
+          "affiliations": [
+            "MongoDB"
+          ]
+        },
+        {
+          "name": "Marilyn George",
+          "affiliations": [
+            "MongoDB"
+          ]
+        },
+        {
+          "name": "Seny Kamara",
+          "affiliations": [
+            "MongoDB and Brown University"
+          ]
+        },
+        {
+          "name": "Lucy Qin",
+          "affiliations": [
+            "Brown University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

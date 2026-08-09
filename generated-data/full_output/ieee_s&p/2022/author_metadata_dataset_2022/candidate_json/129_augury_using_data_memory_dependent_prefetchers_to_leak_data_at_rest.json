@@ -1,0 +1,296 @@
+{
+  "paper_id": "129_augury_using_data_memory_dependent_prefetchers_to_leak_data_at_rest",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Augury: Using Data Memory-Dependent Prefetchers to Leak Data at Rest"
+      },
+      {
+        "source": "selected",
+        "value": "Augury: Using Data Memory-Dependent Prefetchers to Leak Data at Rest"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Microarchitectural side-channel attacks are enjoying a time of explosive growth, mostly fueled by novel transient execution vulnerabilities. These attacks are capable of leaking arbitrary data, as long as it is possible for the adversary to read that data into the processor core using transient instructions. In this paper, we present the first microarchitectural attack that leaks data at rest in the memory system, i.e., never directly read into the core speculatively or non-speculatively. This technique is enabled by a previously unreported class of prefetcher: a data memory-dependent prefetcher (DMP). These prefetchers are designed to allow prefetching of irregular address patterns such as pointer chases. As such, DMPs examine and use the contents of memory directly to determine which addresses to prefetch. Our experiments demonstrate the existence of a pointerchasing DMP on recent Apple processors, including the A14 and M1. We then reverse engineer the details of this DMP to determine the opportunities for and restrictions it places on attackers using it. Finally, we demonstrate several basic attack primitives capable of leaking pointer values using the DMP."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Microarchitectural side-channel attacks are enjoy- ing a time of explosive growth, mostly fueled by novel transient execution vulnerabilities. These attacks are capable of leaking arbitrary data, as long as it is possible for the adversary to read that data into the processor core using transient instructions. In this paper, we present the first microarchitectural attack that leaks data at rest in the memory system, i.e., never directly read into the core speculatively or non-speculatively. This tech- nique is enabled by a previously unreported class of prefetcher: a data memory-dependent prefetcher (DMP). These prefetchers are designed to allow prefetching of irregular address patterns such as pointer chases. As such, DMPs examine and use the contents of memory directly to determine which addresses to prefetch. Our experiments demonstrate the existence of a pointer- chasing DMP on recent Apple processors, including the A14 and M1. We then reverse engineer the details of this DMP to determine the opportunities for and restrictions it places on attackers using it. Finally, we demonstrate several basic attack primitives capable of leaking pointer values using the DMP . I. I NTRODUCTION As the demand for performance gains in general purpose CPUs continues and the gains from Moore's scaling dwin- dle, microarchitects have consistently delivered surprising and powerful optimizations. However, these optimizations come with drawbacks, notably in how they inadvertently leak infor- mation via microarchitectural side channels. Today's microarchitectural side channels are only capable of leaking data in use . That is, data is speculatively or non- speculatively architecturally accessed and then transmitted through an “unsafe instruction”. For example, data might be read into an architectural register and then acted on by an instruction that changes hardware resource usage in an operand-dependent fashion [ 29, 30]. This restriction to data in use limits attacks in situations where victim programs lack access or transmit gadgets or when the programs are specifically written to not contain such gadgets as in constant- time programming [ 13, 14, 16, 19, 49]. Y et, there has recently been speculation that we are standing on a precipice, about to face an even more insidious threat: microarchitectural side channels that leak data at rest [44, 45]. These attacks are brought on by exotic microarchitectural op- timizations such as silent stores [ 32], cache compression [ 37] and data memory-dependent prefetchers [ 50] all of which can leak data even if it is never brought into the processor core . Consider for example a processor that implements a data 1The two first authors contributed equally to the paper. memory-dependent prefetcher (DMP) . Unlike well-known and widely implemented prefetchers whose behavior is “just” a function of a program's address pattern (limiting their leakage to program address pattern/control flow [ 17, 20, 42]), DMPs read and initiate cache fills based on the contents of program data memory directly . This immediately puts all of program memory at risk. For example, Vicarte et al. [ 45] point out how a specific proposed DMP called the indirect-memory prefetcher [ 50, 51] can be coerced into leaking all of program memory, similar to Spectre/Meltdown but without relying on transient instruction execution. Making matters worse, as the DMP lives in the memory system, it accomplishes this without the secret data ever being read from the cache into the processor core, render- ing current constant-time programming techniques ineffective. Fortunately for defenders, data-at-rest attacks have been purely theoretical. While there is a rich literature on DMPs, there has been no evidence to suggest they have ever been implemented in commercial processors. In this paper, we demonstrate for the first time the existence, and resulting security implications, of a DMP in the wild. By extension, this shows that microarchitecture leaking data at rest is real. We refer to our techniques as Augury due to their reliance on interpreting what the prefetcher believes about the future. Specifically, we found that the Apple M1, M1 Max, M1 Pro, and A14 processors possess an Array-of-Pointers (AoP) prefetcher that recognizes streaming and striding reads and dereferences over an array of pointers, and then prefetches the result of dereferencing future pointers. To see the dif- ference from conventional prefetchers, suppose a program is looping from i=0...N and has allocated an array A which is indexed by i. A conventional prefetcher would prefetch an access pattern such as A[i] or A[stride*i]. The M1's AoP DMP prefetches access patterns such as *A[i] or *A[stride*i]. As the AoP DMP operates only on a stream of memory accesses, and does not have any concept of array bounds, this prefetcher can overshoot the legal set of pointers to access and attempt a prefetch of unrelated memory addresses up to its prefetch depth. This act of dereferencing the out-of-bounds pointer (potentially even if it is not actually a pointer!) creates a memory side channel that an attacker can use to learn the pointer . In fact, we show that this pattern recognition is relatively robust, can operate at large strides, and can trigger even if all memory accesses are speculative and eventually 1491 DOI 10.1109/SP46214.2022.00089 squashed. Together, these capabilities enable the attacker to target and leak pointer values across much of memory. There have been many proposed DMP patterns, and since none have previously been found, there is little in the way of guideposts for understanding DMP behaviors. As there is no documentation for even the existence of the M1 AoP DMP , simply finding the activation pattern is a non-trivial matter. 1 Even then, knowing that an AoP DMP exists does not clearly lay out a plan for attack primitives or for software mitigations. To aid in this, we present a detailed analysis of the AoP DMP behavior and we also provide guidance for the reverse engineering and security analysis of any DMP system. For attackers, this prefetcher opens up new, previously un- considered exploitation scenarios. For defenders, the existence of this prefetcher, and the attacks it enables, is a call to action for developing new approaches for programming techniques that can protect data not even being operated on. Contributions. Our major contributions are: • We analyze the security relevant design factors for DMPs. • We demonstrate the existence of the first known data- memory prefetcher in a commercial processor family. • We reverse-engineer the activation criteria, depth of prefetch, and other features of the M1 DMP . • We demonstrate that this prefetcher can be used to cause unexpected pointer de-references, putting data at risk. • We demonstrate the first microarchitectural attacks on data at rest by using the M1 DMP to construct exploit primitives that leak pointer values. Disclosure. We coordinated with Apple on disclosure and mitigation prior to publication. Release of tools. Following disclosure, we have made our tools for investigating DMP behavior on ARM and x86 chips, as well as our proof-of-concept attack primitives available at: https://github.com/FPSG-UIUC/augury. II. B ACKGROUND AND MOTIV A TION A. Classical prefetchers We now review how hardware prefetchers work, and their status from a security perspective. 3) GDWDDGGU &RUH/LFDFKH &RUH/LFDFKH '03 GDWDDGGU /LFDFKH'5$0 &RUH/LFDFKH DGGU GDWDDGGU Fig. 1: A high-level architecture for classical prefetchers/PFs (left) and data memory-dependent prefetchers/DMPs (right). 1We thank Anandtech for their analysis of the A14 processor that speculated a “pointer-chase prefetch mechanism” [22] might exist in that processor. To start, we review what we call classical prefetchers (prefetchers for short). These are widely deployed in com- mercial processors. For example, both Intel and AMD report multiple distinct prefetchers in their recent processors [2, 4]. Like prefetchers, caches are present in multiple forms and levels on nearly all modern processors. Generally, each processor core will have at least 1 level of private cache, split into an instruction and data cache. Below this, there is at least one level of shared cross-core cache, generally storing both data and instructions. By default, caches will exploit temporal locality to hide the latency of repeated accesses to memory by storing data recently used by the core. Prefetchers are next-in-sequence address predictors that proactively fetch data into the cache to help hide memory latency. Figure 1 (left) gives a high-level overview. In Step (training), the prefetcher records whether the address sequence coming from the core matches a specific pattern. In Step (prefetching), if a pattern was recognized with sufficient confidence, the prefetcher autonomously makes accesses to memory to fill the cache with cache lines that it thinks will be requested in the near future. In Step (validation), the prefetcher checks whether its predictions were correct by checking the core's subsequent requests. Note, we separate the above steps to ease explanation; similar to a branch predictor, train/prefetch/validate all occur concurrently and continuously. For example, a typical address pattern that can be captured by a prefetcher is a stride through an array, e.g., int A[M]; ... // e.g., initialize A for (i = 0 ... M) A[k *i]; for some constant stride k. Upon observing the core re- quest addresses &A[0], &A[k], ..., &A[k*N], the prefetcher predicts that the core will request &A[k*(N+1)], ..., &A[k*(N+delta)] in the near future and proactively issues cache fills for those cache lines. Here, N is the confidence threshold: how many accesses must be seen before the prefetcher activates. delta is the depth: how far ahead the prefetcher prefetches once it activates. Depth is often directly correlated to the confidence: As more accesses are made, the prefetcher will fetch proportionally farther ahead. Importantly, prefetchers live in the memory system and are software transparent. For example, they might live between the core and level 1 (L1) cache, or between two lower- levels (L2+) of cache. As such, they are unaware of program semantics: they only see the program address pattern and try to predict the next address. In the above code snippet, the prefetcher is unaware of the array A, its base or its bound. Thus, the prefetcher will prefetch data out of bounds of A, i.e., up to address &A[M+k*delta], before it realizes through subsequent failed validations that the program doesn't intend to access beyond the array bounds. This will have important security implications later on. B. Classical prefetcher security implications Several recent papers have studied prefetchers in a security context [17, 20, 42]. We also note Gruss et al.'s [25] work on vulnerabilities in software prefetch instructions, which we 1492"
+      },
+      {
+        "source": "selected",
+        "value": "Microarchitectural side-channel attacks are enjoying a time of explosive growth, mostly fueled by novel transient execution vulnerabilities. These attacks are capable of leaking arbitrary data, as long as it is possible for the adversary to read that data into the processor core using transient instructions. In this paper, we present the first microarchitectural attack that leaks data at rest in the memory system, i.e., never directly read into the core speculatively or non-speculatively. This technique is enabled by a previously unreported class of prefetcher: a data memory-dependent prefetcher (DMP). These prefetchers are designed to allow prefetching of irregular address patterns such as pointer chases. As such, DMPs examine and use the contents of memory directly to determine which addresses to prefetch. Our experiments demonstrate the existence of a pointerchasing DMP on recent Apple processors, including the A14 and M1. We then reverse engineer the details of this DMP to determine the opportunities for and restrictions it places on attackers using it. Finally, we demonstrate several basic attack primitives capable of leaking pointer values using the DMP."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jose Rodrigo Sanchez Vicarte",
+          "email": "josers2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Michael Flanders",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Washington"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Riccardo Paccagnella",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Grant Garrett-Grossman",
+          "email": "grantlg2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Adam Morrison",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tel Aviv University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Christopher WFletcher",
+          "email": "cwfletch@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "David Kohlbrenner",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Washington"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jose Rodrigo Sanchez Vicarte",
+          "email": "josers2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Michael Flanders",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Washington"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Riccardo Paccagnella",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Grant Garrett-Grossman",
+          "email": "grantlg2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Adam Morrison",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tel Aviv University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Christopher WFletcher",
+          "email": "cwfletch@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "David Kohlbrenner",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Washington"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 18,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Augury: Using Data Memory-Dependent Prefetchers to Leak Data at Rest",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jose Rodrigo Sanchez Vicarte",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Michael Flanders",
+          "affiliations": [
+            "University of Washington"
+          ]
+        },
+        {
+          "name": "Riccardo Paccagnella",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Grant Garrett-Grossman",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Adam Morrison",
+          "affiliations": [
+            "Tel Aviv University"
+          ]
+        },
+        {
+          "name": "Chris Fletcher",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "David Kohlbrenner",
+          "affiliations": [
+            "University of Washington"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

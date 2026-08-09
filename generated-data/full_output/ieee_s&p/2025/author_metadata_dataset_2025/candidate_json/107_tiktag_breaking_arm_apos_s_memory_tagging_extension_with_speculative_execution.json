@@ -1,0 +1,517 @@
+{
+  "paper_id": "107_tiktag_breaking_arm_apos_s_memory_tagging_extension_with_speculative_execution",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "TIKTAG: Breaking ARM's Memory Tagging Extension with Speculative Execution"
+      },
+      {
+        "source": "selected",
+        "value": "TIKTAG: Breaking ARM's Memory Tagging Extension with Speculative Execution"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "ARM Memory Tagging Extension (MTE) is a new hardware feature introduced in ARMv8.5-A architecture, aiming to detect memory corruption vulnerabilities. The low overhead of MTE makes it an attractive solution to mitigate memory corruption attacks in modern software systems and is considered the most promising path forward for improving C/C++ software security. This paper explores the potential security risks posed by speculative execution attacks against MTE. Specifically, this paper identifies new TIKTAG gadgets capable of leaking the MTE tags from arbitrary memory addresses through speculative execution. With TIKTAG gadgets, attackers can bypass the probabilistic defense of MTE, increasing the attack success rate by close to 100%. We demonstrate that TIKTAG gadgets can be used to bypass MTE-based mitigations in real-world systems, Google Chrome and the Linux kernel. Experimental results show that TIKTAG gadgets can successfully leak an MTE tag with a success rate higher than 95% in less than 4 seconds. We further propose new defense mechanisms to mitigate the security risks posed by TIKTAG gadgets."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "ARM Memory Tagging Extension (MTE) is a new hardware feature introduced in ARMv8.5-A architecture, aim- ing to detect memory corruption vulnerabilities. The low over- head of MTE makes it an attractive solution to mitigate memory corruption attacks in modern software systems and is considered the most promising path forward for improving C/C++ software security. This paper explores the potential security risks posed by speculative execution attacks against MTE. Specifically, this paper identifies new TIKTAG gadgets capable of leaking the MTE tags from arbitrary memory addresses through speculative execution. With TIKTAG gadgets, attackers can bypass the probabilistic defense of MTE, increasing the attack success rate by close to 100%. We demonstrate that TIKTAG gadgets can be used to bypass MTE-based mitigations in real-world systems, Google Chrome and the Linux kernel. Experimental results show that TIKTAG gadgets can successfully leak an MTE tag with a success rate higher than 95% in less than 4 seconds. We further propose new defense mechanisms to mitigate the security risks posed by T IKTAG gadgets. 1. Introduction Memory corruption vulnerabilities present significant security threats to computing systems. Exploiting a memory corruption vulnerability, an attacker corrupts the data stored in a memory, hijacking the control flow or crafting the data of the victim. Such exploitation allows the attacker to execute arbitrary code, escalate its privilege, or leak security-sensitive data, critically harming the security of the computing system. In response to these threats, ARM Memory Tagging Extension (MTE) has recently been proposed since ARMv8.5- A architecture, which is a new hardware extension to mitigate memory corruption attacks. Technically, MTE provides two hardware primitive operations, (i) tag and (ii) tag check. A tag operation assigns a tag to a memory location (i.e., a 4-bit tag to each 16-byte memory). Then a tag check operation is performed when accessing the memory, which compares • ∗Corresponding author. two tags, one embedded within the pointer to access the memory and the other associated with the memory location to-be-accessed. If these two tags are the same, the access is allowed. Otherwise, the CPU raises a fault. Using MTE, various mitigation techniques can be devel- oped depending on which tag is assigned or which memory regions are tagged. For instance, MTE-supported memory allocators, such as Android Scudo [ 4] and Chrome Partition- Alloc [13], assign a random tag for all dynamically allocated memory. Specifically, a memory allocator is modified to assign a random tag for each allocation. Then, a pointer to this allocated memory embeds the tag, and as the pointer is propagated, the tag is accordingly propagated together. When any dynamically allocated memory is accessed, a tag check operation is enforced. As the tags are randomly assigned at runtime, it is difficult for the attacker to correctly guess the tag. Thus tag check operation would statistically detect memory corruptions. MTE introduces significant challenges for attackers to exploit the memory corruption vulnerability. This is because MTE-based solutions detect a violation behavior close to the root cause of spatial and temporal memory corruptions. Specifically, since MTE ensures that the relationship be- tween a pointer and a memory location is not corrupted, it promptly detects the corruptions-i.e., MTE promptly detects the moment when out-of-bounds access takes place in a heap-overflow vulnerability or when a dangling pointer is dereferenced in use-after-free. This offers strong security advantages to MTE, particularly compared to popular mitiga- tion techniques such as CFI [1, 55, 66], which does not detect memory corruption but detects control-flow hijack behavior (i.e., an exploitation behavior). For these reasons, MTE is considered the most promising path forward for improving C/C++ software security by many security experts [ 7, 48], since its first adoption with the Pixel 8 device in October 2023. In this paper, we study if MTE provides the security assurance as it is promised. In particular, we analyzed if spec- ulative execution attacks can be a security threat to breaking MTE. To summarize our results, we found that speculative 4063 DOI 10.1109/SP61157.2025.00039 execution attacks are indeed possible against MTE, which severely harms the security assurance of MTE. We discovered two new gadgets, named TIKTAG-v1 and TIKTAG-v2, which can leak the MTE tag of an arbitrary memory address. Specifically, TIKTAG-v1 exploits the speculation shrinkage of the branch prediction and data prefetchers, and TIKTAG- v2 exploits the store-to-load forwarding behavior. To demonstrate the exploitability of real-world MTE- based mitigations, we developed two real-world attacks having distinctive attack surfaces: Google Chrome and the Linux kernel. Our evaluation results show that TIKTAG gadgets can leak MTE tags with a success rate higher than 95% in less than 4 seconds. Compared to the previous works on MTE side- channels [20, 40], we think this paper makes unique contri- butions for the following reasons. First, Project Zero at Google reported that they were not able to find speculative tag leakage from the MTE mechanisms [ 40]. They concluded that speculative MTE check results do not induce distinguishable cache state differences between the tag check success and failure. In contrast, this paper discovers that tag checks indeed generate the cache state difference in speculative execution. Second, this paper provides a new perspective on the root cause of the MTE tag leakage. Previously, StickyTags [20], discovered an MTE tag leakage gadget, which we named TIKTAG-v1 gadget, and suspected that its root cause is memory contention on spurious tag check faults. On the contrary, this paper conducts an in-depth analysis and reveals that speculation shrinkage in branch prediction and data prefetching logic are the root cause of the TIKTAG-v1 gadget. Third, this paper reports new MTE tag leakage gadgets, specifically the variants of TIKTAG-v1 gadget and the new TIKTAG-v2 gadget, along with exploitation against Chrome and the Linux kernel. We further suggest that the exploitation of TIKTAG gadgets can be mitigated in a similar way to the existing transient execution attack mitigations [ 9, 29, 36, 49], while retaining the security benefits of using MTE. At the time of writing, MTE is still in the early stages of adoption. Considering its strong security advantage, it is expected that a large number of MTE-based mitigations (e.g., sensitive data protection [ 28, 30] and data-flow in- tegrity [10, 26, 41, 64]) is expected to be deployed in the near future on MTE-supporting devices (e.g., Android mobile phones). As such, the results of this paper, particularly in how TIKTAG gadgets are constructed and how MTE tags can be leaked, shed light on how MTE-based solutions should be designed or how CPU should be implemented at a micro- architectural level. We have open-sourced TIKTAG gadgets at https://github.com/compsec-snu/tiktag to help the community understand the MTE side-channel issues. Responsible Disclosure. We reported MTE tag leakage gadgets to ARM in November 2023. ARM acknowledged and publicly disclosed the issue in December 2023 [ 34]. Another research group reported a similar issue to ARM and published their findings [ 20], which were conducted independently from our work. We reported the speculative vulnerabilities in Google Chrome V8 to the Chrome Security Team in December 2023. They acknowledged the issues but decided not to fix the vulnerabilities because the V8 sandbox is not intended to guarantee the confidentiality of memory data and MTE tags. Since the Chrome browser currently does not enable its MTE-based defense by default, we agree with their decision to some extent. However, we think that browser security can be improved if MTE-based defenses are deployed with the countermeasures we suggest (§6.1.4). We also reported the MTE oracles in the Pixel 8 device to the Android Security Team in April 2024. Android Security Team acknowledged the issue as a hardware flaw of Pixel 8, decided to address the issue in Android's MTE-based defense, and awarded a bounty reward for the report. 2. Background 2.1. Memory Tagging Extension Memory Tagging Extension (MTE) [ 32] is a hardware extension to prevent memory corruption attacks, available since ARMv8.5-A architecture. MTE has been recently adopted by Pixel 8 [ 39] since October 2023. MTE assigns a 4-bit tag for each 16 bytes of memory and stores the tag in the unused upper bits of a pointer. During memory access, the tag in the pointer is checked against the tag assigned for the memory region. If the tags match, access is permitted; otherwise, the CPU raises a tag check fault (TCF). MTE offers three modes- synchronous, asynchronous, and asymmetric-to balance performance and security. Syn- chronous mode provides the strongest security guarantee, where the tag check fault is synchronously raised at the faulting load/store instruction. Asynchronous mode offers the best performance, where the tag check fault is asyn- chronously raised at context switches. Asymmetric mode strikes a balance between performance and security, with load instructions operating in synchronous mode and store instructions in asynchronous mode. Based on MTE, various mitigation schemes can be developed. deterministic tagging assigns a globally known tag to each allocation. This approach can deterministically isolate memory regions [ 31] or detect bounded spatial memory corruptions [20]. random tagging, on the other hand, assigns a random tag generated at allocation time. This approach prob- abilistically prevents spatial and temporal memory errors at per-allocation granularity, with a maximum detection rate of 15/16 (i.e., 1/16 chance of tag collision). Unlike deterministic tagging, random tagging does not reveal the tag information to attackers, requiring them to guess the tag to exploit memory corruption vulnerabilities. Consequently, random tagging is commonly adopted in real-world allocators (e.g., Android Scudo allocator [ 4], Chrome PartitionAlloc [ 13]) and Linux Hardware Tag-Based KASAN [24]. 2.2. Speculative Execution Attack A speculative execution attack is a class of attacks that exploit the CPU's speculative behaviors to leak sensitive 4064"
+      },
+      {
+        "source": "selected",
+        "value": "ARM Memory Tagging Extension (MTE) is a new hardware feature introduced in ARMv8.5-A architecture, aiming to detect memory corruption vulnerabilities. The low overhead of MTE makes it an attractive solution to mitigate memory corruption attacks in modern software systems and is considered the most promising path forward for improving C/C++ software security. This paper explores the potential security risks posed by speculative execution attacks against MTE. Specifically, this paper identifies new TIKTAG gadgets capable of leaking the MTE tags from arbitrary memory addresses through speculative execution. With TIKTAG gadgets, attackers can bypass the probabilistic defense of MTE, increasing the attack success rate by close to 100%. We demonstrate that TIKTAG gadgets can be used to bypass MTE-based mitigations in real-world systems, Google Chrome and the Linux kernel. Experimental results show that TIKTAG gadgets can successfully leak an MTE tag with a success rate higher than 95% in less than 4 seconds. We further propose new defense mechanisms to mitigate the security risks posed by TIKTAG gadgets."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Juhee Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University, Samsung Research, Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jinbum Park",
+          "email": "jinb.park@samsung.com",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University, Samsung Research, Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Sihyeon Roh",
+          "email": "sihyeonroh@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University, Samsung Research, Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jaeyoung Chung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University, Samsung Research, Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Youngjoo Lee",
+          "email": "youngjoo.lee@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University, Samsung Research, Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University, Samsung Research, Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Byoungyoung Lee",
+          "email": "byoungyoung@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University, Samsung Research, Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Juhee Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jinbum Park",
+          "email": "jinb.park@samsung.com",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Sihyeon Roh",
+          "email": "sihyeonroh@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jaeyoung Chung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Youngjoo Lee",
+          "email": "youngjoo.lee@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research and Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Byoungyoung Lee",
+          "email": "byoungyoung@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 114,
+      "author_count": 7,
+      "matched_author_count": 7,
+      "exact_author_match_count": 7,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.2,
+        "candidates": [
+          {
+            "name": "IK AG",
+            "block_id": "pdf:p1:b2",
+            "font_size": 11.2,
+            "support_ids": []
+          },
+          {
+            "name": "Juhee Kim",
+            "block_id": "pdf:p1:b3",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b7",
+              "pdf:p1:b10"
+            ]
+          },
+          {
+            "name": "Jinbum Park",
+            "block_id": "pdf:p1:b4",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b8",
+              "pdf:p1:b11"
+            ]
+          },
+          {
+            "name": "Sihyeon Roh",
+            "block_id": "pdf:p1:b5",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b9",
+              "pdf:p1:b12"
+            ]
+          },
+          {
+            "name": "Jaeyoung Chung",
+            "block_id": "pdf:p1:b6",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b9",
+              "pdf:p1:b13"
+            ]
+          },
+          {
+            "name": "Youngjoo Lee",
+            "block_id": "pdf:p1:b14",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b18",
+              "pdf:p1:b21"
+            ]
+          },
+          {
+            "name": "Taesoo Kim",
+            "block_id": "pdf:p1:b15",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b19",
+              "pdf:p1:b22"
+            ]
+          },
+          {
+            "name": "Byoungyoung Lee",
+            "block_id": "pdf:p1:b16",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b20",
+              "pdf:p1:b23"
+            ]
+          }
+        ],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Juhee Kim",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Jinbum Park",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Sihyeon Roh",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Jaeyoung Chung",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Youngjoo Lee",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Taesoo Kim",
+          "block_id": "pdf:p1:b15",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Byoungyoung Lee",
+          "block_id": "pdf:p1:b16",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Juhee Kim",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 5.308,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Jinbum Park",
+          "affiliation_raw": "Samsung Research",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 1.363,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Sihyeon Roh",
+          "affiliation_raw": "Seoul National University Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 69.049,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Jaeyoung Chung",
+          "affiliation_raw": "Seoul National University Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 57.833,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Youngjoo Lee",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b18"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 5.22,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Taesoo Kim",
+          "affiliation_raw": "Samsung Research and Georgia Institute of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b15",
+          "affiliation_block_ids": [
+            "pdf:p1:b19",
+            "pdf:p1:b22"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 1.752,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 6,
+          "author": "Byoungyoung Lee",
+          "affiliation_raw": "Seoul National University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b16",
+          "affiliation_block_ids": [
+            "pdf:p1:b20"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 10.458,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "TikTag: Breaking ARM's Memory Tagging Extension with Speculative Execution",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Juhee Kim",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Jinbum Park",
+          "affiliations": [
+            "Samsung Research"
+          ]
+        },
+        {
+          "name": "Sihyeon Roh",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Jaeyoung Chung",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Youngjoo Lee",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        },
+        {
+          "name": "Taesoo Kim",
+          "affiliations": [
+            "Samsung Research",
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Byoungyoung Lee",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

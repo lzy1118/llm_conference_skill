@@ -1,0 +1,455 @@
+{
+  "paper_id": "009_high_assurance_cryptography_in_the_spectre_era",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "High-Assurance Cryptography in the Spectre Era"
+      },
+      {
+        "source": "selected",
+        "value": "High-Assurance Cryptography in the Spectre Era"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "High-assurance cryptography leverages methods from program verification and cryptography engineering to deliver efficient cryptographic software with machine-checked proofs of memory safety, functional correctness, provable security, and absence of timing leaks. Traditionally, these guarantees are established under a sequential execution semantics. However, this semantics is not aligned with the behavior of modern processors that make use of speculative execution to improve performance. This mismatch, combined with the high-profile Spectre-style attacks that exploit speculative execution, naturally casts doubts on the robustness of high-assurance cryptography guarantees. In this paper, we dispel these doubts by showing that the benefits of high-assurance cryptography extend to speculative execution, costing only a modest performance overhead. We build atop the Jasmin verification framework an end-to-end approach for proving properties of cryptographic software under speculative execution, and validate our approach experimentally with efficient, functionally correct assembly implementations of ChaCha20 and Poly1305, which are secure against both traditional timing and speculative execution attacks. 1884 2021 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "High-assurance cryptography leverages methods from program verification and cryptography engineering to deliver efficient cryptographic software with machine-checked proofs of memory safety, functional correctness, provable security, and absence of timing leaks. Traditionally, these guarantees are established under a sequential execution semantics. However, this semantics is not aligned with the behavior of modern processors that make use of speculative execution to improve performance. This mismatch, combined with the high-profile Spectre-style attacks that exploit speculative execution, naturally casts doubts on the robustness of high-assurance cryptography guarantees. In this paper, we dispel these doubts by showing that the benefits of high-assurance cryptography extend to speculative execution, costing only a modest performance overhead. We build atop the Jasmin verification framework an end-to-end approach for proving properties of cryptographic software under speculative execution, and validate our approach experimentally with efficient, functionally correct assembly implementations of ChaCha20 and Poly1305, which are secure against both traditional timing and speculative execution attacks. I. I NTRODUCTION Cryptography is hard to get right: Implementations must achieve the Big Four guarantees: Be (i) memory safe to prevent leaking secrets held in memory, (ii) functionally correct with re- spect to a standard specification, (iii) provably secure to rule out important classes of attacks, and ( iv) protected against timing side-channel attacks that can be carried out remotely without physical access to the device under attack. To achieve these goals, cryptographic libraries increasingly use high-assurance cryptography techniques to deliver practical implementations with formal, machine-checkable guarantees [ 1]. Unfortunately, the guarantees provided by the Big Four are undermined by microarchitectural side-channel attacks, such as Spectre [ 2], which exploit speculative execution in modern CPUs. In particular, Spectre-style attacks evidence a gap between formal guarantees of timing-attack protection, which hold for a sequential model of execution, and practice, where execution can be out-of-order and, more importantly, speculative. Many recent works aim to close this gap by extending formal guarantees of timing-attack protection to a model that accounts for speculative execution [ 3], [4], [5], [6], [7]. However, none of these works have been used to deploy high-assurance cryptography with guarantees fit for the post-Spectre world. More generally, the impact of speculative execution on high- assurance cryptography has not yet been well-studied from a formal vantage point. In this paper, we propose, implement, and evaluate the first holistic approach that delivers the promises of the Big Four under speculative execution. We explore the implications of speculative execution on provable security, functional correctness, and timing-attack protection through several key technical contributions detailed next. Moreover, we implement our approach in the Jasmin verification framework [ 8], [9], and use it to deliver high-speed, Spectre-protected assembly imple- mentations of ChaCha20 and Poly1305, two key cryptographic algorithms used in TLS 1.3. Contributions. Our starting point is the notion of speculative constant-time programs. Similar to the classic notion of constant-time, informally, a program is speculative constant- time if secrets cannot be leaked through timing side-channels, including by speculative execution. Formally, our notion is similar to that of Cauligi et al. [ 3], which defines speculative constant-time using an adversarial semantics for speculative execution. Importantly, this approach delivers microarchitecture- agnostic guarantees under a strong threat model in which the decisions of microarchitectural structures responsible for speculative execution are adversarially controlled. Bringing this idea to the setting of high-assurance cryptog- raphy, we make the following contributions: • We formalize an adversarial semantics of speculative exe- cution and a notion of speculative constant-time for a core language with support for software-level countermeasures against speculative execution attacks. We also define a weaker, “forward” semantics in which executions are forced into early termination when mispeculation is detected. We prove a key property called secure forward consistency , which shows that a program is speculative constant-time iff forward executions (rather than arbitrary speculative executions) do not leak secrets via timing side-channels. This result greatly simplifies verification of speculative constant- time, drastically reducing the number of execution paths to be considered. Moreover, with secure forward consistency, code that is proven functionally correct and provably secure in a sequential semantics also enjoys these properties in a speculative semantics. • We develop a verification method for speculative constant- time. To the best of our knowledge, our method is the first to offer formal guarantees with respect to a strong threat model (prior works that study speculative leakage [ 3], [4], [5], [ 6], [ 7], [ 10] either consider weaker threat models or are not proven sound). Following an established approach, our method is decomposed into two steps: ( i) check that the program does not perform illegal memory accesses under 1884 DOI 10.1109/SP40001.2021.00046 speculative semantics (speculative safety), and ( ii) check that leakage does not depend on secrets. Both checks are performed by (relatively minor) adaptations of standard algorithms for safety and constant-time. • We implement our methods in the Jasmin verification frame- work [8], [9]. By a careful analysis, we show that our methods can be used to lift to speculative semantics the guarantees provided by Jasmin, i.e., safety, functional correctness, provable security, and timing side-channel protection, for source and assembly programs. • We use Jasmin and our extensions to develop efficient, speculatively safe, functionally correct, and speculatively constant-time (scalar and vectorized) implementations of ChaCha20 and Poly1305 (§VIII). We evaluate the efficiency of the generated code and the effort of carrying high- assurance cryptography guarantees to a speculative semantics. Connecting our implementations to existing work [ 11] on proving the security of ChaCha20 and Poly1305 in EasyCrypt would complete the Big Four. Key findings. We make the following key findings: • Algorithms for proving speculative constant-time are not significantly harder than algorithms for proving constant- time (although writing speculative constant-time programs are certainly harder than writing constant-time programs). • Existing approaches for the Big Four can be lifted seamlessly to deliver stronger guarantees in the presence of speculative execution. • The performance overhead of making code speculatively constant-time is relatively modest. Interestingly, it turns out that platform-specific, vectorized implementations are easier to protect due to the availability of additional general- purpose registers leading to fewer (potentially dangerous) memory accesses. As a consequence, speculatively constant- time vectorized implementations incur a smaller performance penalty than their platform-agnostic, scalar counterparts. Online materials. Jasmin is being actively developed as an open-source project athttps://github.com/jasmin-lang/jasmin. Artifacts produced as part of this work, including all tools built on top of Jasmin, and all Jasmin code, specifications, proofs and benchmarks developed for our case studies are available from this page. II.B ACKGROUND AND RELATED WORK We first walk through speculative execution and relevant Spectre-style attacks and defenses using examples written in Jasmin [8], a high-level, verification-friendly programming lan- guage that exposes low-level features for fine-grained resource management. We then describe related work, highlighting what is novel in our work compared to previous work. Speculative execution. Speculative execution is a technique used in modern CPUs to increase performance by prematurely fetching and executing new instructions along some predicted execution path before earlier (perhaps stalled) instructions have completed. If the predicted path is correct, the CPU com- mits speculatively computed results to the architectural state, 1 fn PHT(stacku64 [8] a b, regu64 x) → regu64 { 2 regu64 i r; 3 if (x < 8) { // Speculatively bypass check 4 i = a[(int) x]; // Speculatively read secrets 5 r = b[(int) i]; // Secret -dependentaccess 6 } 7 return r; 8 } Fig. 1. Encoding of a Spectre-PHT attack in Jasmin. 1 fn STL(stacku64 [8] a, regu64 p s) → regu64 { 2 stacku64 [1] c; 3 regu64 i r; 4 c[0] = s; // Store secret value 5 c[0] = p; // Store public value 6 i = c[0]; // Speculatively load s 7 r = a[(int) i]; // Secret -dependentaccess 8 return r; 9 } Fig. 2. Encoding of a Spectre-STL attack in Jasmin. increasing overall performance. Otherwise, if the predicted path is incorrect, the CPU backtracks to the last correct state by discarding all speculatively computed results, resulting in performance comparable to idling. While it is true that the results of mispeculation are never committed to the CPU's architectural state (to maintain func- tional correctness), speculative instructions can still leave traces in the CPU'smicroarchitecturalstate. Indeed, the slew of recent, high-profile speculative execution attacks (e.g., [2], [12], [13], [14], [15], [16], [17]) has shown that these microarchitectural traces can be exploited to recover secret information. At a high-level, these attacks follow a standard rhythm: First, the attacker mistrains specific microarchitectural predictors to mispeculate along some desired execution path. Then, the attacker abuses the speculative instructions along this path to leave microarchitectural traces (e.g., loading a secret-dependent memory location into the cache) that can later be observed (e.g., by timing memory accesses to deduce secret-dependent loads), even after the microarchitectural state has been backtracked. Spectre-PHT (Input Validation Bypass). Spectre-PHT [2] exploits the Pattern History Table (PHT), which predicts the outcomes of conditional branches. Figure1 presents a classic Spectre-PHT vulnerability, encoded in Jasmin. The function PHT takes as arguments arrays a and b of unsigned 64-bit integers allocated on the stack and an unsigned 64-bit integer x allocated to a register, all coming from an untrusted source. Line 3 performs a bounds check onx, which prevents reading sensitive memory outside of a. Unfortunately, the attacker can supply an out-of-bounds value for x, such that a[(int) x] resolves to some secret value, and mistrain the PHT to predict the true branch so that (line 4) the secret value is stored in i. Line 5 is then speculatively executed, loading the secret- dependent memory location b[(int) i] into the cache. 1885"
+      },
+      {
+        "source": "selected",
+        "value": "High-assurance cryptography leverages methods from program verification and cryptography engineering to deliver efficient cryptographic software with machine-checked proofs of memory safety, functional correctness, provable security, and absence of timing leaks. Traditionally, these guarantees are established under a sequential execution semantics. However, this semantics is not aligned with the behavior of modern processors that make use of speculative execution to improve performance. This mismatch, combined with the high-profile Spectre-style attacks that exploit speculative execution, naturally casts doubts on the robustness of high-assurance cryptography guarantees. In this paper, we dispel these doubts by showing that the benefits of high-assurance cryptography extend to speculative execution, costing only a modest performance overhead. We build atop the Jasmin verification framework an end-to-end approach for proving properties of cryptographic software under speculative execution, and validate our approach experimentally with efficient, functionally correct assembly implementations of ChaCha20 and Poly1305, which are secure against both traditional timing and speculative execution attacks. 1884 2021 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Gilles Barthe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute, UC San Diego",
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Sunjay Cauligi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Benjamin Grégoire",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "INRIA Sophia Antipolis, INRIA Paris, MIT"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Adrien Koutsos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Kevin Liao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Tiago Oliveira",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Swarn Priya",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute, UC San Diego",
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Tamara Rezk",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute, UC San Diego",
+            "INRIA Sophia Antipolis, INRIA Paris, MIT",
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Peter Schwabe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Mpi-Sp",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Porto (FCUP), INESC TEC,"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Gilles Barthe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Sunjay Cauligi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Benjamin Grégoire",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Adrien Koutsos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Kevin Liao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Tiago Oliveira",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Swarn Priya",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Tamara Rezk",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Peter Schwabe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "IMDEA Software Institute",
+            "INRIA Sophia Antipolis",
+            "INRIA Paris, ∥MIT",
+            "University of Porto (FCUP) and INESC TEC",
+            "Purdue University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 132,
+      "author_count": 9,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 10.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Adrien Koutsos",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 8,
+          "author": "Peter Schwabe",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Adrien Koutsos",
+          "affiliation_raw": "§ INRIA Sophia Antipolis, Purdue University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b18",
+            "pdf:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 8.54,
+          "center_distance": 21.423,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 8,
+          "author": "Peter Schwabe",
+          "affiliation_raw": "INRIA Sophia Antipolis, Purdue University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b18",
+            "pdf:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.082,
+          "center_distance": 8.112,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "High-Assurance Cryptography in the Spectre Era",
+      "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Gilles Barthe",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy and IMDEA Software Institute"
+          ]
+        },
+        {
+          "name": "Sunjay Cauligi",
+          "affiliations": [
+            "University of California San Diego"
+          ]
+        },
+        {
+          "name": "Benjamin Gregoire",
+          "affiliations": [
+            "INRIA Sophia Antipolis"
+          ]
+        },
+        {
+          "name": "Adrien Koutsos",
+          "affiliations": [
+            "Inria Paris, Max Planck Institute for Security and Privacy"
+          ]
+        },
+        {
+          "name": "Kevin Liao",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy and Massachusetts Institute of Technology"
+          ]
+        },
+        {
+          "name": "Tiago Oliveira",
+          "affiliations": [
+            "University of Porto (FCUP) and INESC TEC"
+          ]
+        },
+        {
+          "name": "Swarn Priya",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Tamara Rezk",
+          "affiliations": [
+            "INRIA Sophia Antipolis"
+          ]
+        },
+        {
+          "name": "Peter Schwabe",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

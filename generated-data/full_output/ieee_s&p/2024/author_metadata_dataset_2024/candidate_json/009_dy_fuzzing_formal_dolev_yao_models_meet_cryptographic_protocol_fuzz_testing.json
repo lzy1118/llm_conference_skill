@@ -1,0 +1,255 @@
+{
+  "paper_id": "009_dy_fuzzing_formal_dolev_yao_models_meet_cryptographic_protocol_fuzz_testing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DY Fuzzing: Formal Dolev-Yao Models Meet Cryptographic Protocol Fuzz Testing"
+      },
+      {
+        "source": "selected",
+        "value": "DY Fuzzing: Formal Dolev-Yao Models Meet Cryptographic Protocol Fuzz Testing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Critical and widely used cryptographic protocols have repeatedly been found to contain flaws in their design and their implementation. A prominent class of such vulnerabilities is logical attacks, e.g. attacks that exploit flawed protocol logic. Automated formal verification methods, based on the Dolev-Yao (DY) attacker, formally define and excel at finding such flaws, but operate only on abstract specification models. Fully automated verification of existing protocol implementations is today still out of reach. This leaves open whether such implementations are secure. Unfortunately, this blind spot hides numerous attacks, such as recent logical attacks on widely used TLS implementations introduced by implementation bugs. We answer by proposing a novel and effective technique that we call DY model-guided fuzzing, which precludes logical attacks against protocol implementations. The main idea is to consider as possible test cases the set of abstract DY executions of the DY attacker, and use a novel mutation-based fuzzer to explore this set. The DY fuzzer concretizes each abstract execution to test it on the program under test. This approach enables reasoning at a more structural and security-related level of messages represented as formal terms (e.g. decrypt a message and re-encrypt it with a different key) as opposed to random bit-level modifications that are much less likely to produce relevant logical adversarial behaviors. We implement a full-fledged and modular DY protocol fuzzer. We demonstrate its effectiveness by fuzzing three popular TLS implementations, resulting in the discovery of four novel vulnerabilities."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Critical and widely used cryptographic protocols have repeatedly been found to contain flaws in their design and their implementation. A prominent class of such vulnerabilities is logical attacks, e.g. attacks that exploit flawed protocol logic. Automated formal verification methods, based on the Dolev- Yao (DY) attacker, formally define and excel at finding such flaws, but operate only on abstract specification models. Fully automated verification of existing protocol implementations is today still out of reach. This leaves open whether such implementations are secure. Unfortunately, this blind spot hides numerous attacks, such as recent logical attacks on widely used TLS implementations introduced by implementation bugs. We answer by proposing a novel and effective technique that we call DY model-guided fuzzing, which precludes logical attacks against protocol implementations. The main idea is to consider as possible test cases the set of abstract DY executions of the DY attacker, and use a novel mutation-based fuzzer to explore this set. The DY fuzzer concretizes each abstract execution to test it on the program under test. This approach enables reasoning at a more structural and security-related level of messages represented as formal terms ( e.g. decrypt a message and re-encrypt it with a different key) as opposed to random bit-level modifications that are much less likely to produce relevant logical adversarial behaviors. We implement a full-fledged and modular DY protocol fuzzer. We demonstrate its effectiveness by fuzzing three popular TLS implementations, resulting in the discovery of four novel vulnerabilities. 1. Introduction Cryptographic protocols are extremely hard to get right. Critical and widely used cryptographic protocols such as Transport Layer Security (TLS) have been repeatedly found to be flawed, both in their design and their implementation, usually with dramatic consequences. For the last decades, security researchers have identified different relevant classes of attacks and methods to prevent them. Logical attacks and formal verification. Since the 1980s [37], the formal methods community has identified and mathematically defined the Dolev-Yao (DY) attacker and the *. Part of this work was done when M. Ammann was at Inria Nancy Grand-Est, Universit´e de Lorraine, LORIA, France. corresponding class of logical attacks [11]. The DY attacker is an active network attacker who treats exchanged messages as formal terms (in a term algebra ): this representation reveals the messages' internal algebraic structure but not their underlying concrete values as bitstrings. This attacker can intercept, eavesdrop, modify and synthesize messages (viewed as terms) in between honest agents, and also actively participate in protocol sessions. In particular, they can use cryptographic primitives ( e.g. encrypt, sign, decrypt) by applying function symbols (also called operators) that encode the algebraic properties of those primitives ( e.g. decrypting a ciphertext senc(m, k) with the right key yields the plaintext: sdec(senc(m, k), k) = m). Logical attacks are the attacks captured by this DY attacker, and from now on, we refer to them as DY attacks. Typical examples are attacks that exploit flaws in the protocol logic such as Machine-in-the-Middle (MITM), authentication bypass, downgrade, replay, impersonation attacks. Much work has focused on developing formal verification methods and tools aimed at finding or proving the absence of DY attacks at the design level -that is, in cryptographic protocol specifications. It has persistently been motivated by the prevalence of such design-level DY attacks and the high complexity of manually finding them. For instance, TLS 1.2 and early drafts of TLS 1.3 specifications suffered from serious DY attacks such as complete authentication bypasses [29, 17, 27, 28, 19, 59, 20, 8, 38]. Similar attacks impacted many other protocols such as WPA2 [75, 76], credit card payment systems [13, 12], etc. Practitioners are now aware of the usefulness of formal methods during protocol design and use them (for example, see IETF calls for help to the formal methods community [63, 78]). However, specifications are simply an abstraction of the program that end-users deploy and run, programs that are themselves plagued with frequent implementation bugs. These may introduce additional vulnerabilities, notably implementation-level DY attacks. Examples thereof are abun- dant and well illustrated by the extensive history of such at- tacks on TLS: [31, 15, 34, 41, 29, 59, 22, 66]. More generally, even a formally proven specification can result in a flawed and insecure implementation. Sadly, fundamental problems in program verification are still unsolved and coping with (com- binations of) features of real-world systems such as pointer aliasing or complex control-flow is still out of scope, preclud- 1481 DOI 10.1109/SP54263.2024.00096 ing verification of most existing, real-world code bases (such as OpenSSL, wolfSSL, and LibreSSL we will test). For such code bases, those techniques are thus limited to the design level but not the implementations thereof ( cf. Section 2.3). Memory-related vulnerabilities and fuzzing. In this paper, we are concerned with finding implementation-level DY attacks in large cryptographic protocol code bases. For this, we build on fuzz testing , which has been developed since the 1990s [58] and is now the gold standard for testing security software. It has become a key part of software development practices; e.g. Google [9], Adobe, Cisco, and Microsoft use it at scale on their and others' codebases. Two reasons for the success of fuzzing are its scalability and its extreme efficiency at finding spatial and temporal memory bugs, a class of vulnerabilities that is both notoriously diffi- cult to manually find, and prevalent in today's software. This is generally achieved by using a fuzzing loop, in which test cases from a Corpus are first randomly mutated (or generated) and then executed against the Program Under Test (PUT). If some feedback metric ( e.g. code-coverage) deems the mutated test case interesting, it is added to the Corpus. When executing test cases, an objective oracle observes whether a security policy violation occurs ( e.g. memory corruption). However, state-of-the-art fuzzers are unable to capture the class of implementation-level DY attacks for two main reasons. First, they fail to effectively capture the DY attacker, in particular the ability of structural modifications on the term representation of messages ( e.g. re-signing a message with some adversarial-controlled key) which are a prerequisite to capture DY attacks. We emphasize that DY attacks may trigger protocol or memory vulnerabilities. Second, they are unable to detect a security violation at the protocol level; e.g. for the attacks that trigger protocol vulnerabilities, which are not memory-related, such as an authentication bypass. (We discuss this gap further in Section 2.3.) Contributions. We answer the lack of effective techniques to preclude DY attacks from cryptographic protocol imple- mentations with the following contributions. DY Fuzzing: a new fuzzing technique. We propose a novel approach to fuzzing cryptographic protocols dubbed Dolev-Yao model-guided fuzzing ( DY fuzzing for short). It is based on the novel idea of using formal DY models as domain-specific knowledge to guide the fuzzer and give it the ability to detect DY attacks in protocol implementations. This requires a re-design of most of the fuzzer components. The test cases become formal and structured DY traces. Those represent executions of protocols against a DY attacker in the (formal) DY model: networking actions (inputs, out- puts) and adversarial manipulations over exchanged messages that are abstracted away by terms and idealized cryptogra- phy [11]. The DY fuzzer is thus capable of intercepting, eavesdropping, modifying, and synthesizing messages. We design new domain-specific mutations over DY traces for exploring the search space made of all the DY traces. Any DY trace can be compiled into a proper test case against the PUT through concretization: DY terms are evaluated into bitstrings, and DY inputs and outputs are evaluated into communications with agent instances of the PUT. The messages as terms paradigm guides DY attackers and thus our DY fuzzer in how they interact with messages and cryptography. It is on purpose that our fuzzer inherits this standard DY assumption: it narrows down the search space to DY attacks and exclude some other attacks, e.g. when bit-level transformations are required and cannot be described at the term-level. The DY attacker and attacks are motivated by and grounded on decades of research and practical attack finding [11]. Next, we define domain-specific fuzzing security policies and objective oracles . Indeed, the usual policies and objective oracle for spatial and temporal memory errors (e.g. AddressSanitizer (ASAN) [69]) are unable to detect DY attacks triggering protocol vulnerabilities . We still enable them, as they are useful to find DY attacks triggering memory vulnerabilities , e.g. memory bugs that can only be triggered from specific states that are hardly reachable using standard fuzzing. As we shall see, DY traces are very good at exploring such deep states . To be able to detect protocol vulnerabilities, we additionally consider formal DY properties, e.g. strong agreement, that express the absence of protocol vulnerabilities. Those properties are translated into security policies and objective oracles. This way, any violation thereof reached through fuzzing is detected and flagged as an attack candidate. We stress that a DY fuzzer does not require a complete protocol DY model, but only a DY attacker model (by means of a term algebra and agents the attacker can communicate with) and security policies. tlspuffin: a full-fledged and modular DY fuzzer implementation. In addition to a generic design specifica- tion for DY fuzzers, we also contribute a complete Rust implementation of a DY fuzzer for TLS that we applied on three different PUTs: OpenSSL, LibreSSL, and wolfSSL. Our implementation follows modular design principles and revolves around three main modules that are of independent interest. First, the protocol- and PUT-agnostic DY fuzzer module puffin is built on top of the fuzzing library LibAFL [40], where we re-implemented most of the fuzzing components. On top of puffin, we built protocol-dependent fuzzers: tlspuffin for TLS and the preliminary sshpuffin for SSH. Third, we connected PUTs to the fuzzers: OpenSSL, LibreSSL, and wolfSSL to tlspuffin and libssh to sshpuffin. This FLOSS project [74] is ca. 16k Rust LoC. Extending the fuzzer to new PUT requires little work (hundreds of Rust LoC) but extension to new protocols is more costly (thousands of Rust LoC) as it requires protocol-dependent concretization, i.e. computing bitstrings out of terms. Our fuzzer is fast ( >700 executions/second/CPU core) and allows parallel processing. We let tlspuffin run on the aforementioned TLS PUTs, which found seven vulnerabil- ities, including four new CVEs on wolfSSL (among which one critical and two high). We also ran three state-of-the-art stateful protocol fuzzers and one test-suite and confirm that none was able to find any of the seven vulnerabilities. We explain why they were out of their scope due to inherent limitations of previous approaches. We perform benchmarks 1482"
+      },
+      {
+        "source": "selected",
+        "value": "Critical and widely used cryptographic protocols have repeatedly been found to contain flaws in their design and their implementation. A prominent class of such vulnerabilities is logical attacks, e.g. attacks that exploit flawed protocol logic. Automated formal verification methods, based on the Dolev-Yao (DY) attacker, formally define and excel at finding such flaws, but operate only on abstract specification models. Fully automated verification of existing protocol implementations is today still out of reach. This leaves open whether such implementations are secure. Unfortunately, this blind spot hides numerous attacks, such as recent logical attacks on widely used TLS implementations introduced by implementation bugs. We answer by proposing a novel and effective technique that we call DY model-guided fuzzing, which precludes logical attacks against protocol implementations. The main idea is to consider as possible test cases the set of abstract DY executions of the DY attacker, and use a novel mutation-based fuzzer to explore this set. The DY fuzzer concretizes each abstract execution to test it on the program under test. This approach enables reasoning at a more structural and security-related level of messages represented as formal terms (e.g. decrypt a message and re-encrypt it with a different key) as opposed to random bit-level modifications that are much less likely to produce relevant logical adversarial behaviors. We implement a full-fledged and modular DY protocol fuzzer. We demonstrate its effectiveness by fuzzing three popular TLS implementations, resulting in the discovery of four novel vulnerabilities."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Max Ammann",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Lucca Hirschi",
+          "email": "lucca.hirschi@inria.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Steve Kremer",
+          "email": "steve.kremer@inria.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Independent Researcher & Trail of Bits, Inria Nancy Grand-Est Université de Lorraine, LORIA, France"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Inria Nancy Grand-Est Université de Lorraine, LORIA, France"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Max Ammann",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Independent Researcher &"
+          ],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Lucca Hirschi",
+          "email": "lucca.hirschi@inria.fr",
+          "orcid": "",
+          "affiliations": [
+            "Inria Nancy Grand-Est Universit´e de Lorraine, LORIA, France"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Steve Kremer",
+          "email": "steve.kremer@inria.fr",
+          "orcid": "",
+          "affiliations": [
+            "Inria Nancy Grand-Est Universit´e de Lorraine, LORIA, France"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 110,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Max Ammann",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Lucca Hirschi",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Steve Kremer",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 1,
+          "author": "Lucca Hirschi",
+          "affiliation_raw": "Inria Nancy Grand-Est Universit e de Lorraine, LORIA, France ´",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6",
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b9",
+            "pdf:p1:b12"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 0.681,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Steve Kremer",
+          "affiliation_raw": "Inria Nancy Grand-Est Universit e de Lorraine, LORIA, France ´",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b10",
+            "pdf:p1:b13"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 0.963,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DY Fuzzing: Formal Dolev-Yao Models Meet Cryptographic Protocol Fuzz Testing",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Max Ammann",
+          "affiliations": [
+            "Independent Researcher, Trail of Bits"
+          ]
+        },
+        {
+          "name": "Lucca Hirschi",
+          "affiliations": [
+            "Inria Nancy"
+          ]
+        },
+        {
+          "name": "Steve Kremer",
+          "affiliations": [
+            "Inria Nancy"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 2,
+      "country_values_restored": 2,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

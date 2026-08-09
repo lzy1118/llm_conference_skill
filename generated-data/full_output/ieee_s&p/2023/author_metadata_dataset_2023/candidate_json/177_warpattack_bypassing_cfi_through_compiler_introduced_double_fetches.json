@@ -1,0 +1,244 @@
+{
+  "paper_id": "177_warpattack_bypassing_cfi_through_compiler_introduced_double_fetches",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "WarpAttack: Bypassing CFI through Compiler-Introduced Double-Fetches"
+      },
+      {
+        "source": "selected",
+        "value": "WarpAttack: Bypassing CFI through Compiler-Introduced Double-Fetches"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Code-reuse attacks are dangerous threats that attracted the attention of the security community for years. These attacks aim at corrupting important control-flow transfers for taking control of a process without injecting code. Nowadays, the combinations of multiple mitigations (e.g., ASLR, DEP, and CFI) drastically reduced this attack surface, making running code-reuse exploits more challenging. Unfortunately, security mitigations are combined with compiler optimizations, that do not distinguish between securityrelated and application code. Blindly deploying code optimizations over code-reuse mitigations may undermine their security guarantees. For instance, compilers may introduce doublefetch vulnerabilities that lead to concurrency issues such as Time-Of-Check to Time-Of-Use (TOCTTOU) attacks. In this work, we propose a new attack vector, called WarpAttack, that exploits compiler-introduced double-fetch optimizations to mount TOCTTOU attacks and bypass codereuse mitigations. We study the mechanism underlying this attack and present a practical proof-of-concept exploit against the last version of Firefox. Additionally, we propose a lightweight analysis to locate vulnerable double-fetch code (with 3% false positives) and conduct research over six popular applications, five operating systems, and four architectures (32 and 64 bits) to study the diffusion of this threat. Moreover, we study the implication of our attack against six CFI implementations. Finally, we investigate possible research lines for addressing this threat and propose practical solutions to be deployed in existing projects. 1271 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Code-reuse attacks are dangerous threats that at- tracted the attention of the security community for years. These attacks aim at corrupting important control-flow transfers for taking control of a process without injecting code. Nowadays, the combinations of multiple mitigations (e.g., ASLR, DEP, and CFI) drastically reduced this attack surface, making running code-reuse exploits more challenging. Unfortunately, security mitigations are combined with com- piler optimizations, that do not distinguish between security- related and application code. Blindly deploying code optimiza- tions over code-reuse mitigations may undermine their security guarantees. For instance, compilers may introduce double- fetch vulnerabilities that lead to concurrency issues such as Time-Of-Check to Time-Of-Use (TOCTTOU) attacks. In this work, we propose a new attack vector, called WarpAttack, that exploits compiler-introduced double-fetch optimizations to mount TOCTTOU attacks and bypass code- reuse mitigations. We study the mechanism underlying this attack and present a practical proof-of-concept exploit against the last version of Firefox. Additionally, we propose a lightweight analysis to locate vulnerable double-fetch code (with 3% false positives) and conduct research over six popular applications, five operating systems, and four architectures (32 and 64 bits) to study the diffusion of this threat. Moreover, we study the implication of our attack against six CFI imple- mentations. Finally, we investigate possible research lines for addressing this threat and propose practical solutions to be deployed in existing projects. 1. Introduction Most software running on today's systems is written in low-level languages like C or C++. As these languages are prone to memory corruption bugs that often enable attackers to launch powerful code execution attacks, the applications need to be thoroughly tested to remove as many bugs as possible. As testing is generally incomplete due to state explosion, mitigations are added to the code to make exploitation more challenging [1]. Widely deployed mitigations such as Address Space Layout Randomization (ASLR) [2], stack canaries [3], and data execution prevention (DEP) [4] lower the exploitabil- ity of bugs. However, code-reuse attacks such as Return- Oriented Programming (ROP) [5-9] remain effective under all these mitigations. These attacks redirect control flow to execute legitimate instruction sequences in program memory for malicious purposes. Control-Flow Integrity (CFI) [10, 11], widely recognized as a key mitigation to stop code-reuse attacks, restricts control-flow transfers to strictly follow some benign pro- gram execution. Specifically, CFI first statically computes the program's control-flow graph (CFG) and determines all legitimate targets of control-flow transfers. Then, CFI in- struments the code with checks to validate each control-flow transfer at run-time. CFI is practical: CFI implementations are readily available in production compilers and have been widely deployed, with some trade-offs between granularity and performance. For example, the Android ecosystem de- ployed LLVM-CFI [12, 13] in Android 9's kernel [14], and Windows applications are widely protected by Microsoft's Control Flow Guard [15]. Despite the advance of modern CFIs, they cannot stop all the attacks. In practice, not all code may be protected through CFI [16] since their precision is limited by the target sets size. In an ideal scenario, only one possible target is valid for each indirect control-flow transfer, however, CFI checks indirect transfers against a set of targets. Therefore, attackers may choose any target in this set, allowing some deviation from a benign execution. This deviation may be sufficient for an attack. Still, the key advantage of CFI is that the size of the target set is generally small (between many targets with under ten targets and few targets at around 100 targets even for complex applications) [17]. Without CFI any executable byte is a valid target, resulting in millions of targets. CFI is therefore believed to practically stop code reuse attacks or, at least, make it almost impossible to bypass. Mitigations are generally implemented as compiler passes (or, rarely, as static binary rewriting passes). How- ever, compilers currently are unaware of security checks inserted by mitigations and consider them just code that undergoes the same optimizations as all non-privileged code. For example, the compiler may spill sensitive variables used for security checks [18] that suffer from double-fetch vulnerabilities (a variable is read multiple times without integrity checks). When these cases appear, they may leave room for a race condition and resulting in Time-of-Check to Time-Of-Use [19] (TOCTTOU) opportunities for attackers. In this work, we present WarpAttack: a novel attack that bypasses strong anti-code-reuse mitigations and grants arbitrary code execution to adversaries. Our attack ex- ploits a misalignment between CFI implementations and assumptions of C/C++ compilers when translating switch statements to jump tables (or multiple checks against one target). The CFI threat model assumes that adversaries can modify arbitrary data including function pointers but not 1271 DOI 10.1109/SP46215.2023.00176 code [20-23]. Therefore, CFI implementations assume that a combination of storing jump tables in read-only memory and bound checking the indirect control flow transfer will sufficiently protect the jump tables. However, compilers are unaware of CFI's security assumptions and optimize code, which results in double fetch vulnerabilities and TOCTTOU attacks between the bound check and the indirect jump. The code for computing indirect jumps in switch statements often follows this pattern: given a jump table and an index, the program first fetches the index value to validate the bound check against the jump table size, then, it fetches the index value again for processing the actual jump. Since the index is loaded (fetched) multiple times, an adversary may race against the bound check and overwrite the index value after the bound check itself, finally allowing arbitrary jumps outside the jump table. The attacker may lose the race by changing the target value too early or too late. If the value is changed before the bounds check, the switch statement will likely revert to the default case. If the value is changed after the jump, it will likely overwrite a stale value. Similar issues were investigated by previous reports [24], that describe double-fetches near bound-checked indirect jump to a jump table but, so far, were considered a concurrency bug [25]. Through our study, we research TOCTTOU security issues introduced by double-fetches. More precisely, we aim at demonstrating: (a) how compilers regularly insert double- fetches of sensitive variables, (b) how to automatically find these cases, (c) discuss their presence in sensitive software, and (d) show practical exploits in commercial applications. To evaluate our new attack WarpAttack, we imple- ment (and release as open-source) a proof-of-concept attack against Firefox to demonstrate WarpAttack is practical under a realistic adversary model. Our PoC shows how to win the race condition and take control of the victim program. Additionally, we implement a lightweight binary analysis to detect compiler-introduced double-fetches in widely used C/C++ programs on multiple platforms (with a false-positive rate of 3%). Our results show that (i) mainstream compilers including Clang, MSVC, and GCC generate such victim code patterns in sensitive situations, (ii) most CFI imple- mentations are vulnerable to our attack, (iii) widely used C/C++ programs like Firefox and Chrome present such vic- tim code patterns; (iv) these code patterns can be found on different platforms including Linux, Windows, and Mac OS and cross-architecture (i.e., x86/64, ARM, MIPS, RISCV). Finally, we discuss possible mitigations and propose future research directions to cope with WarpAttack. In summary, our contributions are: • We introduce WarpAttack, a new attack to bypass code- reuse mitigations and grant arbitrary code execution to adversaries. • We show a working proof-of-concept example of WarpAttack against Firefox. • We conduct a comprehensive research on compiler- introduced double-fetch code samples in popular ap- plications across multiple OSs and architectures. • We perform a study of different compilers and CFI implementations to demonstrate the magnitude of our attack has real-world impact. • We design (and implement) a new lightweight binary analysis to detect victim code (which is available at https://github.com/HexHive/WarpAttack). 2. Background This section introduces background information for un- derstanding WarpAttack. 2.1. Code reuse attacks and mitigations Code reuse attacks use memory corruptions to overwrite indirect forward edges (e.g., call/jumps) or backward edges (e.g., return instructions) for taking control of the program execution (thus granting arbitrary code execution to the at- tacker). Once a code reuse payload is injected and activated, it diverges the normal execution flow of a program into one attacker-controlled. The core idea is to stitch together small pieces of code, called gadgets, in so-called chains. In the literature, there are plenty of techniques to create and inject code reuse payloads that target either backward (ROP [6]) and forward jumps (JOP [8] or vtable [26]). Regardless the technique used, the chain is injected through the memory corruption vulnerability and set such that, when the target indirect jump is traversed, the control-flow is transferred to the first gadget of the chain, finally triggering the attack. For mitigating code reuse attacks, researchers propose solutions to guarantee the correct execution of the program at runtime (i.e., allowing only “benign” execution flows). This is usually implemented through control-flow integrity checks (CFIs), that model all the correct program executions via a control-flow graph (CFG) and enforce correct execu- tion through different policies. Generally, we consider CFIs for protecting forward [12] or backward jumps [27]. In this work, we mainly focus on CFI for forward jumps, however, we show WarpAttack can bypass any CFI that fulfill our requirements. Enforcing perfect CFIs require inferring all the correct executions of a program, thus ensuring that (at runtime) any indirect control-flow transfer lands on one sin- gle target. However, enforcing this property is impracticable since it requires one to infer all the possible execution flows. In practice, CFIs adopt an approximation that allow indirect jumps to land over a set of valid targets (instead of a single one). Even though this leaves room for attacks [28, 29], it has been proved the target sets are small enough to make code reuse attacks generally challenging [17]. 2.2. CFI bypassing methods Current offensive research lines for bypassing CFIs fo- cus on different angles, that we classify in two main cate- gories: targeting policy, or targeting implementation issues. In the first category, a CFI may implement a too loose target set, that de-facto allows an attacker to bend the execution flow while remaining undetected. Alternatively, if the target set is strict enough and no jumps are overwritten, adversaries 1272"
+      },
+      {
+        "source": "selected",
+        "value": "Code-reuse attacks are dangerous threats that attracted the attention of the security community for years. These attacks aim at corrupting important control-flow transfers for taking control of a process without injecting code. Nowadays, the combinations of multiple mitigations (e.g., ASLR, DEP, and CFI) drastically reduced this attack surface, making running code-reuse exploits more challenging. Unfortunately, security mitigations are combined with compiler optimizations, that do not distinguish between securityrelated and application code. Blindly deploying code optimizations over code-reuse mitigations may undermine their security guarantees. For instance, compilers may introduce doublefetch vulnerabilities that lead to concurrency issues such as Time-Of-Check to Time-Of-Use (TOCTTOU) attacks. In this work, we propose a new attack vector, called WarpAttack, that exploits compiler-introduced double-fetch optimizations to mount TOCTTOU attacks and bypass codereuse mitigations. We study the mechanism underlying this attack and present a practical proof-of-concept exploit against the last version of Firefox. Additionally, we propose a lightweight analysis to locate vulnerable double-fetch code (with 3% false positives) and conduct research over six popular applications, five operating systems, and four architectures (32 and 64 bits) to study the diffusion of this threat. Moreover, we study the implication of our attack against six CFI implementations. Finally, we investigate possible research lines for addressing this threat and propose practical solutions to be deployed in existing projects. 1271 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jianhao Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Luca Di",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Flavio Toffalini",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Bing Mao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Mathias Payer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jianhao Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Luca Di",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Flavio Toffalini",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Bing Mao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Mathias Payer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EPFL , State Key Laboratory for Novel Software Technology, Nanjing University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 113,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "WarpAttack: Bypassing CFI through Compiler-Introduced Double-Fetches",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jianhao Xu",
+          "affiliations": [
+            "Nanjing University, China"
+          ]
+        },
+        {
+          "name": "Luca Di Bartolomeo",
+          "affiliations": [
+            "EPFL, Switzerland"
+          ]
+        },
+        {
+          "name": "Flavio Toffalini",
+          "affiliations": [
+            "EPFL, Switzerland"
+          ]
+        },
+        {
+          "name": "Bing Mao",
+          "affiliations": [
+            "Nanjing University, China"
+          ]
+        },
+        {
+          "name": "Mathias Payer",
+          "affiliations": [
+            "EPFL, Switzerland"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 5,
+      "proposed_count": 5,
+      "retained_count": 4,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

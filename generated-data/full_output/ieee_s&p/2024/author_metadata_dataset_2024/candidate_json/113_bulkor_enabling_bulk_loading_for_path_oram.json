@@ -1,0 +1,239 @@
+{
+  "paper_id": "113_bulkor_enabling_bulk_loading_for_path_oram",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BULKOR: Enabling Bulk Loading for Path ORAM"
+      },
+      {
+        "source": "selected",
+        "value": "BULKOR: Enabling Bulk Loading for Path ORAM"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Oblivious RAM (ORAM) is an important cryptographic primitive that aims to protect against data access pattern leakage. With the recent theoretical improvements in ORAM protocols and the introduction of hardware-based trusted execution environments (TEEs), ORAM has become an increasingly practical design that starts to be adopted in realworld secure systems. In this paper, we study the bulk loading problem of ORAM, i.e., constructing an ORAM structure with a large amount of data, which can benefit many scenarios in secure cloud systems, such as data recovery, layout conversion, and query processing. We propose BULKOR, an extension of the state-of-the-art Path ORAM protocol. BULKOR supports the deployment with TEEs in untrusted servers, and satisfies the doubly-oblivious requirement to alleviate the side channel concerns in modern TEEs. BULKOR improves both the theoretical complexity from O(N log 3 N) to O(N log 2 N), and the practical performance of ORAM bulk loading, without sacrificing the security guarantees. It significantly outperforms the baseline designs Oblix and ZeroTrace by 8.7× to 54.6× and 5.8× to 533.1×, respectively, in various settings that implement ORAM on hard disks or in memory. 4258 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Oblivious RAM (ORAM) is an important crypto- graphic primitive that aims to protect against data access pattern leakage. With the recent theoretical improvements in ORAM protocols and the introduction of hardware-based trusted execution environments (TEEs), ORAM has become an increasingly practical design that starts to be adopted in real- world secure systems. In this paper, we study the bulk loading problem of ORAM, i.e., constructing an ORAM structure with a large amount of data, which can benefit many scenarios in secure cloud systems, such as data recovery, layout conversion, and query processing. We propose B ULKOR , an extension of the state-of-the-art Path ORAM protocol. B ULKOR supports the deployment with TEEs in untrusted servers, and satisfies the doubly-oblivious requirement to alleviate the side channel concerns in modern TEEs. B ULKOR improves both the the- oretical complexity from O(N log3 N ) to O(N log2 N ), and the practical performance of ORAM bulk loading, without sacrificing the security guarantees. It significantly outperforms the baseline designs Oblix and ZeroTrace by 8.7× to 54.6× and 5.8× to 533.1×, respectively, in various settings that implement ORAM on hard disks or in memory. 1. Introduction As data security increasingly gains attentions, secure database and data analytics systems quickly emerge in recent years. They support various kinds of privacy-preserving pro- cessing, from data storage outsourcing to encrypted query processing [ 1], [ 2], [ 3], [ 4]. However, although modern encryption and authentication techniques can protect data contents, advanced attacks can still be performed by the adversary to derive a significant amount of private informa- tion, by merely observing the access patterns to the sensitive data [5], causing severe security vulnerabilities. Oblivious RAM (ORAM) protocols have been the stan- dard and generic cryptographic solution to defend against this issue. It has been proposed [ 6] and improved [ 7], [ 8], [9], [ 10], [ 11] for decades, and now there exist practical designs that incur reasonable overheads compared to the non-oblivious setting. Currently, the most prevalent ORAM protocol is tree-based ORAM with O(log N ) bandwidth cost per access, where N denotes the total number of data blocks. Path ORAM [ 9], [ 12] is one such example. In the meantime, besides the theoretical improvements, hardware security techniques, in particular hardware-based trusted execution environments (TEEs), also are introduced to ORAM to reduce the networking communication cost between the remote client and the server [ 13]. A trusted domain known as the enclave can be instantiated at the untrusted server side as a local proxy. However, different from the fully trusted client, TEEs protect the data contents but not their access patterns. Double obliviousness [ 14] is required in such scenarios for both trusted and untrusted memory, which requires more complex ORAM controller designs inside TEEs. Nevertheless, with the progress from both the theoretical and system sides, ORAM techniques are becoming increasingly pragmatic, and have started to be applied to build oblivious database systems [ 14], [15]. In this paper, we motivate an opportunity to further improve ORAM systems in a previously less studied sce- nario - data bulk loading. Bulk loading is a well-known problem in database systems, which refers to loading a large amount of data and building a data structure, such as an index, from scratch as a whole in a short time [ 16], [ 17], [18], [ 19]. It is mostly used during system initialization, layout conversion, and data recovery. Although Oblix [ 14] proposed a bulk loading protocol, it was not significantly better than simply and serially performing write of each data block into ORAM in terms of both time complexity O(N log3 N ) and practical performance. In this work, we aim to improve performance in both theory and practice without sacrificing security. 1.1. Motivation We believe bulk loading for ORAM is an important topic, as there are many real-world scenarios that can benefit from a more efficient and secure bulk loading process. Below we describe several of such motivating use cases. We later formalize the problem in Section 2.3. We specifically target the scenarios where the server is equipped with a TEE and the clients would like to outsource all their private data to the server due to limited local storage. Case 1: building block for oblivious algorithms. ORAM has been widely utilized in many applications as a basic building block for specially designed oblivious al- gorithms, such as database table join [ 20], stable match- 4258 DOI 10.1109/SP54263.2024.00103 ing [21], [22], and breadth-first search [21], [23]. Although some designs [20] treat ORAM construction as a prepro- cessing step, when the oblivious algorithm needs to be per- formed on intermediate results (e.g., results of sub-queries), they would need to build ORAM structures on-the-fly, which is a major performance bottleneck. Therefore, it is important to explore the fast ORAM construction method, i.e., bulk loading, to reduce the end-to-end query processing latency. Cheap ORAM construction will also inspire more oblivious algorithm designs using ORAM, as we will demonstrate in more details in Section 6.3. Case 2: data recovery. For the widely-used trusted proxy model of ORAM [24], [25], [26], [27], Vuppalapati et al. [28] pointed out that if the state of the centralized proxy is lost, the ORAM structure must be reconstructed on a new proxy, which involves downloading/uploading and decrypting/encrypting all the data and metadata. This would cause a long period of system unavailability. Since the TEE can be viewed as a trusted proxy located on an untrusted server that may crash, the aforementioned issue also exists in the TEE setting. If we could accelerate ORAM reconstruction, we can greatly reduce service unavailability and corresponding revenue loss. Case 3: cloud storage services. Cloud storage services (e.g., Google Drive, Dropbox) allow users to store their data in cloud-side storage and also provide highly available access to these data. Such services are typically priced by storage capacity. Since an ORAM structure has larger size (e.g., 4×) than the non-oblivious layout, a more space- efficient approach to offering secure cloud storage services would be to store data in the non-oblivious layout at rest, and only convert into the ORAM structure when the user would like to perform oblivious accesses. Such a layout conversion should be fast enough to reduce user access delays. While converting an ORAM back to a simple layout is easy, e.g., through obliviously sorting all real and dummy blocks and dropping all dummy blocks, bulk loading data to build an ORAM requires specific optimizations. In addition to saving user expenses, this approach is also of interest to the cloud service providers to reduce their own infrastructure cost. 1.2. Our Contributions In this paper, we investigate the bulk loading proce- dure for state-of-the-art tree-based ORAM protocols such as Path ORAM [9]. We mainly target scenarios with TEEs available on the untrusted server, considering their increas- ingly popular use and better efficiency. We consider their side-channel vulnerabilities and design our algorithms in a doubly-oblivious manner [14], i.e., both the access pat- terns within and outside the TEE are oblivious. We aim to improve both the theoretical complexity and the practical performance of ORAM bulk loading, without sacrificing any security guarantees. In other words, the bulk loaded ORAM should provide the same protection as the naive way of serial insertion [9, Section 3.4] for later normal accesses. One key observation in our work is that, a simple ran- dom shuffle of data to initialize the ORAM tree is insecure. We therefore propose our efficient and secure construction, BULKOR , which assigns the path label of each data block in Path ORAM fully independently and randomly at the very beginning. Then B ULKOR efficiently and effectively adjusts the actual location of each data block in the Path ORAM tree to eliminate any overflow issue, without chang- ing the previously assigned path. The entire process is done obliviously, despite of the challenging task of moving data blocks in the irregular tree structure. Therefore, B ULKOR achieves double obliviousness and can be used together with TEEs. We leverage existing oblivious sort primitives, and also propose two novel oblivious sub-procedures that are customized to our block adjustment tasks. BULKOR achieves O(N log2 N ) time complexity using bitonic sort [29] or even O(N log N ) using bucket oblivious sort [30], improv- ing upon the naive doubly-oblivious serial insertion which is O(N log3 N ) with TEEs. B ULKOR supports the standard Path ORAM recursion, so its space cost at the controller (in the enclave) remains the same as O(log2 N ) · ω(1) [9]. The BULKOR implementation is also multi-threading parallelized to achieve good practical performance. Beyond Path ORAM, BULKOR can also be adapted to other tree-based ORAM protocols [10], [11], [31], [32], [33]. We implement B ULKOR with Intel SGX, and evaluate its practical performance on different settings, including hard disks, in-memory, and fully in-enclave data storage, as well as different data block granularities from 64 B to 1 kB. We show that B ULKOR is able to outperform the state-of- the-art Oblix [14] by 8.7× to 54.6× as the ORAM size increases. It also outperforms the ZeroTrace serial inser- tion baseline [13] by up to 160.6× faster on hard disks, 493.6× and 533.1× with fully in-memory and in-enclave data, respectively. When applied to real-world application scenarios, B ULKOR can accelerate various algorithms such as oblivious join, oblivious binary search, and oblivious BFS (case 1), improve the “9s” availability of database services by enabling faster data recovery (case 2), and save bills by roughly 50% for a cloud storage service using dynamically converted ORAM layouts (case 3). We have open sourced BULKOR at https://github.com/tsinghua-ideal/bulkor. 2. Preliminaries 2.1. Path ORAM Path ORAM [9], [12] is a widely adopted ORAM protocol that offers superior performance in practice. The construction is split into two parts as the server and the client. Table 1 summarizes our notations. The server main- tains the server storage in the form of a binary tree with N − 1 nodes (indexed from 1 to N). Each tree node is a bucket that holds Z data blocks (e.g., Z = 4 ). Thus the total number of blocks is about n = Z · N, among which up to N blocks are allowed to store encrypted real data, while the others are dummy blocks (also encrypted). We assign physical addresses to all blocks according to the breadth-first sequential representation (i.e., the heap format) of the ORAM tree. A block i belongs to the bucket αi, and 4259"
+      },
+      {
+        "source": "selected",
+        "value": "Oblivious RAM (ORAM) is an important cryptographic primitive that aims to protect against data access pattern leakage. With the recent theoretical improvements in ORAM protocols and the introduction of hardware-based trusted execution environments (TEEs), ORAM has become an increasingly practical design that starts to be adopted in realworld secure systems. In this paper, we study the bulk loading problem of ORAM, i.e., constructing an ORAM structure with a large amount of data, which can benefit many scenarios in secure cloud systems, such as data recovery, layout conversion, and query processing. We propose BULKOR, an extension of the state-of-the-art Path ORAM protocol. BULKOR supports the deployment with TEEs in untrusted servers, and satisfies the doubly-oblivious requirement to alleviate the side channel concerns in modern TEEs. BULKOR improves both the theoretical complexity from O(N log 3 N) to O(N log 2 N), and the practical performance of ORAM bulk loading, without sacrificing the security guarantees. It significantly outperforms the baseline designs Oblix and ZeroTrace by 8.7× to 54.6× and 5.8× to 533.1×, respectively, in various settings that implement ORAM on hard disks or in memory. 4258 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Xiang Li",
+          "email": "lixiang20@mails.tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Tsinghua University Shanghai AI Laboratory Shanghai Qi Zhi Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yunqian Luo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Tsinghua University Shanghai AI Laboratory Shanghai Qi Zhi Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Mingyu Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University, Tsinghua University Shanghai AI Laboratory Shanghai Qi Zhi Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Xiang Li",
+          "email": "lixiang20@mails.tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yunqian Luo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Mingyu Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Tsinghua University Shanghai AI Laboratory Shanghai Qi Zhi Institute"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 116,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Xiang Li",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Yunqian Luo",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Mingyu Gao",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Xiang Li",
+          "affiliation_raw": "Tsinghua University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 3.987,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Yunqian Luo",
+          "affiliation_raw": "Tsinghua University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 3.497,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Mingyu Gao",
+          "affiliation_raw": "Tsinghua University Shanghai AI Laboratory Shanghai Qi Zhi Institute",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b11",
+            "pdf:p1:b12"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 7.287,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BULKOR: Enabling Bulk Loading for Path ORAM",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Xiang Li",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yunqian Luo",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Mingyu Gao",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

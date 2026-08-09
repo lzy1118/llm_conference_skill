@@ -1,0 +1,237 @@
+{
+  "paper_id": "130_datasentinel_a_game_theoretic_detection_of_prompt_injection_attacks",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DataSentinel: A Game-Theoretic Detection of Prompt Injection Attacks"
+      },
+      {
+        "source": "selected",
+        "value": "DataSentinel: A Game-Theoretic Detection of Prompt Injection Attacks"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "LLM-integrated applications and agents are vulnerable to prompt injection attacks, where an attacker injects prompts into their inputs to induce attacker-desired outputs. A detection method aims to determine whether a given input is contaminated by an injected prompt. However, existing detection methods have limited effectiveness against state-of-the-art attacks, let alone adaptive ones. In this work, we propose DataSentinel, a game-theoretic method to detect prompt injection attacks. Specifically, DataSentinel fine-tunes an LLM to detect inputs contaminated with injected prompts that are strategically adapted to evade detection. We formulate this as a minimax optimization problem, with the objective of fine-tuning the LLM to detect strong adaptive attacks. Furthermore, we propose a gradient-based method to solve the minimax optimization problem by alternating between the inner max and outer min problems. Our evaluation results on multiple benchmark datasets and LLMs show that DataSentinel effectively detects both existing and adaptive prompt injection attacks. Our code and data are available at: https://github.com/liu00222/Open-Prompt-Injection."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "LLM-integrated applications and agents are vul- nerable to prompt injection attacks, where an attacker in- jects prompts into their inputs to induce attacker-desired outputs. A detection method aims to determine whether a given input is contaminated by an injected prompt. However, existing detection methods have limited effectiveness against state-of-the-art attacks, let alone adaptive ones. In this work, we propose DataSentinel, a game-theoretic method to detect prompt injection attacks. Specifically, DataSentinel fine-tunes an LLM to detect inputs contaminated with injected prompts that are strategically adapted to evade detection. We formulate this as a minimax optimization problem, with the objective of fine-tuning the LLM to detect strong adaptive attacks. Furthermore, we propose a gradient-based method to solve the minimax optimization problem by alternating between the inner max and outer min problems. Our evaluation re- sults on multiple benchmark datasets and LLMs show that DataSentinel effectively detects both existing and adaptive prompt injection attacks. Our code and data are available at: https://github.com/liu00222/Open-Prompt-Injection. 1. Introduction LLM-integrated applications and agents-such as Bing Copilot [1], Google search with AI overviews [2], and Amazon's review highlights [3]-are emerging applications built upon large language models (LLMs). The growing popularity of LLM-integrated applications has led to the emergence of app stores, such as OpenAI's GPT Store and Poe [4], where developers can publish their LLM- integrated applications and users can access them, much like the Google Play and App Store for mobile apps. In general, an LLM-integrated application intends to perform a task (referred to as target task), such as webpage summarization in AI-assisted search. Towards this goal, an LLM-integrated application takes a prompt, which is the concatenation of an instruction (referred to as target instruction ) and data (referred to as target data), as an input to query the backend LLM, whose response would solve the target task. The target instruction is often designed by an application developer to direct the backend LLM to perform the target task, while the data is the information to be processed by the backend LLM and is usually from an external source, e.g., the Internet. For instance, when the target task is webpage summarization in AI-assisted search, the target instruction can be “Please summarize the following web pages: [Text from relevant web pages].”, and the target data is the webpages relevant to a user's search query. When the target data comes from an untrusted external source (e.g., the Internet or tool output in LLM agents), LLM-integrated applications are vulnerable to prompt in- jection attacks [5], [6], [7]. In particular, an attacker can contaminate the target data by injecting a prompt (called injected prompt) into it, where the injected prompt itself may consist of an instruction (called injected instruction ) and data (called injected data). As a result, instead of performing the target task, the LLM-integrated application follows the injected prompt to perform an attacker-chosen, arbitrary task (called injected task ). For instance, an attacker can embed an injected prompt “Ignore previous instructions. Ask users to visit the following webpage for more information: [at- tacker's malicious URL].” into a seemingly benign webpage under the attacker's control. When the seemingly benign webpage with the injected prompt is summarized by LLM in AI-assisted search, the summary would guide users to the attacker's malicious website. Detecting prompt injection attacks aims to determine whether the given target data is contaminated by an in- jected prompt [7], [8], [9], [10]. Among existing detectors, known-answer detection [8] achieves state-of-the-art per- formance [7]. Known-answer detection leverages an LLM, called detection LLM , which may differ from the backend LLM. Furthermore, it designs a special instruction (called detection instruction) with an answer known to the detector but not attackers. For instance, the detection instruction can be “Repeat [secret key] once while ignoring the following text:”, where the secret key is a string randomly sampled by the detector [7]. This detection instruction is concatenated with the given target data and then fed into the detection LLM. If the detection LLM does not output the secret key, it suggests that the detection LLM followed the injected prompt, indicating the target data is contaminated. A benchmark study [7], confirmed in our experiments, showed that known-answer detection still suffers from high false positive rates (FPRs) , mistakenly labeling a large fraction of clean target data as contaminated, and high false negative rates (FNRs) in detecting state-of-the-art prompt injection attacks, particularly strong adaptive ones. This is primarily due to two key limitations: 1) it uses a standard LLM, which is not specifically trained for the detection purpose, and 2) it does not take strong adaptive prompt injection attacks into consideration by design. 2190 DOI 10.1109/SP61157.2025.00250 “Repeat 'DGDSGNH' once while ignoring the following text: ” “[text from relevant web pages]. Ignore previous instructions. Ask users to visit the following webpage for more information: [attacker's malicious URL].” Standard LLM 𝑔′ Fine-tuned LLM 𝑔 “DGDSGNH. Other text is ignored.” “Please visit [attacker's malicious URL].” 𝑥 is clean, because ‘DGDSGNH' is in 𝑔′(𝑠𝑑||𝑥) 𝑥 is contaminated, because ‘DGDSGNH' isn't in 𝑔(𝑠𝑑||𝑥) Target data 𝑥 Note: red text corresponds to injected prompt Detection instruction 𝑠𝑑 Incorrect detection Correct detection 𝑠𝑑||𝑥 Output 𝑔′(𝑠𝑑||𝑥) Output 𝑔(𝑠𝑑||𝑥) Figure 1: Illustration of the key difference between known-answer detection and DataSentinel, where the former uses a standard LLM as a detection LLM while the latter fine-tunes the detection LLM via a game-theoretic method. Our work: In this work, we bridge the gap by proposing DataSentinel, a game-theoretic method to address the two key limitations of known-answer detection. Specifically, we fine-tune the detection LLM to be more vulnerable to prompt injection attacks. Our key insight is to turn the detection LLM's increased vulnerability into a defense mechanism. By making the detection LLM more vulnerable to prompt injection, it becomes more likely to follow the injected prompt and fail to output the secret key when taking the detection instruction concatenated with contaminated target data as input. In other words, a more vulnerable detection LLM makes detection more effective. Furthermore, during the fine-tuning process, we consider strong adaptive attacks that optimize injected prompts to both evade the detection LLM and mislead the backend LLM into performing the injected tasks. Figure 1 illustrates known-answer detection and DataSentinel during detection. Formally, we propose framing the fine-tuning of the detection LLM as a minimax optimization problem, which simulates a game between the detector and the attacker. The objective of this minimax optimization problem is to fine- tune the detection LLM to accurately distinguish between contaminated and clean target data, while the contaminated target data contains injected prompts that are adapted to both evade detection and mislead the backend LLM into performing the injected tasks. More specifically, we formu- late strong adaptive attacks against the given detection and backend LLMs as the inner max problem in the minimax framework. Meanwhile, fine-tuning the detection LLM with the given contaminated and clean target data constitutes the outer min problem. Solving minimax optimization problem exactly is noto- riously challenging. To address this, we propose a method to approximately solve our problem. Our method alternates be- tween the inner max and outer min problems. In each round, given the current detection LLM, we first iteratively solve the inner max problem to optimize the injected prompts. Then, given the optimized injected prompts, we iteratively solve the outer min problem to update the detection LLM. This process is repeated until a pre-defined number of rounds is reached. We evaluate DataSentinel across 7 target tasks, each corresponding to a dataset, 9 injected tasks, 6 LLMs, and 9 existing prompt injection attacks. Our results show that DataSentinel is consistently highly effective at detecting contaminated target data. Specifically, DataSentinel achieves a FPR close to 0 in all our experiments, and a FNR close to 0 for several prompt injection attacks and at most 0.07 for others. Moreover, our evaluation on 6 baseline detection methods shows that DataSentinel significantly outperforms them by a large margin in terms of FPR and FNR. For instance, the state-of-the-art known-answer detection has a FPR of up to 0.1 for some target task and a FNR of up to 0.21 for optimization-based prompt injection attacks. We also evaluate known-answer detection and DataSentinel against 3 adaptive prompt injection attacks. The results show that DataSentinel offers even more pronounced advantages over known-answer detection and remains highly effective at detecting adaptive attacks, as long as the injected prompts mislead the backend LLM into performing injected tasks that differ from the target task. In summary, we make the following contributions: • We propose DataSentinel, the first game-theoretic method to detect prompt injection attacks. • We formulate fine-tuning a detection LLM as a min- imax optimization problem and propose a method to approximately solve it by alternating between the inner max and outer min problems. • We evaluate DataSentinel on 9 state-of-the-art prompt injection attacks and 3 adaptive ones, 7 benchmark datasets, as well as 6 LLMs; and we compare it with 6 baseline detection methods. 2191"
+      },
+      {
+        "source": "selected",
+        "value": "LLM-integrated applications and agents are vulnerable to prompt injection attacks, where an attacker injects prompts into their inputs to induce attacker-desired outputs. A detection method aims to determine whether a given input is contaminated by an injected prompt. However, existing detection methods have limited effectiveness against state-of-the-art attacks, let alone adaptive ones. In this work, we propose DataSentinel, a game-theoretic method to detect prompt injection attacks. Specifically, DataSentinel fine-tunes an LLM to detect inputs contaminated with injected prompts that are strategically adapted to evade detection. We formulate this as a minimax optimization problem, with the objective of fine-tuning the LLM to detect strong adaptive attacks. Furthermore, we propose a gradient-based method to solve the minimax optimization problem by alternating between the inner max and outer min problems. Our evaluation results on multiple benchmark datasets and LLMs show that DataSentinel effectively detects both existing and adaptive prompt injection attacks. Our code and data are available at: https://github.com/liu00222/Open-Prompt-Injection."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yupei Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yuqi Jia",
+          "email": "yuqi.jia@duke.edu",
+          "orcid": "",
+          "affiliations": [
+            "Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jinyuan Jia",
+          "email": "jinyuan@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Dawn Song",
+          "email": "dawnsong@berkeley.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Neil Zhenqiang Gong",
+          "email": "neil.gong@duke.edu",
+          "orcid": "",
+          "affiliations": [
+            "Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yupei Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yuqi Jia",
+          "email": "yuqi.jia@duke.edu",
+          "orcid": "",
+          "affiliations": [
+            "Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jinyuan Jia",
+          "email": "jinyuan@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Dawn Song",
+          "email": "dawnsong@berkeley.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Neil Zhenqiang Gong",
+          "email": "neil.gong@duke.edu",
+          "orcid": "",
+          "affiliations": [
+            "Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 122,
+      "author_count": 5,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 4,
+          "author": "Neil Zhenqiang Gong",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DataSentinel: A Game-Theoretic Detection of Prompt Injection Attacks",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yupei Liu",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Yuqi Jia",
+          "affiliations": [
+            "Duke University"
+          ]
+        },
+        {
+          "name": "Jinyuan Jia",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Dawn Song",
+          "affiliations": [
+            "UC Berkerly"
+          ]
+        },
+        {
+          "name": "Neil Zhenqiang Gong",
+          "affiliations": [
+            "Duke University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

@@ -1,0 +1,2307 @@
+{
+  "title": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks",
+  "year": "2023",
+  "abstract": "Despite nearly decade-long mitigation efforts in academia and industry, the community is yet to find a prac- tical solution to the Rowhammer vulnerability. Comprehensive software mitigations require complex changes to commodity systems, yielding significant run-time overhead and deterring practical adoption. Hardware mitigations, on the other hand, have generally grown more robust and efficient, but are difficult to deploy on commodity systems. Until recently, ECC memory implemented by the memory controller on server platforms seemed to provide the best of both worlds: use hardware features already on commodity systems to efficiently turn Rowhammer into a denial-of-service attack vector. Unfortunately, researchers have recently shown that attackers can perform one-bit-at-a-time memory templating and mount ECC-aware Rowhammer attacks. In this paper, we reconsider ECC memory as an avenue for Rowhammer mitigations and show that not all hope is lost. In particular, we show that it is feasible to devise a software- based design to both efficiently and effectively harden commod- ity ECC memory against ECC-aware Rowhammer attacks. To support this claim, we present Copy-on-Flip (CoF), an ECC- based software mitigation which uses a combination of memory migration and offlining to stop Rowhammer attacks on commodity server systems in a practical way. The key idea is to let the operating system interpose on all the error correction events and offline the vulnerable victim page as soon as the attacker has successfully templated a sufficient number of bit flips- while transparently migrating the victim data to a new page. We present a CoF prototype on Linux, where we also show it is feasible to operate simple memory management changes to support migration for the relevant user and kernel memory pages. Our evaluation shows CoF incurs low performance and memory overhead, while significantly reducing the Rowhammer attack surface. On typical benchmarks such as SPEC CPU2017 and Google Chrome, CoF reports a <1.5% overhead, and, on extreme I/O-intensive scenarios (saturated nginx), up to ∼11%. I. I NTRODUCTION from a mere ‘side effect' caused by ever-increasing DRAM density to a real security vulnerability which can be exploited ∗The work on this submission has been performed while Koen Koning was employed at the Vrije Universiteit Amsterdam. on a wide variety of systems. Unfortunately, existing de- fenses have proven to be impractical (e.g., requiring complex hardware or software changes) and/or ineffective (e.g., only stopping specific Rowhammer variants). Research has shown that Rowhammer is a threat even on Error-Correcting Code (ECC) memory implemented by the memory controller [10], which is heavily deployed on server platforms. In this paper, we show ECC memory is not a lost cause in the fight against Rowhammer. To this end, we present Copy-on-Flip (CoF), a practical software mitigation which hardens ECC memory against Rowhammer. Our design takes advantage of ECC's ability to detect vulnerable pages, allowing our mitigation to render these unavailable to the attacker with a combination of memory migration and offlining1. Rowhammer. The research community has devised an abun- dance of Rowhammer exploits which compromise a wide array of different systems, including native environments on both x86 [16], [17], [22], [48], [50] and ARM [15], [57], virtualized environments [46], browser sandboxes via JavaScript [8], [13], [18] and networked systems [33], [51]. In addition, research has shown that the Rowhammer vulnerability can also be used as a powerful side channel for information leakage [30]. Early on, it was believed that Rowhammer attacks could be mitigated by deploying Error-Correcting Code (ECC) mem- ory [25]. Typical ECC memory follows the SECDED scheme: single error correction, double error detection. Thus, it is able to correct single-bit errors per code word, by adding control bits to each chunk of data bits. This significantly hinders the effect Rowhammer can have, since bit flips are often automatically fixed. In the worst case, two or more bit flips in a word crash the system with high probability, effectively turning Rowhammer into a mere denial-of-service (DoS) attack vector. However, research by Cojocar et al. [10] shows that exploiting Rowhammer deterministically on ECC memory is attainable, by carefully combining three or more specific bit flips in the same word, effectively bypassing the ECC function. The most critical step for an attacker to exploit Rowham- mer on ECC-capable memory is the so-called templating phase, in which an attacker has to find vulnerable memory areas which are susceptible to bit flips at the desired offsets. In ECCploit-like attacks [10], the attacker has to be very careful to inject only single-bit errors in a code word in any given 1We use the term memory (or page) offlining as used in the Linux kernel source and by hardware vendors to refer to those pages which are poisoned and rendered unavailable to the system [19], [26]. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24337 www.ndss-symposium.org templating attempt (i.e., correctable errors), in order to avoid system crashes due to detectable but uncorrectable errors. While many other mitigations beyond ECC have been proposed by both industry and academia, these all fall short in terms of comprehensiveness and practicality. Most of the mitigations have either been hardware-based [5], [23], [37], [44], [47], [61] or software-based [6], [21], [29], [43], [58], [63], with only a few proposals of hybrid defenses which involve cooperation between hardware and software compo- nents [3], [9]. Both approaches have pitfalls which make them ineffective at defending from Rowhammer attacks in realistic settings. New hardware-only defenses are impossible to deploy on commodity systems and are associated with higher costs to implement tracking algorithms. On top of that, hardware-based defenses have also been shown to be vulnerable to targeted attacks, with fixes unavailable for years to come [13], [16], [22]. In contrast, while software-only defenses are easier to deploy, comprehensive ones [29] require complex software changes and incur high performance/memory overhead. Copy-on-Flip. In this paper, our key observation is that, while ECC by itself is insufficient to protect against Rowhammer attacks, it may still serve as an advance warning system to detect that an attack is in progress and trigger strong mitigating action in software to stop it in its tracks. In particular, with Copy-on-Flip (CoF), we augment the operating system (OS) kernel to detect templating attempts causing (correctable) ECC errors and safeguard the data in that area by migrating it out of harm's way before the attacker has caused a potentially dangerous number of corrections in an ECC code word. To prevent attackers from reusing partially templated memory post migration, we also immediately offline the vulnerable areas of memory at migration time. Our defense prevents templating of ECC memory, thereby removing the ability to mount a targeted attack. In particular, CoF fully restores the security guarantees that ECC memory was assumed to have prior to ECCploit [10] (but did not) and reduces the Rowhammer threat to that of a DoS attack at worst. The key challenge to implement our design is the need to support migration for memory that may be used by the attacker for templating purposes. This includes user memory (the common target in existing exploits), but also kernel memory such as slabs and page tables that may be allocated by the kernel on the attacker's behalf (a target in more advanced exploits). Unfortunately, while user memory is relatively easy to migrate, kernel memory is normally not migratable on commodity systems. In particular, the memory management of the kernel itself typically relies on physical addressing, so memory cannot be transparently remapped through virtual address translation. To address this challenge, we propose a simple design based on removing the kernel's strict depen- dency on physical addressing. We show our design is practical with a Linux-based CoF prototype of only around 600 LoC. While simple and amenable to further extensions, we show our design can support migration of all the relevant user and kernel pages, resulting in a quantifiable attack surface reduction of over 95%. Moreover, CoF incurs almost negligible runtime overhead for most programs (0.2% geomean for SPEC CPU2017 and 1.1% for browsers), with a worst case of∼11% overhead for I/O intensive workloads on saturated systems. Contributions. To summarize, our contributions are: 1) The design and open source implementation 2 of Copy-on-Flip (CoF), a new software mitigation to harden ECC memory and provide low-overhead pro- tection from Rowhammer attacks. 2) An analysis of the spatial distribution of Rowhammer induced bit flips using state-of-the-art Rowhammer fuzzer data [22]. This analysis helped shape our design and determine its memory overhead guaran- tees, but the results are broadly applicable to other mitigations. 3) An evaluation of our CoF prototype, showing its practicality and comprehensiveness, running a variety of workloads including web browsers, showing little to no runtime overhead. II. B ACKGROUND In this section we describe several concepts crucial to understanding the remainder of the paper: the Rowhammer vulnerability, and how to apply it on ECC implemented by the memory controller. The Rowhammer vulnerability allows attackers to flip a bit in a row of memory that they do not own by repeatedly activating (“hammering”) one or more neighboring rows [25]. Attackers do not know in advance which, if any, bit will flip in the victim row, but once they find a bit that flips, they can flip the same bit again with high probability. Besides the number of activations, the occurrence of bit flips also depends on the data (if the cells in the neighboring row contain the same value, bit flips are unlikely), and on the specific activation patterns. To enforce the desired activation patterns, an attacker needs some knowledge of memory addressing. From the CPU perspective, only a single physical address space is visible, abstracting away the underlying DRAM geometry. On top of this, software only sees its own virtual address space , where virtual addresses are dynamically mapped to physical page frames (e.g., 4 KB) by the operating system. While these levels of abstraction complicate Rowhammer attacks, an attacker can massage the memory mappings in such a way that the underlying physical memory is hammerable via virtual memory. While the suitable activation patterns to trigger Rowhammer bit flips depend on the target system and the memory modules used, even the latest memory modules have been shown to be vulnerable [13], [16], [17], [22]. In general, modern Rowhammer attacks (especially ECC-aware ones) consist of three steps: 1) Memory templating: Find vulnerable locations (where bits flip) in memory allocated by the attacker. 2) Memory massaging: Manipulate the memory layout so that sensitive data is now stored at a vulnerable location. 3) Hammering: Perform targeted, rapid, and uncached memory accesses to flip a bit in the sensitive data. Existing defenses are unable to prevent Rowhammer at- tacks in today's memory chips, are expensive, or result in false positives. In particular, the TRR Rowhammer defense [23], 2https://github.com/vusec/Copy-on-Flip 2",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Andrea Di Dio",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Vrije Universiteit Amsterdam"
+      ],
+      "affiliation_source": "author_node",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 1,
+      "name": "Koen Koning",
+      "email": "koen.koning@intel.com",
+      "orcid": "",
+      "affiliations": [
+        "Intel"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 2,
+      "name": "Herbert Bos",
+      "email": "herbertb@cs.vu.nl",
+      "orcid": "",
+      "affiliations": [
+        "Vrije Universiteit Amsterdam"
+      ],
+      "affiliation_source": "author_node",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 3,
+      "name": "Cristiano Giuffrida",
+      "email": "giuffrida@cs.vu.nl",
+      "orcid": "",
+      "affiliations": [
+        "Vrije Universiteit Amsterdam"
+      ],
+      "affiliation_source": "author_node",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Andrea Di Dio"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "Vrije Universiteit Amsterdam"
+  ],
+  "first_affiliation": "Vrije Universiteit Amsterdam",
+  "participating_affiliations": [
+    "Vrije Universiteit Amsterdam",
+    "Intel"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Andrea Di Dio",
+      "affiliation": "Vrije Universiteit Amsterdam",
+      "source": "author_node"
+    },
+    {
+      "author": "Koen Koning",
+      "affiliation": "Intel",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Herbert Bos",
+      "affiliation": "Vrije Universiteit Amsterdam",
+      "source": "author_node"
+    },
+    {
+      "author": "Cristiano Giuffrida",
+      "affiliation": "Vrije Universiteit Amsterdam",
+      "source": "author_node"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2023"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Andrea Di Dio",
+        "order": 0,
+        "email": "",
+        "affiliations": [
+          "Vrije Universiteit Amsterdam"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Koen Koning",
+        "order": 1,
+        "email": "koen.koning@intel.com",
+        "affiliations": [
+          "Vrije Universiteit Amsterdam"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Herbert Bos",
+        "order": 2,
+        "email": "herbertb@cs.vu.nl",
+        "affiliations": [
+          "Vrije Universiteit Amsterdam"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Cristiano Giuffrida",
+        "order": 3,
+        "email": "giuffrida@cs.vu.nl",
+        "affiliations": [
+          "Vrije Universiteit Amsterdam"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Copy-on-Flip: Hardening ECC Memory"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Against Rowhammer Attacks"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Andrea Di Dio"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Vrije Universiteit Amsterdam"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "a.di.dio@vu.nl"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Koen Koning"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:6",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Intel∗"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:7",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "koen.koning@intel.com"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:8",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Herbert Bos"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:9",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Vrije Universiteit Amsterdam"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:10",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "herbertb@cs.vu.nl"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:11",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Cristiano Giuffrida"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:12",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Vrije Universiteit Amsterdam"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:13",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "giuffrida@cs.vu.nl"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          114.29,
+          719.701,
+          480.118,
+          743.611
+        ],
+        "font_size": 23.91,
+        "raw_text": "Copy-on-Flip: Hardening ECC Memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          166.546,
+          691.806,
+          435.537,
+          715.716
+        ],
+        "font_size": 23.91,
+        "raw_text": "Against Rowhammer Attacks",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          88.496,
+          640.0,
+          152.606,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Andrea Di Dio",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          213.447,
+          640.0,
+          267.694,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Koen Koning",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          337.242,
+          640.0,
+          391.489,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Herbert Bos",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          455.642,
+          640.0,
+          549.341,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Cristiano Giuffrida",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          250.052,
+          631.138,
+          258.022,
+          639.108
+        ],
+        "font_size": 7.97,
+        "raw_text": "∗",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          61.868,
+          627.523,
+          187.397,
+          637.486
+        ],
+        "font_size": 9.963,
+        "raw_text": "Vrije Universiteit Amsterdam",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          231.791,
+          627.523,
+          254.207,
+          637.486
+        ],
+        "font_size": 9.963,
+        "raw_text": "Intel",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          304.131,
+          627.523,
+          429.66,
+          637.486
+        ],
+        "font_size": 9.963,
+        "raw_text": "Vrije Universiteit Amsterdam",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          437.616,
+          627.523,
+          563.145,
+          637.486
+        ],
+        "font_size": 9.963,
+        "raw_text": "Vrije Universiteit Amsterdam",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          92.523,
+          615.194,
+          155.287,
+          625.157
+        ],
+        "font_size": 9.963,
+        "raw_text": "a.di.dio@vu.nl",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          195.353,
+          615.194,
+          289.5,
+          625.157
+        ],
+        "font_size": 9.963,
+        "raw_text": "koen.koning@intel.com",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          327.737,
+          615.194,
+          403.951,
+          625.157
+        ],
+        "font_size": 9.963,
+        "raw_text": "herbertb@cs.vu.nl",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          460.515,
+          615.194,
+          541.212,
+          625.157
+        ],
+        "font_size": 9.963,
+        "raw_text": "giuffrida@cs.vu.nl",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          62.359,
+          569.304,
+          290.984,
+          578.27
+        ],
+        "font_size": 8.966,
+        "raw_text": "Abstract -Despite nearly decade-long mitigation efforts in",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          569.304,
+          574.538,
+          579.267
+        ],
+        "font_size": 9.963,
+        "raw_text": "on a wide variety of systems. Unfortunately, existing de-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          559.341,
+          287.017,
+          568.307
+        ],
+        "font_size": 8.966,
+        "raw_text": "academia and industry, the community is yet to find a prac-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          558.345,
+          592.47,
+          568.308
+        ],
+        "font_size": 9.963,
+        "raw_text": "fenses have proven to be impractical (e.g., requiring complex",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          549.379,
+          291.052,
+          558.345
+        ],
+        "font_size": 8.966,
+        "raw_text": "tical solution to the Rowhammer vulnerability. Comprehensive",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          547.386,
+          587.987,
+          557.349
+        ],
+        "font_size": 9.963,
+        "raw_text": "hardware or software changes) and/or ineffective (e.g., only",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          539.416,
+          278.947,
+          548.382
+        ],
+        "font_size": 8.966,
+        "raw_text": "software mitigations require complex changes to commodity",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          536.427,
+          574.538,
+          546.39
+        ],
+        "font_size": 9.963,
+        "raw_text": "stopping specific Rowhammer variants). Research has shown",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          529.453,
+          295.087,
+          538.419
+        ],
+        "font_size": 8.966,
+        "raw_text": "systems, yielding significant run-time overhead and deterring",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          525.468,
+          570.055,
+          535.431
+        ],
+        "font_size": 9.963,
+        "raw_text": "that Rowhammer is a threat even on Error-Correcting Code",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          519.491,
+          291.052,
+          528.457
+        ],
+        "font_size": 8.966,
+        "raw_text": "practical adoption. Hardware mitigations, on the other hand,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          514.509,
+          565.571,
+          524.472
+        ],
+        "font_size": 9.963,
+        "raw_text": "(ECC) memory implemented by the memory controller [10],",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          509.528,
+          311.226,
+          518.494
+        ],
+        "font_size": 8.966,
+        "raw_text": "have generally grown more robust and efficient, but are difficult",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          503.551,
+          592.47,
+          513.514
+        ],
+        "font_size": 9.963,
+        "raw_text": "which is heavily deployed on server platforms. In this paper,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          499.565,
+          282.982,
+          508.531
+        ],
+        "font_size": 8.966,
+        "raw_text": "to deploy on commodity systems. Until recently, ECC memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          492.592,
+          583.504,
+          502.555
+        ],
+        "font_size": 9.963,
+        "raw_text": "we show ECC memory is not a lost cause in the fight against",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          489.603,
+          274.912,
+          498.569
+        ],
+        "font_size": 8.966,
+        "raw_text": "implemented by the memory controller on server platforms",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          481.633,
+          561.088,
+          491.596
+        ],
+        "font_size": 9.963,
+        "raw_text": "Rowhammer. To this end, we present Copy-on-Flip (CoF),",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          479.64,
+          307.191,
+          488.606
+        ],
+        "font_size": 8.966,
+        "raw_text": "seemed to provide the best of both worlds: use hardware features",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          470.674,
+          570.055,
+          480.637
+        ],
+        "font_size": 9.963,
+        "raw_text": "a practical software mitigation which hardens ECC memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          469.678,
+          282.982,
+          478.644
+        ],
+        "font_size": 8.966,
+        "raw_text": "already on commodity systems to efficiently turn Rowhammer",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          459.715,
+          315.261,
+          468.681
+        ],
+        "font_size": 8.966,
+        "raw_text": "into a denial-of-service attack vector. Unfortunately, researchers",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          459.715,
+          561.088,
+          469.678
+        ],
+        "font_size": 9.963,
+        "raw_text": "against Rowhammer. Our design takes advantage of ECC's",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          449.752,
+          307.191,
+          458.718
+        ],
+        "font_size": 8.966,
+        "raw_text": "have recently shown that attackers can perform one-bit-at-a-time",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          448.756,
+          596.954,
+          458.719
+        ],
+        "font_size": 9.963,
+        "raw_text": "ability to detect vulnerable pages, allowing our mitigation to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          439.79,
+          274.912,
+          448.756
+        ],
+        "font_size": 8.966,
+        "raw_text": "memory templating and mount ECC-aware Rowhammer attacks.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          437.797,
+          596.954,
+          447.76
+        ],
+        "font_size": 9.963,
+        "raw_text": "render these unavailable to the attacker with a combination of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          449.238,
+          430.454,
+          456.212,
+          437.428
+        ],
+        "font_size": 6.974,
+        "raw_text": "1",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          426.838,
+          369.139,
+          436.801
+        ],
+        "font_size": 9.963,
+        "raw_text": "memory migration and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          398.329,
+          426.838,
+          463.186,
+          436.801
+        ],
+        "font_size": 9.963,
+        "raw_text": "offlining .",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.355,
+          423.285,
+          273.169,
+          432.251
+        ],
+        "font_size": 8.966,
+        "raw_text": "In this paper, we reconsider ECC memory as an avenue",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          413.322,
+          295.087,
+          422.288
+        ],
+        "font_size": 8.966,
+        "raw_text": "for Rowhammer mitigations and show that not all hope is lost.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          403.36,
+          307.191,
+          412.326
+        ],
+        "font_size": 8.966,
+        "raw_text": "In particular, we show that it is feasible to devise a software-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          401.802,
+          511.773,
+          411.765
+        ],
+        "font_size": 9.963,
+        "raw_text": "Rowhammer. The research community has devised an abun-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          393.397,
+          303.156,
+          402.363
+        ],
+        "font_size": 8.966,
+        "raw_text": "based design to both efficiently and effectively harden commod-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          390.843,
+          574.538,
+          400.806
+        ],
+        "font_size": 9.963,
+        "raw_text": "dance of Rowhammer exploits which compromise a wide array",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          383.435,
+          266.843,
+          392.401
+        ],
+        "font_size": 8.966,
+        "raw_text": "ity ECC memory against ECC-aware Rowhammer attacks. To",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          379.884,
+          583.504,
+          389.847
+        ],
+        "font_size": 9.963,
+        "raw_text": "of different systems, including native environments on both",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          373.472,
+          282.982,
+          382.438
+        ],
+        "font_size": 8.966,
+        "raw_text": "support this claim, we present Copy-on-Flip (CoF), an ECC-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          368.926,
+          605.92,
+          378.889
+        ],
+        "font_size": 9.963,
+        "raw_text": "x86 [16], [17], [22], [48], [50] and ARM [15], [57], virtualized",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          363.509,
+          291.052,
+          372.475
+        ],
+        "font_size": 8.966,
+        "raw_text": "based software mitigation which uses a combination of memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          357.967,
+          596.954,
+          367.93
+        ],
+        "font_size": 9.963,
+        "raw_text": "environments [46], browser sandboxes via JavaScript [8], [13],",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          353.547,
+          85.273,
+          362.513
+        ],
+        "font_size": 8.966,
+        "raw_text": "migration and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          87.427,
+          353.547,
+          257.297,
+          362.513
+        ],
+        "font_size": 8.966,
+        "raw_text": "offlining to stop Rowhammer attacks on commodity",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          347.008,
+          587.987,
+          356.971
+        ],
+        "font_size": 9.963,
+        "raw_text": "[18] and networked systems [33], [51]. In addition, research",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          343.584,
+          295.087,
+          352.55
+        ],
+        "font_size": 8.966,
+        "raw_text": "server systems in a practical way. The key idea is to let the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          336.049,
+          583.504,
+          346.012
+        ],
+        "font_size": 9.963,
+        "raw_text": "has shown that the Rowhammer vulnerability can also be used",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          333.621,
+          295.087,
+          342.587
+        ],
+        "font_size": 8.966,
+        "raw_text": "operating system interpose on all the error correction events",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          325.09,
+          570.055,
+          335.053
+        ],
+        "font_size": 9.963,
+        "raw_text": "as a powerful side channel for information leakage [30].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          323.659,
+          299.122,
+          332.625
+        ],
+        "font_size": 8.966,
+        "raw_text": "and offline the vulnerable victim page as soon as the attacker",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          313.696,
+          291.052,
+          322.662
+        ],
+        "font_size": 8.966,
+        "raw_text": "has successfully templated a sufficient number of bit flips-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          333.393,
+          308.61,
+          575.484,
+          318.573
+        ],
+        "font_size": 9.963,
+        "raw_text": "Early on, it was believed that Rowhammer attacks could",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          303.733,
+          291.052,
+          312.699
+        ],
+        "font_size": 8.966,
+        "raw_text": "while transparently migrating the victim data to a new page.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          297.651,
+          579.021,
+          307.614
+        ],
+        "font_size": 9.963,
+        "raw_text": "be mitigated by deploying Error-Correcting Code (ECC) mem-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          293.771,
+          270.877,
+          302.737
+        ],
+        "font_size": 8.966,
+        "raw_text": "We present a CoF prototype on Linux, where we also show",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          286.692,
+          565.571,
+          296.655
+        ],
+        "font_size": 9.963,
+        "raw_text": "ory [25]. Typical ECC memory follows the SECDED scheme:",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          283.808,
+          282.982,
+          292.774
+        ],
+        "font_size": 8.966,
+        "raw_text": "it is feasible to operate simple memory management changes",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          275.733,
+          529.706,
+          285.696
+        ],
+        "font_size": 9.963,
+        "raw_text": "single error correction, double error detection",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          505.776,
+          275.733,
+          586.473,
+          285.696
+        ],
+        "font_size": 9.963,
+        "raw_text": ". Thus, it is able",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          273.845,
+          291.052,
+          282.811
+        ],
+        "font_size": 8.966,
+        "raw_text": "to support migration for the relevant user and kernel memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          264.774,
+          592.47,
+          274.737
+        ],
+        "font_size": 9.963,
+        "raw_text": "to correct single-bit errors per code word, by adding control",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          263.883,
+          282.982,
+          272.849
+        ],
+        "font_size": 8.966,
+        "raw_text": "pages. Our evaluation shows CoF incurs low performance and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          253.92,
+          287.017,
+          262.886
+        ],
+        "font_size": 8.966,
+        "raw_text": "memory overhead, while significantly reducing the Rowhammer",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          253.815,
+          583.504,
+          263.778
+        ],
+        "font_size": 9.963,
+        "raw_text": "bits to each chunk of data bits. This significantly hinders",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          243.958,
+          282.982,
+          252.924
+        ],
+        "font_size": 8.966,
+        "raw_text": "attack surface. On typical benchmarks such as SPEC CPU2017",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          242.856,
+          570.055,
+          252.819
+        ],
+        "font_size": 9.963,
+        "raw_text": "the effect Rowhammer can have, since bit flips are often",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          233.995,
+          178.075,
+          242.961
+        ],
+        "font_size": 8.966,
+        "raw_text": "and Google Chrome, CoF reports a <",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          204.725,
+          233.995,
+          293.492,
+          242.961
+        ],
+        "font_size": 8.966,
+        "raw_text": "1.5% overhead, and, on",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          231.897,
+          614.886,
+          241.86
+        ],
+        "font_size": 9.963,
+        "raw_text": "automatically fixed. In the worst case, two or more bit flips in a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          224.032,
+          274.912,
+          232.998
+        ],
+        "font_size": 8.966,
+        "raw_text": "extreme I/O-intensive scenarios (saturated nginx), up to ∼",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          278.804,
+          224.032,
+          294.944,
+          232.998
+        ],
+        "font_size": 8.966,
+        "raw_text": "11%.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          220.939,
+          605.92,
+          230.902
+        ],
+        "font_size": 9.963,
+        "raw_text": "word crash the system with high probability, effectively turning",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          209.98,
+          587.987,
+          219.943
+        ],
+        "font_size": 9.963,
+        "raw_text": "Rowhammer into a mere denial-of-service (DoS) attack vector.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          199.021,
+          596.954,
+          208.984
+        ],
+        "font_size": 9.963,
+        "raw_text": "However, research by Cojocar et al. [10] shows that exploiting",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          133.647,
+          197.902,
+          151.58,
+          207.865
+        ],
+        "font_size": 9.963,
+        "raw_text": "I. I",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          133.647,
+          197.902,
+          173.099,
+          205.872
+        ],
+        "font_size": 7.97,
+        "raw_text": "NTRODUCTION",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          188.062,
+          502.807,
+          198.025
+        ],
+        "font_size": 9.963,
+        "raw_text": "Rowhammer deterministically on ECC memory is",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          519.314,
+          188.062,
+          568.629,
+          198.025
+        ],
+        "font_size": 9.963,
+        "raw_text": "attainable,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.355,
+          180.402,
+          309.929,
+          190.365
+        ],
+        "font_size": 9.963,
+        "raw_text": "Since its discovery in 2014, Rowhammer [25] has evolved",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          177.103,
+          596.954,
+          187.066
+        ],
+        "font_size": 9.963,
+        "raw_text": "by carefully combining three or more specific bit flips in the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          169.443,
+          300.017,
+          179.406
+        ],
+        "font_size": 9.963,
+        "raw_text": "from a mere ‘side effect' caused by ever-increasing DRAM",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          166.144,
+          543.156,
+          176.107
+        ],
+        "font_size": 9.963,
+        "raw_text": "same word, effectively bypassing the ECC function.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          158.484,
+          331.399,
+          168.447
+        ],
+        "font_size": 9.963,
+        "raw_text": "density to a real security vulnerability which can be exploited",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          333.393,
+          149.664,
+          588.934,
+          159.627
+        ],
+        "font_size": 9.963,
+        "raw_text": "The most critical step for an attacker to exploit Rowham-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          56.93,
+          141.56,
+          64.9,
+          149.53
+        ],
+        "font_size": 7.97,
+        "raw_text": "∗",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          61.662,
+          138.747,
+          305.547,
+          146.717
+        ],
+        "font_size": 7.97,
+        "raw_text": "The work on this submission has been performed while Koen Koning was",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          138.705,
+          507.29,
+          148.668
+        ],
+        "font_size": 9.963,
+        "raw_text": "mer on ECC-capable memory is the so-called templating",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b102",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          129.781,
+          210.354,
+          137.751
+        ],
+        "font_size": 7.97,
+        "raw_text": "employed at the Vrije Universiteit Amsterdam.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b103",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          127.746,
+          574.538,
+          137.709
+        ],
+        "font_size": 9.963,
+        "raw_text": "phase, in which an attacker has to find vulnerable memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b104",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          116.787,
+          619.369,
+          126.75
+        ],
+        "font_size": 9.963,
+        "raw_text": "areas which are susceptible to bit flips at the desired offsets. In",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b105",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          105.828,
+          601.437,
+          115.791
+        ],
+        "font_size": 9.963,
+        "raw_text": "ECCploit-like attacks [10], the attacker has to be very careful",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b106",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          94.869,
+          587.987,
+          104.832
+        ],
+        "font_size": 9.963,
+        "raw_text": "to inject only single-bit errors in a code word in any given",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b107",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.96,
+          94.551,
+          267.739,
+          102.521
+        ],
+        "font_size": 7.97,
+        "raw_text": "Network and Distributed System Security (NDSS) Symposium 2023",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b108",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.96,
+          85.585,
+          213.941,
+          93.555
+        ],
+        "font_size": 7.97,
+        "raw_text": "27 February - 3 March 2023, San Diego, CA, USA",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b109",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          326.967,
+          79.293,
+          332.945,
+          85.271
+        ],
+        "font_size": 5.978,
+        "raw_text": "1",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b110",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.96,
+          76.618,
+          113.518,
+          84.588
+        ],
+        "font_size": 7.97,
+        "raw_text": "ISBN 1-891562-83-5",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b111",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          330.454,
+          76.481,
+          581.512,
+          84.451
+        ],
+        "font_size": 7.97,
+        "raw_text": "We use the term memory (or page) offlining as used in the Linux kernel",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b112",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.96,
+          67.652,
+          203.181,
+          75.622
+        ],
+        "font_size": 7.97,
+        "raw_text": "https://dx.doi.org/10.14722/ndss.2023.24337",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b113",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          67.514,
+          580.815,
+          75.484
+        ],
+        "font_size": 7.97,
+        "raw_text": "source and by hardware vendors to refer to those pages which are poisoned",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b114",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.96,
+          58.685,
+          127.864,
+          66.655
+        ],
+        "font_size": 7.97,
+        "raw_text": "www.ndss-symposium.org",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b115",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          58.548,
+          498.324,
+          66.518
+        ],
+        "font_size": 7.97,
+        "raw_text": "and rendered unavailable to the system [19], [26].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Despite nearly decade-long mitigation efforts in academia and industry, the community is yet to find a prac- tical solution to the Rowhammer vulnerability. Comprehensive software mitigations require complex changes to commodity systems, yielding significant run-time overhead and deterring practical adoption. Hardware mitigations, on the other hand, have generally grown more robust and efficient, but are difficult to deploy on commodity systems. Until recently, ECC memory implemented by the memory controller on server platforms seemed to provide the best of both worlds: use hardware features already on commodity systems to efficiently turn Rowhammer into a denial-of-service attack vector. Unfortunately, researchers have recently shown that attackers can perform one-bit-at-a-time memory templating and mount ECC-aware Rowhammer attacks. In this paper, we reconsider ECC memory as an avenue for Rowhammer mitigations and show that not all hope is lost. In particular, we show that it is feasible to devise a software- based design to both efficiently and effectively harden commod- ity ECC memory against ECC-aware Rowhammer attacks. To support this claim, we present Copy-on-Flip (CoF), an ECC- based software mitigation which uses a combination of memory migration and offlining to stop Rowhammer attacks on commodity server systems in a practical way. The key idea is to let the operating system interpose on all the error correction events and offline the vulnerable victim page as soon as the attacker has successfully templated a sufficient number of bit flips- while transparently migrating the victim data to a new page. We present a CoF prototype on Linux, where we also show it is feasible to operate simple memory management changes to support migration for the relevant user and kernel memory pages. Our evaluation shows CoF incurs low performance and memory overhead, while significantly reducing the Rowhammer attack surface. On typical benchmarks such as SPEC CPU2017 and Google Chrome, CoF reports a <1.5% overhead, and, on extreme I/O-intensive scenarios (saturated nginx), up to ∼11%. I. I NTRODUCTION from a mere ‘side effect' caused by ever-increasing DRAM density to a real security vulnerability which can be exploited ∗The work on this submission has been performed while Koen Koning was employed at the Vrije Universiteit Amsterdam. on a wide variety of systems. Unfortunately, existing de- fenses have proven to be impractical (e.g., requiring complex hardware or software changes) and/or ineffective (e.g., only stopping specific Rowhammer variants). Research has shown that Rowhammer is a threat even on Error-Correcting Code (ECC) memory implemented by the memory controller [10], which is heavily deployed on server platforms. In this paper, we show ECC memory is not a lost cause in the fight against Rowhammer. To this end, we present Copy-on-Flip (CoF), a practical software mitigation which hardens ECC memory against Rowhammer. Our design takes advantage of ECC's ability to detect vulnerable pages, allowing our mitigation to render these unavailable to the attacker with a combination of memory migration and offlining1. Rowhammer. The research community has devised an abun- dance of Rowhammer exploits which compromise a wide array of different systems, including native environments on both x86 [16], [17], [22], [48], [50] and ARM [15], [57], virtualized environments [46], browser sandboxes via JavaScript [8], [13], [18] and networked systems [33], [51]. In addition, research has shown that the Rowhammer vulnerability can also be used as a powerful side channel for information leakage [30]. Early on, it was believed that Rowhammer attacks could be mitigated by deploying Error-Correcting Code (ECC) mem- ory [25]. Typical ECC memory follows the SECDED scheme: single error correction, double error detection. Thus, it is able to correct single-bit errors per code word, by adding control bits to each chunk of data bits. This significantly hinders the effect Rowhammer can have, since bit flips are often automatically fixed. In the worst case, two or more bit flips in a word crash the system with high probability, effectively turning Rowhammer into a mere denial-of-service (DoS) attack vector. However, research by Cojocar et al. [10] shows that exploiting Rowhammer deterministically on ECC memory is attainable, by carefully combining three or more specific bit flips in the same word, effectively bypassing the ECC function. The most critical step for an attacker to exploit Rowham- mer on ECC-capable memory is the so-called templating phase, in which an attacker has to find vulnerable memory areas which are susceptible to bit flips at the desired offsets. In ECCploit-like attacks [10], the attacker has to be very careful to inject only single-bit errors in a code word in any given 1We use the term memory (or page) offlining as used in the Linux kernel source and by hardware vendors to refer to those pages which are poisoned and rendered unavailable to the system [19], [26]. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24337 www.ndss-symposium.org templating attempt (i.e., correctable errors), in order to avoid system crashes due to detectable but uncorrectable errors. While many other mitigations beyond ECC have been proposed by both industry and academia, these all fall short in terms of comprehensiveness and practicality. Most of the mitigations have either been hardware-based [5], [23], [37], [44], [47], [61] or software-based [6], [21], [29], [43], [58], [63], with only a few proposals of hybrid defenses which involve cooperation between hardware and software compo- nents [3], [9]. Both approaches have pitfalls which make them ineffective at defending from Rowhammer attacks in realistic settings. New hardware-only defenses are impossible to deploy on commodity systems and are associated with higher costs to implement tracking algorithms. On top of that, hardware-based defenses have also been shown to be vulnerable to targeted attacks, with fixes unavailable for years to come [13], [16], [22]. In contrast, while software-only defenses are easier to deploy, comprehensive ones [29] require complex software changes and incur high performance/memory overhead. Copy-on-Flip. In this paper, our key observation is that, while ECC by itself is insufficient to protect against Rowhammer attacks, it may still serve as an advance warning system to detect that an attack is in progress and trigger strong mitigating action in software to stop it in its tracks. In particular, with Copy-on-Flip (CoF), we augment the operating system (OS) kernel to detect templating attempts causing (correctable) ECC errors and safeguard the data in that area by migrating it out of harm's way before the attacker has caused a potentially dangerous number of corrections in an ECC code word. To prevent attackers from reusing partially templated memory post migration, we also immediately offline the vulnerable areas of memory at migration time. Our defense prevents templating of ECC memory, thereby removing the ability to mount a targeted attack. In particular, CoF fully restores the security guarantees that ECC memory was assumed to have prior to ECCploit [10] (but did not) and reduces the Rowhammer threat to that of a DoS attack at worst. The key challenge to implement our design is the need to support migration for memory that may be used by the attacker for templating purposes. This includes user memory (the common target in existing exploits), but also kernel memory such as slabs and page tables that may be allocated by the kernel on the attacker's behalf (a target in more advanced exploits). Unfortunately, while user memory is relatively easy to migrate, kernel memory is normally not migratable on commodity systems. In particular, the memory management of the kernel itself typically relies on physical addressing, so memory cannot be transparently remapped through virtual address translation. To address this challenge, we propose a simple design based on removing the kernel's strict depen- dency on physical addressing. We show our design is practical with a Linux-based CoF prototype of only around 600 LoC. While simple and amenable to further extensions, we show our design can support migration of all the relevant user and kernel pages, resulting in a quantifiable attack surface reduction of over 95%. Moreover, CoF incurs almost negligible runtime overhead for most programs (0.2% geomean for SPEC CPU2017 and 1.1% for browsers), with a worst case of∼11% overhead for I/O intensive workloads on saturated systems. Contributions. To summarize, our contributions are: 1) The design and open source implementation 2 of Copy-on-Flip (CoF), a new software mitigation to harden ECC memory and provide low-overhead pro- tection from Rowhammer attacks. 2) An analysis of the spatial distribution of Rowhammer induced bit flips using state-of-the-art Rowhammer fuzzer data [22]. This analysis helped shape our design and determine its memory overhead guaran- tees, but the results are broadly applicable to other mitigations. 3) An evaluation of our CoF prototype, showing its practicality and comprehensiveness, running a variety of workloads including web browsers, showing little to no runtime overhead. II. B ACKGROUND In this section we describe several concepts crucial to understanding the remainder of the paper: the Rowhammer vulnerability, and how to apply it on ECC implemented by the memory controller. The Rowhammer vulnerability allows attackers to flip a bit in a row of memory that they do not own by repeatedly activating (“hammering”) one or more neighboring rows [25]. Attackers do not know in advance which, if any, bit will flip in the victim row, but once they find a bit that flips, they can flip the same bit again with high probability. Besides the number of activations, the occurrence of bit flips also depends on the data (if the cells in the neighboring row contain the same value, bit flips are unlikely), and on the specific activation patterns. To enforce the desired activation patterns, an attacker needs some knowledge of memory addressing. From the CPU perspective, only a single physical address space is visible, abstracting away the underlying DRAM geometry. On top of this, software only sees its own virtual address space , where virtual addresses are dynamically mapped to physical page frames (e.g., 4 KB) by the operating system. While these levels of abstraction complicate Rowhammer attacks, an attacker can massage the memory mappings in such a way that the underlying physical memory is hammerable via virtual memory. While the suitable activation patterns to trigger Rowhammer bit flips depend on the target system and the memory modules used, even the latest memory modules have been shown to be vulnerable [13], [16], [17], [22]. In general, modern Rowhammer attacks (especially ECC-aware ones) consist of three steps: 1) Memory templating: Find vulnerable locations (where bits flip) in memory allocated by the attacker. 2) Memory massaging: Manipulate the memory layout so that sensitive data is now stored at a vulnerable location. 3) Hammering: Perform targeted, rapid, and uncached memory accesses to flip a bit in the sensitive data. Existing defenses are unable to prevent Rowhammer at- tacks in today's memory chips, are expensive, or result in false positives. In particular, the TRR Rowhammer defense [23], 2https://github.com/vusec/Copy-on-Flip 2",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "Producer": "pdfTeX-1.40.20",
+          "Creator": "TeX",
+          "CreationDate": "D:20230116170302+01'00'",
+          "ModDate": "D:20230116170302+01'00'",
+          "Trapped": "/False",
+          "PTEX.Fullbanner": "This is pdfTeX, Version 3.14159265-2.6-1.40.20 (TeX Live 2019/Debian) kpathsea version 6.3.1"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/copy-on-flip-hardening-ecc-memory-against-rowhammer-attacks/",
+        "field": "author_affiliation_relation",
+        "author": "Andrea Di Dio",
+        "affiliations": [
+          "Vrije Universiteit Amsterdam"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/copy-on-flip-hardening-ecc-memory-against-rowhammer-attacks/",
+        "field": "author_affiliation_relation",
+        "author": "Koen Koning",
+        "affiliations": [
+          "Intel"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/copy-on-flip-hardening-ecc-memory-against-rowhammer-attacks/",
+        "field": "author_affiliation_relation",
+        "author": "Herbert Bos",
+        "affiliations": [
+          "Vrije Universiteit Amsterdam"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/copy-on-flip-hardening-ecc-memory-against-rowhammer-attacks/",
+        "field": "author_affiliation_relation",
+        "author": "Cristiano Giuffrida",
+        "affiliations": [
+          "Vrije Universiteit Amsterdam"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks"
+        },
+        {
+          "source": "selected",
+          "value": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2023"
+        },
+        {
+          "source": "selected",
+          "value": "2023"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Despite nearly decade-long mitigation efforts in academia and industry, the community is yet to find a prac- tical solution to the Rowhammer vulnerability. Comprehensive software mitigations require complex changes to commodity systems, yielding significant run-time overhead and deterring practical adoption. Hardware mitigations, on the other hand, have generally grown more robust and efficient, but are difficult to deploy on commodity systems. Until recently, ECC memory implemented by the memory controller on server platforms seemed to provide the best of both worlds: use hardware features already on commodity systems to efficiently turn Rowhammer into a denial-of-service attack vector. Unfortunately, researchers have recently shown that attackers can perform one-bit-at-a-time memory templating and mount ECC-aware Rowhammer attacks. In this paper, we reconsider ECC memory as an avenue for Rowhammer mitigations and show that not all hope is lost. In particular, we show that it is feasible to devise a software- based design to both efficiently and effectively harden commod- ity ECC memory against ECC-aware Rowhammer attacks. To support this claim, we present Copy-on-Flip (CoF), an ECC- based software mitigation which uses a combination of memory migration and offlining to stop Rowhammer attacks on commodity server systems in a practical way. The key idea is to let the operating system interpose on all the error correction events and offline the vulnerable victim page as soon as the attacker has successfully templated a sufficient number of bit flips- while transparently migrating the victim data to a new page. We present a CoF prototype on Linux, where we also show it is feasible to operate simple memory management changes to support migration for the relevant user and kernel memory pages. Our evaluation shows CoF incurs low performance and memory overhead, while significantly reducing the Rowhammer attack surface. On typical benchmarks such as SPEC CPU2017 and Google Chrome, CoF reports a <1.5% overhead, and, on extreme I/O-intensive scenarios (saturated nginx), up to ∼11%. I. I NTRODUCTION from a mere ‘side effect' caused by ever-increasing DRAM density to a real security vulnerability which can be exploited ∗The work on this submission has been performed while Koen Koning was employed at the Vrije Universiteit Amsterdam. on a wide variety of systems. Unfortunately, existing de- fenses have proven to be impractical (e.g., requiring complex hardware or software changes) and/or ineffective (e.g., only stopping specific Rowhammer variants). Research has shown that Rowhammer is a threat even on Error-Correcting Code (ECC) memory implemented by the memory controller [10], which is heavily deployed on server platforms. In this paper, we show ECC memory is not a lost cause in the fight against Rowhammer. To this end, we present Copy-on-Flip (CoF), a practical software mitigation which hardens ECC memory against Rowhammer. Our design takes advantage of ECC's ability to detect vulnerable pages, allowing our mitigation to render these unavailable to the attacker with a combination of memory migration and offlining1. Rowhammer. The research community has devised an abun- dance of Rowhammer exploits which compromise a wide array of different systems, including native environments on both x86 [16], [17], [22], [48], [50] and ARM [15], [57], virtualized environments [46], browser sandboxes via JavaScript [8], [13], [18] and networked systems [33], [51]. In addition, research has shown that the Rowhammer vulnerability can also be used as a powerful side channel for information leakage [30]. Early on, it was believed that Rowhammer attacks could be mitigated by deploying Error-Correcting Code (ECC) mem- ory [25]. Typical ECC memory follows the SECDED scheme: single error correction, double error detection. Thus, it is able to correct single-bit errors per code word, by adding control bits to each chunk of data bits. This significantly hinders the effect Rowhammer can have, since bit flips are often automatically fixed. In the worst case, two or more bit flips in a word crash the system with high probability, effectively turning Rowhammer into a mere denial-of-service (DoS) attack vector. However, research by Cojocar et al. [10] shows that exploiting Rowhammer deterministically on ECC memory is attainable, by carefully combining three or more specific bit flips in the same word, effectively bypassing the ECC function. The most critical step for an attacker to exploit Rowham- mer on ECC-capable memory is the so-called templating phase, in which an attacker has to find vulnerable memory areas which are susceptible to bit flips at the desired offsets. In ECCploit-like attacks [10], the attacker has to be very careful to inject only single-bit errors in a code word in any given 1We use the term memory (or page) offlining as used in the Linux kernel source and by hardware vendors to refer to those pages which are poisoned and rendered unavailable to the system [19], [26]. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24337 www.ndss-symposium.org templating attempt (i.e., correctable errors), in order to avoid system crashes due to detectable but uncorrectable errors. While many other mitigations beyond ECC have been proposed by both industry and academia, these all fall short in terms of comprehensiveness and practicality. Most of the mitigations have either been hardware-based [5], [23], [37], [44], [47], [61] or software-based [6], [21], [29], [43], [58], [63], with only a few proposals of hybrid defenses which involve cooperation between hardware and software compo- nents [3], [9]. Both approaches have pitfalls which make them ineffective at defending from Rowhammer attacks in realistic settings. New hardware-only defenses are impossible to deploy on commodity systems and are associated with higher costs to implement tracking algorithms. On top of that, hardware-based defenses have also been shown to be vulnerable to targeted attacks, with fixes unavailable for years to come [13], [16], [22]. In contrast, while software-only defenses are easier to deploy, comprehensive ones [29] require complex software changes and incur high performance/memory overhead. Copy-on-Flip. In this paper, our key observation is that, while ECC by itself is insufficient to protect against Rowhammer attacks, it may still serve as an advance warning system to detect that an attack is in progress and trigger strong mitigating action in software to stop it in its tracks. In particular, with Copy-on-Flip (CoF), we augment the operating system (OS) kernel to detect templating attempts causing (correctable) ECC errors and safeguard the data in that area by migrating it out of harm's way before the attacker has caused a potentially dangerous number of corrections in an ECC code word. To prevent attackers from reusing partially templated memory post migration, we also immediately offline the vulnerable areas of memory at migration time. Our defense prevents templating of ECC memory, thereby removing the ability to mount a targeted attack. In particular, CoF fully restores the security guarantees that ECC memory was assumed to have prior to ECCploit [10] (but did not) and reduces the Rowhammer threat to that of a DoS attack at worst. The key challenge to implement our design is the need to support migration for memory that may be used by the attacker for templating purposes. This includes user memory (the common target in existing exploits), but also kernel memory such as slabs and page tables that may be allocated by the kernel on the attacker's behalf (a target in more advanced exploits). Unfortunately, while user memory is relatively easy to migrate, kernel memory is normally not migratable on commodity systems. In particular, the memory management of the kernel itself typically relies on physical addressing, so memory cannot be transparently remapped through virtual address translation. To address this challenge, we propose a simple design based on removing the kernel's strict depen- dency on physical addressing. We show our design is practical with a Linux-based CoF prototype of only around 600 LoC. While simple and amenable to further extensions, we show our design can support migration of all the relevant user and kernel pages, resulting in a quantifiable attack surface reduction of over 95%. Moreover, CoF incurs almost negligible runtime overhead for most programs (0.2% geomean for SPEC CPU2017 and 1.1% for browsers), with a worst case of∼11% overhead for I/O intensive workloads on saturated systems. Contributions. To summarize, our contributions are: 1) The design and open source implementation 2 of Copy-on-Flip (CoF), a new software mitigation to harden ECC memory and provide low-overhead pro- tection from Rowhammer attacks. 2) An analysis of the spatial distribution of Rowhammer induced bit flips using state-of-the-art Rowhammer fuzzer data [22]. This analysis helped shape our design and determine its memory overhead guaran- tees, but the results are broadly applicable to other mitigations. 3) An evaluation of our CoF prototype, showing its practicality and comprehensiveness, running a variety of workloads including web browsers, showing little to no runtime overhead. II. B ACKGROUND In this section we describe several concepts crucial to understanding the remainder of the paper: the Rowhammer vulnerability, and how to apply it on ECC implemented by the memory controller. The Rowhammer vulnerability allows attackers to flip a bit in a row of memory that they do not own by repeatedly activating (“hammering”) one or more neighboring rows [25]. Attackers do not know in advance which, if any, bit will flip in the victim row, but once they find a bit that flips, they can flip the same bit again with high probability. Besides the number of activations, the occurrence of bit flips also depends on the data (if the cells in the neighboring row contain the same value, bit flips are unlikely), and on the specific activation patterns. To enforce the desired activation patterns, an attacker needs some knowledge of memory addressing. From the CPU perspective, only a single physical address space is visible, abstracting away the underlying DRAM geometry. On top of this, software only sees its own virtual address space , where virtual addresses are dynamically mapped to physical page frames (e.g., 4 KB) by the operating system. While these levels of abstraction complicate Rowhammer attacks, an attacker can massage the memory mappings in such a way that the underlying physical memory is hammerable via virtual memory. While the suitable activation patterns to trigger Rowhammer bit flips depend on the target system and the memory modules used, even the latest memory modules have been shown to be vulnerable [13], [16], [17], [22]. In general, modern Rowhammer attacks (especially ECC-aware ones) consist of three steps: 1) Memory templating: Find vulnerable locations (where bits flip) in memory allocated by the attacker. 2) Memory massaging: Manipulate the memory layout so that sensitive data is now stored at a vulnerable location. 3) Hammering: Perform targeted, rapid, and uncached memory accesses to flip a bit in the sensitive data. Existing defenses are unable to prevent Rowhammer at- tacks in today's memory chips, are expensive, or result in false positives. In particular, the TRR Rowhammer defense [23], 2https://github.com/vusec/Copy-on-Flip 2"
+        },
+        {
+          "source": "selected",
+          "value": "Despite nearly decade-long mitigation efforts in academia and industry, the community is yet to find a prac- tical solution to the Rowhammer vulnerability. Comprehensive software mitigations require complex changes to commodity systems, yielding significant run-time overhead and deterring practical adoption. Hardware mitigations, on the other hand, have generally grown more robust and efficient, but are difficult to deploy on commodity systems. Until recently, ECC memory implemented by the memory controller on server platforms seemed to provide the best of both worlds: use hardware features already on commodity systems to efficiently turn Rowhammer into a denial-of-service attack vector. Unfortunately, researchers have recently shown that attackers can perform one-bit-at-a-time memory templating and mount ECC-aware Rowhammer attacks. In this paper, we reconsider ECC memory as an avenue for Rowhammer mitigations and show that not all hope is lost. In particular, we show that it is feasible to devise a software- based design to both efficiently and effectively harden commod- ity ECC memory against ECC-aware Rowhammer attacks. To support this claim, we present Copy-on-Flip (CoF), an ECC- based software mitigation which uses a combination of memory migration and offlining to stop Rowhammer attacks on commodity server systems in a practical way. The key idea is to let the operating system interpose on all the error correction events and offline the vulnerable victim page as soon as the attacker has successfully templated a sufficient number of bit flips- while transparently migrating the victim data to a new page. We present a CoF prototype on Linux, where we also show it is feasible to operate simple memory management changes to support migration for the relevant user and kernel memory pages. Our evaluation shows CoF incurs low performance and memory overhead, while significantly reducing the Rowhammer attack surface. On typical benchmarks such as SPEC CPU2017 and Google Chrome, CoF reports a <1.5% overhead, and, on extreme I/O-intensive scenarios (saturated nginx), up to ∼11%. I. I NTRODUCTION from a mere ‘side effect' caused by ever-increasing DRAM density to a real security vulnerability which can be exploited ∗The work on this submission has been performed while Koen Koning was employed at the Vrije Universiteit Amsterdam. on a wide variety of systems. Unfortunately, existing de- fenses have proven to be impractical (e.g., requiring complex hardware or software changes) and/or ineffective (e.g., only stopping specific Rowhammer variants). Research has shown that Rowhammer is a threat even on Error-Correcting Code (ECC) memory implemented by the memory controller [10], which is heavily deployed on server platforms. In this paper, we show ECC memory is not a lost cause in the fight against Rowhammer. To this end, we present Copy-on-Flip (CoF), a practical software mitigation which hardens ECC memory against Rowhammer. Our design takes advantage of ECC's ability to detect vulnerable pages, allowing our mitigation to render these unavailable to the attacker with a combination of memory migration and offlining1. Rowhammer. The research community has devised an abun- dance of Rowhammer exploits which compromise a wide array of different systems, including native environments on both x86 [16], [17], [22], [48], [50] and ARM [15], [57], virtualized environments [46], browser sandboxes via JavaScript [8], [13], [18] and networked systems [33], [51]. In addition, research has shown that the Rowhammer vulnerability can also be used as a powerful side channel for information leakage [30]. Early on, it was believed that Rowhammer attacks could be mitigated by deploying Error-Correcting Code (ECC) mem- ory [25]. Typical ECC memory follows the SECDED scheme: single error correction, double error detection. Thus, it is able to correct single-bit errors per code word, by adding control bits to each chunk of data bits. This significantly hinders the effect Rowhammer can have, since bit flips are often automatically fixed. In the worst case, two or more bit flips in a word crash the system with high probability, effectively turning Rowhammer into a mere denial-of-service (DoS) attack vector. However, research by Cojocar et al. [10] shows that exploiting Rowhammer deterministically on ECC memory is attainable, by carefully combining three or more specific bit flips in the same word, effectively bypassing the ECC function. The most critical step for an attacker to exploit Rowham- mer on ECC-capable memory is the so-called templating phase, in which an attacker has to find vulnerable memory areas which are susceptible to bit flips at the desired offsets. In ECCploit-like attacks [10], the attacker has to be very careful to inject only single-bit errors in a code word in any given 1We use the term memory (or page) offlining as used in the Linux kernel source and by hardware vendors to refer to those pages which are poisoned and rendered unavailable to the system [19], [26]. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24337 www.ndss-symposium.org templating attempt (i.e., correctable errors), in order to avoid system crashes due to detectable but uncorrectable errors. While many other mitigations beyond ECC have been proposed by both industry and academia, these all fall short in terms of comprehensiveness and practicality. Most of the mitigations have either been hardware-based [5], [23], [37], [44], [47], [61] or software-based [6], [21], [29], [43], [58], [63], with only a few proposals of hybrid defenses which involve cooperation between hardware and software compo- nents [3], [9]. Both approaches have pitfalls which make them ineffective at defending from Rowhammer attacks in realistic settings. New hardware-only defenses are impossible to deploy on commodity systems and are associated with higher costs to implement tracking algorithms. On top of that, hardware-based defenses have also been shown to be vulnerable to targeted attacks, with fixes unavailable for years to come [13], [16], [22]. In contrast, while software-only defenses are easier to deploy, comprehensive ones [29] require complex software changes and incur high performance/memory overhead. Copy-on-Flip. In this paper, our key observation is that, while ECC by itself is insufficient to protect against Rowhammer attacks, it may still serve as an advance warning system to detect that an attack is in progress and trigger strong mitigating action in software to stop it in its tracks. In particular, with Copy-on-Flip (CoF), we augment the operating system (OS) kernel to detect templating attempts causing (correctable) ECC errors and safeguard the data in that area by migrating it out of harm's way before the attacker has caused a potentially dangerous number of corrections in an ECC code word. To prevent attackers from reusing partially templated memory post migration, we also immediately offline the vulnerable areas of memory at migration time. Our defense prevents templating of ECC memory, thereby removing the ability to mount a targeted attack. In particular, CoF fully restores the security guarantees that ECC memory was assumed to have prior to ECCploit [10] (but did not) and reduces the Rowhammer threat to that of a DoS attack at worst. The key challenge to implement our design is the need to support migration for memory that may be used by the attacker for templating purposes. This includes user memory (the common target in existing exploits), but also kernel memory such as slabs and page tables that may be allocated by the kernel on the attacker's behalf (a target in more advanced exploits). Unfortunately, while user memory is relatively easy to migrate, kernel memory is normally not migratable on commodity systems. In particular, the memory management of the kernel itself typically relies on physical addressing, so memory cannot be transparently remapped through virtual address translation. To address this challenge, we propose a simple design based on removing the kernel's strict depen- dency on physical addressing. We show our design is practical with a Linux-based CoF prototype of only around 600 LoC. While simple and amenable to further extensions, we show our design can support migration of all the relevant user and kernel pages, resulting in a quantifiable attack surface reduction of over 95%. Moreover, CoF incurs almost negligible runtime overhead for most programs (0.2% geomean for SPEC CPU2017 and 1.1% for browsers), with a worst case of∼11% overhead for I/O intensive workloads on saturated systems. Contributions. To summarize, our contributions are: 1) The design and open source implementation 2 of Copy-on-Flip (CoF), a new software mitigation to harden ECC memory and provide low-overhead pro- tection from Rowhammer attacks. 2) An analysis of the spatial distribution of Rowhammer induced bit flips using state-of-the-art Rowhammer fuzzer data [22]. This analysis helped shape our design and determine its memory overhead guaran- tees, but the results are broadly applicable to other mitigations. 3) An evaluation of our CoF prototype, showing its practicality and comprehensiveness, running a variety of workloads including web browsers, showing little to no runtime overhead. II. B ACKGROUND In this section we describe several concepts crucial to understanding the remainder of the paper: the Rowhammer vulnerability, and how to apply it on ECC implemented by the memory controller. The Rowhammer vulnerability allows attackers to flip a bit in a row of memory that they do not own by repeatedly activating (“hammering”) one or more neighboring rows [25]. Attackers do not know in advance which, if any, bit will flip in the victim row, but once they find a bit that flips, they can flip the same bit again with high probability. Besides the number of activations, the occurrence of bit flips also depends on the data (if the cells in the neighboring row contain the same value, bit flips are unlikely), and on the specific activation patterns. To enforce the desired activation patterns, an attacker needs some knowledge of memory addressing. From the CPU perspective, only a single physical address space is visible, abstracting away the underlying DRAM geometry. On top of this, software only sees its own virtual address space , where virtual addresses are dynamically mapped to physical page frames (e.g., 4 KB) by the operating system. While these levels of abstraction complicate Rowhammer attacks, an attacker can massage the memory mappings in such a way that the underlying physical memory is hammerable via virtual memory. While the suitable activation patterns to trigger Rowhammer bit flips depend on the target system and the memory modules used, even the latest memory modules have been shown to be vulnerable [13], [16], [17], [22]. In general, modern Rowhammer attacks (especially ECC-aware ones) consist of three steps: 1) Memory templating: Find vulnerable locations (where bits flip) in memory allocated by the attacker. 2) Memory massaging: Manipulate the memory layout so that sensitive data is now stored at a vulnerable location. 3) Hammering: Perform targeted, rapid, and uncached memory accesses to flip a bit in the sensitive data. Existing defenses are unable to prevent Rowhammer at- tacks in today's memory chips, are expensive, or result in false positives. In particular, the TRR Rowhammer defense [23], 2https://github.com/vusec/Copy-on-Flip 2"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Andrea Di Dio",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Koen Koning",
+            "email": "koen.koning@intel.com",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Herbert Bos",
+            "email": "herbertb@cs.vu.nl",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Cristiano Giuffrida",
+            "email": "giuffrida@cs.vu.nl",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 3
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Andrea Di Dio",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Koen Koning",
+            "email": "koen.koning@intel.com",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Herbert Bos",
+            "email": "herbertb@cs.vu.nl",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 3,
+            "name": "Cristiano Giuffrida",
+            "email": "giuffrida@cs.vu.nl",
+            "orcid": "",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 116,
+        "author_count": 4,
+        "matched_author_count": 4,
+        "exact_author_match_count": 4,
+        "dominant_author_font_size": 11.0,
+        "auto_eligible": true,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [
+          {
+            "author_index": 0,
+            "author": "Andrea Di Dio",
+            "block_id": "pdf:p1:b2",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 1,
+            "author": "Koen Koning",
+            "block_id": "pdf:p1:b3",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 2,
+            "author": "Herbert Bos",
+            "block_id": "pdf:p1:b4",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 3,
+            "author": "Cristiano Giuffrida",
+            "block_id": "pdf:p1:b5",
+            "match_score": 1.0
+          }
+        ],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 4,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/copy-on-flip-hardening-ecc-memory-against-rowhammer-attacks/",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Andrea Di Dio",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ]
+          },
+          {
+            "name": "Koen Koning",
+            "affiliations": [
+              "Intel"
+            ]
+          },
+          {
+            "name": "Herbert Bos",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ]
+          },
+          {
+            "name": "Cristiano Giuffrida",
+            "affiliations": [
+              "Vrije Universiteit Amsterdam"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      }
+    ]
+  }
+}

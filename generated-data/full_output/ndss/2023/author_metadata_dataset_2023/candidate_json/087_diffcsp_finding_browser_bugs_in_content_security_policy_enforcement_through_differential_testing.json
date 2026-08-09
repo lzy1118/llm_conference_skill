@@ -1,0 +1,230 @@
+{
+  "paper_id": "087_diffcsp_finding_browser_bugs_in_content_security_policy_enforcement_through_differential_testing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DiffCSP: Finding Browser Bugs in Content Security Policy Enforcement through Differential Testing"
+      },
+      {
+        "source": "selected",
+        "value": "DiffCSP: Finding Browser Bugs in Content Security Policy Enforcement through Differential Testing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The Content Security Policy (CSP) is one of the de facto security mechanisms that mitigate web threats. Many websites have been deploying CSPs mainly to mitigate crosssite scripting (XSS) attacks by instructing client browsers to constrain JavaScript (JS) execution. However, a browser bug in CSP enforcement enables an adversary to bypass a deployed CSP, posing a security threat. As the CSP specification evolves, CSP becomes more complicated in supporting an increasing number of directives, which brings additional complexity to implementing correct enforcement behaviors. Unfortunately, the finding of CSP enforcement bugs in a systematic way has been largely understudied. In this paper, we propose DiffCSP, the first differential testing framework to find CSP enforcement bugs involving JS execution. DiffCSP generates CSPs and a comprehensive set of HTML instances that exhibit all known ways of executing JS snippets. DiffCSP then executes each HTML instance for each generated policy across different browsers, thereby collecting inconsistent execution results. To analyze a large volume of the execution results, we leverage a decision tree and identify common causes of the observed inconsistencies. We demonstrate the efficacy of DiffCSP by finding 29 security bugs and eight functional bugs. We also show that three bugs are due to unclear descriptions of the CSP specification. We further identify the common root causes of CSP enforcement bugs, such as incorrect CSP inheritance and hash handling. We confirm the risky trend of client browsers deriving completely different interpretations from the same CSPs, which raises security concerns. Our study demonstrates the effectiveness of DiffCSP for identifying CSP enforcement bugs, and our findings have contributed to patching 12 security bugs in major browsers, including Chrome and Safari. I. INTRODUCTION Content Security Policy (CSP) [4, 5, 6] is a protection mechanism that has become a de facto measure of security mitigation. A web developer declares a CSP for their website in the web response header or the response body via a meta tag. This instructs the browser to honor the CSP and govern the execution and inclusion of various web resources, such as scripts or images. The CSP specification has evolved into the level 3 specification (CSP3) [6] since its adoption by major browsers, including Chrome, Firefox, Edge, and Safari."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The Content Security Policy (CSP) is one of the de facto security mechanisms that mitigate web threats. Many websites have been deploying CSPs mainly to mitigate cross- site scripting (XSS) attacks by instructing client browsers to constrain JavaScript (JS) execution. However, a browser bug in CSP enforcement enables an adversary to bypass a deployed CSP, posing a security threat. As the CSP specification evolves, CSP becomes more complicated in supporting an increasing number of directives, which brings additional complexity to implementing correct enforcement behaviors. Unfortunately, the finding of CSP enforcement bugs in a systematic way has been largely understudied. In this paper, we propose DiffCSP, the first differential testing framework to find CSP enforcement bugs involving JS execution. DiffCSP generates CSPs and a comprehensive set of HTML instances that exhibit all known ways of executing JS snippets. DiffCSP then executes each HTML instance for each generated policy across different browsers, thereby collecting inconsistent execution results. To analyze a large volume of the execution results, we leverage a decision tree and identify common causes of the observed inconsistencies. We demonstrate the efficacy of DiffCSP by finding 29 security bugs and eight functional bugs. We also show that three bugs are due to unclear descriptions of the CSP specification. We further identify the common root causes of CSP enforcement bugs, such as incorrect CSP inheritance and hash handling. We confirm the risky trend of client browsers deriving completely different interpretations from the same CSPs, which raises security concerns. Our study demonstrates the effectiveness of DiffCSP for identifying CSP enforcement bugs, and our findings have contributed to patching 12 security bugs in major browsers, including Chrome and Safari. I. I NTRODUCTION Content Security Policy (CSP) [4, 5, 6] is a protection mechanism that has become a de facto measure of security mitigation. A web developer declares a CSP for their website in the web response header or the response body via a meta tag. This instructs the browser to honor the CSP and govern the execution and inclusion of various web resources, such as scripts or images. The CSP specification has evolved into the level 3 specification (CSP3) [6] since its adoption by major browsers, including Chrome, Firefox, Edge, and Safari. 1 XSS attack payload: 2 http://[Target URL]/PoC.html#javascript:alert('XSS') 3 CSP: script-src-elem 'sha256-aHbTR...'; 4 Target website: 5 <script> 6 let hash = window.location.hash.slice(1); 7 window.location.href = hash; 8 </script> Fig. 1: An HTML instance that triggers a bug in Chrome; the adversary bypasses CSP enforcement by exploiting this bug. CSP has been increasingly deployed on the Web. Most CSPs are meant to mitigate the impact of cross-site script- ing (XSS) attacks by limiting the sources from which an adversary can draw their injected scripts. Weichselbaumet al. demonstrated that 1,680,000 Internet hosts deployed a CSP, and 86% of the unique CSPs that they crawled were designed to mitigate XSS threats [70]. Rothet al.also showed that by 2019,1,233outofthe10,000popularsiteslistedintheInternet Archive had deployed a CSP [58]. Due to the nature of a client-side security mechanism, CSP depends on browsers to honor a given policy and correctly govern the inclusion of web resources according to the policy. In particular, CSP plays a crucial role in mitigating XSS threats by governing the execution of JS snippets based on their source URL, hash value, or attached nonce. Therefore, a browser bug in CSP enforcement regarding JS execution causes actual behaviors to deviate from the CSP specification and the expectations of site operators. Accordingly, such discrepancies open security holes for an XSS attacker to bypass CSPs and inject adversarial JS snippets. Figure 1 shows a CSP that defines script-src- elem [35] to have the hash value ofsha256-aHbTR.... The expected behavior is that a browser would only execute the inline JavaScript (JS) snippet in a script tag or javascript:, the hash value of which is sha256-aHbTR... (i.e., the JS between Lines 6-7). Hence, any injected inline scripts will be blocked according to the defined policy. However, a bug in Chrome and Edge that we discovered in this paper allows an XSS attacker to inject arbitrary JS viajavascript: navigation regardless of the hash value in thescript-src-elem directive. Despite the severity of CSP enforcement bugs, to the best of our knowledge, no previous studies have addressed the systematic identification of browser bugs in CSP enforcement regarding JS execution. In this paper, we hence raise the research question:How can we identify browser bugs in CSP Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24200 www.ndss-symposium.org enforcement regarding JS execution? Contributions. We propose DiffCSP, the first testing frame- work designed to find CSP enforcement bugs in governing JS execution. To identify bugs in browsers without analyzing their source code, we choose to generate inputs that are highly likely to exhibit erroneous CSP enforcement. Specifically, DiffCSP generates HTML instances that exhibit all the known forms of executing JS snippets and diverse CSPs. DiffCSP then checks whether a generated CSP is violated across these generated HTML instances due to an inherent browser bug by checking whether the embedded JS snippet in each HTML instance is executed. Devising a testing framework that finds CSP enforcement bugs by generating inputs entails three technical challenges: (1) the testing framework should generate comprehensive inputs (i.e., CSPs and HTMLs) that trigger inherent browser bugs; (2) it should identify unexpected execution results for each generated input that may lead to finding browser bugs; and (3) it should help an analyzer examine a large number of generated inputs that exhibit unexpected behaviors. To address the first challenge, we define a data-driven HTML grammar by referencing known CSP bugs [10], known XSS attack payloads [8], an HTML security cheat sheet [24], and the ECMAScript specification [17]. That is, this HTML grammar is designed to derive adversarial HTML instances that exhibit all known forms of embedding JS snippets. For the second challenge, we conduct differential testing on generated inputs on three desktop and five mobile browsers and identify a set of inputs that cause inconsistent execution results. That is, we use the inconsistent execution results for each generated input as a bug oracle. Notably, different browser vendors may support different levels of the CSP specification (e.g., until recently, Safari did not support the strict-dynamic keyword introduced in 2016), and we generate many HTML instances that exhibit diverse ways of executing JS snippets. Therefore, DiffCSP reports a large number of inputs that cause behavioral dif- ferences. Subsequently, it becomes difficult to analyze all test inputs causing these inconsistencies. To overcome this challenge, we first vectorize the execution result for each generated HTML instance and label this HTML instance as either consistent or inconsistent based on its execution result. Using these vectors and their labels, we compute a decision tree to ease the identification of causes that result in a large number of observed inconsistencies. We then identify all paths leading to inconsistent execution results in the decision tree. For each collected path, we manually analyze the conditions that appear in the path and HTML instances that correspond to this decision path. Therefore, DiffCSP helps us to identify causes while avoiding an analysis of each HTML instance that causes an inconsistency, thus addressing the third challenge. Using DiffCSP, we found CSP enforcement bugs in three desktop and five mobile browsers. For the desktop browsers, we found 37 bugs in Chrome, Firefox, and Safari. These browser vendors patched 23 bugs; eight of them were patched solely due to our bug reports, and four were patched in response to addressing reports from ours and other bug re- porters. For four bugs, we are awaiting the responses from the browser vendors. Out of the 37 identified bugs, 29 bugs 1 script-src 'self'; 2 default-src http://a.com; Fig. 2:An example of content restriction using CSP. undermine security, allowing the attacker to bypass CSPs and inject executable JS snippets. Furthermore, we identified that three bugs stem from the vague or missing descriptions in the CSP standard [6]. In summary, this paper makes the following contributions: 1) We design and implement DiffCSP, the first testing framework that identifies browser bugs in CSP enforcement regarding JS execution. 2) We propose conducting differential testing across mul- tiple browsers by generating a diverse set of test inputs that exhibit unexpected behaviors regarding CSP enforcement. 3) To systematically analyze the observed inconsistencies, we leverage decision trees to pinpoint the root causes for erroneous CSP enforcement. 4) We identify 37 browser bugs, including 29 security bugs. We find that three bugs are due to unspecified rules in the CSP specification, thus recommending revision of the specification. Chromium, Safari, and Firefox browser vendors have patched 12 of them, providing an award for the bugs found in Chrome, Safari, and Firefox with a bounty of 4,000 USD. 5) To support open science and reproducible research, we will release DiffCSP at https://github.com/WSP-LAB/ DiffCSP. II. B ACKGROUND A. Content Security Policy Acontentsecuritypolicy(CSP)referstoanHTTPresponse header or a policy defined via a meta element, which enables client software (e.g., browsers) to honor a defined policy. By design, it is a browser's responsibility to enforce a defined CSP while rendering a webpage, governing the inclusion of web resources based on their domain sources or hash values. Stamm et al. [65] originally proposed CSP, with the original goal of mitigating cross-site scripting (XSS) attacks. Browser vendors have adopted CSP and developed its standard specification. The first specification was finalized in 2015 and CSP level 2 was already published in 2016. Since then, CSP3 has remained a working draft, however, is the de facto standard that should be implemented in browsers [6]. A CSP consists of directives, each of which defines a set of values. Figure 2 shows two directives: default-src and script-src. In the presence of script-src, this directive governs the inclusion of scripts. In this case, this means that the page can only execute external scripts hosted onhttp://a.com, but it implicitly disallows inline scripts, inline event handlers, and eval. All other resources (e.g., images or fonts) must be loaded from the page's origin, given the default-src fallback directive. This directive controls all resources for which a more specific directive (e.g.,image-src orfont-src) is not present in the policy. The straightforward nature of defining allowed domains simplified the implementation of CSP enforcement in browsers in the early stage of CSP. However, CSP level 3 now supports 2"
+      },
+      {
+        "source": "selected",
+        "value": "The Content Security Policy (CSP) is one of the de facto security mechanisms that mitigate web threats. Many websites have been deploying CSPs mainly to mitigate crosssite scripting (XSS) attacks by instructing client browsers to constrain JavaScript (JS) execution. However, a browser bug in CSP enforcement enables an adversary to bypass a deployed CSP, posing a security threat. As the CSP specification evolves, CSP becomes more complicated in supporting an increasing number of directives, which brings additional complexity to implementing correct enforcement behaviors. Unfortunately, the finding of CSP enforcement bugs in a systematic way has been largely understudied. In this paper, we propose DiffCSP, the first differential testing framework to find CSP enforcement bugs involving JS execution. DiffCSP generates CSPs and a comprehensive set of HTML instances that exhibit all known ways of executing JS snippets. DiffCSP then executes each HTML instance for each generated policy across different browsers, thereby collecting inconsistent execution results. To analyze a large volume of the execution results, we leverage a decision tree and identify common causes of the observed inconsistencies. We demonstrate the efficacy of DiffCSP by finding 29 security bugs and eight functional bugs. We also show that three bugs are due to unclear descriptions of the CSP specification. We further identify the common root causes of CSP enforcement bugs, such as incorrect CSP inheritance and hash handling. We confirm the risky trend of client browsers deriving completely different interpretations from the same CSPs, which raises security concerns. Our study demonstrates the effectiveness of DiffCSP for identifying CSP enforcement bugs, and our findings have contributed to patching 12 security bugs in major browsers, including Chrome and Safari. I. INTRODUCTION Content Security Policy (CSP) [4, 5, 6] is a protection mechanism that has become a de facto measure of security mitigation. A web developer declares a CSP for their website in the web response header or the response body via a meta tag. This instructs the browser to honor the CSP and govern the execution and inclusion of various web resources, such as scripts or images. The CSP specification has evolved into the level 3 specification (CSP3) [6] since its adoption by major browsers, including Chrome, Firefox, Edge, and Safari."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Seongil Wi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, Center for Information Security Computer Science Graduate School, KAIST CISPA Helmholtz, Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Trung Tin Nguyen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, Center for Information Security Computer Science Graduate School, KAIST CISPA Helmholtz, Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jihwan Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, Center for Information Security Computer Science Graduate School, KAIST CISPA Helmholtz, Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ben Stock",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, Center for Information Security Computer Science Graduate School, KAIST CISPA Helmholtz, Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Sooel Son",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, Center for Information Security Computer Science Graduate School, KAIST CISPA Helmholtz, Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Seongil Wi",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Trung Tin Nguyen",
+          "email": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security",
+            "Computer Science Graduate School, Saarland University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jihwan Kim",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Ben Stock",
+          "email": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Sooel Son",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 123,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DiffCSP: Finding Browser Bugs in Content Security Policy Enforcement through Differential Testing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/diffcsp-finding-browser-bugs-in-content-security-policy-enforcement-through-differential-testing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Seongil Wi",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Trung Tin Nguyen",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security, Saarland University"
+          ]
+        },
+        {
+          "name": "Jihwan Kim",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Ben Stock",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ]
+        },
+        {
+          "name": "Sooel Son",
+          "affiliations": [
+            "KAIST"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

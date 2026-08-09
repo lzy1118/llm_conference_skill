@@ -9,10 +9,91 @@ from conference_dataset_loader import filter_rows, load_normalized_rows, write_m
 
 
 def normalize_author_display_name(name: str) -> str:
-    text = name.strip()
+    text = re.sub(r"\s+", " ", (name or "").strip())
     if not text:
         return ""
     return re.sub(r"\s0+\d+$", "", text).strip()
+
+
+def normalize_author_identity(name: str) -> str:
+    """Compact identity key for OCR-inserted spaces in author names."""
+    return re.sub(r"[^a-z0-9]", "", normalize_author_display_name(name).casefold())
+
+
+def build_author_key_aliases(rows: list[dict[str, str]]) -> dict[str, str]:
+    """Merge only compact variants and initial/full names with strong evidence.
+
+    An initial plus surname is intentionally not treated as a person's identity:
+    common initials (for example ``J Wu``) represent multiple researchers.  An
+    initial form is merged with a full name only when exactly one candidate has
+    a shared institution, country, or coauthor evidence.
+    """
+    compact_to_keys: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        key = row.get("author_key", "").strip() or row.get("name", "").strip()
+        compact = normalize_author_identity(row.get("name", ""))
+        if key and compact:
+            compact_to_keys[compact].add(key)
+    aliases: dict[str, str] = {}
+    for keys in compact_to_keys.values():
+        preferred = sorted(keys)[0]
+        aliases.update({key: preferred for key in keys})
+
+    profiles: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: {"names": set(), "institutions": set(), "countries": set(), "coauthors": set()}
+    )
+    paper_authors: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        raw_key = row.get("author_key", "").strip() or row.get("name", "").strip()
+        key = aliases.get(raw_key, raw_key)
+        if not key:
+            continue
+        profile = profiles[key]
+        profile["names"].add(normalize_author_display_name(row.get("name", "")))
+        institution = (row.get("institution_id", "") or row.get("institution_key", "")
+                       or row.get("canonical_institution_name", "") or row.get("inst", "")).strip()
+        country = row.get("country", "").strip()
+        if institution:
+            profile["institutions"].add(institution.casefold())
+        if country and country.casefold() not in {"unknown", "none"}:
+            profile["countries"].add(country.casefold())
+        paper_key = row.get("paper_key", "")
+        if paper_key:
+            paper_authors[paper_key].add(key)
+    for authors in paper_authors.values():
+        for key in authors:
+            profiles[key]["coauthors"].update(authors - {key})
+
+    def parts(value: str) -> list[str]:
+        return [part for part in re.sub(r"[^A-Za-z0-9 ]+", " ", value).split() if part]
+
+    def candidate_matches(initial_name: str, full_name: str) -> bool:
+        left, right = parts(initial_name), parts(full_name)
+        if len(left) < 2 or len(right) < 2 or len(left[0]) != 1:
+            return False
+        return left[-1].casefold() == right[-1].casefold() and left[0].casefold() == right[0][0].casefold()
+
+    names_by_key = {key: next(iter(profile["names"]), "") for key, profile in profiles.items()}
+    for initial_key, initial_name in list(names_by_key.items()):
+        initial_parts = parts(initial_name)
+        if len(initial_parts) < 2 or len(initial_parts[0]) != 1:
+            continue
+        candidates = [
+            key for key, name in names_by_key.items()
+            if key != initial_key and candidate_matches(initial_name, name)
+        ]
+        if not candidates:
+            continue
+        evidence = []
+        for candidate in candidates:
+            left, right = profiles[initial_key], profiles[candidate]
+            # Country alone is weak evidence for common surnames.
+            score = sum(bool(left[field] & right[field]) for field in ("institutions", "coauthors"))
+            if score:
+                evidence.append((candidate, score))
+        if len(evidence) == 1:
+            aliases[initial_key] = evidence[0][0]
+    return aliases
 
 
 def simplified_author_name(value: str) -> str:
@@ -43,67 +124,51 @@ def has_initial_fullname_pair(names: set[str]) -> bool:
 
 
 def build_identity_review(rows: list[dict[str, str]]) -> list[dict[str, object]]:
-    by_display: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
-    by_simplified: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    # Ambiguous initials and same-display collisions are handled deterministically
+    # by ``build_author_key_aliases``; no manual review queue is emitted.
+    return []
 
+
+def normalize_title_key(title: str) -> str:
+    text = re.sub(r"\s+", " ", (title or "").strip().casefold()).rstrip(".")
+    # Use a compact comparison key so ``Dense-Key`` and ``Dense - Key`` (or
+    # OCR-inserted spaces inside a word) still identify the same paper.
+    return re.sub(r"[^a-z0-9]", "", text)
+
+
+def build_canonical_paper_keys(rows: list[dict[str, str]]) -> dict[str, str]:
+    papers_to_rows: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
-        author_name = normalize_author_display_name(row.get("name", "").strip())
-        author_key = row.get("author_key", "").strip() or author_name
-        display_key = author_name.casefold()
-        simplified_key = simplified_author_name(author_name)
-        for bucket_key, bucket in ((display_key, by_display), (simplified_key, by_simplified)):
-            if not bucket_key:
-                continue
-            entry = bucket[bucket_key]
-            entry["author_keys"].add(author_key)
-            entry["author_names"].add(author_name)
-            entry["papers"].add(row.get("paper_key", ""))
-            entry["conferences"].add(row.get("conference", ""))
-            entry["years"].add(row.get("year", ""))
-            if row.get("country"):
-                entry["countries"].add(row.get("country", ""))
-            if row.get("canonical_institution_name") or row.get("inst"):
-                entry["institutions"].add(row.get("canonical_institution_name", "") or row.get("inst", ""))
+        papers_to_rows[row["paper_key"]].append(row)
 
-    review_rows: list[dict[str, object]] = []
-    for display_key, entry in by_display.items():
-        if len(entry["author_keys"]) <= 1:
-            continue
-        review_rows.append(
-            {
-                "identity_cluster_key": display_key,
-                "issue_type": "same_display_name_multiple_author_keys",
-                "author_names": " | ".join(sorted(entry["author_names"])),
-                "author_keys": " | ".join(sorted(entry["author_keys"])),
-                "papers": len(entry["papers"]),
-                "conferences": " | ".join(sorted(entry["conferences"])),
-                "years": " | ".join(sorted(entry["years"])),
-                "countries": " | ".join(sorted(entry["countries"])),
-                "institutions": " | ".join(sorted(entry["institutions"])[:12]),
-                "needs_review": "true",
-            }
-        )
+    canonical: dict[str, str] = {}
+    signature_groups: dict[tuple[object, ...], list[str]] = defaultdict(list)
+    for paper_key, paper_rows in papers_to_rows.items():
+        def order_value(item: dict[str, str]) -> int:
+            try:
+                return int(item.get("author_order", ""))
+            except (TypeError, ValueError):
+                return 10**9
 
-    for simplified_key, entry in by_simplified.items():
-        if len(entry["author_names"]) <= 1:
-            continue
-        if not has_initial_fullname_pair(entry["author_names"]):
-            continue
-        review_rows.append(
-            {
-                "identity_cluster_key": simplified_key,
-                "issue_type": "same_initial_last_name_multiple_display_names",
-                "author_names": " | ".join(sorted(entry["author_names"])),
-                "author_keys": " | ".join(sorted(entry["author_keys"])),
-                "papers": len(entry["papers"]),
-                "conferences": " | ".join(sorted(entry["conferences"])),
-                "years": " | ".join(sorted(entry["years"])),
-                "countries": " | ".join(sorted(entry["countries"])),
-                "institutions": " | ".join(sorted(entry["institutions"])[:12]),
-                "needs_review": "true",
-            }
+        author_signature = tuple(
+            (str(item.get("author_order", "")), normalize_author_identity(item.get("name", "")))
+            for item in sorted(paper_rows, key=order_value)
         )
-    return sorted(review_rows, key=lambda row: (-int(row["papers"]), str(row["identity_cluster_key"])))
+        sample = paper_rows[0]
+        signature = (
+            sample.get("conference", ""),
+            sample.get("year", ""),
+            normalize_title_key(sample.get("title", "")),
+            author_signature,
+        )
+        signature_groups[signature].append(paper_key)
+
+    for paper_keys in signature_groups.values():
+        preferred = sorted(paper_keys, key=lambda key: (key.endswith("a"), key))
+        canonical_key = preferred[0]
+        for paper_key in paper_keys:
+            canonical[paper_key] = canonical_key
+    return canonical
 
 
 def aggregate_authors(rows: list[dict[str, str]]) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
@@ -118,32 +183,44 @@ def aggregate_authors(rows: list[dict[str, str]]) -> tuple[list[dict[str, object
     by_year: dict[tuple[str, str], set[str]] = defaultdict(set)
     first_author_rows: list[dict[str, object]] = []
     papers_to_authors: dict[str, list[dict[str, str]]] = defaultdict(list)
+    canonical_paper_keys = build_canonical_paper_keys(rows)
+    author_key_aliases = build_author_key_aliases(rows)
 
     for row in rows:
-        key = row["author_key"] or row["name"]
+        canonical_paper_key = canonical_paper_keys.get(row["paper_key"], row["paper_key"])
+        key = author_key_aliases.get(row["author_key"] or row["name"], row["author_key"] or row["name"])
         grouped[key]["author_name"] = grouped[key]["author_name"] or normalize_author_display_name(row["name"])
-        grouped[key]["paper_keys"].add(row["paper_key"])
+        grouped[key]["paper_keys"].add(canonical_paper_key)
         grouped[key]["conferences"].add(row["conference"])
         grouped[key]["years"].add(row["year"])
         if str(row["author_order"]) == "0":
-            grouped[key]["first_author_papers"].add(row["paper_key"])
-        by_year[(key, row["year"])].add(row["paper_key"])
-        papers_to_authors[row["paper_key"]].append(row)
+            grouped[key]["first_author_papers"].add(canonical_paper_key)
+        by_year[(key, row["year"])].add(canonical_paper_key)
+        papers_to_authors[canonical_paper_key].append(row)
 
     for paper_rows in papers_to_authors.values():
         unique_authors = {}
+        seen_first_author_keys: set[tuple[str, str]] = set()
         for row in paper_rows:
-            key = row["author_key"] or row["name"]
+            raw_key = row["author_key"] or row["name"]
+            key = author_key_aliases.get(raw_key, raw_key)
             unique_authors[key] = row["name"]
         author_keys = sorted(unique_authors)
         for author_key in author_keys:
             grouped[author_key]["coauthors"].update(other for other in author_keys if other != author_key)
         for row in paper_rows:
             if str(row["author_order"]) == "0":
+                dedup_key = (
+                    author_key_aliases.get(row["author_key"] or row["name"], row["author_key"] or row["name"]),
+                    canonical_paper_keys.get(row["paper_key"], row["paper_key"]),
+                )
+                if dedup_key in seen_first_author_keys:
+                    continue
+                seen_first_author_keys.add(dedup_key)
                 first_author_rows.append({
-                    "author_key": row["author_key"] or row["name"],
+                    "author_key": author_key_aliases.get(row["author_key"] or row["name"], row["author_key"] or row["name"]),
                     "author_name": normalize_author_display_name(row["name"]),
-                    "paper_key": row["paper_key"],
+                    "paper_key": canonical_paper_keys.get(row["paper_key"], row["paper_key"]),
                     "conference": row["conference"],
                     "year": row["year"],
                     "title": row["title"],
@@ -153,7 +230,8 @@ def aggregate_authors(rows: list[dict[str, str]]) -> tuple[list[dict[str, object
     for paper_key, paper_rows in papers_to_authors.items():
         distinct = {}
         for row in paper_rows:
-            distinct[row["author_key"] or row["name"]] = normalize_author_display_name(row["name"])
+            raw_key = row["author_key"] or row["name"]
+            distinct[author_key_aliases.get(raw_key, raw_key)] = normalize_author_display_name(row["name"])
         keys = sorted(distinct)
         for index, left in enumerate(keys):
             for right in keys[index + 1:]:

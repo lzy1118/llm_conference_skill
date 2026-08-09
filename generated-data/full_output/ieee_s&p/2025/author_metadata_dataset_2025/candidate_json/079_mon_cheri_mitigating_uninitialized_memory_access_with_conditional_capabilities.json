@@ -1,0 +1,240 @@
+{
+  "paper_id": "079_mon_cheri_mitigating_uninitialized_memory_access_with_conditional_capabilities",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Mon CHÉRI: Mitigating Uninitialized Memory Access with Conditional Capabilities"
+      },
+      {
+        "source": "selected",
+        "value": "Mon CHÉRI: Mitigating Uninitialized Memory Access with Conditional Capabilities"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Up to 10% of memory-safety vulnerabilities in languages like C and C++ stem from uninitialized variables. This work addresses the prevalence and lack of adequate software mitigations for uninitialized memory issues, proposing architectural protections in hardware. Capability-based addressing, such as the University of Cambridge's CHERI, mitigates many memory defects, including spatial and temporal safety violations at an architectural level. CHERI, however, does not handle undefined behavior from uninitialized variables. We extend the CHERI capability model to include \"conditional capabilities\", enabling memory-access policies based on prior operations. This allows enforcement of policies that satisfy memory-safety objectives such as \"no reads to memory without at least one prior write\" (Write-before-Read). We present our architecture extension, compiler support, and detailed evaluation of our approach on the QEMU full-system simulator and a modified FPGA-based CHERI-RISCV softcore. Our evaluation shows conditional capabilities are practical, with high detection accuracy while adding a small (≈ 3.5%) overhead which is comparable to the cost of baseline CHERI capabilities. 829 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Up to 10% of memory-safety vulnerabilities in languages like C and C++stem from uninitialized variables. This work addresses the prevalence and lack of adequate software mitigations for uninitialized memory issues, propos- ing architectural protections in hardware. Capability-based addressing, such as the University of Cambridge's CHERI, mitigates many memory defects, including spatial and temporal safety violations at an architectural level. CHERI, however, does not handle undefined behavior from uninitialized variables. We extend the CHERI capability model to include “conditional capabilities”, enabling memory-access policies based on prior operations. This allows enforcement of policies that satisfy memory-safety objectives such as “no reads to memory without at least one prior write” ( Write-before-Read). We present our architecture extension, compiler support, and detailed evaluation of our approach on the QEMU full-system simulator and a modified FPGA-based CHERI-RISCV softcore. Our evaluation shows conditional capabilities are practical, with high detection accuracy while adding a small ( ≈ 3.5%) overhead which is comparable to the cost of baseline CHERI capabilities. 1. Introduction Uninitialized variables, variables that are declared but not assigned a value, are a well-known source of software defects in the C-family of programming languages. In general, all run-time allocated memory in C, C++, and even in modern languages like Rust, starts out asuninitialized. In this state, the value of the memory is indeterminate and may not reflect a valid state for the variable type. Attempting to interpret uninitialized memory results in undefined behavior, which can cause security vulnerabilities. In particular, uninitialized memory may expose residual data from previously deallocated data structures. This may inadvertently result in information disclosure, ranging from leaked pointer values [1] to the exposure of cryptographic keys [2]. Leaked pointer values can be exploited by attackers to bypassaddress space layout randomization (ASLR)[1], while the use of uninitialized variables can enable arbitrary code execution attacks [3]. Following recent surveys, use- before-initialized conditions account for a sizable 10% of memory-safety vulnerabilities in the wild [4]-[6]. Hardware-assisted defenses against memory-safety is- sues [7] are motivated by the need to reduce the overhead of run-time defenses through hardware/software co-designs and willingness by processor manufacturers to incorporate mechanisms for software security into their designs [8]-[10]. A prominent example isCapability Hardware Enhanced RISC Instructions (CHERI)[11], a joint research project of SRI International and the University of Cambridge. CHERI extends instruction-set architectures (ISAs) with fine-grained memory protection and software compartmentalization. In its default configuration, CHERI provides spatial safety through capability-based addressing. While this allows software to preclude many classes of memory-safety defects, CHERI does not address uninitialized variables. Microsoft Security Response Center (MSRC) conducted a comprehen- sive analysis of vulnerabilities reported in 2019 to assess the CHERI ISAv7 [4]. The findings indicate that only 31% of the reported vulnerabilities could have been mitigated through the default configuration of CHERI. An additional 24% could be mitigated by CHERI when configured to provide partial temporal safety under the Cornucopia mechanism [12]. The analysis further highlights that at least 12% of the assessed vulnerabilities could have been mitigated if CHERI would protect against uninitialized access. This work explores and evaluates extensions for CHERI to mitigate those 12%. This paper and contributions.In this paper, we extend the CHERI capability model to express memory-access policies that eliminate undefined behavior associated with uninitial- ized memory. We introduceconditional permissions (CPs) to capability-based addressing. CPs can express memory- access policies that take previous operations on memory into account. This enablesconditional capabilitieswith fine- grained policies that satisfy different instances of memory- safety objectives at different granularities, such as“no reads of memory which has not been the subject of at least one write” (Write-before-Read) or“this memory can be written to only once”( Write-Once). We describe these CPs in §3. CPs are enforced by introducing the notion ofoperation-specific boundsto capability-based addressing: • We introduceconditional permissionsandconditional capabilitiesfor capability-based addressing (§ 3). • We integrate conditional capabilities to CHERI-RISC-V in prototypes based on the QEMU full-system emulator and an FPGA softcore based on Flute64Cheri IP (§ 4). • We add support for Write-before-Read conditional permissions to the CHERI-enabled Clang/LLVM com- piler (§ 4.3) and embedded memory allocators (§ 4.4). • We evaluate CPs using > 1000 NIST Juliet test suite 829 DOI 10.1109/SP61157.2025.00133 ➀1-bit Validity tag ➁Permissions ➂Object type ➃Bounds ➄Baseline architecture address Figure 1: In-memory representation of CHERI capabilities adapted from Watson et al. [13] test cases for uninitialized variables and using EEMBC CoreMark performance benchmarks (§ 5). Our results show that CPs achieve 100% detection with only six false positives ( ≈ 1%) for the Juliet test suite, where the false positives do exhibit uninitialized (but non- vulnerable) accesses. We further show that CPs on CHERI- RISC-V impose only ≈ 3.5% performance overhead in addition to that added by CHERI, compared to benchmarks on an unmodified RISC-V softcore (7% combined). Con- sequently, CP overhead is comparable to that of CHERI. In summary, our work effectively and efficiently addresses uninitialized memory vulnerabilities, combining very high detection accuracy with performance penalties that are sub- stantially lower than other detection mechanisms in hardware or software. Our conditional capability-enhanced QEMU and toolchain protototypes, and evaluation artifacts are available at https://github.com/conditionalcapabilities. 2. Background How prevalent are uninitialized memory vulnerabilities? The prevalence of uninitialized memory as a source of vulnerabilities has been highlighted in statistics based on the Common Vulnerability Enumeration (CVE) program. MSRC reports that, between 2017 and 2019, uninitialized memory vulnerabilities accounted for ≈ 5-10% of the Common Vulnerability Enumerations (CVEs) issued by Microsoft [4], [5]. In 2019, uninitialized memory accesses were the fourth largest class of memory defects (10%), after spatial (44%), temporal (29%), and type confusion (14%). Similarly, a more recent survey of memory-safety CVEs between 2015 - 2022 by Sutter [6] indicates that use-before-initialized conditions account for ≈ 9% of all reported memory-safety vulnerabilities, after lifetime safety (49%), bounds safety (18%), and type confusion (11%), indicating that uninitialized memory accesses remain an issue in industrial code bases that impacts system security. 2.1. Capability-Based Addressing Capability-based addressingis a memory access-control paradigm originating from mainframe computers of the late 1950s and 60s [14]. In capability-based addressing, conventional references to locations in computer memory, i.e.pointers, are replaced by protected objects calledcapa- bilities[15]. Capabilities carry, in addition to the referenced memory address, additional permission information that is used by the processor or memory-management subsystem to determine whether the accesses performed through a capabil- ity are allowed. While the exact composition of a capability can vary between different hardware instantiations, virtually all capability-based addressing schemes express allowed operations through at leastRead( R),Write( W), andExecute (X) permissions that control whether references through a capability are permitted for load and store instructions or instruction fetches respectively. Capabilities also include bounds informationthat limit the range of memory that can be referenced via a particular capability. Interest in capability-based addressing diminished with the introduction of memory management units (MMUs) that, in addition to performing address translation between virtual and physical memory addresses, also manage access control to virtual memory. However, capabilities differ fundamentally from the access control in MMUs: whereas MMUs associate permissions toindividual memory pages, capabilities asso- ciate permissions to thereferences used to address memory. 2.2. The CHERI Capability Architecture CHERI, which stands for Capability Hardware Enhanced RISC Instructions, is an ISA extension for a capability- based architectural protection model and hardware-software co-design. The CHERI architecture extends an underlying conventional ISA with hardware-supported capabilities that are used to protect virtual addresses used as code or data pointers. The CHERI ISA specification [16] defines the representation of capabilities held in registers and memory, as well as capability-aware instructions to manipulate them. Currently, implementations of CHERI exist for MIPS, RISC- V , and Armv8-A instruction sets. CHERI-enabled processors have been developed by Arm [17], Microsoft [18], as well as in the RISC-V ecosystem. Figure 1 shows the in-memory representation of a CHERI capability. Each capability is double the width of the native integer pointer type of the baseline architecture: 128 bits on 64-bit platforms and 64 bits on 32-bit platforms. One additional bit, thevalidity tag ➀, is stored separate from the capability and is protects its integrity: any manipulation of the capability in-memory by non-capability-aware instructions invalidates its tag. Capability-aware instructions maintain the tag as long as certain architectural invariants are met. This prevents direct in-memory manipulations and injection of arbitrary data as capabilities. Thepermissions ➁ control how the capability can be used and consists of the permissions described in § 2.1. Theobject type ➂ allows capabilities to be temporarily “sealed”, which renders the capability unusable until it is “unsealed” by a special instruction. Sealing is used by CHERI to implement opaque pointer types and fine-grained in-process isolation. Thebounds ➃ describe a lower and upper bound relative to the baseline 830"
+      },
+      {
+        "source": "selected",
+        "value": "Up to 10% of memory-safety vulnerabilities in languages like C and C++ stem from uninitialized variables. This work addresses the prevalence and lack of adequate software mitigations for uninitialized memory issues, proposing architectural protections in hardware. Capability-based addressing, such as the University of Cambridge's CHERI, mitigates many memory defects, including spatial and temporal safety violations at an architectural level. CHERI, however, does not handle undefined behavior from uninitialized variables. We extend the CHERI capability model to include \"conditional capabilities\", enabling memory-access policies based on prior operations. This allows enforcement of policies that satisfy memory-safety objectives such as \"no reads to memory without at least one prior write\" (Write-before-Read). We present our architecture extension, compiler support, and detailed evaluation of our approach on the QEMU full-system simulator and a modified FPGA-based CHERI-RISCV softcore. Our evaluation shows conditional capabilities are practical, with high detection accuracy while adding a small (≈ 3.5%) overhead which is comparable to the cost of baseline CHERI capabilities. 829 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Merve Gülmez",
+          "email": "merve.gulmez@ericsson.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Håkan Englund",
+          "email": "hakan.englund@ericsson.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jan Tobias Mühlberg",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Université Libre de Bruxelles"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Thomas Nyman",
+          "email": "thomas.nyman@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Product Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Ericsson Security Research",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "K UDistrinet",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Leuven",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Merve Gülmez",
+          "email": "merve.gulmez@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research",
+            "DistriNet, KU Leuven",
+            "Université Libre de Bruxelles",
+            "Ericsson Product Security"
+          ],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Håkan Englund",
+          "email": "hakan.englund@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research",
+            "DistriNet, KU Leuven",
+            "Université Libre de Bruxelles",
+            "Ericsson Product Security"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jan Tobias Mühlberg",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research",
+            "DistriNet, KU Leuven",
+            "Université Libre de Bruxelles",
+            "Ericsson Product Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Thomas Nyman",
+          "email": "thomas.nyman@ericsson.com",
+          "orcid": "",
+          "affiliations": [
+            "Ericsson Security Research",
+            "DistriNet, KU Leuven",
+            "Université Libre de Bruxelles",
+            "Ericsson Product Security"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 116,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Mon CHÉRI: Mitigating Uninitialized Memory Access with Conditional Capabilities",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Merve Gülmez",
+          "affiliations": [
+            "Ericsson Security Research",
+            "KU Leuven"
+          ]
+        },
+        {
+          "name": "Håkan Englund",
+          "affiliations": [
+            "Ericsson Security Research"
+          ]
+        },
+        {
+          "name": "Jan Tobias Mühlberg",
+          "affiliations": [
+            "KU Leuven",
+            "Université Libre de Bruxelles"
+          ]
+        },
+        {
+          "name": "Thomas Nyman",
+          "affiliations": [
+            "Ericsson Product Security"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

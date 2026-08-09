@@ -1,0 +1,278 @@
+{
+  "paper_id": "093_veribin_adaptive_verification_of_patches_at_the_binary_level",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "VERIBIN: Adaptive Verification of Patches at the Binary Level"
+      },
+      {
+        "source": "selected",
+        "value": "VERIBIN: Adaptive Verification of Patches at the Binary Level"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Previous work (i.e., SPIDER [51]) has considered a patch as \"safe\" if it only restricts a function's accepted input space without affecting its behavior for valid inputs, and it has formally defined source-code-level properties that need to hold for a patch to be considered as functionality-preserving. Our goal is to aid the patch verification process by identifying, highlighting, and verifying patch-introduced changes directly in binaries. We aim to verify analogous properties, which we call Safe to Apply (StA) properties, without the need for source code, by directly comparing a patched binary with its original version. With the term \"safe\", our definition of StA emphasizes maintaining the program's original functionality, ensuring that the patch does"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Vendors are often provided with updated versions of a piece of software, fixing known security issues. However, the inability to have any guarantee that the provided patched software does not break the functionality of its original version often hinders patch deployment. This issue is particularly severe when the patched software is only provided in its compiled binary form. In this case, manual analysis of the patch's source code is impossible, and existing automated patch analysis techniques, which rely on source code, are not applicable. Even when the source code is accessible, the necessity of binary-level patch verification is still crucial, as highlighted by the recent XZ Utils backdoor. To tackle this issue, we propose VERI BIN, a system able to compare a binary with its patched version and determine whether the patch is “Safe to Apply”, meaning it does not introduce any modification that could potentially break the functionality of the original binary. To achieve this goal, VERI BIN checks functional equivalence between the original and patched binaries. In particular, VERI BIN first uses symbolic execution to systematically identify patch-introduced modifications. Then, it checks if the detected patch-introduced modifications respect specific properties that guarantee they will not break the original binary's functionality. To work without source code, VERI BIN's design solves several challenges related to the absence of semantic information (removed during the compilation process) about the analyzed code and the complexity of symbolically executing large functions precisely. Our evaluation of VERI BIN on a dataset of 86 samples shows that it achieves an accuracy of 93.0% with no false positives, requiring only minimal analyst input. Additionally, we showcase how VERI BIN can be used to detect the recently discovered XZ Utils backdoor. I. I NTRODUCTION Timely creation and deployment of security patches is essential to protect programs against corresponding security vulnerabilities [59]. However, studies [28], [47] show that vendors take significant time to apply these security patches. From the vendor perspective, applying patches involves a risk of regression and breaking the existing program functionality [24], [89]. Such regressions are expensive, especially when affecting mission-critical embedded systems such as aircraft and power grids. Consequently, vendors either spend considerable time testing the patched version of a program to ensure that it does not contain any regressions [12], [15], [25], [31], or they may decide not to patch a system even if it is affected by known vulnerabilities. This friction in verifying patches results in a “patch gap” [55], [65], which is detrimental to the security of the unpatched system, especially if the underlying vulnerability is publicly known [48]. To handle the tension between the risk of regression and the patch gap, we need techniques to verify that a given patch neither affects the program's functionality nor causes regression and, consequently, is safe to apply. In this context, “safe” refers to the preservation of functionality, rather than addressing whether the code is affected by vulnerabilities. Existing patch verification techniques, such as SPIDER [51] and SID [79], require source code patches. However, when the code running on a device is provided by a third party, such source code patches are usually unavailable to vendors, who only receive patched binaries. Furthermore, in old legacy systems, where the exact source code version is lost, or the process for building the software from source code is not documented - binary-level patching is the only option [8]. Recently, researchers have proposed many techniques [26], [32], [65], [71], [82], [84], [87] to directly patch the program binaries, and a few companies, such as 0Patch [9], offer binary-level patches for unmaintained software. Obviously, patches generated in this way cannot be verified using existing, source-code-based, patch verification approaches. As demonstrated by the recent XZ Utils backdoor [10], it is feasible to circumvent source-level verification techniques by injecting malicious code directly into the binary through a modified compilation pipeline. This demonstrates the critical need for and importance of binary-level patch verification, even when the source code is accessible. This necessity has also been recently highlighted by the DARPA AMP program [8], which emphasizes the importance of binary patch verification and tasked several researchers and organizations to develop such techniques. Previous work (i.e., SPIDER [51]) has considered a patch as “safe” if it only restricts a function's accepted input space with- out affecting its behavior for valid inputs, and it has formally defined source-code-level properties that need to hold for a patch to be considered as functionality-preserving. Our goal is to aid the patch verification process by identifying, highlighting, and verifying patch-introduced changes directly in binaries. We aim to verify analogous properties, which we call Safe to Apply (StA) properties, without the need for source code, by directly comparing a patched binary with its original version . With the term “safe”, our definition of StA emphasizes maintaining the program's original functionality, ensuring that the patch does Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.230359 www.ndss-symposium.org not introduce regressions or alter intended behavior. It does not, however, guarantee that the patch addresses the underlying vulnerability. Evaluating semantic equivalence to determine whether patches preserve the original functionality has been previously explored by several source-level approaches [17], [46], [51], [52], [78]. However, as we will show, the verification of these properties at the binary level poses various challenges that require our solution to differ significantly from source-code- based solutions. Additionally, we make our verification “adap- tive”, enabling analysts to assist in cases where automated verifi- cation is infeasible since it requires domain-specific knowledge. More precisely, given a binary patch ( i.e., the original and patched binaries) and the patch-affected function addresses, we use under-constrained symbolic execution (Section V-B) to explore all reachable paths in the affected functions. Then we verify StA properties for corresponding path pairs in the original and patched functions. This path-based verification also enables us to be adaptive and use additional information an analyst can potentially provide (Section V-D). Specifically, if we are unable to verify certain properties automatically ( e.g., because it requires semantic reasoning), we perform introspection of the corresponding symbolic constraint to identify the root cause. This will be translated into a query on the patch that an analyst can answer. We use the analyst's response to simplify symbolic constraints and verify the corresponding property. Our design choices (Section V) aim to produce a high-assurance system with zero false positives, such that any patch considered StA by VERI BIN is always safe to apply . We evaluate VERI BIN on three datasets with a total of 86 pairs oforiginal and patched binaries whose sizes vary from 5KB to 120MB. Our evaluation shows that VERI BIN achieves 93.0% accuracy (i.e., the number of correctly classified patches over the total number of patches) with an average of 1,293.8 seconds of runtime and does not generate any false positives. In summary, we make the following contributions: • We design VERI BIN, the first system capable of describing patch behavior at the binary level and determining whether the patched binary can be safely deployed ( i.e., it is functionality preserving). To this aim, we formalize the definition of Safe to Apply ( StA) patches for binaries and define StA properties. • We design an efficient, path-based technique to verify StA properties. Our techniques reduce the analysis time by 75% compared to the standard approach. • We also make our analysis adaptive so that analysts can augment VERI BIN's analysis by providing domain-specific information, which is not available in the patched binary. • We evaluate VERI BIN on 86 pairs of binaries coming from three different datasets. Our results show that VERI BIN can delineate patch behaviors with 93.0% accuracy and no false positives. Additionally, we showcase how VERI BIN can be used to detect the recently discovered XZ Utils backdoor. To foster further research in this field, we make VERI BIN publicly available [11]. II. B ACKGROUND In principle, a patch to a binary is Safe to Apply (StA) if it does not break the existing functionality. However, every patch, unless empty, impacts the binary's functionality in some way. Nevertheless, certain patches, particularly security patches [47], [64], only restrict the input space by adding validation checks to reject invalid inputs, while preserving the program's behavior for valid inputs. As explained in previous work [51], such input-restricting patches are StA. Therefore, at the high level, we aim to verify that a given patch to a binary is StA by ensuring that it restricts inputs and does not affect the program's behavior for valid inputs . Here, “safe” specifically refers to maintaining the integrity of the program's original functionality, instead of focusing on whether the patch addresses the underlying vulnerability. A. Terminology As mentioned before, our techniques will work at the binary level and have access only to the original and the patched binary. We will use the patch in Listing 1 as our running example and x86-64 as the target architecture to explain our techniques. Figure 1 shows the assembly level Control Flow Graph ( CFG) of the corresponding original and patched functions. Original and Patched entities. We will use o and p to indicate original and patched entities. For instance, for a binary B, Bo and Bp represent the original and patched binary, respectively. Similarly, Fo and Fp indicate the original and patched functions of a function F , respectively. Valid Exit Path (VEP) and Error-handling Exit Path ( EEP). We assume the CFG of a function has a single entry ( i.e., no predecessors) and multiple exit Basic Blocks ( BBs) (i.e., no successors). A complete path in a CFG starts at an entry BB and ends at an exit BB. For instance, all the paths shown in Figure 1 are complete paths. We consider all of a function's arguments as its “inputs”. Within a function, a Valid Exit Path (VEP) is a complete path that the function execution takes only on valid inputs. In other words, an input that follows a VEP is a valid input, such as Po2 and Pp3 in Figure 1. Similarly, an Error-handling Exit Path ( EEP) is a complete path where inputs that follow this path are considered invalid and are thus rejected by the function, such as Po1, Pp1, and Pp2. Path Constraint ( PC). A path constraint ( PC) is a condition that must be met by a function's input for the execution to follow a specific path. For example, the path constraint of Po1 is edi > 0x3ff . We denote the path constraint of a path k as Ck. B. Identifying StA Patches We start from previous work [51] to define a Safe to Apply (StA) patch. Specifically, a patch is StA if it satisfies two properties (StA properties): (i) It does not increase the valid input space of the binary ( non-increasing input space ), and (ii) The output of the patched binary remains the same as the original for all the valid inputs ( output equivalence). The first property ensures that the patched program does not accept any new input values, preserving the original input constraints. The second property guarantees that the output of the patched program will be identical to the original program for all valid inputs, maintaining consistent functionality. Given the original ( Bo) and patched ( Bp) binaries, our"
+      },
+      {
+        "source": "selected",
+        "value": "Previous work (i.e., SPIDER [51]) has considered a patch as \"safe\" if it only restricts a function's accepted input space without affecting its behavior for valid inputs, and it has formally defined source-code-level properties that need to hold for a patch to be considered as functionality-preserving. Our goal is to aid the patch verification process by identifying, highlighting, and verifying patch-introduced changes directly in binaries. We aim to verify analogous properties, which we call Safe to Apply (StA) properties, without the need for source code, by directly comparing a patched binary with its original version. With the term \"safe\", our definition of StA emphasizes maintaining the program's original functionality, ensuring that the patch does"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hongwei Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jianliang Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Simon Fraser University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Ruoyu Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ayushi Sharma",
+          "email": "sharm616@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Aravind Machiry",
+          "email": "amachiry@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Antonio Bianchi",
+          "email": "antoniob@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hongwei Wu",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jianliang Wu",
+          "email": "wujl@sfu.ca",
+          "affiliations": [
+            "Simon Fraser University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Ruoyu Wu",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Ayushi Sharma",
+          "email": "sharm616@purdue.edu",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Aravind Machiry",
+          "email": "amachiry@purdue.edu",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Antonio Bianchi",
+          "email": "antoniob@purdue.edu",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 101,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "VeriBin: Adaptive Verification of Patches at the Binary Level",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/veribin-adaptive-verification-of-patches-at-the-binary-level/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hongwei Wu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Jianliang Wu",
+          "affiliations": [
+            "Simon Fraser University"
+          ]
+        },
+        {
+          "name": "Ruoyu Wu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Ayushi Sharma",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Aravind Machiry",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Antonio Bianchi",
+          "affiliations": [
+            "Purdue University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jianliang Wu",
+      "field": "email",
+      "restored_value": "wujl@sfu.ca",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Ayushi Sharma",
+      "field": "email",
+      "restored_value": "sharm616@purdue.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

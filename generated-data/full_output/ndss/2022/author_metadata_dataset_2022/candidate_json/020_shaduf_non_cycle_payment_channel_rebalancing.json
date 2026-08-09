@@ -1,0 +1,233 @@
+{
+  "paper_id": "020_shaduf_non_cycle_payment_channel_rebalancing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Shaduf: Non-Cycle Payment Channel Rebalancing"
+      },
+      {
+        "source": "selected",
+        "value": "Shaduf: Non-Cycle Payment Channel Rebalancing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "A leading approach to enhancing the performance and scalability of permissionless blockchains is to use the payment channel, which allows two users to perform off-chain payments with almost unlimited frequency. By linking payment channels together to form a payment channel network, users connected by a path of channels can perform off-chain payments rapidly. However, payment channels risk encountering fund depletion, which threatens the availability of both the payment channel and network. The most recent method needs a cycle-based channel rebalancing procedure, which requires a fair leader and users with rebalancing demands forming directed cycles in the network. Therefore, its large-scale applications are restricted. In this work, we introduce Shaduf, a novel non-cycle offchain rebalancing protocol that offers a new solution for users to shift coins between channels directly without relying on the cycle setting. Shaduf can be applied to more general rebalancing scenarios. We provide the details of Shaduf and formally prove its security under the Universal Composability framework. Our prototype demonstrates its feasibility and the experimental evaluation shows that Shaduf enhances the Lighting Network performance in payment success ratio and volume. Moreover, our protocol prominently reduces users' deposits in channels while maintaining the same amount of payments."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "A leading approach to enhancing the performance and scalability of permissionless blockchains is to use the payment channel, which allows two users to perform off-chain payments with almost unlimited frequency. By linking payment channels together to form a payment channel network, users connected by a path of channels can perform off-chain payments rapidly. However, payment channels risk encountering fund depletion, which threatens the availability of both the payment channel and network. The most recent method needs a cycle-based channel rebalancing procedure, which requires a fair leader and users with rebalancing demands forming directed cycles in the network. Therefore, its large-scale applications are restricted. In this work, we introduce Shaduf, a novel non-cycle off- chain rebalancing protocol that offers a new solution for users to shift coins between channels directly without relying on the cycle setting. Shaduf can be applied to more general rebalanc- ing scenarios. We provide the details of Shaduf and formally prove its security under the Universal Composability framework. Our prototype demonstrates its feasibility and the experimental evaluation shows that Shaduf enhances the Lighting Network performance in payment success ratio and volume. Moreover, our protocol prominently reduces users' deposits in channels while maintaining the same amount of payments. I. I NTRODUCTION Blockchain has seen rapid development over the last decade, enabling secure transactions in a distributed and trust- less setting. Complex transaction logic is also supported with the help of so-called smart contracts, which can be regarded as program codes executed on the blockchain. However, the scalability issue still limits the deployment of blockchain, due to the inherent consensus mechanism to achieve a consistent view on transactions among all peers. For example, Bitcoin processes tens of transactions per second and requires around one hour to confirm a transaction. A novel solution, called payment channels, has been intro- duced to address the scalability challenge. A payment channel allows two users to deposit funds to a co-maintained ledger and perform payments without broadcasting and recording them on the blockchain. It is guaranteed that users could refund coins in the two-party ledger to the blockchain at any time. Since payments require only approval from channel users rather than all peers of the blockchain, they are conducted quickly and * Corresponding authors. confirmed immediately, only limited by the communication bandwidth and latency. Payment channels are extended to the network, in which users sharing no channels can perform multi-hop payments leveraging paths of existing channels. With other users as relays of payments, users do not have to open channels to each other, thereby reducing costs in maintaining channels. Lightning Network (LN) [21], for example, is a practical payment channel network deployed upon Bitcoin. Users in payment channels face the problem of fund depletion [13]. As payment flows in both directions over a channel are not equal, funds gradually accumulate in the direction of the higher flow. Eventually, the channel becomes depleted and fails payments in that direction, undermining the off-chain network throughput. Current solutions for refunding the depleted channel fall into two categories. The first one is to refund the single channel using on-chain coins. A trivial ap- proach is to close and reopen the channel, which requires two costly and time-consuming on-chain transactions. LOOP (see https://lightning.engineering/loop/) reduces the refund costs to one on-chain transaction. Both approaches need interactions with the blockchain each time of channel refunding, which can be regarded as “one-time on-chain execution, one-time refunding”. The second solution is to refund the channel by reallocating deposits in adjacent channels, also called “rebal- ance”. It recovers the channel from depletion without perform- ing transactions on the blockchain, exemplified by Revive [13]. Relying on circular paths in the payment channel network, Revive instructs coins to flow along the path, therefore users' coins are rebalanced from well-funded channels to poorly- funded channels. The whole process is executed off-chain, thus being cost-free for unlimited times of rebalancing and relieving the transaction load on the underlying blockchain. These features make Revive act well in scenarios where users have stable and circular rebalancing relations. Nevertheless, Revive suffers from low feasibility in large- scale applications, such as LN, because of the lack of auton- omy. Specifically, to achieve a successful off-chain rebalanc- ing, the following requirements need to be met. (1) For users with the demand of rebalancing, both the channels they want to rebalance and the direction of desired coin flows can form directed cycles in the payment channel network. (2) A fair leader is necessary to collect users' rebalancing demands, find the directed cycles, and generate the rebalancing transactions for cycles justly. (3) Once a rebalancing cycle is established, all cycle users would cooperate with the rebalancing procedure. If any of these requirements are not satisfied, Revive will fail. To make matters worse, even if the rebalancing succeeds, only the minimum rebalancing amount among the cycle users could be Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24203 www.ndss-symposium.org TABLE I: Comparison of channel refunding solutions. # On-Chain TXs for n Times Refunding Wait Time for 1 Time Refunding Leader Bitcoin-compatible Usability Non-cycle Users Cycle UsersSingle-channel Users Multiple-channel Users Close-and-Reopen 2n 2∆ No need Yes LOOP n ∆ No need Yes Revive 0 instantly 1 Fair2 Yes3 Shaduf 14 instantly 1 No need No 5 ∆ denotes the blockchain delay, which is the maximum time required for one transaction to be recorded on the blockchain. : unusable; : usable when requirements are met; : usable. 1 Instantly when involved users cooperate. In Revive, it includes users along the cycle. In Shaduf, it includes two adjacent users. 2 The leader treats users' rebalancing requests equally. 3 With the atomic multi-channel update protocol introduced in [9], Revive could be deployed to Bitcoin-compatible platforms. 4 For one single pair of channels, Shaduf achieves 1-time on-chain binding, n-times off-chain refunding. 5 Although the single-channel users cannot be off-chain rebalanced, their channels could help other users to rebalance. In the LN snapshot used in the evaluation (Section VI-B), the single-channel users account for around 45%. achieved. In other words, one user's rebalanced amounts are limited by the amounts of other users in the cycle. Contributions and roadmap. This work addresses the aforementioned shortcomings with a protocol we call Shaduf, which overcomes the limitations of Revive and can be applied to more general rebalancing scenarios. Our contributions in- clude, • Novel solution for payment channel rebalancing. We in- troduce Shaduf, a non-cycle off-chain channel rebalancing scheme, which allows users to perform unlimited times of off-chain coin shifts between channels after one-time on-chain binding . Compared with Revive, Shaduf does not rely on cycles in the network. Even better, since only the user's own channels and adjacent users are involved, Shaduf is resistant to uncooperative participants and not restricted by others' demands. The comparison between current approaches and Shaduf is shown in Table I. An additional benefit brought by the autonomy of rebalancing is that Shaduf reduces the deposits of channel users and maintains the payment amount (Section III and V). • Formal security proof. We formalize the security proper- ties of Shaduf using the ideal/real world paradigm in the Universal Composability (UC) framework and provide the formal security proof according to our definition (Section IV and V, and Appendix B). • Implementation and valid evaluation. We provide a proof- of-concept implementation of Shaduf on Ethereum to show the required one-time binding is cheap compared with the unlimited times of rebalancing brought by it. Besides, an experimental evaluation demonstrates that Shaduf outperforms LN and Revive. Particularly, under different application strategies, Shaduf increases by 6% - 28% in terms of payment success ratio and volume, and reduces users' deposits by 37% - 75% while maintaining the same network performance (Section VI). II. P RELIMINARIES A. Blockchain and Smart Contracts The blockchain is an append-only transaction ledger and maintains users' balances. Let ∆ be the blockchain delay, i.e., the time for a transaction to be recorded on the blockchain. A smart contract is a piece of code executed on the blockchain, receiving coins and handling them according to predefined rules when triggered by users or other contracts. Our scheme is constructed upon Turing-complete blockchains such as Ethereum. B. Payment Channel There are three phases in the lifetime of a payment channel: open, update, and close, as shown in Figure 1. 1) Open: Two users, Alice and Bob, open a channel by depositing funds into it. Firstly, Alice sends a coins to the contract as her deposits in the channel. Upon receiving the coins, the contract informs Bob of the opening event and waits ∆ time for his confirmation. If Bob confirms, the channel is opened and the sent along b coins serve as his deposits in the channel. Otherwise, Alice retrieves the coins she deposited. 2) Update: Two users update the channel state in pace with off-chain payments. The channel state includes the allocation of the channel capacity, i.e., a total of a + b coins, between Alice and Bob, and a version that indicates the number of updates and increases by 1 each update. A state is valid when it is confirmed by both users, that is, users have exchanged their signatures on the state. Any user can initiate the update. For instance, when Alice performs a payment, she increases the channel version, updates the balance allocation, and sends the updated state to Bob along with her signature on it. If Bob approves the state and replies with his signature on it, the state becomes valid. The process is completed without interacting with the blockchain. Alice Bob ... Alice Bob Open Channel: Update Channel: Close Channel: Blockchain Fig. 1: Three phases of a payment channel, exemplified by β whose users are Alice and Bob. Dashed boxes indicate on- chain transactions and colored boxes represent the balances of users in the channel. Two users first escrow a and b coins to the contract C(β) respectively, thereby opening the channel. After an arbitrary number of payments, they close the channel, and the latest balances, an and bn, are refunded. 2"
+      },
+      {
+        "source": "selected",
+        "value": "A leading approach to enhancing the performance and scalability of permissionless blockchains is to use the payment channel, which allows two users to perform off-chain payments with almost unlimited frequency. By linking payment channels together to form a payment channel network, users connected by a path of channels can perform off-chain payments rapidly. However, payment channels risk encountering fund depletion, which threatens the availability of both the payment channel and network. The most recent method needs a cycle-based channel rebalancing procedure, which requires a fair leader and users with rebalancing demands forming directed cycles in the network. Therefore, its large-scale applications are restricted. In this work, we introduce Shaduf, a novel non-cycle offchain rebalancing protocol that offers a new solution for users to shift coins between channels directly without relying on the cycle setting. Shaduf can be applied to more general rebalancing scenarios. We provide the details of Shaduf and formally prove its security under the Universal Composability framework. Our prototype demonstrates its feasibility and the experimental evaluation shows that Shaduf enhances the Lighting Network performance in payment success ratio and volume. Moreover, our protocol prominently reduces users' deposits in channels while maintaining the same amount of payments."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zhonghui Ge",
+          "email": "zhonghui.ge@sjtu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yi Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yu Long",
+          "email": "longyu@sjtu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Dawu Gu",
+          "email": "dwgu@sjtu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zhonghui Ge",
+          "email": "zhonghui.ge@sjtu.edu.cn",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yi Zhang",
+          "email": "",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yu Long",
+          "email": "longyu@sjtu.edu.cn",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Dawu Gu",
+          "email": "dwgu@sjtu.edu.cn",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 110,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Dawu Gu",
+          "block_id": "pdf:p1:b1",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Dawu Gu",
+          "affiliation_raw": "Shanghai Jiao Tong University",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b1",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 16.436,
+          "center_distance": 63.625,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Shaduf: Non-Cycle Payment Channel Rebalancing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-254/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zhonghui Ge",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ]
+        },
+        {
+          "name": "Yi Zhang",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ]
+        },
+        {
+          "name": "Yu Long",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ]
+        },
+        {
+          "name": "Dawu Gu",
+          "affiliations": [
+            "Shanghai Jiao Tong University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Dawu Gu",
+      "field": "email",
+      "restored_value": "dwgu@sjtu.edu.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

@@ -1,0 +1,252 @@
+{
+  "paper_id": "225_saturn_host_gadget_synergistic_usb_driver_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SATURN: Host-Gadget Synergistic USB Driver Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "SATURN: Host-Gadget Synergistic USB Driver Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The Universal Serial Bus (USB) is an essential component in modern operating systems, allowing for a wide assortment of peripherals to connect conveniently to a computer. The USB stack in an operating system usually consists of the following two components: the host-side driver and the device-side gadget driver, both of which are securitycritical. If any vulnerabilities in these privileged-mode drivers are exploited, a malicious or malformed device could crash the whole system. Fuzzing, a popular automated vulnerability detection technology, has been applied to testing kernel components such as drivers with varying degrees of success. However, existing works mainly focus on one side and test drivers through emulating malicious input from userspace or peripherals while neglecting intricate internal states triggered only through interaction between the two boundaries, leaving a multitude of bugs exposed. In this paper, we propose SATURN, a host-gadget synergistic USB driver fuzzing approach, aiming to cover the entire handling chain throughout the USB communication. To achieve this, SATURN first leverages extracted driver information to attach gadgets systematically and trigger more driver types, facilitating the transition to interactive logic. Then, SATURN performs a persistent synergistic fuzzing process through canonical operation injection on both sides to play their own important roles, significantly expanding the states explored and exposing bugs in such logic. Compared to the state-of-theart USB fuzzers, such as Syzkaller, USBFuzz and FUZZUSB, SATURN improves the branch coverage statistics on the corresponding stack by 1.53×, 3.69× and 2.3×, respectively. In addition, SATURN found 26 previously unknown bugs, among which are 4 CVEs, including drivers on each side. 4646 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The Universal Serial Bus (USB) is an essential component in modern operating systems, allowing for a wide assortment of peripherals to connect conveniently to a com- puter. The USB stack in an operating system usually consists of the following two components: the host-side driver and the device-side gadget driver, both of which are security- critical. If any vulnerabilities in these privileged-mode drivers are exploited, a malicious or malformed device could crash the whole system. Fuzzing, a popular automated vulnerabil- ity detection technology, has been applied to testing kernel components such as drivers with varying degrees of success. However, existing works mainly focus on one side and test drivers through emulating malicious input from userspace or peripherals while neglecting intricate internal states triggered only through interaction between the two boundaries, leaving a multitude of bugs exposed. In this paper, we propose S ATURN , a host-gadget synergis- tic USB driver fuzzing approach, aiming to cover the entire handling chain throughout the USB communication. To achieve this, S ATURN first leverages extracted driver information to attach gadgets systematically and trigger more driver types, facilitating the transition to interactive logic. Then, S ATURN performs a persistent synergistic fuzzing process through canonical operation injection on both sides to play their own important roles, significantly expanding the states explored and exposing bugs in such logic. Compared to the state-of-the- art USB fuzzers, such as Syzkaller, USBFuzz and FUZZUSB, SATURN improves the branch coverage statistics on the cor- responding stack by 1.53 ×, 3.69 × and 2.3 ×, respectively. In addition, S ATURN found 26 previously unknown bugs, among which are 4 CVEs, including drivers on each side. 1. Introduction The Universal Serial Bus (USB) is one of the universal standards in the modern computer system. A wide variety of peripheral devices can connect to a computer through simply plugging into the USB socket. USB devices are pervasive and play an essential role in a variety of applications such as file transfer, charging, audio, and keyboard. Their functional- ities are powered by two software components: the host-side driver and the device-side driver. Apart from working with the hardware, the host-side driver performs interactions with the user program as well as makes various requests to the peripherals. The device-side driver, commonly named the B. Yu Jiang is the corresponding author. gadget, runs on billions of embedded systems and Android devices, which receives requests from the host and responds accordingly. While unifying peripheral connections for con- venience, the USB system, like any other piece of hardware and software, contains bugs and is potentially dangerous. For instance, attackers can exploit vulnerabilities within the drivers to intercept sensitive traffic, steal private data, or even take control of a computer [ 10], [ 37]. As a master- slave model, the security of USB system depends on either side. The numerous functionalities expose device drivers to a broad attack surface, and in conjunction with the drivers running under the privileged mode, lead to the possibility that simply plugging in a malicious or malformed device might cause a system-level crash. Fuzzing is an effective vulnerability discovery approach and has been applied to assist kernel testing. There has been prior research concerning USB driver fuzzing. Syzkaller's USB fuzzing module [ 13] injects randomly generated data from the device in response to the host's requests, exploring any possible vulnerabilities in the host drivers. USBFuzz [22] uses an emulated USB device virtually attached and detached to the target system, feeding random inputs when drivers perform IO operations. FUZZUSB [ 12] extracts in- ternal state machines from USB gadget drivers to achieve state-guided gadget fuzzing through multi-channel inputs. In practice, these methods have achieved respectable results and have detected vulnerabilities within the USB stack. However, these approaches mainly test one side of the USB stack, which limits its effectiveness significantly. As aforementioned, the USB system consists of host drivers and gadget drivers, both of which maintain their own in- ternal state that can be altered by inputs from outside and interactions with the opposite side. These drivers expose two external boundaries: userspace application to the host kernel and external events to the device-side logic, (e.g., keyboard press). Existing works, which test from one side, experience difficulty in exploring states that can only be reached through both sides' interaction. For instance, a printer's“mid-print, no paper” status requires a joint effort. Specifically, to reach this state, the userspace program first submits a print job, which is dispatched to the host driver. Then the host driver informs the printer gadget and their respective states change to the printing in progress state. During printing, the printer detects a lack of paper in the intray, the information is then sent to the gadget, which subsequently interacts with the host to enter the correspond- ing state. In the above process, inputs from both the user application and the peripheral device influenced the states of 4646 DOI 10.1109/SP54263.2024.00051 both drivers, leading to a state that cannot be easily reached by sending inputs only to one side, thus will be incapable of detecting bugs that can only be triggered here. This prompts a need for more sophisticated testing techniques that can effectively find bugs in the drivers' interaction phase, as currently, the Linux kernel primarily conducts initialization checks that detect invalid USB con- figurations, while the data transfer, i.e. device interactions, is left unchecked [14]. Therefore, we propose to fuzz the host drivers and the gadget drivers synergistically, targeting vul- nerabilities within the drivers' interaction after attachment. To achieve such goals, the challenges are two-fold: First, we need to significantly increase the success rate of driver initialization, thus the state of such drivers can transition to those involved in their respective devices' interactions, allowing fuzzers to uncover bugs within this process. Existing methods mainly rely on a limited set of initialization information or randomness to overcome kernel sanity checks, which are not robust enough to initialize a wide variety of drivers. S ATURN employs Linux's built- in gadget subsystem as the device side, which can trigger various host drivers through synthesizing different attribute configurations. However, the gadget module has a vast con- figuration space, and randomly generated configurations can be easily rejected by the kernel's sanity checker. Therefore, it is imperative to devise a method for systematically and efficiently attaching a wide variety of gadget devices. Second, we need to engage in the interaction process with canonical operations, significantly expanding the states explored and exposing bugs in such interactive logic. Pre- vious approaches such as Syzkaller [5] perform less than optimal since they solely rely on predefined system call descriptions and test one side of the USB stack, thus a large proportion of the inputs it produces are incompatible with the dynamically attached driver. Therefore, it is essential to reliably detect dynamically attached device files including both the host drivers and the corresponding gadget drivers, and inject compatible and high-quality inputs to both sides, thus invoking their interactions and exploring the states that can only be reached through such interactions. To address the aforementioned limitations and improve fuzzing effectiveness, we propose S ATURN , a novel host- gadget synergistic USB driver fuzzing approach. Unlike typical fuzzers focusing on one side, S ATURN enables both security-critical sides, the host and gadget, to play their own essential roles in the overall fuzzing process. First, SATURN directly extracts the possible configuration space from the kernel and utilizes the gadget subsystem to respond to initialization requests, thus greatly increasing the success rate of driver initialization. Next, SATURN efficiently detects the device files on both sides and dynamically probes the underlying file operations, allowing S ATURN to be aware of the inputs that host and gadget drivers require. Finally, SATURN performs persistent fuzzing synergistically by in- jecting sequences on both sides, grouping syscalls according to gadget types, and fixing parameters if necessary, thus significantly increasing the quality of the generated inputs. We implemented SATURN and evaluated its performance on recent versions of the Linux kernel. Overall, S ATURN achieves higher coverage on the corresponding stack than the host-side fuzzer Syzkaller USB fuzzing module and USBFuzz, as well as the gadget-side fuzzer FUZZUSB by 1.53 ×, 3.69 × and 2.3 × on average. Subsequently, we evaluated the specific improvements gained by either com- ponent. Regarding S ATURN 's driver attachment component, it successfully triggered 304 unique drivers, compared to Syzkaller's 14 drivers and USBFuzz's 44 drivers. Regarding synergistic fuzzing, we extracted and compared the cover- age of common drivers among Syzkaller, USBFuzz, and SATURN , and observed that synergistic fuzzing delivers a 58% and 77% improvement, respectively. This demonstrates that S ATURN is capable of initializing more drivers and effectively exploring the interaction states simultaneously through the host-gadget synergistic fuzzing approach. In terms of vulnerability discovery capabilities, S ATURN found 26 previously unknown vulnerabilities, among which are 4 CVEs, including the implementations on both the host and gadget drivers. The bugs have been reported to kernel maintainers and relevant patches have been merged. Overall, this paper makes the following contributions: • We identify the difficulties in USB driver fuzzing, and propose a host-gadget synergistic fuzzing ap- proach targeting to cover the full handling chain during USB communication. • We design S ATURN , consisting of a systematic gad- get attachment phase and an efficient host-gadget synergistic fuzzing phase, which is capable of de- creasing the difficulty involved for fuzzers to test USB drivers and increasing the attack surface. • We implemented S ATURN and evaluated its effec- tiveness from the perspectives of the overall and component-wise improvements and found 26 un- known vulnerabilities, among which are 4 CVEs. 2. Background and Motivation 2.1. USB Host-Gadget Model Since its introduction in the 1990s, USB has received widespread popularity due to the hot-plugging and plug- and-play features. It has become a ubiquitous standard used to connect a diverse range of peripheral devices such as keyboards, mice, printers, digital cameras, flash memory, and hard drives to the host computer. With the advent of high-speed USB standards (1.x, 2.x, 3.x, 4.x), numerous new peripherals have been developed, and a considerable number of drivers have been integrated into the kernel codebase. USB follows an asymmetrical master-slave model in which the host computer functions as the master, while the peripheral devices serve as the slaves. In the communication process, only the host initiates communication requests by polling and sending data to the peripheral devices, which can only wait for the host's requests. This master-slave model implies that drivers on the host and device sides differ signif- icantly. Linux, one of the most successful operating systems, 4647"
+      },
+      {
+        "source": "selected",
+        "value": "The Universal Serial Bus (USB) is an essential component in modern operating systems, allowing for a wide assortment of peripherals to connect conveniently to a computer. The USB stack in an operating system usually consists of the following two components: the host-side driver and the device-side gadget driver, both of which are securitycritical. If any vulnerabilities in these privileged-mode drivers are exploited, a malicious or malformed device could crash the whole system. Fuzzing, a popular automated vulnerability detection technology, has been applied to testing kernel components such as drivers with varying degrees of success. However, existing works mainly focus on one side and test drivers through emulating malicious input from userspace or peripherals while neglecting intricate internal states triggered only through interaction between the two boundaries, leaving a multitude of bugs exposed. In this paper, we propose SATURN, a host-gadget synergistic USB driver fuzzing approach, aiming to cover the entire handling chain throughout the USB communication. To achieve this, SATURN first leverages extracted driver information to attach gadgets systematically and trigger more driver types, facilitating the transition to interactive logic. Then, SATURN performs a persistent synergistic fuzzing process through canonical operation injection on both sides to play their own important roles, significantly expanding the states explored and exposing bugs in such logic. Compared to the state-of-theart USB fuzzers, such as Syzkaller, USBFuzz and FUZZUSB, SATURN improves the branch coverage statistics on the corresponding stack by 1.53×, 3.69× and 2.3×, respectively. In addition, SATURN found 26 previously unknown bugs, among which are 4 CVEs, including drivers on each side. 4646 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yiru Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Hao Sun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jianzhong Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yuheng Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yiru Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Hao Sun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jianzhong Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yuheng Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 111,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SATURN: Host-Gadget Synergistic USB Driver Fuzzing",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yiru Xu",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Hao Sun",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Jianzhong Liu",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yuheng Shen",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yu Jiang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 5,
+      "proposed_count": 5,
+      "retained_count": 4,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 5,
+      "country_values_restored": 5,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

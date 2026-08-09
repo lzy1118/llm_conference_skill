@@ -1,0 +1,272 @@
+{
+  "paper_id": "087_cmasan_custom_memory_allocator_aware_address_sanitizer",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "CMASan: Custom Memory Allocator-aware Address Sanitizer"
+      },
+      {
+        "source": "selected",
+        "value": "CMASan: Custom Memory Allocator-aware Address Sanitizer"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Custom Memory Allocator (CMA) replaces the standard memory allocator for various purposes, such as improving memory efficiency or enhancing security. However, memory objects allocated by CMA are vulnerable to memory bugs similar to those allocated by the standard memory allocator. Unfortunately, existing memory bug detection approaches, including Address Sanitizer (ASan), do not work properly with these CMAs because existing approaches are mainly designed for the standard memory allocator. This paper presents CMASan, the first CMA-aware address sanitizer designed to effectively detect memory bugs on CMA objects that ASan misses without requiring expert knowledge, manual code modifications, or changing the unique internal logic of CMAs. According to our evaluation, CMASan successfully identifies 19 previously unknown CMA memory bugs undetected by ASan, including some undetected for 9 years. Compared to ASan, CMASan incurs only an additional 9.63% overhead. 740 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Custom Memory Allocator (CMA) replaces the standard memory allocator for various purposes, such as improving memory efficiency or enhancing security. However, memory objects allocated by CMA are vulnerable to memory bugs similar to those allocated by the standard memory allocator . Unfortunately, existing memory bug detection approaches, including Address Sanitizer (ASan), do not work properly with these CMAs because existing approaches are mainly designed for the standard memory allocator . This paper presents CMASan, the first CMA-aware address sanitizer designed to effectively detect memory bugs on CMA objects that ASan misses without requiring expert knowledge, manual code modifications, or changing the unique internal logic of CMAs. According to our evaluation, CMASan successfully identifies 19 previously unknown CMA memory bugs undetected by ASan, including some undetected for 9 years. Compared to ASan, CMASan incurs only an additional 9.63% overhead. 1. Introduction Custom Memory Allocator (CMA) is used as an alternative to the standard memory allocator for various purposes [ 1- 6], such as cache utilization, memory efficiency, and security. These CMAs are widely used in the real world. For example, among the top 100 C/C++ applications sorted by GitHub stars, CMAs have been adopted in 44% of the applications. However, objects allocated by CMAs can be vulnerable to invalid memory access due to memory bugs (e.g., buffer overflow), similar to those allocated by the standard memory allocator. Unfortunately, existing memory bug detection approaches are designed for the standard memory allocator, and therefore, they are unable to adequately detect memory bugs related to CMAs, which have unique internal CMA logic and different CMA API names and types (e.g., clear API). To address this, several approaches have been proposed for detecting CMA- related memory bugs. These approaches can be broadly †. Corresponding author classified into two categories: symbolic execution-based approaches [7- 11] and Address Sanitizer (ASan)-based [ 12] manual code modification approaches [ 13- 17]. Symbolic execution-based detection approaches for CMA memory bugs are restricted by the inherent limitations [18]o f symbolic execution, such as path explosion, limited handling of complex data structures, and difficulties with real-world inputs, preventing them from detecting all types of CMA memory bugs in large and complex programs. ASan, unlike symbolic execution, performs instrumen- tation at compile time and verification during runtime using precise real-time data. Consequently, ASan does not suffer from the same limitation as symbolic execution, thereby allowing for identifying memory bugs in large and complicated programs. In fact, ASan is the most widely adopted approach [ 19] for memory bug detection, and ASan identifies a significant number of bugs in C/C++ programs. For instance, ASan has identified more than 10,000 memory bugs [20- 22] across different software. While ASan effectively detects memory bugs, it does not properly cover memory bugs related to CMA objects, as it only tracks objects allocated by standard memory allocators (e.g., malloc()). To address these limitations, the Shim [ 13, 14] approach and the ASan manual poisoning APIs [ 15- 17] have been proposed to support the detection of CMA memory bugs through ASan. This Shim approach provides a mode to disable CMA and replace it with a standard allocator, thereby enabling ASan to treat CMA as a standard allocator. However, applying the Shim approach requires an understanding of the target application code and manual modifications. Furthermore, not all CMAs are compatible with Shim because their diverse and unique CMA internal logic can complicate precise mapping with the standard memory allocator, resulting in less accurate detection. The ASan manual poisoning APIs support manual poi- soning while maintaining CMA's logic. However, using these APIs also requires code modifications and expert knowledge of the target program and CMA. Additionally, users need to manually modify CMA to secure redzone areas for each CMA object and implement separated Quarantine zones 740 DOI 10.1109/SP61157.2025.00074 to delay the freeing of CMA objects for a certain period. Consequently, the application of both the Shim approach and ASan manual poisoning APIs to real-world programs is rare due to these limitations, including the need for manual code modification and expert knowledge, and limited CMA API coverage. According to our survey of the top 100 C/C++ applications ranked by GitHub stars, only ten applications have adopted Shim. Among these, CMAs in five applications are not fully covered by Shim. Furthermore, only three applications utilize ASan manual poisoning APIs. We present CMASan, the first CMA-aware Address Sanitizer, designed to detect CMA-related memory bugs in applications that utilize CMAs, without requiring expert knowledge, code modification, or alterations to the internal logic of the target CMAs. First, at static time, CMASan identifies the CMA APIs and instruments these APIs for memory bug detection. More specifically, CMASan identifies CMA API candidates using a widely-used static analyzer, CodeQL [23], and then categorizes these candidates through CMASan's semi-automated categorization procedure. For each identified CMA API (e.g., alloc, realloc, and free), CMASan automatically inserts the corresponding ASan instrumentation. Note that to preserve the internal logic of the CMA allocator, CMASan does not replace the allocator with ASan's allocator like ASan. Furthermore, CMASan handles special APIs that are used uniquely and frequently in CMA. For example, CMA frequently uses the clear API to release multiple objects at once, a practice observed in 20% of arena-type CMA cases, instead of individually freeing objects through the free. By handling such clear APIs, CMASan can accurately detect DF and UAF that occur after clear operations. In runtime, for fast and accurate memory detection related to CMA objects, it is important to efficiently manage the CMA object-related metadata generated by CMASan. To achieve this, CMASan utilizes a customized two-level table to handle metadata efficiently. Additionally, CMASan carefully manages the lifecycle of the metadata to maximize its detection capability by always maintaining the most up- to-date, accurate information. To enhance the detection capability for temporal memory violations while preserving the logic of CMA, CMASan introduces instance-specific quarantine zones to maximize the duration of objects in the freed state. Unlike ASan, CMASan's quarantine zone delays free requests by only marking them in the redzone without actually freeing them. Additionally, when multiple allocators share a single quaran- tine zone, it can result in inaccurate detections of Use-After- Free (UAF) and Double-Free (DF). To address these issues, CMASan proposes an individual quarantine zone approach, maintaining a separate quarantine zone for each allocator instance. Lastly, to further improve the accuracy of CMA bug detection, it is necessary to appropriately handle the various false positive reports. For example, CMASan manages red- zones without replacing existing CMAs with ASan's internal memory allocators. This approach preserves the internal behavior of CMAs, which could lead to false positives, such as metadata access on freed objects. To prevent these CMA- related false positive issues, CMASan proposes four different false positive suppression techniques. In our evaluation, we first identify a significant number of memory accesses to CMA objects-for example, in ncnn [24], 87% of memory accesses are related to CMA-that ASan is unable to verify. Due to CMASan's increased detection coverage for checking memory access to such CMA ob- jects, CMASan has successfully detected ten known CMA bugs that native ASan does not detect, without any false positive reports. In addition, CMASan identifies 19 new unknown CMA memory bugs in real-world applications. All these 19 bugs have been reported, and twelve have received confirmation. Out of these, six have been patched and assigned CVE IDs. Interestingly, CMA memory bugs detected by CMASan in SQLite3 and PHP are triggered by their own unit tests. However, due to the limitations of existing approaches, these bugs remained undetected for two years in PHP and nine years in SQLite. Furthermore, due to several CMASan's optimization techniques, such as the two-level metadata table, CMASan incurs only an additional 9.63% performance overhead and 14.83% memory overhead on average compared to native ASan. In summary, this paper makes the following contributions: • We propose the first CMA-aware address sanitizer de- signed to improve detection capabilities, allowing for the identification of CMA memory bugs without requiring specific expert knowledge and code modification. • We propose several techniques that handle CMA's unique logic to improve the precision of detecting CMA memory bugs and minimize false positives. • In our evaluation, CMASan identifies 19 previously un- known real-world CMA memory bugs, of which 5 are acknowledged, 7 have been fixed, and 6 of them received CVEs. 2. Background and Motivation 2.1. Mechanism of Address Sanitizer Address Sanitizer (ASan) pre-allocates shadow memory at a ratio of 1 byte of shadow memory for every 8 bytes of user- accessible memory for storing the redzone statuses to validate accesses during load/store instructions [ 25]. When allocating an object, surrounding areas are marked as redzones to detect Buffer-Overflow (BOF). ASan achieves this by replacing standard memory allocator APIs (e.g., malloc, realloc,o r calloc) with its internal allocator APIs, which allocate extra space surrounding the requested-sized object to accommodate space for redzones. This extra space for redzones helps detect BOF memory access. Similarly, to detect Use-After-Free (UAF) and Double- Free (DF), ASan replaces standard memory allocator APIs (e.g., free, or realloc) with its internal ASan allocator APIs. ASan also marks a freed object as a redzone, allowing the detection of subsequent accesses to and deallocation API calls on the object as UAF and DF, respectively. However, 741"
+      },
+      {
+        "source": "selected",
+        "value": "Custom Memory Allocator (CMA) replaces the standard memory allocator for various purposes, such as improving memory efficiency or enhancing security. However, memory objects allocated by CMA are vulnerable to memory bugs similar to those allocated by the standard memory allocator. Unfortunately, existing memory bug detection approaches, including Address Sanitizer (ASan), do not work properly with these CMAs because existing approaches are mainly designed for the standard memory allocator. This paper presents CMASan, the first CMA-aware address sanitizer designed to effectively detect memory bugs on CMA objects that ASan misses without requiring expert knowledge, manual code modifications, or changing the unique internal logic of CMAs. According to our evaluation, CMASan successfully identifies 19 previously unknown CMA memory bugs undetected by ASan, including some undetected for 9 years. Compared to ASan, CMASan incurs only an additional 9.63% overhead. 740 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Junwha Hong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Department of Electrical and Computer Engineering, Rensselaer Polytechnic Institute, University of Maryland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Wonil Jang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Department of Electrical and Computer Engineering, Rensselaer Polytechnic Institute, University of Maryland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Mijung Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Department of Electrical and Computer Engineering, Rensselaer Polytechnic Institute, University of Maryland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Lei Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Department of Electrical and Computer Engineering, Rensselaer Polytechnic Institute, University of Maryland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yonghwi Kwon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Department of Electrical and Computer Engineering, Rensselaer Polytechnic Institute, University of Maryland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yuseok Jeon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Department of Electrical and Computer Engineering, Rensselaer Polytechnic Institute, University of Maryland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Junwha Hong",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Wonil Jang",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Mijung Kim",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Lei Yu",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science Rensselaer Polytechnic Institute"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yonghwi Kwon",
+          "email": "",
+          "affiliations": [
+            "Department of Electrical and"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Computer Engineering",
+          "email": "",
+          "affiliations": [
+            "University of Maryland"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Yuseok Jeon",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 21,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "CMASan: Custom Memory Allocator-aware Address Sanitizer",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Junwha Hong",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Wonil Jang",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Mijung Kim",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Lei Yu",
+          "affiliations": [
+            "Rensselaer Polytechnic Institute"
+          ]
+        },
+        {
+          "name": "Yonghwi Kwon",
+          "affiliations": [
+            "University of Maryland"
+          ]
+        },
+        {
+          "name": "Yuseok Jeon",
+          "affiliations": [
+            "UNIST"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

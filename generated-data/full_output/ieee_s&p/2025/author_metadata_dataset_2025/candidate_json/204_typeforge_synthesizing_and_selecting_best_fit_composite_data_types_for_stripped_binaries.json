@@ -1,0 +1,280 @@
+{
+  "paper_id": "204_typeforge_synthesizing_and_selecting_best_fit_composite_data_types_for_stripped_binaries",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "TypeForge: Synthesizing and Selecting Best-Fit Composite Data Types for Stripped Binaries"
+      },
+      {
+        "source": "selected",
+        "value": "TypeForge: Synthesizing and Selecting Best-Fit Composite Data Types for Stripped Binaries"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Static binary analysis is a widely used approach for ensuring the security of closed-source software. However, the absence of type information in stripped binaries, particularly for composite data types, poses significant challenges for both static analyzers and reverse engineering experts in achieving efficient and accurate analysis. Existing methods often struggle with inaccuracies and scalability limitations when dealing with such data types. To address these problems, we present TYPEFORGE, a novel approach inspired by the workflow of reverse engineering experts, which uses a two-stage synthesisselection strategy to automate the recovery of composite data types from stripped binaries. We design a new graph structure, the Type Flow Graph (TFG) to represent type information within stripped binaries. In the first stage, TFG-based Type Synthesis focuses on efficiently and accurately building constraints and synthesizing possible composite type declarations from the stripped binaries. In the second stage, we propose an LLM-assisted double-elimination framework to select the best-fit type declaration from the candidates by assessing the readability of the decompiled code. Our comparison with stateof-the-art approaches demonstrates that TYPEFORGE achieves F1 scores of 81.7% and 88.2% in Composite Data Type Identification and Layout Recovery, respectively, substantially outperforming existing methods. Additionally, TYPEFORGE achieves an F1 score of 72.1% in Relationship Recovery, a particularly challenging task for previous approaches. Furthermore, TYPEFORGE has significantly lower time overhead, requiring only about 3.8% of the time taken by OSPREY, the best-performing existing approach, making it a promising solution for various real-world reverse engineering tasks. 3070 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Static binary analysis is a widely used approach for ensuring the security of closed-source software. However, the absence of type information in stripped binaries, particularly for composite data types, poses significant challenges for both static analyzers and reverse engineering experts in achieving efficient and accurate analysis. Existing methods often struggle with inaccuracies and scalability limitations when dealing with such data types. To address these problems, we present TYPEFORGE , a novel approach inspired by the workflow of reverse engineering experts, which uses a two-stage synthesis- selection strategy to automate the recovery of composite data types from stripped binaries. We design a new graph structure, the Type Flow Graph (TFG) to represent type information within stripped binaries. In the first stage, TFG-based Type Synthesis focuses on efficiently and accurately building con- straints and synthesizing possible composite type declarations from the stripped binaries. In the second stage, we propose an LLM-assisted double-elimination framework to select the best-fit type declaration from the candidates by assessing the readability of the decompiled code. Our comparison with state- of-the-art approaches demonstrates that T YPEFORGE achieves F1 scores of 81.7% and 88.2% in Composite Data Type Identification and Layout Recovery, respectively, substantially outperforming existing methods. Additionally, T YPEFORGE achieves an F1 score of 72.1% in Relationship Recovery, a particularly challenging task for previous approaches. Fur- thermore, T YPEFORGE has significantly lower time overhead, requiring only about 3.8% of the time taken by OSPREY, the best-performing existing approach, making it a promising solution for various real-world reverse engineering tasks. 1. Introduction Conducting security analysis on closed-source software is widely recognized as a challenging task. One key reason is that stripped binaries in closed-source software typically lack variable and type information, which is lost during com- pilation. Accurately recovering this missing type informa- tion is critical for various downstream tasks, including vul- nerability detection [1], [2], [3], [4], [5], decompilation [6], [7], [8], [9], and malware analysis [10], [11], [12]. For *Corresponding Author. instance, static analysis tools can more efficiently identify vulnerabilities by locating read and write accesses to specific data structure members, while decompilers can use recov- ered type information to enhance code readability. Currently, widely used binary analysis platforms like Ghidra [13] and IDA Pro [14] can recover primitive data types, such as int and long, with reasonable accuracy, but they encounter significant difficulties in recovering composite data types. These mainstream platforms still rely heavily on manual efforts from users to recover composite data types, resulting in considerable time consumption and a strong dependence on expert experience. Our statistics show that accesses to composite data type variables and their fields in binaries are nearly 1.8 times more frequent than accesses to primitive variables, and this ratio increases further in more complex software. Additionally, our statistics indicate that the state- of-the-art binary analysis platform, IDA Pro [14], can accu- rately recover only 6% of composite data types, only limited to library-defined types, while user-defined composite data types remain unrecoverable. Several recent studies have attempted to address the challenge of recovering composite data types in stripped binaries. TIE [15] and OSPREY [16] utilize whole-program memory dependency analysis, such as Value-Set Analysis (VSA) [17], along with a series of heuristic rules to infer composite data types from stripped binaries. DIRTY [9] leverages a transformer model to predict known types from a training set, but it has limitations in recovering user-defined composite data types because DIRTY ignores data flow re- lationships between variables, resulting in inconsistent type predictions for variables that should share the same type. TYGR [18] combines intra-procedural analysis with graph neural networks to predict variable types within functions, but it fails to recover the member layout of composite types. ReSym [19] leverages large language models and inter- procedural analysis, and while it can recover composite type layouts to some extent, its accuracy remains relatively low for practical applications. In summary, existing efforts suffer from the following limitations. L1: Difficulty in accurately and efficiently recov- ering the full declaration of composite data types. Existing methods either prioritize efficiency, resulting in numerous false positives that lead to both missing legitimate members and introducing spurious members within composite data 3070 DOI 10.1109/SP61157.2025.00193 types [9], [19], or trade time for accuracy, making them difficult to scale to more complex and larger binary pro- grams [15], [16]. Furthermore, existing methods often strug- gle to reconstruct relationships between composite types, such as structure pointer references and structure nesting. These relationships are crucial for downstream security anal- ysis tasks, for example, a composite type containing two pointer-type members that reference itself would signal to reverse engineers that it likely represents a node in a doubly linked list or tree structure. L2: Difficulty in effectively handling ambiguities while recovering composite data types. Most efforts [16], [17], [19] rely on memory access patterns collected from stripped binaries to recover composite data types. However, different composite data types often exhibit the same memory access patterns in stripped binaries. For example, access pattern dereference(base + offset) could originate from either structure member accesses or array element accesses in the source code, making it difficult to accurately determine their actual types. By observing how human reverse engineering experts manually recover composite data types, we find that they typically begin by synthesizing an initial composite data type declaration based on partial type hints (such as memory access patterns) in binary. They then continuously analyze the binary, iteratively refining and modifying this initial declaration. When facing uncertainty, they consider multiple potential alternatives as candidates and ultimately use their expertise to select the best-fit composite type declarations. Inspired by the above observation, we realize that replicating the workflow of reverse engineering experts, which involves (1) continuously analyzing the binary and synthesizing po- tential composite data type declarations as candidates and (2) selecting the best-fit type declaration from these candi- dates, can effectively overcome the limitations of accuracy and ambiguity in existing methods. However, implementing such an automated technique presents some challenges. Challenges. C1: Existing techniques struggle to construct constraints for composite data types efficiently and accu- rately, resulting in an extensive search space when syn- thesizing declarations. Due to the inherent complexity of internal member layouts and relationships in composite data types, accurate constraints are always necessary when synthesizing possible type declarations; without them, an enormous search space results. However, as previously men- tioned, existing data flow analysis techniques used to con- struct composite type constraints for stripped binaries cannot effectively balance accuracy and scalability, limiting their practical use in real-world reverse engineering scenarios. C2: Difficulty in selecting the best-fit composite data type declaration from candidates. Reverse engineering experts rely heavily on domain-specific experience and a deep un- derstanding of the target binary to select the final type declaration from the candidates, often consuming significant time and effort. However, translating this expert experience into an automated process is challenging, as the complexity and diversity of stripped binaries make it difficult to quantify this expertise into corresponding algorithms. Our Approach. In this paper, we introduce T YPEFORGE, a novel automated approach that employs a two-stage synthesis-selection strategy to emulate the workflow of a reverse engineering expert and overcome the aforementioned challenges. To address C1 , we propose TFG-based Type Synthesis for accurately and efficiently synthesizing poten- tial composite data type declarations from stripped binaries. Specifically, we first design a novel data flow abstraction called the Type Flow Graph (TFG) based on variables and primitive types inferred by existing tools. Compared to previous work, TFG not only efficiently gathers type hints representing both the internal layout and the relationships between composite data types, but also supports constructing whole-program TFG through parallelized analysis, minimiz- ing false positives while maintaining low time overhead. Based on TFG, we propose a Conflict-Aware Type Hint Propagation algorithm to process the whole-program TFG for constructing accurate composite type constraints. Unlike the inter-procedural analysis used in existing methods [16], [19], Conflict-Aware Type Hint Propagation effectively pre- vents erroneous propagation of type hints through conflict detection, significantly reducing false positives while main- taining low time overhead. Finally, informed by the factors contributing to ambiguity in composite data type recovery, we design an Adaptive Sliding Window algorithm that syn- thesizes all possible declarations based on the constructed type constraints. To address C2 , we observe that the higher the ac- curacy of the composite data types recovered by the ex- pert, the more precise the syntax and semantics of the decompiled code, significantly improving its readability. Therefore, rather than designing a specific algorithm, we propose Readability-Guided Selection , an LLM-assisted double-elimination [20] mechanism to select the best-fit composite data type declaration from the candidates syn- thesized in stage one. Specifically, we first provide the candidate type declarations to the decompiler via the re- type interface 1, generating different variants of decompiled code. Next, these different variants of decompiled code are subjected to multiple rounds of pairwise comparison, with the LLM-assisted mechanism serving as the judge, assessing their readability and ranking them accordingly. Finally, this mechanism selects the composite data type declaration that produces the most readable decompiled code variant. We evaluate T YPEFORGE by comparing it with state- of-the-art approaches, and our results demonstrate that TYPEFORGE achieves high F1 Scores of 81.7% and 88.2% in Composite Data Type Identification and Layout Recovery, respectively, superior to these existing approaches. Notably, TYPEFORGE can recover relationships between composite data types with an F1 Score of 72.1%, which most ex- isting approaches cannot handle. Additionally, T YPEFORGE achieves a significantly lower time overhead, requiring only about 3.8% of the time taken by the best-performing existing approach, OSPREY , demonstrating that it can scale to larger 1. Mainstream decompilers (e.g., IDA Pro, Ghidra, Binary Ninja) allow users to manually create and specify variable types through the retype interface, helping to produce clearer and more accurate decompiled code. 3071"
+      },
+      {
+        "source": "selected",
+        "value": "Static binary analysis is a widely used approach for ensuring the security of closed-source software. However, the absence of type information in stripped binaries, particularly for composite data types, poses significant challenges for both static analyzers and reverse engineering experts in achieving efficient and accurate analysis. Existing methods often struggle with inaccuracies and scalability limitations when dealing with such data types. To address these problems, we present TYPEFORGE, a novel approach inspired by the workflow of reverse engineering experts, which uses a two-stage synthesisselection strategy to automate the recovery of composite data types from stripped binaries. We design a new graph structure, the Type Flow Graph (TFG) to represent type information within stripped binaries. In the first stage, TFG-based Type Synthesis focuses on efficiently and accurately building constraints and synthesizing possible composite type declarations from the stripped binaries. In the second stage, we propose an LLM-assisted double-elimination framework to select the best-fit type declaration from the candidates by assessing the readability of the decompiled code. Our comparison with stateof-the-art approaches demonstrates that TYPEFORGE achieves F1 scores of 81.7% and 88.2% in Composite Data Type Identification and Layout Recovery, respectively, substantially outperforming existing methods. Additionally, TYPEFORGE achieves an F1 score of 72.1% in Relationship Recovery, a particularly challenging task for previous approaches. Furthermore, TYPEFORGE has significantly lower time overhead, requiring only about 3.8% of the time taken by OSPREY, the best-performing existing approach, making it a promising solution for various real-world reverse engineering tasks. 3070 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yanzhong Wang",
+          "email": "wangyanzhong@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS, China",
+            "School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Ruigang Liang",
+          "email": "liangruigang@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS, China",
+            "School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yilin Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS, China",
+            "School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Peiwei Hu",
+          "email": "hupeiwei@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS, China",
+            "School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Kai Chen",
+          "email": "chenkai@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS, China",
+            "School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Bolun Zhang",
+          "email": "zhangbolun@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS, China",
+            "School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yanzhong Wang",
+          "email": "wangyanzhong@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS, China 2School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Ruigang Liang",
+          "email": "liangruigang@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS, China 2School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yilin Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "1State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS, China 2School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Peiwei Hu",
+          "email": "hupeiwei@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS, China 2School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Kai Chen",
+          "email": "chenkai@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS, China 2School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Bolun Zhang",
+          "email": "zhangbolun@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS, China 2School of Cyber Security, University of Chinese Academy of Sciences, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 128,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "TypeForge: Synthesizing and Selecting Best-Fit Composite Data Types for Stripped Binaries",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yanzhong Wang",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Ruigang Liang",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yilin Li",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Peiwei Hu",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Kai Chen",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Bolun Zhang",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

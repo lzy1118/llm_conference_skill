@@ -1,0 +1,390 @@
+{
+  "paper_id": "174_a_tale_of_two_industroyers_it_was_the_season_of_darkness",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "A Tale of Two Industroyers: It was the Season of Darkness"
+      },
+      {
+        "source": "selected",
+        "value": "A Tale of Two Industroyers: It was the Season of Darkness"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "In this paper, we study two pieces of malware that attempted to create blackouts in Ukraine. In particular, we design and develop a new sandbox that emulates different networks, devices, and other characteristics so that we can execute malware targeting substation equipment and understand in detail the specific sequence of actions the attackers could perform on substation equipment. We also study the effects that future similar malware can have. Our findings include new malware behavior not previously documented (such as the detailed algorithm for the MMS protocol payload) and an illustration of how attacking different targets will produce different effects. 312 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "In this paper, we study two pieces of malware that attempted to create blackouts in Ukraine. In particular, we design and develop a new sandbox that emulates different networks, devices, and other characteristics so that we can ex- ecute malware targeting substation equipment and understand in detail the specific sequence of actions the attackers could perform on substation equipment. We also study the effects that future similar malware can have. Our findings include new malware behavior not previously documented (such as the detailed algorithm for the MMS protocol payload) and an illustration of how attacking different targets will produce different effects. 1. Introduction In less than a decade, Ukraine has suffered from several cyber attacks attempting to cause electrical outages. On December 23, 2015, in a dark and cold winter, Ukraine suffered a blackout caused by cyber attacks [1]. This was the first confirmed case worldwide of cyberattacks intentionally targeting the power grid. In this first incident, attackers gained remote access to the industrial networks of power companies, and a remote adversary operated the human- machine interface of operators, opening circuit breakers manually. A year later, on December 17, 2016, a fifth of Ukraine's capital, Kyiv, experienced another blackout [2], [3]. This time, the target was a transmission utility, and unlike the previous year when remote human attackers opened the cir- cuit breakers, the attack in 2016 was launched automatically by the first known industrial malware targeting the power grid: Industroyer [4] (also known as CrashOverride [5]). Finally, on April 8, 2022, in the first months of the Russian invasion of Ukraine, operators discovered another malware tailored to attack circuit breakers automatically. This new malware was called Industroyer 2, and it repre- sented yet another attempt to target Ukraine's power grid amid many other Russian cyber-attacks coordinated along- side their kinetic military action [6]. The two Industroyer malware payloads represent a wa- tershed moment for the security of critical infrastructures for several reasons: (1) they represent the first and only known malware samples specifically deployed by malicious actors to target the power grid. (2) Industroyer is the only known malware that caused a power blackout successfully. (3) Industroyer 2 exemplifies how modern wars combine cyber and kinetic attacks to maximize a show of force. (4) While the attackers in 2015 needed a real-time network connection to the power company to open circuit breakers, Industroyer and Industroyer 2 can, in principle, be deployed in air- gapped systems (or systems with strong network segmenta- tion where remote connections are not allowed) because the malware could automatically target power grid equipment without the need for human feedback. (5) Industrial malware may have other advantages over remote (manual) attackers, like the ability to repeatedly send commands to devices faster than an operator could respond to them. In the remainder of the paper, we will refer to “Indus- troyer” as “Industroyer 1” to avoid ambiguity. While Industroyer 1 and Industroyer 2 represent the only known malware samples specifically designed to cause power blackouts, they have received little attention from the academic community. There have been several industrial reports about them [4], [5], [7], [8], [9], [10], [11], [12], but unfortunately, these reports tend to focus on the Windows exploits and other indicators of compromise and do not focus on the power grid. We believe academic researchers working on the secu- rity of the power grid want to learn the details of how Industroyer 1 and 2 launched the attacks and the impact that similar malware may have in the future so that we can understand the attacker's decision-making behind the payload design and also anticipate future attacks. As we will explain later in Table 6, these industrial reports do not give us enough details about the design behind the industrial payloads. For example, these reports do not answer (1) whether the payload against the power grid expects a central control room or a substation, (2) how many substations or devices can be attacked, (3) what the specific sequence of industrial commands these malware samples could send to different devices in the power grid, and (4) what is the impact that these attacks may cause in the bulk power system (e.g., can these attacks lead to cascading outages, and if not, what would be the alternate impacts). To answer these questions, in this paper, we design and develop a new industrial sandbox to execute malware target- ing the power grid. Anti-virus companies use various tools and sandboxes to execute regular IT malware dynamically. However, as far as we are aware, there is no sandbox to understand the execution of power grid malware because the sandbox needs to represent a high-fidelity simulation of industrial systems and include the unique industrial proto- cols the malware expects. In this paper, we develop such a sandbox and use it to understand in detail the operation and potential impact of Industroyer 1 and Industroyer 2, reveal- ing previously unreported functionalities of these attacks. We plan to continue developing this sandbox and extend it 312 DOI 10.1109/SP54263.2024.00162 to provide other use cases. As our contributions: • We provide the first in-depth analysis of Industroyer 1 and 2. Our paper fills the gap between previous industrial reports and the knowledge that power grid operators and industrial control experts need to under- stand the specific attack commands targeting power grid equipment. Our analysis finds previously unre- ported behavior of Industroyer 1 and 2. • We design and develop NEFICS1, a new industrial control sandbox to test malware interacting with power grid equipment. In particular, we provide environments that emulate a control room for a power grid operator with remote connections to substations or a substation network with local connections to electrical equipment. Our software artifacts are openly available. • We discuss and analyze the evolution of attacks, the attack surface of the grid, and the impact that these attacks may have on the bulk power system. 2. Background The power grid is a distributed control system operated by a federation of companies, each controlling a specific part of the infrastructure. For simplicity, we call any company monitoring and controlling a section of the power grid a Transmission and Distribution System Provider (TDSP) . A typical TDSP has a central Control Room (CR). The control room is where the physical process is monitored and controlled with the help of human operators. A CR hosts the Supervisory Control and Data Acquisition (SCADA) applications, which collect information from remote devices and remotely actuating equipment. A CR usually has several specialized computers focusing on different aspects of the operation of the power grid, such as a Historian that keeps track of the operational states of the power grid, Human- Machine Interfaces (HMIs) that operators can use to visu- alize and manage the physical process, and OPC servers used for compatibility. Most of the sensors and actuators monitored and controlled by the CR, can be found in various substations. So, CRs have several remote connections to a set of distributed substations. Substations are distributed facilities that house equip- ment to monitor and control the power grid. These include transformers, voltage regulators, telemetry equipment, and protection devices. Substations can be indoor or outdoor facilities and can be staffed or unattended. Some substations have their own Control Room (CR) to monitor and control the local equipment. A SCADA server in the central CR interacts with Re- mote Terminal Units (RTUs) . RTUs are embedded com- puters deployed in remote substations to collect data from various devices within the substation and report this to the CR. While RTUs have been the traditional endpoint for communications between a CR and a substation, some modern substation endpoints are called substation gateways. Within a substation, an internal local network connects various devices, including Intelligent Electronic Devices (IEDs). An IED is an embedded computer in a substation 1. https://github.com/Cyphysecurity/NEFICS that directly monitors and controls power system equip- ment. IEDs host logical nodes (computer programs) such as Control Switches (CSWI) . A CSWI, in turn, controls a physical device called a Circuit Breaker (CB) . CBs are independently mounted poles with a chamber that has an isolating material able to stop current or arc effect currents. CBs can be used to disconnect parts of the electric grid. 2.1. Industrial Communication Protocols CR to substation: The communication between a CR and a remote substation is realized by the SCADA system through various industrial protocols. Early SCADA sys- tems used point-to-point serial communication protocols like Modbus and IEC 101, which emerged as the communication standards for connecting a CR with substations. IEC 60870- 5-101 (IEC 101) enables telecontrol messages between the CR and substations. This protocol uses a low bandwidth bit-serial communication (serial communication) to trans- mit data objects and services over geographically wide areas. With the advent of TCP/IP networks, new Internet- compatible protocols such as IEC 60870-5-104 ( IEC 104 ) and DNP3 became popular for connecting substations to a CR. While these protocols support Internet standards (TCP/IP), they are generally used over private networks leased from telecommunication providers, so, in principle, the links between CRs and substations are not accessible through the public Internet. Within a Substation: Ethernet-based communications within a substation are defined by the IEC 61850 stan- dard. IEC 61850 includes three protocols: MMS (used by workstations to get data from IEDs), GOOSE (this is how IEDs communicate between themselves), and SV (used by IEDs to get data from the physical process). IEC 61850 also defines a universal language for substation configuration, the Substation Configuration Language (SCL), which includes a logical and abstract representation of the substation com- ponents and facilitates the automation of substations. Finally, OPC (OLE for Process Control) is a standard to facilitate intercommunication among ICS devices. By leveraging Microsoft's standards Object Linking and Em- bedding (OLE), Component Object Model (COM) , and Dis- tributed Component Object Model (DCOM) , OPC models the interface to translate OPC requests (e.g., read/write) to requests understandable by the target device [13]. What is known as OPC Classic is the initial standard that used to work only on Windows systems and is composed by the OPC Data Access (DA) , OPC Alarms & Events (AE) , and OPC Historical Data Access (OPC HDA) . More recently, the OPC Foundation created the OPC Unified Architecture (UA) [14]; a standard that works on multiple environments (not only on Windows) and includes multiple capabilities, such as Session Encryption, Message Signing, and Se- quenced Packets. An attacker must understand these protocols to design an effective payload capable of communicating with the equip- ment in predictable ways. Defenders can also understand the potential impact of the malware by understanding these protocols and the architecture of industrial networks. For example, Industroyer 1 was a Swiss army knife for attacking power grid systems. It had payloads for IEC 101, IEC 104, 313"
+      },
+      {
+        "source": "selected",
+        "value": "In this paper, we study two pieces of malware that attempted to create blackouts in Ukraine. In particular, we design and develop a new sandbox that emulates different networks, devices, and other characteristics so that we can execute malware targeting substation equipment and understand in detail the specific sequence of actions the attackers could perform on substation equipment. We also study the effects that future similar malware can have. Our findings include new malware behavior not previously documented (such as the detailed algorithm for the MMS protocol payload) and an illustration of how attacking different targets will produce different effects. 312 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Luis Salazar",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Sebastián RCastro",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Juan Lozano",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Keerthi Koneru",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Emmanuele Zambon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Eindhoven University of Technology, The University of Texas at Austin"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Bing Huang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Ross Baldick",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Marina Krotofil",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Systems Security Partners Axon Group"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Alonso Rojas",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Alvaro ACardenas",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Luis Salazar",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Juan Lozano",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Keerthi Koneru",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Emmanuele Zambon",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Bing Huang",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Ross Baldick",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Marina Krotofil",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Alonso Rojas",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Alvaro A. Cardenas",
+          "email": "",
+          "affiliations": [
+            "University of California, Santa Cruz †Eindhoven University of Technology ‡The University of Texas at Austin §Information Systems Security Partners ¶Axon Group"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 114,
+      "author_count": 9,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 7,
+          "author": "Alonso Rojas",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 8,
+          "author": "Alvaro A. Cardenas",
+          "block_id": "pdf:p1:b113",
+          "match_score": 0.75
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 7,
+          "author": "Alonso Rojas",
+          "affiliation_raw": "Eindhoven University of Technology Information Systems Security Partners Axon Group",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 11.733,
+          "center_distance": 39.169,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "A Tale of Two Industroyers: It was the Season of Darkness",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Luis Salazar",
+          "affiliations": [
+            "University of California, Santa Cruz"
+          ]
+        },
+        {
+          "name": "Sebastian Castro",
+          "affiliations": [
+            "University of California, Santa Cruz"
+          ]
+        },
+        {
+          "name": "Juan Lozano",
+          "affiliations": [
+            "University of California, Santa Cruz"
+          ]
+        },
+        {
+          "name": "Keerthi Koneru",
+          "affiliations": [
+            "University of California, Santa Cruz"
+          ]
+        },
+        {
+          "name": "Emmanuele Zambon",
+          "affiliations": [
+            "Eindhoven University of Technology"
+          ]
+        },
+        {
+          "name": "Bing Huang",
+          "affiliations": [
+            "University of Texas"
+          ]
+        },
+        {
+          "name": "Ross Baldick",
+          "affiliations": [
+            "University of Texas"
+          ]
+        },
+        {
+          "name": "Marina Krotofil",
+          "affiliations": [
+            "ISSP"
+          ]
+        },
+        {
+          "name": "Alonso Rojas",
+          "affiliations": [
+            "Axon Group"
+          ]
+        },
+        {
+          "name": "Alvaro Cardenas",
+          "affiliations": [
+            "University of California, Santa Cruz"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

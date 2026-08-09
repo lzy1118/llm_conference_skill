@@ -1,0 +1,460 @@
+{
+  "paper_id": "226_comet_accelerating_private_inference_for_large_language_model_by_predicting_activation_sparsity",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Comet: Accelerating Private Inference for Large Language Model by Predicting Activation Sparsity"
+      },
+      {
+        "source": "selected",
+        "value": "Comet: Accelerating Private Inference for Large Language Model by Predicting Activation Sparsity"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "With the growing use of large language models (LLMs) hosted on cloud platforms to offer inference services, privacy concerns about the potential leakage of sensitive information are escalating. Secure Multi-Party Computation (MPC) is a promising solution to protect the privacy in LLM inference. However, MPC requires frequent inter-server communication, causing high performance overhead. Inspired by the prevalent activation sparsity of LLMs, where most neuron are not activated after non-linear activation functions, we propose an efficient private inference system, Comet. This system employs an accurate and fast predictor to predict the sparsity distribution of activation function output. Additionally, we introduce a new private inference protocol. It efficiently and securely avoids computations involving zero values by exploiting the spatial locality of the predicted sparsity distribution. While this computation-avoidance approach impacts the spatiotemporal continuity of KV cache entries, we address this challenge with a low-communication overhead cache refilling strategy that merges miss requests and incorporates a prefetching mechanism. Finally, we evaluate Comet on four common LLMs and compare it with six state-of-theart private inference systems. Comet achieves a 1.87×-2.63× speedup and a 1.94×-2.64× communication reduction. 2827 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "With the growing use of large language models (LLMs) hosted on cloud platforms to offer inference services, privacy concerns about the potential leakage of sensitive infor- mation are escalating. Secure Multi-Party Computation (MPC) is a promising solution to protect the privacy in LLM inference. However, MPC requires frequent inter-server communication, causing high performance overhead. Inspired by the prevalent activation sparsity of LLMs, where most neuron are not activated after non-linear activation functions, we propose an efficient private inference system, Comet. This system employs an accurate and fast predictor to predict the sparsity distribution of activation function output. Additionally, we introduce a new private inference protocol. It efficiently and securely avoids computations involving zero values by exploiting the spatial locality of the predicted spar- sity distribution. While this computation-avoidance approach impacts the spatiotemporal continuity of KV cache entries, we address this challenge with a low-communication overhead cache refilling strategy that merges miss requests and incor- porates a prefetching mechanism. Finally, we evaluate Comet on four common LLMs and compare it with six state-of-the- art private inference systems. Comet achieves a 1.87×-2.63× speedup and a 1.94×-2.64× communication reduction. 1. Introduction Large Language Models (LLMs) have been extensively utilized in a range of tasks such as text generation, ques- tion answering, sentiment analysis and reading comprehen- sion [12], [13], [17], [53], [86], [93]. Currently, LLMs commonly follow the “Deep Learning as a Service” (DLaaS) paradigm [78], wherein LLMs are deployed on cloud servers as service providers, and users send input data to these servers to perform inference tasks. However, this raises privacy concerns, as the user's data may be privacy-sensitive. One promising solution to address the privacy con- cerns in LLM inference is Secure Multi-Party Computation (MPC), known as MPC-based private inference [14], [20], [30], [42], [43], [47], [60], [63], [70], [73], [82], [88], [89]. ∗ Yuhui Zhang and Rui Hou are the corresponding authors. Specifically, the model owner and the user provide their models or inputs to multiple non-colluding ( ≥ 2) MPC servers in a secret-shared form, then servers execute the pri- vate inference protocol and send the results back to the user. This method ensures that no single server can recover the original data, thereby enabling privacy-preserving inference. However, private inference encounters significant perfor- mance problem, primarily due to extensive communication between MPC servers. These servers frequently exchange intermediate results derived from their local computations. For instance, in the case of OPT-6.7B [94], communication time constitutes over 85% of the total inference time. Prior works have mainly focused on reducing the communication overhead of non-linear layers by designing model archi- tectures with fewer non-linear operations [1], [47], [56], or by using more efficient approximations for non-linear functions [23], [30], [59]. The optimization for linear layers has been overlooked, especially in private LLM inference, where this part of communication incurs higher overhead. Fortunately, the activation sparsity [57], [62], [79], [80], [95] of LLMs provides an opportunity to accelerate both linear and non-linear computations. For instance, in OPT- 6.7B, more than 90% of the neurons output zero after the activation function (ReLU) of its Feed-Forward Network (FFN). As illustrated in Figure 1, if activation sparsity can be accurately predicted (depicted by white boxes), it becomes possible to identify neurons that will output zero in advance. Consequently, the computations of their non- linear activation functions can be omitted, and the related linear computations in both preceding and subsequent linear layers can also be skipped. By avoiding these unnecessary computations (shaded boxes), the associated communication overhead in private inference can also be reduced. Contributions. This paper proposes Comet, an efficient private inference system that leverages activation sparsity to reduce computation and communication overhead in MPC. Unlike prior work focusing on optimizing specific MPC protocols, Comet is orthogonal to these efforts and inte- grates the novel prediction mechanism and the computaion- communication avoidance mechanism into the classical pri- vate inference framework. To the best of our knowledge, this is the first system to exploit activation sparsity for acceler- 2827 DOI 10.1109/SP61157.2025.00182 FC1 FC2 × =× = four avoidable multiplications two avoidable ReLUs × =× = ReLU ReLU ReLU four avoidable multiplications Input/Weights Zero value Avoidable computation Figure 1: Activation sparsity of LLMs. ating private inference in LLMs. The main contributions of this paper are as follows: • We propose a predictor to estimate the sparsity distribu- tion of activation outputs. To ensure accurate prediction and efficient execution, we implement the predictor using a lightweight neural network. To preserve privacy, the predictor generates a secret-shared sparsity distribution, which is collaboratively computed by MPC servers using secure protocols. However, indexing activated neurons based on this secret-shared distribution poses efficiency challenges, as existing secure indexing methods require numerous expensive comparison operations [50], negat- ing the efficiency gains of sparsity. To address this, we introduce a shuffle-based indexing technique that uses oblivious shuffling to randomize the order of the sparsity distribution, allowing plaintext indexing while preserving privacy. These designs significantly reduce prediction and indexing latency, establishing the feasibility of sparsity prediction within private inference systems. • We propose a private inference protocol designed to minimize computation and communication overhead by leveraging the spatial locality of the sparsity distribution. For the linear layers preceding and following the activa- tion function, computation can be reduced by identifying nonzero elements of the sparsity distribution and perform- ing only the corresponding dot products. However, in clas- sical private inference protocols, naively performing dot products separately results in redundant communication due to the need for repeated masking and communicat- ing the rows or columns of the matrix. In contrast, our protocol fully exploits the spatial locality of sparsity dis- tribution by grouping the nonzero elements resulting from dot products of the same matrix rows or columns into a single block, ensuring that each row or column is masked and communicated only once. This approach enhances the efficiency of secure computations, achieving up to 300× reduction in communication overhead compared to classical methods. • We propose a KV cache refilling strategy to address the compatibility challenges between sparsity prediction and KV caching. KV cache [48] is a core optimization technique in LLM systems, enhancing performance by storing and reusing intermediate results. However, the computation savings introduced by sparsity prediction disrupt the spatiotemporal continuity of cached key-value pairs, reducing the cache hit rate and requiring costly refills. To mitigate this, our strategy merges consecutive cache miss requests, often targeting the same attention heads or tokens, and incorporates a prefetching mecha- nism to proactively handle potential misses. These designs improve the compatibility between sparsity-aware compu- tation and KV caching, enabling efficient integration with modern private LLM inference systems. Finally, we evaluate the performance of Comet system using four different sizes of LLMs. The results indicate that, compared to six state-of-the-art private inference systems, the Comet achieves 1.87×-2.63× end-to-end speedup and 1.94×-2.64× communication reduction. 2. Understanding of Private Inference 2.1. MPC-based private inference Secure Multi-Party Computation (MPC) [26] is a cryp- tographic technique that provides a promising solution for private inference among multiple participants [30], [34], [42], [43], [47], [59], [73]. It relies on cryptographic prim- itives such as secret sharing to protect both model weights and inference data [11], [32], [76]. This work adopts an additive secret sharing scheme, which is widely used in private inference due to its efficiency and applicability. Additive secret sharing . For simplicity, we illustrate addi- tive secret sharing in a two party setting ( P1 and P2): • Sharing: A secret x is split into two shares [ [x] ]1 and [ [x] ]2 such that x = [ [x] ]1 + [ [x] ]2, ensuring no single share can retrieve information of the secret. The data owner sends [ [x] ]1 to P1 and [ [x] ]2 to P2. • Reconstruction: To reveal the secret x, P1 and P2 ex- change their shares and locally compute x = [ [x] ]1 +[ [x] ]2. • Addition: To compute z = ax + by + c, where a, b, c are public values and x, y are secret-shared among P1 and P2, each party locally computes [ [z] ]i = a[ [x] ]i+b[ [y] ]i+(i−1)c. • Multiplication: To compute z = xy where x, y are secret shared among P1 and P2, the parties use pre- generated Beaver triples ([ [a] ], [ [b] ], [ [c] ])where c = a · b. The triples can be provided by a trusted third party or generated via cryptographic methods such as homomor- phic encryption [67] or oblivious transfer [41]. Each party locally computes differences [ [d] ]i = [ [x] ]i − [ [a] ]i and [ [e] ]i = [ [y] ]i − [ [b] ]i, reconstructs d and e, and computes: [ [z] ]i = [ [c] ]i + d · [ [b] ]i + e · [ [a] ]i + (i − 1) · d · e (1) Based on the above basic operations, various protocols can be constructed, including dot product ( ΠDP) and matrix multiplication (ΠMatMul). In this paper, we employ them in a blackbox manner. Private inference. In a MPC-based private inference sys- tem, three primary roles are typically identified: the model owner, the user, and at least two non-colluding MPC servers. In practical, the computing nodes from different cloud plat- forms are usually selected to act as MPC servers to meet the requirement of non-colluding [3], [65]. Additionally, if the user has enough compute capability, it can serve as one of the MPC servers [30], [60]. This setup ensures that at least 2828"
+      },
+      {
+        "source": "selected",
+        "value": "With the growing use of large language models (LLMs) hosted on cloud platforms to offer inference services, privacy concerns about the potential leakage of sensitive information are escalating. Secure Multi-Party Computation (MPC) is a promising solution to protect the privacy in LLM inference. However, MPC requires frequent inter-server communication, causing high performance overhead. Inspired by the prevalent activation sparsity of LLMs, where most neuron are not activated after non-linear activation functions, we propose an efficient private inference system, Comet. This system employs an accurate and fast predictor to predict the sparsity distribution of activation function output. Additionally, we introduce a new private inference protocol. It efficiently and securely avoids computations involving zero values by exploiting the spatial locality of the predicted sparsity distribution. While this computation-avoidance approach impacts the spatiotemporal continuity of KV cache entries, we address this challenge with a low-communication overhead cache refilling strategy that merges miss requests and incorporates a prefetching mechanism. Finally, we evaluate Comet on four common LLMs and compare it with six state-of-theart private inference systems. Comet achieves a 1.87×-2.63× speedup and a 1.94×-2.64× communication reduction. 2827 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Guang Yan",
+          "email": "yanguang1997@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yuhui Zhang",
+          "email": "zhangyuhui@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zimu Guo",
+          "email": "guozimu@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Lutan Zhao",
+          "email": "zhaolutan@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Xiaojun Chen",
+          "email": "chenxiaojun@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Chen Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "EIRI, NELBDRC, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Wenhao Wang",
+          "email": "wangwenhao@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Dan Meng",
+          "email": "mengdan@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Rui Hou",
+          "email": "hourui@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, State Key Laboratory of Cyberspace Security Defense, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Activation Sparsity",
+          "email": "",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Guang Yan",
+          "email": "yanguang1997@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yuhui Zhang",
+          "email": "zhangyuhui@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 3,
+          "name": "Zimu Guo",
+          "email": "guozimu@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Lutan Zhao",
+          "email": "zhaolutan@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Xiaojun Chen",
+          "email": "chenxiaojun@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Chen Wang",
+          "email": "",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Wenhao Wang",
+          "email": "wangwenhao@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Dan Meng",
+          "email": "mengdan@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Rui Hou",
+          "email": "hourui@iie.ac.cn",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS and University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 116,
+      "author_count": 10,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 14.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Activation Sparsity",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Comet: Accelerating Private Inference for Large Language Model by Predicting Activation Sparsity",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Guang Yan",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yuhui Zhang",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Zimu Guo",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Lutan Zhao",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Xiaojun Chen",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Chen Wang",
+          "affiliations": [
+            "EIRI",
+            "NELBDRC",
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Wenhao Wang",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Dan Meng",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Rui Hou",
+          "affiliations": [
+            "State Key Laboratory of Cyberspace Security Defense",
+            "Institute of Information Engineering",
+            "CAS",
+            "University of Chinese Academy of Sciences"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Guang Yan",
+      "field": "email",
+      "restored_value": "yanguang1997@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yuhui Zhang",
+      "field": "email",
+      "restored_value": "zhangyuhui@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Zimu Guo",
+      "field": "email",
+      "restored_value": "guozimu@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Lutan Zhao",
+      "field": "email",
+      "restored_value": "zhaolutan@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xiaojun Chen",
+      "field": "email",
+      "restored_value": "chenxiaojun@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Wenhao Wang",
+      "field": "email",
+      "restored_value": "wangwenhao@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Dan Meng",
+      "field": "email",
+      "restored_value": "mengdan@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Rui Hou",
+      "field": "email",
+      "restored_value": "hourui@iie.ac.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

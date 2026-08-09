@@ -1,0 +1,2166 @@
+{
+  "title": "REaaS: Enabling Adversarially Robust Downstream Classifiers via Robust Encoder as a Service",
+  "year": "2023",
+  "abstract": "Encoder as a service is an emerging cloud service. Specifically, a service provider first pre-trains an encoder (i.e., a general-purpose feature extractor) via either supervised learning or self-supervised learning and then deploys it as a cloud service API. A client queries the cloud service API to obtain feature vectors for its training/testing inputs when training/testing its classifier (called downstream classifier). A downstream classifier is vulnerable to adversarial examples, which are testing inputs with carefully crafted perturbation that the downstream classifier misclassifies. Therefore, in safety and security critical applications, a client aims to build a robust downstream classifier and certify its robustness guarantees against adversarial examples. What APIs should the cloud service provide, such that a client can use any certification method to certify the robustness of its downstream classifier against adversarial examples while minimizing the number of queries to the APIs? How can a service provider pre-train an encoder such that clients can build more certifiably robust downstream classifiers? We aim to answer the two questions in this work. For the first question, we show that the cloud service only needs to provide two APIs, which we carefully design, to enable a client to certify the robustness of its downstream classifier with a minimal number of queries to the APIs. For the second question, we show that an encoder pre-trained using a spectral-norm regularization term enables clients to build more robust downstream classifiers. I. I NTRODUCTION In an encoder as a service, a service provider (e.g., OpenAI, Google, and Amazon) pre-trains a general-purpose feature extractor (called encoder) and deploys it as a cloud service; and a client queries the cloud service APIs for the feature vectors of its training/testing inputs when training/testing a downstream classifier. For instance, the encoder could be pre- trained using supervised learning on a large amount of labeled data or self-supervised learning [ 1], [2] on a large amount of unlabeled data. A client could be a smartphone, IoT device, self-driving car, or edge device in the era of edge computing. Encoder as a service has been widely deployed by industry, e.g., OpenAI's GPT-3 API [3] and Clarifai's General Embedding API [4]. In the Standard Encoder as a Service (SEaaS), the service provides a single API (called Feature-API) for clients Wenjie Qu performed this research when he was an intern in Gong's group. and the encoder is pre-trained without taking the robustness of downstream classifiers into consideration. A client sends its training/testing inputs to the Feature-API, which returns their feature vectors to the client. A downstream classifier is vulnerable to adversarial exam- ples [5], [6]. Suppose a testing input is correctly classified by the downstream classifier. An attacker adds a small carefully crafted perturbation to the testing input to induce misclassification. Such testing input with carefully crafted perturbation is called an adversarial example. Therefore, in security and safety critical applications such as user authentication and traffic sign recognition, a client desires to build a downstream classifier robust against adversarial examples. Many methods have been developed for an attacker to craft adversarial examples and the community keeps developing new, stronger ones. Therefore, instead of defending against a specific class of adversarial examples, a client aims to defend against all bounded adversarial perturbations via building a certifiably robust downstream classifier. A classifier is certifiably robust if its predicted label for a testing input is unaffected by arbitrary perturbation added to the testing input once its size (measured by ℓ2-norm in this work) is less than a threshold, which is known as certified radius. A larger certified radius indicates better certified robustness against adversarial examples. In general, there are two categories of complementary methods to build a certifiably robust classifier and derive its certified radius for a testing input, i.e., base classifier (BC) based certification [7], [ 8], [ 9], [ 10] and smoothed classifier (SC) based certification (also known as randomized smoothing) [ 11], [ 12], [ 13]. BC based certification aims to directly derive the certified radius of a given classifier (called base classifier ) for a testing input. BC based certification requires white-box access to the base classifier as it often requires propagating the perturbation from the input layer to the output layer of the base classifier layer by layer. SC based certification first builds a smoothed classifier based on the base classifier via adding random noise (e.g., Gaussian noise) to a testing input and then derives the certified radius of the smoothed classifier for the testing input. To increase the testing inputs' certified radii, SC based certification often requires training the base classifier using training inputs with random noise. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of multiple noisy versions of the testing input. SEaaS faces three challenges when a client aims to build a certifiably robust downstream classifier and derive its certified Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24444 www.ndss-symposium.org SEaaS REaaS Feature-API Feature-API F2IPerturb-API [0.1, ⋯, 0.2] Cloud Server Client Client Cloud Server Encoder Encoder � [0.1, ⋯, 0.2] Downstream Classifier Step 1 Step 2 Step 3 BC/SC Fig. 1: SEaaS vs. REaaS. radii for testing inputs. The first challenge is that a client cannot use BC based certification. In particular, the composition of the encoder and the client's downstream classifier is the base classifier that the client needs to certify in BC based certification. However, the client does not have white-box access to the encoder deployed on the cloud server, making BC based certification not applicable. The second challenge is that, although a client can use SC based certification by treating the composition of the encoder and its downstream classifier as a base classifier, it incurs a large communication cost for the client and a large computation cost for the cloud server. Specifically, the client needs to query the Feature-API once for each noisy training input in each training epoch of the downstream classifier because SC based certification trains the base classifier using noisy training inputs. Therefore, the client requires e queries to the Feature-API per training input, where e is the number of epochs used to train the downstream classifier. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of N noisy testing inputs. Therefore, the client requires N queries to the Feature-API per testing input. Note that N is often a large number (e.g., 10,000) [ 13]. The large number of queries to the Feature- API imply 1) large communication cost, which is intolerable for resource-constrained clients such as smartphone and IoT devices, and 2) large computation cost for the cloud server. The third challenge is that SC based certification achieves suboptimal certified radii. This is because the base classifier is the composition of the encoder and a client's downstream classifier, but a client cannot train/fine-tune the encoder as it is deployed on the cloud server. Our work: We propose Robust Encoder as a Service (REaaS) to address the three challenges of SEaaS. Figure 1 compares SEaaS with REaaS. Our key idea is to provide another API called F2IPerturb-API.1 A downstream classifier essentially takes a feature vector as input and outputs a label. Our F2IPerturb-API enables a client to treat its downstream classifier alone as a base classifier and certify the robustness of its base or smoothed downstream classifier in the feature space. Specifically, a client performs three steps to derive the certified radius of a testing input in REaaS. First, the client obtains the feature vector of the testing input via querying the Feature-API. Second, the client views its downstream classifier alone as a base classifier and derives a feature-space certified radius RF for the testing input using any BC/SC certification method. The client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input's feature vector is less 1‘F' stands for Feature and ‘I' stands for Input. than RF . Third, the client sends the testing input and its feature- space certified radius RF to query the F2IPerturb-API, which returns the corresponding input-space certified radius R to the client. Our input-space certified radius R guarantees the client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input is less than R. The key challenge of implementing our F2IPerturb-API is how to find the largest input-space certified radius R for a given testing input and its feature-space certified radius RF . To address the challenge, we formulate finding the largest R as an optimization problem, where the objective function is to find the maximum R and the constraint is that the feature- space perturbation is less than RF . However, the optimization problem is challenging to solve due to the highly non-linear constraint. To address the challenge, we propose a binary search based solution. The key component of our solution is to check whether the constraint is satisfied for a specific R in each iteration of binary search. Towards this goal, we derive an upper bound of the feature-space perturbation for a given R and we treat the constraint satisfied if the upper bound is less than RF . Our upper bound can be computed efficiently. F2IPerturb-API addresses the first two challenges of SEaaS. Specifically, BC based certification is applicable in REaaS. Moreover, SC based certification requires much less queries to the APIs in REaaS. Specifically, for any certification method, a client only requires one query to Feature-API per training input and two queries (one to Feature-API and one to F2IPerturb-API) per testing input in our REaaS. To address the third challenge of SEaaS, we propose a new method to pre-train a robust encoder, so a client can derive larger certified radii even though it cannot train/fine-tune the encoder. Our method can be combined with standard supervised learning or self-supervised learning to enhance the robustness of a pre-trained encoder. An encoder is more robust if it produces more similar feature vectors for an input and its adversarially perturbed version. Our key idea is to derive an upper bound for the Euclidean distance between the feature vectors of an input and its adversarial version, where our upper bound is a product of a spectral-norm term and the perturbation size. The spectral- norm term depends on the parameters of the encoder, but it does not depend on the input nor the adversarial perturbation. An encoder with a smaller spectral-norm term may produce more similar feature vectors for an input and its adversarial version. Thus, we use the spectral-norm term as a regularization term to regularize the pre-training of an encoder. We perform a systematic evaluation on multiple datasets including CIFAR10, SVHN, STL10, and Tiny-ImageNet. Our 2",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Wenjie Qu",
+      "email": "",
+      "affiliations": [
+        "Huazhong University of Science and Technology"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "name": "Jinyuan Jia",
+      "email": "",
+      "affiliations": [
+        "University of Illinois Urbana-Champaign"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 1,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    },
+    {
+      "name": "Neil Zhenqiang Gong",
+      "email": "",
+      "affiliations": [
+        "Duke University"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 2,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    }
+  ],
+  "first_authors": [
+    "Wenjie Qu"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "Huazhong University of Science and Technology"
+  ],
+  "first_affiliation": "Huazhong University of Science and Technology",
+  "participating_affiliations": [
+    "Huazhong University of Science and Technology",
+    "University of Illinois Urbana-Champaign",
+    "Duke University"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Wenjie Qu",
+      "affiliation": "Huazhong University of Science and Technology",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Jinyuan Jia",
+      "affiliation": "University of Illinois Urbana-Champaign",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Neil Zhenqiang Gong",
+      "affiliation": "Duke University",
+      "source": "conference_official_web"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "REaaS: Enabling Adversarially Robust Downstream Classifiers via Robust Encoder as a Service"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2023"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Wenjie Qu",
+        "order": 0,
+        "email": "wenjiequ@outlook.com",
+        "affiliations": [
+          "Huazhong University of Science and Technology"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jinyuan Jia",
+        "order": 1,
+        "email": "jinyuan@illinois.edu",
+        "affiliations": [
+          "University of Illinois Urbana-Champaign"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Neil Zhenqiang Gong",
+        "order": 2,
+        "email": "neil.gong@duke.edu",
+        "affiliations": [
+          "Duke University"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "REaaS: Enabling Adversarially Robust Downstream"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Classifiers via Robust Encoder as a Service"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Wenjie Qu1, Jinyuan Jia 2, Neil Zhenqiang Gong 3"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "1 Huazhong University of Science and Technology, wen jie qu@outlook.com"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "2 University of Illinois Urbana-Champaign, jinyuan@illinois.edu"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "3 Duke University, neil.gong@duke.edu"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.933,
+          719.701,
+          560.63,
+          743.611
+        ],
+        "font_size": 23.91,
+        "raw_text": "REaaS: Enabling Adversarially Robust Downstream",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          95.903,
+          691.806,
+          558.562,
+          715.716
+        ],
+        "font_size": 23.91,
+        "raw_text": "Classifiers via Robust Encoder as a Service",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          246.505,
+          643.959,
+          254.475,
+          651.929
+        ],
+        "font_size": 7.97,
+        "raw_text": "1",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          198.505,
+          640.0,
+          416.047,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Wenjie Qu , Jinyuan Jia , Neil Zhenqiang Gong",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          251.237,
+          640.0,
+          259.207,
+          647.97
+        ],
+        "font_size": 7.97,
+        "raw_text": "2",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          312.484,
+          640.0,
+          320.454,
+          647.97
+        ],
+        "font_size": 7.97,
+        "raw_text": "3",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          150.207,
+          631.139,
+          157.181,
+          638.113
+        ],
+        "font_size": 6.974,
+        "raw_text": "1",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          150.207,
+          631.139,
+          374.375,
+          641.102
+        ],
+        "font_size": 9.963,
+        "raw_text": "Huazhong University of Science and Technology, wen",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          177.71,
+          618.81,
+          184.684,
+          625.784
+        ],
+        "font_size": 6.974,
+        "raw_text": "2",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          177.71,
+          618.81,
+          451.194,
+          628.773
+        ],
+        "font_size": 9.963,
+        "raw_text": "University of Illinois Urbana-Champaign, jinyuan@illinois.edu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          228.732,
+          606.481,
+          235.706,
+          613.455
+        ],
+        "font_size": 6.974,
+        "raw_text": "3",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          228.732,
+          606.481,
+          385.649,
+          616.444
+        ],
+        "font_size": 9.963,
+        "raw_text": "Duke University, neil.gong@duke.edu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          62.359,
+          581.633,
+          210.806,
+          590.599
+        ],
+        "font_size": 8.966,
+        "raw_text": "Abstract - Encoder as a service is an emerging cloud service.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          581.633,
+          587.998,
+          591.596
+        ],
+        "font_size": 9.963,
+        "raw_text": "and the encoder is pre-trained without taking the robustness",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          571.67,
+          327.353,
+          580.636
+        ],
+        "font_size": 8.966,
+        "raw_text": "Specifically, a service provider first pre-trains an encoder (i.e., a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          570.674,
+          605.931,
+          580.637
+        ],
+        "font_size": 9.963,
+        "raw_text": "of downstream classifiers into consideration. A client sends its",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          561.707,
+          311.214,
+          570.673
+        ],
+        "font_size": 8.966,
+        "raw_text": "general-purpose feature extractor) via either supervised learning",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          559.715,
+          601.448,
+          569.678
+        ],
+        "font_size": 9.963,
+        "raw_text": "training/testing inputs to the Feature-API, which returns their",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          551.745,
+          315.249,
+          560.711
+        ],
+        "font_size": 8.966,
+        "raw_text": "or self-supervised learning and then deploys it as a cloud service",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          548.756,
+          453.498,
+          558.719
+        ],
+        "font_size": 9.963,
+        "raw_text": "feature vectors to the client.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.637,
+          541.782,
+          294.754,
+          550.748
+        ],
+        "font_size": 8.966,
+        "raw_text": "API. A client queries the cloud service API to obtain feature",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.735,
+          531.82,
+          310.99,
+          540.786
+        ],
+        "font_size": 8.966,
+        "raw_text": "vectors for its training/testing inputs when training/testing its",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          333.393,
+          531.472,
+          512.727,
+          541.435
+        ],
+        "font_size": 9.963,
+        "raw_text": "A downstream classifier is vulnerable to adversarial exam-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          521.857,
+          220.32,
+          530.823
+        ],
+        "font_size": 8.966,
+        "raw_text": "classifier (called downstream classifier ). A downstream classifier",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          520.513,
+          336.93,
+          530.476
+        ],
+        "font_size": 9.963,
+        "raw_text": "ples",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          520.513,
+          605.931,
+          530.476
+        ],
+        "font_size": 9.963,
+        "raw_text": "[5], [6]. Suppose a testing input is correctly classified by the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          511.894,
+          220.918,
+          520.86
+        ],
+        "font_size": 8.966,
+        "raw_text": "is vulnerable to adversarial examples , which are testing inputs",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          509.554,
+          610.414,
+          519.517
+        ],
+        "font_size": 9.963,
+        "raw_text": "downstream classifier. An attacker adds a small carefully crafted",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.637,
+          501.932,
+          314.927,
+          510.898
+        ],
+        "font_size": 8.966,
+        "raw_text": "with carefully crafted perturbation that the downstream classifier",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          498.595,
+          596.965,
+          508.558
+        ],
+        "font_size": 9.963,
+        "raw_text": "perturbation to the testing input to induce misclassification.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          491.969,
+          335.423,
+          500.935
+        ],
+        "font_size": 8.966,
+        "raw_text": "misclassifies. Therefore, in safety and security critical applications,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          487.636,
+          605.931,
+          497.599
+        ],
+        "font_size": 9.963,
+        "raw_text": "Such testing input with carefully crafted perturbation is called",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          482.006,
+          311.214,
+          490.972
+        ],
+        "font_size": 8.966,
+        "raw_text": "a client aims to build a robust downstream classifier and certify",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          476.678,
+          574.548,
+          486.641
+        ],
+        "font_size": 9.963,
+        "raw_text": "an adversarial example. Therefore, in security and safety",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          472.044,
+          270.868,
+          481.01
+        ],
+        "font_size": 8.966,
+        "raw_text": "its robustness guarantees against adversarial examples.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          465.719,
+          614.898,
+          475.682
+        ],
+        "font_size": 9.963,
+        "raw_text": "critical applications such as user authentication and traffic sign",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.355,
+          455.496,
+          285.264,
+          464.462
+        ],
+        "font_size": 8.966,
+        "raw_text": "What APIs should the cloud service provide, such that a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          454.76,
+          596.965,
+          464.723
+        ],
+        "font_size": 9.963,
+        "raw_text": "recognition, a client desires to build a downstream classifier",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          445.533,
+          311.214,
+          454.499
+        ],
+        "font_size": 8.966,
+        "raw_text": "client can use any certification method to certify the robustness",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          435.57,
+          303.145,
+          444.536
+        ],
+        "font_size": 8.966,
+        "raw_text": "of its downstream classifier against adversarial examples while",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          425.608,
+          303.145,
+          434.574
+        ],
+        "font_size": 8.966,
+        "raw_text": "minimizing the number of queries to the APIs? How can a service",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          415.645,
+          299.11,
+          424.611
+        ],
+        "font_size": 8.966,
+        "raw_text": "provider pre-train an encoder such that clients can build more",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          405.682,
+          303.145,
+          414.648
+        ],
+        "font_size": 8.966,
+        "raw_text": "certifiably robust downstream classifiers? We aim to answer the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          395.72,
+          307.18,
+          404.686
+        ],
+        "font_size": 8.966,
+        "raw_text": "two questions in this work. For the first question, we show that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          385.757,
+          282.972,
+          394.723
+        ],
+        "font_size": 8.966,
+        "raw_text": "the cloud service only needs to provide two APIs, which we",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          378.047,
+          345.897,
+          388.01
+        ],
+        "font_size": 9.963,
+        "raw_text": "robust",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          378.047,
+          587.998,
+          388.01
+        ],
+        "font_size": 9.963,
+        "raw_text": "downstream classifier. A classifier is certifiably robust if",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          375.795,
+          311.214,
+          384.761
+        ],
+        "font_size": 8.966,
+        "raw_text": "carefully design, to enable a client to certify the robustness of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          367.088,
+          614.898,
+          377.051
+        ],
+        "font_size": 9.963,
+        "raw_text": "its predicted label for a testing input is unaffected by arbitrary",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          365.832,
+          295.076,
+          374.798
+        ],
+        "font_size": 8.966,
+        "raw_text": "its downstream classifier with a minimal number of queries to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          356.13,
+          601.448,
+          366.093
+        ],
+        "font_size": 9.963,
+        "raw_text": "perturbation added to the testing input once its size (measured",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          345.171,
+          328.96,
+          355.134
+        ],
+        "font_size": 9.963,
+        "raw_text": "by ℓ",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          341.936,
+          345.171,
+          584.037,
+          355.134
+        ],
+        "font_size": 9.963,
+        "raw_text": "-norm in this work) is less than a threshold, which is",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          337.466,
+          343.676,
+          344.44,
+          350.65
+        ],
+        "font_size": 6.974,
+        "raw_text": "2",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          343.392,
+          561.098,
+          353.355
+        ],
+        "font_size": 9.963,
+        "raw_text": "robust against adversarial examples. Many methods have",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          335.944,
+          258.763,
+          344.91
+        ],
+        "font_size": 8.966,
+        "raw_text": "clients to build more robust downstream classifiers.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          334.212,
+          528.119,
+          344.175
+        ],
+        "font_size": 9.963,
+        "raw_text": "known as certified radius . A larger certified radius indicates",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          323.253,
+          574.548,
+          333.216
+        ],
+        "font_size": 9.963,
+        "raw_text": "better certified robustness against adversarial examples.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          133.647,
+          309.624,
+          151.58,
+          319.587
+        ],
+        "font_size": 9.963,
+        "raw_text": "I. I",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          133.647,
+          309.624,
+          173.099,
+          317.594
+        ],
+        "font_size": 7.97,
+        "raw_text": "NTRODUCTION",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          333.393,
+          305.969,
+          571.011,
+          315.932
+        ],
+        "font_size": 9.963,
+        "raw_text": "In general, there are two categories of complementary",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          295.01,
+          583.514,
+          304.973
+        ],
+        "font_size": 9.963,
+        "raw_text": "methods to build a certifiably robust classifier and derive",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.355,
+          292.079,
+          243.205,
+          302.042
+        ],
+        "font_size": 9.963,
+        "raw_text": "In an encoder as a service , a service provider (e.g., OpenAI,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          284.051,
+          529.714,
+          294.014
+        ],
+        "font_size": 9.963,
+        "raw_text": "its certified radius for a testing input, i.e., base classifier",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          281.12,
+          300.027,
+          291.083
+        ],
+        "font_size": 9.963,
+        "raw_text": "Google, and Amazon) pre-trains a general-purpose feature",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          274.717,
+          282.972,
+          283.683
+        ],
+        "font_size": 8.966,
+        "raw_text": "the APIs. For the second question, we show that an encoder",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.33,
+          273.092,
+          434.897,
+          283.055
+        ],
+        "font_size": 9.963,
+        "raw_text": "(BC) based certification [7], [ 8], [ 9], [ 10] and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          502.349,
+          273.092,
+          538.216,
+          283.055
+        ],
+        "font_size": 9.963,
+        "raw_text": "smoothed",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          270.161,
+          125.176,
+          280.124
+        ],
+        "font_size": 9.963,
+        "raw_text": "extractor (called encoder",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          153.087,
+          270.161,
+          314.487,
+          280.124
+        ],
+        "font_size": 9.963,
+        "raw_text": ") and deploys it as a cloud service;",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          264.755,
+          295.076,
+          273.721
+        ],
+        "font_size": 8.966,
+        "raw_text": "pre-trained using a spectral-norm regularization term enables",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          262.133,
+          475.914,
+          272.096
+        ],
+        "font_size": 9.963,
+        "raw_text": "classifier (SC) based certification (also known as",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          458.924,
+          262.133,
+          503.757,
+          272.096
+        ],
+        "font_size": 9.963,
+        "raw_text": "randomized",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.96,
+          259.202,
+          313.478,
+          269.165
+        ],
+        "font_size": 9.963,
+        "raw_text": "and a client queries the cloud service APIs for the feature",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          251.174,
+          556.615,
+          261.137
+        ],
+        "font_size": 9.963,
+        "raw_text": "smoothing ) [ 11], [ 12], [ 13]. BC based certification aims to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.711,
+          248.244,
+          326.679,
+          258.207
+        ],
+        "font_size": 9.963,
+        "raw_text": "vectors of its training/testing inputs when training/testing a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          240.215,
+          614.898,
+          250.178
+        ],
+        "font_size": 9.963,
+        "raw_text": "directly derive the certified radius of a given classifier (called",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          237.285,
+          326.927,
+          247.248
+        ],
+        "font_size": 9.963,
+        "raw_text": "downstream classifier. For instance, the encoder could be pre-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          232.024,
+          587.998,
+          241.987
+        ],
+        "font_size": 9.963,
+        "raw_text": "been developed for an attacker to craft adversarial examples",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          229.257,
+          520.748,
+          239.22
+        ],
+        "font_size": 9.963,
+        "raw_text": "base classifier ) for a testing input. BC based certification",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          226.326,
+          326.927,
+          236.289
+        ],
+        "font_size": 9.963,
+        "raw_text": "trained using supervised learning on a large amount of labeled",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          218.298,
+          587.998,
+          228.261
+        ],
+        "font_size": 9.963,
+        "raw_text": "requires white-box access to the base classifier as it often",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          215.367,
+          331.41,
+          225.33
+        ],
+        "font_size": 9.963,
+        "raw_text": "data or self-supervised learning [ 1], [2] on a large amount of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          207.339,
+          592.481,
+          217.302
+        ],
+        "font_size": 9.963,
+        "raw_text": "requires propagating the perturbation from the input layer to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          204.408,
+          313.477,
+          214.371
+        ],
+        "font_size": 9.963,
+        "raw_text": "unlabeled data. A client could be a smartphone, IoT device,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          196.38,
+          605.931,
+          206.343
+        ],
+        "font_size": 9.963,
+        "raw_text": "the output layer of the base classifier layer by layer. SC based",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          193.449,
+          255.193,
+          203.412
+        ],
+        "font_size": 9.963,
+        "raw_text": "self-driving car, or edge device in the era of edge computing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          235.487,
+          193.449,
+          245.45,
+          203.412
+        ],
+        "font_size": 9.963,
+        "raw_text": ".",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          185.421,
+          444.531,
+          195.384
+        ],
+        "font_size": 9.963,
+        "raw_text": "certification first builds a smoothed classifier",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          431.008,
+          185.421,
+          484.809,
+          195.384
+        ],
+        "font_size": 9.963,
+        "raw_text": "based on the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          182.49,
+          335.893,
+          192.453
+        ],
+        "font_size": 9.963,
+        "raw_text": "Encoder as a service has been widely deployed by industry, e.g.,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          174.462,
+          596.965,
+          184.425
+        ],
+        "font_size": 9.963,
+        "raw_text": "base classifier via adding random noise (e.g., Gaussian noise)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          171.531,
+          295.543,
+          181.494
+        ],
+        "font_size": 9.963,
+        "raw_text": "OpenAI's GPT-3 API [3] and Clarifai's General Embedding",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          163.503,
+          601.448,
+          173.466
+        ],
+        "font_size": 9.963,
+        "raw_text": "to a testing input and then derives the certified radius of the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.601,
+          160.572,
+          242.952,
+          170.535
+        ],
+        "font_size": 9.963,
+        "raw_text": "API [4]. In the Standard Encoder as a Service (SEaaS) , the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          152.544,
+          614.898,
+          162.507
+        ],
+        "font_size": 9.963,
+        "raw_text": "smoothed classifier for the testing input. To increase the testing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          149.613,
+          214.843,
+          159.576
+        ],
+        "font_size": 9.963,
+        "raw_text": "service provides a single API (called Feature-API",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          253.189,
+          149.613,
+          311.472,
+          159.576
+        ],
+        "font_size": 9.963,
+        "raw_text": ") for clients",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          141.585,
+          596.965,
+          151.548
+        ],
+        "font_size": 9.963,
+        "raw_text": "inputs' certified radii, SC based certification often requires",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          130.626,
+          596.965,
+          140.589
+        ],
+        "font_size": 9.963,
+        "raw_text": "training the base classifier using training inputs with random",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          56.93,
+          129.781,
+          315.158,
+          137.751
+        ],
+        "font_size": 7.97,
+        "raw_text": "Wenjie Qu performed this research when he was an intern in Gong's group.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          120.655,
+          561.098,
+          130.618
+        ],
+        "font_size": 9.963,
+        "raw_text": "and the community keeps developing new, stronger ones.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b102",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          119.668,
+          587.998,
+          129.631
+        ],
+        "font_size": 9.963,
+        "raw_text": "noise. Moreover, to derive the predicted label and certified",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b103",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.688,
+          109.696,
+          583.206,
+          119.659
+        ],
+        "font_size": 9.963,
+        "raw_text": "Therefore, instead of defending against a specific class of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b104",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          108.709,
+          601.448,
+          118.672
+        ],
+        "font_size": 9.963,
+        "raw_text": "radius for a testing input, SC based certification requires the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b105",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          98.737,
+          574.548,
+          108.7
+        ],
+        "font_size": 9.963,
+        "raw_text": "adversarial examples, a client aims to defend against all",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b106",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          97.75,
+          605.931,
+          107.713
+        ],
+        "font_size": 9.963,
+        "raw_text": "base classifier to predict the labels of multiple noisy versions",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b107",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          94.551,
+          271.888,
+          102.521
+        ],
+        "font_size": 7.97,
+        "raw_text": "Network and Distributed System Security (NDSS) Symposium 2023",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b108",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          86.791,
+          413.147,
+          96.754
+        ],
+        "font_size": 9.963,
+        "raw_text": "of the testing input.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b109",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.673,
+          85.68,
+          213.136,
+          93.65
+        ],
+        "font_size": 7.97,
+        "raw_text": "2 7 February - 3 March 2023, San Diego, CA, USA",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b110",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          76.911,
+          116.528,
+          84.881
+        ],
+        "font_size": 7.97,
+        "raw_text": "ISBN 1-891562-83-5",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b111",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          333.393,
+          69.507,
+          593.427,
+          79.47
+        ],
+        "font_size": 9.963,
+        "raw_text": "SEaaS faces three challenges when a client aims to build a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b112",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          68.091,
+          203.178,
+          76.061
+        ],
+        "font_size": 7.97,
+        "raw_text": "https://dx.doi.org/10.14722/ndss.2023.24444",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b113",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.673,
+          59.271,
+          127.576,
+          67.241
+        ],
+        "font_size": 7.97,
+        "raw_text": "www.ndss-symposium.org",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b114",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          58.548,
+          610.415,
+          68.511
+        ],
+        "font_size": 9.963,
+        "raw_text": "certifiably robust downstream classifier and derive its certified",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b115",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          0.0,
+          0.0,
+          62.767,
+          9.963
+        ],
+        "font_size": 9.963,
+        "raw_text": "jie qu@outlook.com",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b116",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          -12.631,
+          534.198,
+          -2.668
+        ],
+        "font_size": 9.963,
+        "raw_text": "bounded adversarial perturbations via building a certifiably",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Encoder as a service is an emerging cloud service. Specifically, a service provider first pre-trains an encoder (i.e., a general-purpose feature extractor) via either supervised learning or self-supervised learning and then deploys it as a cloud service API. A client queries the cloud service API to obtain feature vectors for its training/testing inputs when training/testing its classifier (called downstream classifier). A downstream classifier is vulnerable to adversarial examples, which are testing inputs with carefully crafted perturbation that the downstream classifier misclassifies. Therefore, in safety and security critical applications, a client aims to build a robust downstream classifier and certify its robustness guarantees against adversarial examples. What APIs should the cloud service provide, such that a client can use any certification method to certify the robustness of its downstream classifier against adversarial examples while minimizing the number of queries to the APIs? How can a service provider pre-train an encoder such that clients can build more certifiably robust downstream classifiers? We aim to answer the two questions in this work. For the first question, we show that the cloud service only needs to provide two APIs, which we carefully design, to enable a client to certify the robustness of its downstream classifier with a minimal number of queries to the APIs. For the second question, we show that an encoder pre-trained using a spectral-norm regularization term enables clients to build more robust downstream classifiers. I. I NTRODUCTION In an encoder as a service, a service provider (e.g., OpenAI, Google, and Amazon) pre-trains a general-purpose feature extractor (called encoder) and deploys it as a cloud service; and a client queries the cloud service APIs for the feature vectors of its training/testing inputs when training/testing a downstream classifier. For instance, the encoder could be pre- trained using supervised learning on a large amount of labeled data or self-supervised learning [ 1], [2] on a large amount of unlabeled data. A client could be a smartphone, IoT device, self-driving car, or edge device in the era of edge computing. Encoder as a service has been widely deployed by industry, e.g., OpenAI's GPT-3 API [3] and Clarifai's General Embedding API [4]. In the Standard Encoder as a Service (SEaaS), the service provides a single API (called Feature-API) for clients Wenjie Qu performed this research when he was an intern in Gong's group. and the encoder is pre-trained without taking the robustness of downstream classifiers into consideration. A client sends its training/testing inputs to the Feature-API, which returns their feature vectors to the client. A downstream classifier is vulnerable to adversarial exam- ples [5], [6]. Suppose a testing input is correctly classified by the downstream classifier. An attacker adds a small carefully crafted perturbation to the testing input to induce misclassification. Such testing input with carefully crafted perturbation is called an adversarial example. Therefore, in security and safety critical applications such as user authentication and traffic sign recognition, a client desires to build a downstream classifier robust against adversarial examples. Many methods have been developed for an attacker to craft adversarial examples and the community keeps developing new, stronger ones. Therefore, instead of defending against a specific class of adversarial examples, a client aims to defend against all bounded adversarial perturbations via building a certifiably robust downstream classifier. A classifier is certifiably robust if its predicted label for a testing input is unaffected by arbitrary perturbation added to the testing input once its size (measured by ℓ2-norm in this work) is less than a threshold, which is known as certified radius. A larger certified radius indicates better certified robustness against adversarial examples. In general, there are two categories of complementary methods to build a certifiably robust classifier and derive its certified radius for a testing input, i.e., base classifier (BC) based certification [7], [ 8], [ 9], [ 10] and smoothed classifier (SC) based certification (also known as randomized smoothing) [ 11], [ 12], [ 13]. BC based certification aims to directly derive the certified radius of a given classifier (called base classifier ) for a testing input. BC based certification requires white-box access to the base classifier as it often requires propagating the perturbation from the input layer to the output layer of the base classifier layer by layer. SC based certification first builds a smoothed classifier based on the base classifier via adding random noise (e.g., Gaussian noise) to a testing input and then derives the certified radius of the smoothed classifier for the testing input. To increase the testing inputs' certified radii, SC based certification often requires training the base classifier using training inputs with random noise. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of multiple noisy versions of the testing input. SEaaS faces three challenges when a client aims to build a certifiably robust downstream classifier and derive its certified Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24444 www.ndss-symposium.org SEaaS REaaS Feature-API Feature-API F2IPerturb-API [0.1, ⋯, 0.2] Cloud Server Client Client Cloud Server Encoder Encoder � [0.1, ⋯, 0.2] Downstream Classifier Step 1 Step 2 Step 3 BC/SC Fig. 1: SEaaS vs. REaaS. radii for testing inputs. The first challenge is that a client cannot use BC based certification. In particular, the composition of the encoder and the client's downstream classifier is the base classifier that the client needs to certify in BC based certification. However, the client does not have white-box access to the encoder deployed on the cloud server, making BC based certification not applicable. The second challenge is that, although a client can use SC based certification by treating the composition of the encoder and its downstream classifier as a base classifier, it incurs a large communication cost for the client and a large computation cost for the cloud server. Specifically, the client needs to query the Feature-API once for each noisy training input in each training epoch of the downstream classifier because SC based certification trains the base classifier using noisy training inputs. Therefore, the client requires e queries to the Feature-API per training input, where e is the number of epochs used to train the downstream classifier. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of N noisy testing inputs. Therefore, the client requires N queries to the Feature-API per testing input. Note that N is often a large number (e.g., 10,000) [ 13]. The large number of queries to the Feature- API imply 1) large communication cost, which is intolerable for resource-constrained clients such as smartphone and IoT devices, and 2) large computation cost for the cloud server. The third challenge is that SC based certification achieves suboptimal certified radii. This is because the base classifier is the composition of the encoder and a client's downstream classifier, but a client cannot train/fine-tune the encoder as it is deployed on the cloud server. Our work: We propose Robust Encoder as a Service (REaaS) to address the three challenges of SEaaS. Figure 1 compares SEaaS with REaaS. Our key idea is to provide another API called F2IPerturb-API.1 A downstream classifier essentially takes a feature vector as input and outputs a label. Our F2IPerturb-API enables a client to treat its downstream classifier alone as a base classifier and certify the robustness of its base or smoothed downstream classifier in the feature space. Specifically, a client performs three steps to derive the certified radius of a testing input in REaaS. First, the client obtains the feature vector of the testing input via querying the Feature-API. Second, the client views its downstream classifier alone as a base classifier and derives a feature-space certified radius RF for the testing input using any BC/SC certification method. The client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input's feature vector is less 1‘F' stands for Feature and ‘I' stands for Input. than RF . Third, the client sends the testing input and its feature- space certified radius RF to query the F2IPerturb-API, which returns the corresponding input-space certified radius R to the client. Our input-space certified radius R guarantees the client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input is less than R. The key challenge of implementing our F2IPerturb-API is how to find the largest input-space certified radius R for a given testing input and its feature-space certified radius RF . To address the challenge, we formulate finding the largest R as an optimization problem, where the objective function is to find the maximum R and the constraint is that the feature- space perturbation is less than RF . However, the optimization problem is challenging to solve due to the highly non-linear constraint. To address the challenge, we propose a binary search based solution. The key component of our solution is to check whether the constraint is satisfied for a specific R in each iteration of binary search. Towards this goal, we derive an upper bound of the feature-space perturbation for a given R and we treat the constraint satisfied if the upper bound is less than RF . Our upper bound can be computed efficiently. F2IPerturb-API addresses the first two challenges of SEaaS. Specifically, BC based certification is applicable in REaaS. Moreover, SC based certification requires much less queries to the APIs in REaaS. Specifically, for any certification method, a client only requires one query to Feature-API per training input and two queries (one to Feature-API and one to F2IPerturb-API) per testing input in our REaaS. To address the third challenge of SEaaS, we propose a new method to pre-train a robust encoder, so a client can derive larger certified radii even though it cannot train/fine-tune the encoder. Our method can be combined with standard supervised learning or self-supervised learning to enhance the robustness of a pre-trained encoder. An encoder is more robust if it produces more similar feature vectors for an input and its adversarially perturbed version. Our key idea is to derive an upper bound for the Euclidean distance between the feature vectors of an input and its adversarial version, where our upper bound is a product of a spectral-norm term and the perturbation size. The spectral- norm term depends on the parameters of the encoder, but it does not depend on the input nor the adversarial perturbation. An encoder with a smaller spectral-norm term may produce more similar feature vectors for an input and its adversarial version. Thus, we use the spectral-norm term as a regularization term to regularize the pre-training of an encoder. We perform a systematic evaluation on multiple datasets including CIFAR10, SVHN, STL10, and Tiny-ImageNet. Our 2",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "CreationDate": "D:20230106221130Z",
+          "Creator": "LaTeX with hyperref",
+          "GTS_PDFA1Version": "PDF/A-1b:2005",
+          "ModDate": "D:20230205220346-05'00'",
+          "PTEX.Fullbanner": "This is pdfTeX, Version 3.141592653-2.6-1.40.23 (TeX Live 2021) kpathsea version 6.3.3",
+          "Producer": "pdfTeX",
+          "Trapped": "/False"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/reaas-enabling-adversarially-robust-downstream-classifiers-via-robust-encoder-as-a-service/",
+        "field": "author_affiliation_relation",
+        "author": "Wenjie Qu",
+        "affiliations": [
+          "Huazhong University of Science and Technology"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/reaas-enabling-adversarially-robust-downstream-classifiers-via-robust-encoder-as-a-service/",
+        "field": "author_affiliation_relation",
+        "author": "Jinyuan Jia",
+        "affiliations": [
+          "University of Illinois Urbana-Champaign"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/reaas-enabling-adversarially-robust-downstream-classifiers-via-robust-encoder-as-a-service/",
+        "field": "author_affiliation_relation",
+        "author": "Neil Zhenqiang Gong",
+        "affiliations": [
+          "Duke University"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "REaaS: Enabling Adversarially Robust Downstream Classifiers via Robust Encoder as a Service"
+        },
+        {
+          "source": "selected",
+          "value": "REaaS: Enabling Adversarially Robust Downstream Classifiers via Robust Encoder as a Service"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2023"
+        },
+        {
+          "source": "selected",
+          "value": "2023"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Encoder as a service is an emerging cloud service. Specifically, a service provider first pre-trains an encoder (i.e., a general-purpose feature extractor) via either supervised learning or self-supervised learning and then deploys it as a cloud service API. A client queries the cloud service API to obtain feature vectors for its training/testing inputs when training/testing its classifier (called downstream classifier). A downstream classifier is vulnerable to adversarial examples, which are testing inputs with carefully crafted perturbation that the downstream classifier misclassifies. Therefore, in safety and security critical applications, a client aims to build a robust downstream classifier and certify its robustness guarantees against adversarial examples. What APIs should the cloud service provide, such that a client can use any certification method to certify the robustness of its downstream classifier against adversarial examples while minimizing the number of queries to the APIs? How can a service provider pre-train an encoder such that clients can build more certifiably robust downstream classifiers? We aim to answer the two questions in this work. For the first question, we show that the cloud service only needs to provide two APIs, which we carefully design, to enable a client to certify the robustness of its downstream classifier with a minimal number of queries to the APIs. For the second question, we show that an encoder pre-trained using a spectral-norm regularization term enables clients to build more robust downstream classifiers. I. I NTRODUCTION In an encoder as a service, a service provider (e.g., OpenAI, Google, and Amazon) pre-trains a general-purpose feature extractor (called encoder) and deploys it as a cloud service; and a client queries the cloud service APIs for the feature vectors of its training/testing inputs when training/testing a downstream classifier. For instance, the encoder could be pre- trained using supervised learning on a large amount of labeled data or self-supervised learning [ 1], [2] on a large amount of unlabeled data. A client could be a smartphone, IoT device, self-driving car, or edge device in the era of edge computing. Encoder as a service has been widely deployed by industry, e.g., OpenAI's GPT-3 API [3] and Clarifai's General Embedding API [4]. In the Standard Encoder as a Service (SEaaS), the service provides a single API (called Feature-API) for clients Wenjie Qu performed this research when he was an intern in Gong's group. and the encoder is pre-trained without taking the robustness of downstream classifiers into consideration. A client sends its training/testing inputs to the Feature-API, which returns their feature vectors to the client. A downstream classifier is vulnerable to adversarial exam- ples [5], [6]. Suppose a testing input is correctly classified by the downstream classifier. An attacker adds a small carefully crafted perturbation to the testing input to induce misclassification. Such testing input with carefully crafted perturbation is called an adversarial example. Therefore, in security and safety critical applications such as user authentication and traffic sign recognition, a client desires to build a downstream classifier robust against adversarial examples. Many methods have been developed for an attacker to craft adversarial examples and the community keeps developing new, stronger ones. Therefore, instead of defending against a specific class of adversarial examples, a client aims to defend against all bounded adversarial perturbations via building a certifiably robust downstream classifier. A classifier is certifiably robust if its predicted label for a testing input is unaffected by arbitrary perturbation added to the testing input once its size (measured by ℓ2-norm in this work) is less than a threshold, which is known as certified radius. A larger certified radius indicates better certified robustness against adversarial examples. In general, there are two categories of complementary methods to build a certifiably robust classifier and derive its certified radius for a testing input, i.e., base classifier (BC) based certification [7], [ 8], [ 9], [ 10] and smoothed classifier (SC) based certification (also known as randomized smoothing) [ 11], [ 12], [ 13]. BC based certification aims to directly derive the certified radius of a given classifier (called base classifier ) for a testing input. BC based certification requires white-box access to the base classifier as it often requires propagating the perturbation from the input layer to the output layer of the base classifier layer by layer. SC based certification first builds a smoothed classifier based on the base classifier via adding random noise (e.g., Gaussian noise) to a testing input and then derives the certified radius of the smoothed classifier for the testing input. To increase the testing inputs' certified radii, SC based certification often requires training the base classifier using training inputs with random noise. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of multiple noisy versions of the testing input. SEaaS faces three challenges when a client aims to build a certifiably robust downstream classifier and derive its certified Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24444 www.ndss-symposium.org SEaaS REaaS Feature-API Feature-API F2IPerturb-API [0.1, ⋯, 0.2] Cloud Server Client Client Cloud Server Encoder Encoder � [0.1, ⋯, 0.2] Downstream Classifier Step 1 Step 2 Step 3 BC/SC Fig. 1: SEaaS vs. REaaS. radii for testing inputs. The first challenge is that a client cannot use BC based certification. In particular, the composition of the encoder and the client's downstream classifier is the base classifier that the client needs to certify in BC based certification. However, the client does not have white-box access to the encoder deployed on the cloud server, making BC based certification not applicable. The second challenge is that, although a client can use SC based certification by treating the composition of the encoder and its downstream classifier as a base classifier, it incurs a large communication cost for the client and a large computation cost for the cloud server. Specifically, the client needs to query the Feature-API once for each noisy training input in each training epoch of the downstream classifier because SC based certification trains the base classifier using noisy training inputs. Therefore, the client requires e queries to the Feature-API per training input, where e is the number of epochs used to train the downstream classifier. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of N noisy testing inputs. Therefore, the client requires N queries to the Feature-API per testing input. Note that N is often a large number (e.g., 10,000) [ 13]. The large number of queries to the Feature- API imply 1) large communication cost, which is intolerable for resource-constrained clients such as smartphone and IoT devices, and 2) large computation cost for the cloud server. The third challenge is that SC based certification achieves suboptimal certified radii. This is because the base classifier is the composition of the encoder and a client's downstream classifier, but a client cannot train/fine-tune the encoder as it is deployed on the cloud server. Our work: We propose Robust Encoder as a Service (REaaS) to address the three challenges of SEaaS. Figure 1 compares SEaaS with REaaS. Our key idea is to provide another API called F2IPerturb-API.1 A downstream classifier essentially takes a feature vector as input and outputs a label. Our F2IPerturb-API enables a client to treat its downstream classifier alone as a base classifier and certify the robustness of its base or smoothed downstream classifier in the feature space. Specifically, a client performs three steps to derive the certified radius of a testing input in REaaS. First, the client obtains the feature vector of the testing input via querying the Feature-API. Second, the client views its downstream classifier alone as a base classifier and derives a feature-space certified radius RF for the testing input using any BC/SC certification method. The client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input's feature vector is less 1‘F' stands for Feature and ‘I' stands for Input. than RF . Third, the client sends the testing input and its feature- space certified radius RF to query the F2IPerturb-API, which returns the corresponding input-space certified radius R to the client. Our input-space certified radius R guarantees the client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input is less than R. The key challenge of implementing our F2IPerturb-API is how to find the largest input-space certified radius R for a given testing input and its feature-space certified radius RF . To address the challenge, we formulate finding the largest R as an optimization problem, where the objective function is to find the maximum R and the constraint is that the feature- space perturbation is less than RF . However, the optimization problem is challenging to solve due to the highly non-linear constraint. To address the challenge, we propose a binary search based solution. The key component of our solution is to check whether the constraint is satisfied for a specific R in each iteration of binary search. Towards this goal, we derive an upper bound of the feature-space perturbation for a given R and we treat the constraint satisfied if the upper bound is less than RF . Our upper bound can be computed efficiently. F2IPerturb-API addresses the first two challenges of SEaaS. Specifically, BC based certification is applicable in REaaS. Moreover, SC based certification requires much less queries to the APIs in REaaS. Specifically, for any certification method, a client only requires one query to Feature-API per training input and two queries (one to Feature-API and one to F2IPerturb-API) per testing input in our REaaS. To address the third challenge of SEaaS, we propose a new method to pre-train a robust encoder, so a client can derive larger certified radii even though it cannot train/fine-tune the encoder. Our method can be combined with standard supervised learning or self-supervised learning to enhance the robustness of a pre-trained encoder. An encoder is more robust if it produces more similar feature vectors for an input and its adversarially perturbed version. Our key idea is to derive an upper bound for the Euclidean distance between the feature vectors of an input and its adversarial version, where our upper bound is a product of a spectral-norm term and the perturbation size. The spectral- norm term depends on the parameters of the encoder, but it does not depend on the input nor the adversarial perturbation. An encoder with a smaller spectral-norm term may produce more similar feature vectors for an input and its adversarial version. Thus, we use the spectral-norm term as a regularization term to regularize the pre-training of an encoder. We perform a systematic evaluation on multiple datasets including CIFAR10, SVHN, STL10, and Tiny-ImageNet. Our 2"
+        },
+        {
+          "source": "selected",
+          "value": "Encoder as a service is an emerging cloud service. Specifically, a service provider first pre-trains an encoder (i.e., a general-purpose feature extractor) via either supervised learning or self-supervised learning and then deploys it as a cloud service API. A client queries the cloud service API to obtain feature vectors for its training/testing inputs when training/testing its classifier (called downstream classifier). A downstream classifier is vulnerable to adversarial examples, which are testing inputs with carefully crafted perturbation that the downstream classifier misclassifies. Therefore, in safety and security critical applications, a client aims to build a robust downstream classifier and certify its robustness guarantees against adversarial examples. What APIs should the cloud service provide, such that a client can use any certification method to certify the robustness of its downstream classifier against adversarial examples while minimizing the number of queries to the APIs? How can a service provider pre-train an encoder such that clients can build more certifiably robust downstream classifiers? We aim to answer the two questions in this work. For the first question, we show that the cloud service only needs to provide two APIs, which we carefully design, to enable a client to certify the robustness of its downstream classifier with a minimal number of queries to the APIs. For the second question, we show that an encoder pre-trained using a spectral-norm regularization term enables clients to build more robust downstream classifiers. I. I NTRODUCTION In an encoder as a service, a service provider (e.g., OpenAI, Google, and Amazon) pre-trains a general-purpose feature extractor (called encoder) and deploys it as a cloud service; and a client queries the cloud service APIs for the feature vectors of its training/testing inputs when training/testing a downstream classifier. For instance, the encoder could be pre- trained using supervised learning on a large amount of labeled data or self-supervised learning [ 1], [2] on a large amount of unlabeled data. A client could be a smartphone, IoT device, self-driving car, or edge device in the era of edge computing. Encoder as a service has been widely deployed by industry, e.g., OpenAI's GPT-3 API [3] and Clarifai's General Embedding API [4]. In the Standard Encoder as a Service (SEaaS), the service provides a single API (called Feature-API) for clients Wenjie Qu performed this research when he was an intern in Gong's group. and the encoder is pre-trained without taking the robustness of downstream classifiers into consideration. A client sends its training/testing inputs to the Feature-API, which returns their feature vectors to the client. A downstream classifier is vulnerable to adversarial exam- ples [5], [6]. Suppose a testing input is correctly classified by the downstream classifier. An attacker adds a small carefully crafted perturbation to the testing input to induce misclassification. Such testing input with carefully crafted perturbation is called an adversarial example. Therefore, in security and safety critical applications such as user authentication and traffic sign recognition, a client desires to build a downstream classifier robust against adversarial examples. Many methods have been developed for an attacker to craft adversarial examples and the community keeps developing new, stronger ones. Therefore, instead of defending against a specific class of adversarial examples, a client aims to defend against all bounded adversarial perturbations via building a certifiably robust downstream classifier. A classifier is certifiably robust if its predicted label for a testing input is unaffected by arbitrary perturbation added to the testing input once its size (measured by ℓ2-norm in this work) is less than a threshold, which is known as certified radius. A larger certified radius indicates better certified robustness against adversarial examples. In general, there are two categories of complementary methods to build a certifiably robust classifier and derive its certified radius for a testing input, i.e., base classifier (BC) based certification [7], [ 8], [ 9], [ 10] and smoothed classifier (SC) based certification (also known as randomized smoothing) [ 11], [ 12], [ 13]. BC based certification aims to directly derive the certified radius of a given classifier (called base classifier ) for a testing input. BC based certification requires white-box access to the base classifier as it often requires propagating the perturbation from the input layer to the output layer of the base classifier layer by layer. SC based certification first builds a smoothed classifier based on the base classifier via adding random noise (e.g., Gaussian noise) to a testing input and then derives the certified radius of the smoothed classifier for the testing input. To increase the testing inputs' certified radii, SC based certification often requires training the base classifier using training inputs with random noise. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of multiple noisy versions of the testing input. SEaaS faces three challenges when a client aims to build a certifiably robust downstream classifier and derive its certified Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24444 www.ndss-symposium.org SEaaS REaaS Feature-API Feature-API F2IPerturb-API [0.1, ⋯, 0.2] Cloud Server Client Client Cloud Server Encoder Encoder � [0.1, ⋯, 0.2] Downstream Classifier Step 1 Step 2 Step 3 BC/SC Fig. 1: SEaaS vs. REaaS. radii for testing inputs. The first challenge is that a client cannot use BC based certification. In particular, the composition of the encoder and the client's downstream classifier is the base classifier that the client needs to certify in BC based certification. However, the client does not have white-box access to the encoder deployed on the cloud server, making BC based certification not applicable. The second challenge is that, although a client can use SC based certification by treating the composition of the encoder and its downstream classifier as a base classifier, it incurs a large communication cost for the client and a large computation cost for the cloud server. Specifically, the client needs to query the Feature-API once for each noisy training input in each training epoch of the downstream classifier because SC based certification trains the base classifier using noisy training inputs. Therefore, the client requires e queries to the Feature-API per training input, where e is the number of epochs used to train the downstream classifier. Moreover, to derive the predicted label and certified radius for a testing input, SC based certification requires the base classifier to predict the labels of N noisy testing inputs. Therefore, the client requires N queries to the Feature-API per testing input. Note that N is often a large number (e.g., 10,000) [ 13]. The large number of queries to the Feature- API imply 1) large communication cost, which is intolerable for resource-constrained clients such as smartphone and IoT devices, and 2) large computation cost for the cloud server. The third challenge is that SC based certification achieves suboptimal certified radii. This is because the base classifier is the composition of the encoder and a client's downstream classifier, but a client cannot train/fine-tune the encoder as it is deployed on the cloud server. Our work: We propose Robust Encoder as a Service (REaaS) to address the three challenges of SEaaS. Figure 1 compares SEaaS with REaaS. Our key idea is to provide another API called F2IPerturb-API.1 A downstream classifier essentially takes a feature vector as input and outputs a label. Our F2IPerturb-API enables a client to treat its downstream classifier alone as a base classifier and certify the robustness of its base or smoothed downstream classifier in the feature space. Specifically, a client performs three steps to derive the certified radius of a testing input in REaaS. First, the client obtains the feature vector of the testing input via querying the Feature-API. Second, the client views its downstream classifier alone as a base classifier and derives a feature-space certified radius RF for the testing input using any BC/SC certification method. The client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input's feature vector is less 1‘F' stands for Feature and ‘I' stands for Input. than RF . Third, the client sends the testing input and its feature- space certified radius RF to query the F2IPerturb-API, which returns the corresponding input-space certified radius R to the client. Our input-space certified radius R guarantees the client's base or smoothed downstream classifier predicts the same label for the testing input if the ℓ2-norm of the adversarial perturbation added to the testing input is less than R. The key challenge of implementing our F2IPerturb-API is how to find the largest input-space certified radius R for a given testing input and its feature-space certified radius RF . To address the challenge, we formulate finding the largest R as an optimization problem, where the objective function is to find the maximum R and the constraint is that the feature- space perturbation is less than RF . However, the optimization problem is challenging to solve due to the highly non-linear constraint. To address the challenge, we propose a binary search based solution. The key component of our solution is to check whether the constraint is satisfied for a specific R in each iteration of binary search. Towards this goal, we derive an upper bound of the feature-space perturbation for a given R and we treat the constraint satisfied if the upper bound is less than RF . Our upper bound can be computed efficiently. F2IPerturb-API addresses the first two challenges of SEaaS. Specifically, BC based certification is applicable in REaaS. Moreover, SC based certification requires much less queries to the APIs in REaaS. Specifically, for any certification method, a client only requires one query to Feature-API per training input and two queries (one to Feature-API and one to F2IPerturb-API) per testing input in our REaaS. To address the third challenge of SEaaS, we propose a new method to pre-train a robust encoder, so a client can derive larger certified radii even though it cannot train/fine-tune the encoder. Our method can be combined with standard supervised learning or self-supervised learning to enhance the robustness of a pre-trained encoder. An encoder is more robust if it produces more similar feature vectors for an input and its adversarially perturbed version. Our key idea is to derive an upper bound for the Euclidean distance between the feature vectors of an input and its adversarial version, where our upper bound is a product of a spectral-norm term and the perturbation size. The spectral- norm term depends on the parameters of the encoder, but it does not depend on the input nor the adversarial perturbation. An encoder with a smaller spectral-norm term may produce more similar feature vectors for an input and its adversarial version. Thus, we use the spectral-norm term as a regularization term to regularize the pre-training of an encoder. We perform a systematic evaluation on multiple datasets including CIFAR10, SVHN, STL10, and Tiny-ImageNet. Our 2"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Wenjie Qu",
+            "email": "wenjiequ@outlook.com",
+            "orcid": "",
+            "affiliations": [
+              "Huazhong University of Science and Technology"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Jinyuan Jia",
+            "email": "jinyuan@illinois.edu",
+            "orcid": "",
+            "affiliations": [
+              "University of Illinois Urbana-Champaign"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Neil Zhenqiang Gong",
+            "email": "neil.gong@duke.edu",
+            "orcid": "",
+            "affiliations": [
+              "Duke University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Wenjie Qu1",
+            "email": "",
+            "affiliations": [
+              "1 Huazhong University of Science and Technology, wen jie"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Jinyuan Jia 2",
+            "email": "jinyuan@illinois.edu",
+            "affiliations": [
+              "1 Huazhong University of Science and Technology, wen jie"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Neil Zhenqiang Gong 3",
+            "email": "",
+            "affiliations": [
+              "1 Huazhong University of Science and Technology, wen jie"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 117,
+        "author_count": 3,
+        "matched_author_count": 0,
+        "exact_author_match_count": 0,
+        "dominant_author_font_size": 0.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 3,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "REaaS: Enabling Adversarially Robust Downstream Classifiers via Robust Encoder as a Service",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/reaas-enabling-adversarially-robust-downstream-classifiers-via-robust-encoder-as-a-service/",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Wenjie Qu",
+            "affiliations": [
+              "Huazhong University of Science and Technology"
+            ]
+          },
+          {
+            "name": "Jinyuan Jia",
+            "affiliations": [
+              "University of Illinois Urbana-Champaign"
+            ]
+          },
+          {
+            "name": "Neil Zhenqiang Gong",
+            "affiliations": [
+              "Duke University"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      }
+    ]
+  }
+}

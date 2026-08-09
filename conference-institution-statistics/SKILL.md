@@ -58,6 +58,34 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 指标定义详见 [机构排名参考](references/institution_rankings.md)。
 
+## 可选输出：详细排名工作簿
+
+当用户请求同时给出会议范围、年份或年份范围，并出现“详细排名”“详细工作簿”“Top10 及逐篇明细”或同义表达时，生成详细 Excel 工作簿，而不是只生成国家切片 CSV。会议范围可以是任意单个会议、会议集合（例如“四大会”）、集合中的某一个会议或自定义会议列表；会议名称匹配不区分大小写。
+
+以下表达均属于可触发形式（会议名和年份按请求替换）：
+
+- `生成 Asiacrypt 2025 中国大陆详细排名`
+- `生成 ASIACRYPT 2020-2025 详细排名`
+- `生成四大会 2025 详细排名`
+- `生成四大会中的某一个会议 2024 年 Top10 及逐篇明细`
+- `生成任意会议 2021 至 2023 年的详细排名工作簿`
+
+如果请求中明确写出“中国大陆”“中国机构”或其他国家/地区，则按该范围过滤；未指定国家/地区时，按请求的默认数据范围统计。详细工作簿应包含论文清单，以及机构和作者的排名与逐篇明细。是否生成方法说明页，应按用户当前请求决定，不设固定规则。论文表按国家/地区、会议和年份范围动态命名（例如 `China_Papers_2025` 或 `Papers_ASIACRYPT_2020_2025`）；核心数据工作表包括：
+
+1. `Papers_<scope>_<year_or_range>`
+2. `First_Unit_Top10`
+3. `First_Unit_Details`
+4. `Participating_Unit_Top10`
+5. `Participating_Unit_Details`
+6. `First_Author_Top10`
+7. `First_Author_Details`
+8. `Participating_Author_Top10`
+9. `Participating_Author_Details`
+
+其中 `Details` 工作表必须保留排名实体对应的逐篇论文信息；复合机构或国家标签可解析时按组成项拆分并分别统计，无法解析的组成部分作为残片丢弃。中国大陆范围是可选国家规则，不替代全球统计口径。
+
+若用户只说 `中国机构清单`、`中国机构排名` 或指定 `--country China`，仍生成标准国家切片 CSV；只有在同时明确会议范围、年份（或年份范围）和详细排名/逐篇明细意图时，才生成上述多工作表 XLSX。
+
 ## 核心指标
 
 至少计算以下指标：
@@ -87,6 +115,18 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 
 如果组合了多个范围条件，必须在报告中明确写出。
 
+中国机构清单是一个可选国家切片。使用 `--country China` 后，输出仅保留中国归属机构，仍按去重论文数排序，并保留作者数、一作论文数、会议覆盖数和年份覆盖数：
+
+```bash
+python3 conference-institution-statistics/scripts/institution_statistics.py \
+  --input <analysis-dir>/normalized/author_affiliation_facts.csv \
+  --output-dir <analysis-dir>/china-institutions \
+  --country China \
+  [--year 2025]
+```
+
+该切片应同时保留完整的 `institution_summary.csv`、`institution_by_conference.csv`、`institution_by_year.csv` 和 `institution_report.md`，作为中国机构的具体清单；复合机构或国家标签按可解析组成项拆分，无法解析的组成部分按残片丢弃。
+
 ### 第 2 步：验证机构标准化质量
 
 在排名前检查：
@@ -94,6 +134,7 @@ allowed-tools: Bash(python3:*) Read Glob Grep
 - 多个显示名是否指向同一个 `institution_key`
 - 同一个显示名是否被拆成多个 key
 - 是否存在 `unknown` 之类未解析机构
+- `Independent Researcher` 是无机构作者的统一占位，不进入机构排名
 
 如果标准化质量较弱，应先运行 `conference-dataset-normalization`。
 

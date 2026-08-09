@@ -1,0 +1,318 @@
+{
+  "paper_id": "083_uncovering_cross_context_inconsistent_access_control_enforcement_in_android",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Uncovering Cross-Context Inconsistent Access Control Enforcement in Android"
+      },
+      {
+        "source": "selected",
+        "value": "Uncovering Cross-Context Inconsistent Access Control Enforcement in Android"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Due to the complexity resulted from the huge code base and the multi-context nature of Android, inconsistent access control enforcement exists in Android, which can be exploited by malware to bypass the access control and perform unauthorized security-sensitive operations. Unfortunately, existing studies only focus on the inconsistent access control enforcement in the Java context of Android. In this paper, we conduct the first systematic investigation on the inconsistent access control enforcement across the Java context and native context of Android. In particular, to automatically discover cross-context inconsistencies, we design and implement IAceFinder, a new tool that extracts and contrasts the access control enforced in the Java context and native context of Android. Applying IAceFinder to 14 open-source Android ROMs, we find that it can effectively uncover their cross-context inconsistent access control enforcement. Specifically, IAceFinder discovers 23 inconsistencies that can be abused by attackers to compromise the device and violate user privacy."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Due to the complexity resulted from the huge code base and the multi-context nature of Android, inconsistent access control enforcement exists in Android, which can be exploited by malware to bypass the access control and perform unauthorized security-sensitive operations. Unfortunately, existing studies only focus on the inconsistent access control enforcement in the Java context of Android. In this paper, we conduct the first systematic investigation on the inconsistent access control enforcement across the Java context and native context of Android. In particular, to automatically discover cross-context inconsistencies, we design and implement IAceFinder, a new tool that extracts and contrasts the access control enforced in the Java context and native context of Android. Applying IAceFinderto 14 open-source Android ROMs, we find that it can effectively uncover their cross-context inconsistent access control enforcement. Specifically, IAceFinder discovers 23 inconsistencies that can be abused by attackers to compromise the device and violate user privacy. I. I NTRODUCTION Modern operating systems (e.g., Windows, Linux, Android, iOS) commonly employ access control mechanisms to prevent unauthorized applications or users from accessing the sensitive system functions and the users' private data [ 73]. For example, Linux only allows the processes associated with specific user identifiers (UIDs) to access certain files [ 64]. As a Linux based operating system, Android not only adopts the UID based security model but also employs the permission based access control mechanism [ 48]. Precisely, it only permits the Android applications (including Android apps and native programs that are written by C or C++ code) that have specific UIDs and permissions to invoke its sensitive functions. Unfortunately, due to the complexity and the huge code base of modern operating systems, it is not uncommon that developers fail to enforce consistent access control on sensitive system functions [ 77]. Such an inconsistency can be exploited by the unauthorized applications to perform security-sensitive operations to compromise privacy of user data or cause damage to the system. For instance, owing to the inconsistent UID check, malware can launch DoS attacks on Android's critical system services [ 43, 75]. In addition, due to the inconsistent permission check, malicious Android applications can steal users' private data [15, 52, 61, 75, 85]. ∗The corresponding authors. Android system services provide both Java and native interfaces for applications to invoke sensitive system functions, which can be divided into two types depending on the pro- gramming languages used to implement their core functionality, namely Java system services and native system services that are usually implemented in C++ code [ 69]. Android is expected to enforce consistent access control to restrict the invocations to these system services [46]. First, since Android applications can call the sensitive functions of system services through multiple ways in the same context [ 75], consistent access control should be enforced on all possible invocation interfaces to the same function. Second, since the sensitive functions of Java system services may rely on native system services to implement their functionality, the access control enforced in the Java context should be consistent with that in the native context. Unfortunately, recent studies showed that inconsistent access control enforcement exist in Android's Java system services (i.e., the first scenario) [43, 61, 75]. However, to the best of our knowledge, none of existing work examines the inconsistent access control enforcement across the Java context and native context of Android (i.e., the second scenario). In order to fill in the gap, in this paper, we conduct the first systematic investigation on the cross-context inconsistent access control enforcement in Android framework, and develop the Inconsistent Access control enforcement Finder (IAceFinder) to automatically uncover such inconsistencies. More precisely, IAceFinderfirst extracts the access control enforced in the Java context and that in the native context, and then contrasts them. The whole process consists of three steps. First, to identify the access control enforced in different contexts, IAceFinder performs static analysis on Java libraries (i.e., .jar files) and native libraries (i.e., .so files) of Android framework to construct the callgraphs for Java system services and native system services, respectively. Second, IAceFinderanalyzes the callgraphs to find the access control enforced in Java system services and native system services. Since the sensitive functions of Java system services may employ the JNI interface [23, 72] to interact with native system services, the JNI interface bridges these two contexts of Android. A JNI interface contains a pair of JNI method and JNI function. The former is declared in the Java context and the latter is implemented in the native context [22, 80]. Accordingly, the access control enforced to restrict the invocation of the JNI method in Java system services should be consistent with the access control enforced to restrict the execution of the JNI function in native system services. Therefore, IAceFinderidentifies the access control enforced on the JNI methods and that enforced on the JNI functions, respectively. Third, given a JNI interface, IAceFindercontrasts Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.23166 www.ndss-symposium.org the access control associated with its JNI method and the access control enforced on its JNI function to uncover the potential cross-context inconsistent access control enforcement. It is challenging to design and develop IAceFinderdue to the following technical issues. First, it is non-trivial to build the complete callgraph of native system services by analyzing its native libraries individually, because the functions in one native library may rely on the functions exported by the others. To approach this issue, when building the callgraph of a native library, we also analyze the dependent shared libraries (detailed in § VI-A). Second, since native system services are mainly implemented in C++, the polymorphism of C++ language makes it hard to accurately distinguish the objects of the classes that are inherited from the same parent class (especially for the interface class), thus degrading the quality of the callgraph built for native system services. To mitigate this problem, we carefully perform points-to analysis on native code when constructing the callgraph (detailed §VI-A). Third, since the interfaces accessible to Android applications use Binder to interact with native system services, there is no explicit function calls from the interfaces to the functions of native system services, and thus the calling relationships between them are missed in the callgraph. To address this issue, we conduct static analysis on Binder of native system services to restore the edges that connect the interfaces to the corresponding functions of native system services in the callgraph (detailed in §VI-A). We use IAceFinderto discover the cross-context inconsis- tent access control enforcement in 14 open-source Android distributions, including the recently released official Android systems and other third-party Android ROMs (e.g., LineageOS [24]). IAceFinderuncovers 23 inconsistencies which can be exploited by adversaries to compromise the device or invade user privacy. We have reported the discovered inconsistencies to Google and other ROMs' maintainers and got rewards from Google vulnerability reward program. In summary, we make the following contributions: • To the best of our knowledge, we are the first to investigate the inconsistent access control enforcement across the Java context and native context of Android framework. • We develop IAceFinder, a new tool to automatically uncover the cross-context inconsistent access control enforcement after tackling several technical challenges. Our tool will be released at https://github.com/moonZHH/IAceFinder. • We extensively evaluate the performance of IAceFinderby applying it to 14 open-source Android ROMs. IAceFinder discovers 23 cross-context inconsistent access control en- forcement that can be abused to compromise the device and invade user privacy. II. B ACKGROUND This section introduces two types of access control enforced by Android in § II-A and Android system services in § II-B. To explain the causes of cross-context inconsistent access control enforcement (in §III), we describe how Android applications interact with Android system services and how different system services interact with each other in §II-C. A. Access Control Android mainly employs permission checks and UIDchecks to protect their sensitive functions [ 44, 46, 47, 83]. Therefore, in this paper, we mainly focus on analyzing the permission based and UID based access control. • Permission: Android employs the permission based access control model [48, 74, 75], which requires Android applications to gain the necessary permissions to access private user data (e.g., contacts), retrieve sensitive device information (e.g., mi- crophone's states), or use critical system features (e.g., camera) [34]. Depending on the protection level that characterizes the potential risk implied in the permission [ 8], Android divides permissions [ 32] into four categories. The permissions with the protection levels privileged and signature can only be gained by the privileged system applications (e.g., system services and ADBshell [1, 2]), and thus they are associated with high privilege [ 43]. Since the permissions with the protection levels dangerous and normal can be obtained by normal applications, they are associated with low privilege [43]. TABLE I: Partial UIDs in Android framework. UID Alias Value Description ROOT_UID AID_ROOT 0 For root user. SYSTEM_UID AID_SYSTEM1,000 For system user. SHELL_UID AID_SHELL 2,000 For shell user. FIRST_APPLICATION_UIDAID_APP_START10,000 For normal apps. LAST_APPLICATION_UIDAID_APP_END19,999 For normal apps. • User Identifier (UID) : Android also employs the UID based access control model [ 75], which only allows the applications with the required UIDs to call the restricted system functions. Table I lists partial of the critical UIDs and their aliases used by Android. Specifically, for normal applications, their UIDs are in the range of [10, 000, 19, 999], and the UIDs of privileged system applications (e.g., system services and ADB shell) are smaller than 10, 000. Generally, the privilege associated with the UIDs of privileged system applications is higher than that associated with the UIDs of normal applications [ 43]. It is worth to note that, ADBshell shares its UID (i.e., SHELL_UID) and permissions to the native programs executed by it. B. Android System Services and Binder Being the essential components of Android, Android system services can be accessed by Android applications through their interfaces [ 36, 84]. Since system services usually provide sensitive functions, Android enforces access control on their interfaces. Depending on the programming languages used to implement their functionality, system services are categorized into Java system services and native system services [69]. Since Android applications and system services run in separate processes, Android provides Binder [10], an inter- process communication ( IPC) mechanism, for applications to interact with system services. Android applications use the Binder proxy to communicate with the corresponding Binder stub, which is a special object held by system services. Precisely, the applications invoke the methods ( local interfaces) defined in the classes of the Binder proxy to call the methods ( remote interfaces) defined in the classes of the Binder stub. Note that, the classes of a pair of Binder proxy and Binder stub inherit the"
+      },
+      {
+        "source": "selected",
+        "value": "Due to the complexity resulted from the huge code base and the multi-context nature of Android, inconsistent access control enforcement exists in Android, which can be exploited by malware to bypass the access control and perform unauthorized security-sensitive operations. Unfortunately, existing studies only focus on the inconsistent access control enforcement in the Java context of Android. In this paper, we conduct the first systematic investigation on the inconsistent access control enforcement across the Java context and native context of Android. In particular, to automatically discover cross-context inconsistencies, we design and implement IAceFinder, a new tool that extracts and contrasts the access control enforced in the Java context and native context of Android. Applying IAceFinder to 14 open-source Android ROMs, we find that it can effectively uncover their cross-context inconsistent access control enforcement. Specifically, IAceFinder discovers 23 inconsistencies that can be abused by attackers to compromise the device and violate user privacy."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hao Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Haoyu Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xiapu Luo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ting Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Electronic Science and Technology of China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yajin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Ting Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hao Zhou",
+          "email": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Haoyu Wang",
+          "email": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Xiapu Luo",
+          "email": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 3,
+          "name": "Ting Chen",
+          "email": "",
+          "affiliations": [
+            "University of Electronic Science and Technology of, China"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 4,
+          "name": "Yajin Zhou",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Ting Wang",
+          "email": "",
+          "affiliations": [
+            "Pennsylvania State University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 139,
+      "author_count": 6,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 4,
+          "author": "Yajin Zhou",
+          "block_id": "pdf:p1:b10",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Ting Wang",
+          "block_id": "pdf:p1:b4",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 4,
+          "author": "Yajin Zhou",
+          "affiliation_raw": "Beijing University of Posts and Telecommunications Zhejiang University, Pennsylvania State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b10",
+          "affiliation_block_ids": [
+            "pdf:p1:b16",
+            "pdf:p1:b20"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 7.507,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Ting Wang",
+          "affiliation_raw": "Beijing University of Posts and Telecommunications Zhejiang University, Pennsylvania State University",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b16",
+            "pdf:p1:b20"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 16.435,
+          "center_distance": 51.759,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Uncovering Cross-Context Inconsistent Access Control Enforcement in Android",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-190/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hao Zhou",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ]
+        },
+        {
+          "name": "Haoyu Wang",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications"
+          ]
+        },
+        {
+          "name": "Xiapu Luo",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ]
+        },
+        {
+          "name": "Ting Chen",
+          "affiliations": [
+            "University of Electronic Science and Technology of China"
+          ]
+        },
+        {
+          "name": "Yajin Zhou",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Ting Wang",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 1,
+      "country_values_restored": 1,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

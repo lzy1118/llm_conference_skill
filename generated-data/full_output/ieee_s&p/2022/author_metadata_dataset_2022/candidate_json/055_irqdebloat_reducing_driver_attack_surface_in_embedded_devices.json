@@ -1,0 +1,185 @@
+{
+  "paper_id": "055_irqdebloat_reducing_driver_attack_surface_in_embedded_devices",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "IRQDebloat: Reducing Driver Attack Surface in Embedded Devices"
+      },
+      {
+        "source": "selected",
+        "value": "IRQDebloat: Reducing Driver Attack Surface in Embedded Devices"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Embedded and IoT devices often come with a wide range of hardware functionality, but any particular end user may only use some small subset of these features. However, even unused hardware features are accompanied by potentially buggy driver code, which increases the attack surface of the device. In this paper, we introduce IRQDebloat, a system for disabling unwanted hardware features through automated firmware rewriting. Building on the insight that external inputs to the system are typically delivered through interrupt requests (IRQs), IRQDebloat systematically explores the interrupt handling code in the target firmware, identifies the handler function for each peripheral, and finally rewrites target firmware to disable the handlers that correspond to undesired hardware features. In our experiments we demonstrate IRQDebloat's effectiveness and generality by identifying IRQ handlers across four different operating systems (Linux, FreeBSD, VxWorks, and RiscOS) and seven different embedded platforms, and disabling selected peripherals on real-world hardware (a Raspberry Pi and a Valve Steam Link). On the Steam Link, we survey the attack surface and find that disabling selected peripherals could block up to 44 CVEs found in the Linux kernel over the past five years."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Embedded and IoT devices often come with a wide range of hardware functionality, but any particular end user may only use some small subset of these features. However, even unused hardware features are accompanied by potentially buggy driver code, which increases the attack surface of the device. In this paper, we introduce IRQDebloat, a system for dis- abling unwanted hardware features through automated firmware rewriting. Building on the insight that external inputs to the system are typically delivered through interrupt requests (IRQs), IRQDebloat systematically explores the interrupt handling code in the target firmware, identifies the handler function for each peripheral, and finally rewrites target firmware to disable the handlers that correspond to undesired hardware features. In our experiments we demonstrate IRQDebloat's effectiveness and generality by identifying IRQ handlers across four different operating systems (Linux, FreeBSD, VxWorks, and RiscOS) and seven different embedded platforms, and disabling selected peripherals on real-world hardware (a Raspberry Pi and a Valve Steam Link). On the Steam Link, we survey the attack surface and find that disabling selected peripherals could block up to 44 CVEs found in the Linux kernel over the past five years. I. I NTRODUCTION Many embedded and IoT devices offer a wide range of functionality to support the needs of a diverse user population. However, this breadth of features comes at a price: each feature requires additional software support, and creates more opportunities for vulnerabilities. For hardware features, these vulnerabilities often lurk in kernel-mode driver code, where bugs can lead to complete compromise of the system. For example, Cisco Meraki WiFi access points integrate a Bluetooth Low Energy (BLE) beacon to provide services such as indoor localization [ 1]. Although many customers may not need or desire these features, the software needed to support it is enabled in the firmware and remains a part of the device's exposed attack surface. Indeed, researchers from Armis discovered multiple remote code execution vulnerabil- ities (collectively dubbed “BleedingBit”) in the BLE stack of these devices [ 42]. Examples like these demonstrate the need for debloating: the automated removal of unwanted features in software. Although debloating has been previously studied in the context of desktop [ 38], server [ 31], mobile [ 47], [ 27], and web applications [ 8], less attention has been paid to disabling potentially vulnerable hardware features in embedded devices. In this paper, we demonstrate an approach to debloating that allows users to selectively disable unwanted hardware features by automatically rewriting their firmware. Our key insight is that the the vulnerable attack surface from driver code can, in most cases, only be reached when input from the outside world enters the system via a hardware interrupt. Thus, by enumerating the interrupt handlers on a system, matching them to actual hardware functionality, and then rewriting the firmware to disable code that handles interrupts from unneeded devices, we can effectively close off the driver attack surface from the outside world. We envision that this capability will be most useful to tech- nically sophisticated users who wish to deploy embedded de- vices without such unwanted hardware functionality that may render them less secure. A classic (though perhaps apocryphal) example is the anecdote that some secure government facilities may have filled the USB ports of their computers with epoxy to prevent the use of USB [ 24]; blocking hardware features through firmware rewriting is similar in spirit to this technique, but requires less manual effort (and is more reversible). More prosaically, a large company deploying a fleet of wireless routers such as the Meraki access points mentioned above might wish to disable BLE functionality entirely. And finally, hobbyist users may wish to keep their embedded devices running past their end-of-life date by disabling peripherals whose drivers have unfixed vulnerabilities. To demonstrate this idea, we have built a prototype firmware debloating system, IRQDebloat. Starting from a snapshot of the CPU and memory state from a real embedded device, IRQDebloat migrates this snapshot into a software emula- tor and collects execution traces by systematically exploring different paths through a top-level interrupt handler. Once these traces are collected, we use differential slicing [ 29] to precisely identify the handlers available for each peripheral in the system. Finally, we instrument these handlers on the real device and replace the interrupt handler for that peripheral with one that simply ignores the interrupt and returns. We evaluate our system on two CPU architectures (ARM and MIPS), four different operating systems (Linux, FreeBSD, VxWorks, and RiscOS) and across seven different embedded system-on-chip (SoC) platforms and find that it can success- fully enumerate and identify all registered interrupt handlers. We also demonstrate, in a case study, the use of IRQDebloat to protect a real-world device, the Valve Steam Link, by auto- matically reverse engineering its interrupt sources, locating the interrupt used for WiFi and Bluetooth, and then disabling it. We estimate that this would prevent 13 distinct CVEs found in the Linux Kernel's Bluetooth and WiFi drivers over the past five years. IRQDebloat allows users to effectively reduce their exposure to unknown vulnerabilities by automatically removing unwanted hardware functionality. 1608 DOI 10.1109/SP46214.2022.00085 CPU irq_pend = fetch_irq(ic_dev) mask = fetch_mask(ic_dev) irq_pend &= mask if (irq_pend) { n = ffs(irq_pend) handler = lookup(n) handler() } Interrupt Controller IRQ Pending Register UART Ethernet USB I2C IRQ Mask Register GPIO Fig. 1. Typical flow for interrupt handling in an embedded system. II. B ACKGROUND A. Interrupts In an embedded system, most inputs from the outside world are delivered via interrupts (sometimes called interrupt requests or IRQs). Interrupts originate in a hardware peripheral and cause an asynchronous control flow transfer to an interrupt handler, a function that services the interrupt. The interrupt handler then communicates with the peripheral that raised the interrupt, handles any pending I/O for the peripheral,1 and then acknowledges the interrupt, marking it as finished. In hardware, an embedded CPU typically has only a small number of dedicated interrupt pins (e.g., on ARM, there are only two top-level interrupt pins, one for standard interrupts and another for low-latency “fast interrupts”, known as FIQs). To support a larger number of interrupts, most systems come with a dedicated interrupt controller (IC) , which multiplexes multiple interrupt pins into a single interrupt source. Interrupt controllers can also be chained together to support an arbitrary number of peripherals by tying the output pin of a secondary interrupt controller to one of the input pins of the primary interrupt controller. A typical example of IRQ handling is depicted in Figure 1. First, the peripheral signals an interrupt; this causes the interrupt controller to store the interrupt number as a bit in a bitset in a memory-mapped register and then signal the main CPU. The CPU responds to the interrupt by jumping to an architecture-defined top-level interrupt handler. This handler then retrieves the interrupt number from the interrupt controller, and uses it to dispatch to the handler for the specific peripheral. This peripheral-specific handler then handles I/O for the peripheral using memory-mapped I/O (MMIO), and 1In practice, interrupt handlers will often queue the I/O and handle it later in a bottom half , in the interest of keeping interrupt latency low. However, in this paper we are only concerned with identifying the initial per-peripheral interrupt handlers, so this detail is not essential. finally acknowledges the interrupt. The details of this process may differ depending on the specific model of interrupt controller; for example, the interrupt controller used by the BeagleBone stores the pending interrupt number as an 8-bit value rather than a bit in a bitset. To service interrupts, the embedded operating system must maintain a mapping between hardware IRQ numbers and the corresponding handlers. In the simplest case, these could be hardcoded (e.g., using an array of function pointers to the individual peripheral handlers), but more sophisticated operating systems will typically support dynamic registration of IRQ handlers. For example, in Linux, drivers can register a handler by calling request_irq, and the mapping between IRQ numbers and handlers is maintained in a radix tree. Although the implementation details for interrupt handling differ between embedded architectures, the core pattern of re- ceiving a top-level interrupt and then dispatching to a specific interrupt handler appears to be universal. We leverage this pattern to build IRQDebloat, which enumerates the individual peripheral handlers and allows the user to disable them, closing off that peripheral's driver attack surface from the outside world. B. Execution Indexing Our trace analysis for finding interrupt handlers relies on execution indexing [48], a technique for aligning pairs of program traces that marks points where they diverge and (importantly) reconverge. Because program traces may diverge for trivial reasons (such as an extra iteration of a loop), it is important in practice that we have a technique for re- identifying alignment after a divergence in order to focus only on large divergences. We briefly describe the core algorithm here, and then discuss our modifications to execution indexing to support whole-system traces on embedded firmware; we refer readers to Xin et al. [48] for a full treatment of execution indexing. An execution index (EI) uniquely identifies a point in an execution and allows it to be compared across different execution traces. It uses a stack data structure that identifies the execution context of a basic block of code, e.g., how many conditional branches were encountered before the basic block was reached. Whenever a new code context is encountered, such as a function call or conditional branch, EI pushes onto the stack its address and the location of its immediate post- dominator. Because the immediate post-dominator of a basic block is, by definition, the earliest node through which every path from that block to the exit must pass, it identifies the end of an execution context (Johnson et al. [29] provide the helpful analogy that the closing curly bracket in C is an example of an immediate post-dominator). When the immediate post- dominator at the top of the stack is encountered in the trace, the stack entry is popped. To compare two traces, EI starts by assuming they are initially aligned, with two empty EI stacks for both traces. It then steps through the two traces in tandem, updating the EI stacks at every step. Whenever the two EI stacks disagree, 1609"
+      },
+      {
+        "source": "selected",
+        "value": "Embedded and IoT devices often come with a wide range of hardware functionality, but any particular end user may only use some small subset of these features. However, even unused hardware features are accompanied by potentially buggy driver code, which increases the attack surface of the device. In this paper, we introduce IRQDebloat, a system for disabling unwanted hardware features through automated firmware rewriting. Building on the insight that external inputs to the system are typically delivered through interrupt requests (IRQs), IRQDebloat systematically explores the interrupt handling code in the target firmware, identifies the handler function for each peripheral, and finally rewrites target firmware to disable the handlers that correspond to undesired hardware features. In our experiments we demonstrate IRQDebloat's effectiveness and generality by identifying IRQ handlers across four different operating systems (Linux, FreeBSD, VxWorks, and RiscOS) and seven different embedded platforms, and disabling selected peripherals on real-world hardware (a Raspberry Pi and a Valve Steam Link). On the Steam Link, we survey the attack surface and find that disabling selected peripherals could block up to 44 CVEs found in the Linux kernel over the past five years."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zhenghao Hu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Brendan Dolan-Gavitt",
+          "email": "brendandg@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zhenghao Hu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Brendan Dolan-Gavitt",
+          "email": "brendandg@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "aligned_author_affiliation_rows",
+      "header_block_count": 111,
+      "author_count": 2,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 2,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Zhenghao Hu",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Brendan Dolan-Gavitt",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Zhenghao Hu",
+          "affiliation_raw": "New York University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b4"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 13.315,
+          "center_distance": 2.636,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Brendan Dolan-Gavitt",
+          "affiliation_raw": "New York University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 13.315,
+          "center_distance": 0.794,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "IRQDebloat: Reducing Driver Attack Surface in Embedded Devices",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zhenghao Hu",
+          "affiliations": [
+            "New York University"
+          ]
+        },
+        {
+          "name": "Brendan Dolan-Gavitt",
+          "affiliations": [
+            "NYU"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

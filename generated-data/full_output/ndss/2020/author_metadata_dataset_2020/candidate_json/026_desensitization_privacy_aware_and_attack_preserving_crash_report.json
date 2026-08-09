@@ -1,0 +1,199 @@
+{
+  "paper_id": "026_desensitization_privacy_aware_and_attack_preserving_crash_report",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DESENSITIZATION: Privacy-Aware and Attack-Preserving Crash Report"
+      },
+      {
+        "source": "selected",
+        "value": "DESENSITIZATION: Privacy-Aware and Attack-Preserving Crash Report"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Software vendors collect crash reports from endusers to assist in the debugging and testing of their products. However, crash reports may contain users' private information, like names and passwords, rendering the user hesitant to share the reports with developers. We need a mechanism to protect users' privacy in crash reports on the client side while keeping sufficient information to support server-side debugging and analysis. In this paper, we propose the DESENSITIZATION technique, which generates privacy-aware and attack-preserving crash reports from crashed executions. Our tool adopts lightweight methods to identify bug-related and attack-related data from the memory, and removes other data to protect users' privacy. Since a large portion of the desensitized memory contains null bytes, we store crash reports in spare files to save the network bandwidth and the server-side storage. We prototype DESENSITIZATION and apply it to a large number of crashes of real-world programs, like browsers and the JavaScript engine. The result shows that our DESENSITIZATION technique can eliminate 80.9% of nonzero bytes from coredumps, and 49.0% from minidumps. The desensitized crash report can be 50.5% smaller than the original one, which significantly saves resources for report submission and storage. Our DESENSITIZATION technique is a pushbutton solution for the privacy-aware crash report."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Software vendors collect crash reports from end- users to assist in the debugging and testing of their products. However, crash reports may contain users' private information, like names and passwords, rendering the user hesitant to share the reports with developers. We need a mechanism to protect users' privacy in crash reports on the client side while keeping sufficient information to support server-side debugging and analysis. In this paper, we propose the D ESENSITIZATION technique, which generates privacy-aware and attack-preserving crash re- ports from crashed executions. Our tool adopts lightweight methods to identify bug-related and attack-related data from the memory, and removes other data to protect users' privacy. Since a large portion of the desensitized memory contains null bytes, we store crash reports in spare files to save the network bandwidth and the server-side storage. We prototype DESENSITIZATION and apply it to a large number of crashes of real-world programs, like browsers and the JavaScript engine. The result shows that our D ESENSITIZATION technique can eliminate 80.9% of non- zero bytes from coredumps, and 49.0% from minidumps. The desensitized crash report can be 50.5% smaller than the original one, which significantly saves resources for report submission and storage. Our D ESENSITIZATION technique is a push-button solution for the privacy-aware crash report. I. I NTRODUCTION Software vendors collect crash reports from their end-users to improve the stability and security of their products [ 2], [5], [36], [ 58], [ 79]. The crash report is either a coredump file that captures the CPU context and the memory content of the crashed program [ 1], [51], or the program input that makes the execution crash [ 19], [80], [24], [4]. Unfortunately, in either case, the crash report may contain privacy-sensitive information of individual users. For example, a recent study on 2.5 million crash reports of a popular web browser identifies an enormous amount of private user data, including user names, passwords, session tokens, and personal contact information [ 69]. A crash report with private information is unwelcome to both users and developers. While users are unwilling to share the crash reports due to the concern of leaking their private information, developers do not want to collect privacy-sensitive reports where any storage breach may lead to bad publicity, and even financial liability. ∗The two lead authors contributed equally to this work. To protect users' privacy while supporting timely bug fixing, we need to remove users' sensitive data from crash reports before sending them to developers. We call this process DESENSITIZATION . Several proposals aim to desensitize the crash report, but unfortunately, we have not seen any real-world deployment. Techniques like Scrash [ 13] rely on developers to manually annotate sensitive data to remove them from crash reports. However, the manual annotation is usually time- consuming and error-prone, and does not work on closed- source programs. Pattern-based search is a general method to identify particular privacy-sensitive data, like URLs and email accounts [ 69], but it cannot handle program-specific data. Another set of works aims to desensitize the crashing input, which should make the program crash in a similar manner as the original [19], [80], [24], [4]. However, these proposals rely on computation-heavy techniques, such as symbolic execution [15], [22], [ 20], [ 16] or taint analysis [ 76], [ 61], [ 68], causing significant burdens to users or developers. More importantly, they require a non-trivial change to the current crash-report systems, which mainly use crash files instead of crashing inputs to classify and prioritize different bugs [ 2], [5], [36], [58], [79]. Given the understanding of the current obstacles, we identify three desirable properties that a DESENSITIZATION technique should have for wider deployment: • Privacy-aware: The technique removes users' private information from the crash report as much as possible. • Attack-preserving. The desensitized crash report still contains sufficient information for effective bug analysis. If the execution crashes due to a failed attack, the technique should keep the attack residue in the report. • Widely applicable. The technique should be lightweight for end-users and compatible with current crash-report systems. It should work on closed-source programs, cover various types of sensitive data, and generate minimal crash reports for resource-limited environments. In this paper, we propose a bug-oriented and attack-oriented method to desensitize crash reports so that they capture a snapshot of the crashed program with minimal risk of leaking users' private information. Our observation is that although there are many bugs on the client side, only a few general techniques are used on the server side to diagnose bugs and detect attacks. For example, call-stack-based analysis is widely used to classify and prioritize crash reports [ 57], [8]. Therefore, DESENSITIZATION keeps only the information for commonly used bug-analysis techniques and removes all other data to protect users' privacy. We design one general and four lightweight techniques to identify bug-related and attack-related data from the crashed memory snapshot. The general technique Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24428 www.ndss-symposium.org 1 #define MAX_LEN 64 2 typedef struct { char *ptr; void (*print)(); } String; 3 void printString() { ... } 4 void vuln(char *input) { 5 char passwd[MAX_LEN]; load_passwd(passwd); 6 char *buf = ( char *) malloc(MAX_LEN); 7 String *string = (String *) malloc( sizeof(String)); 8 string->ptr = buf; string->print = &printString; 9 strcpy(buf, input); 10 string->print(); 11 } (a) Vulnerable source code. xchgrax,rspretGpivot G1pop rsiretROP chainheapgadgets …ptrprint… shellcodexorrdx, rdx… mov[rdx], rbxsyscall add rbx, 0x8 …SS'pop rdiretG2 G3mprotect passwdstack bufstring (b) Memory layout before crash. Fig. 1: A vulnerable code snippet and the memory layout before the execution crashes . The code has a heap-based buffer overflow bug at line 9. Attackers corrupt a function pointer to pivot the stack, launch ROP attacks, and eventually run the shellcode. However, due to the incorrect address, the program crashes and generates a coredump. The stack contains user password - a sensitive private data value. scans the memory snapshot to identify all pointers, as most crashes and attacks stem from corrupted pointers. For each type of prevalent bug and attack, we design one technique to identify specific information or tailor existing techniques for client-side efficiency. Specifically, we design a heap module to identify all heap metadata, a format string module to detect malformed format strings, an ROP module to search for suspicious ROP gadgets, and a shellcode module to collect possible payload. The modular design makes our tool extensible to support future bug-analysis and attack-detection techniques. The prototype of our DESENSITIZATION technique can generate desensitized crash reports from either crashed exe- cutions or existing reports. For the runtime report generation, our tool installs a signal handler to take over the execution once the process crashes. It applies DESENSITIZATION on the memory snapshot and generates the desensitized crash reports that are compatible with existing formats, such as coredumps (the default format on Linux [ 51]) and minidumps (the default format on Windows and many large programs, like Firefox [ 1]). It can also desensitize existing reports to remove private information. Currently, our prototype supports both 32-bit and 64-bit Linux ELF programs. We plan to add the support of Windows PE binaries in future work. To understand the efficacy and efficiency of our tool on protecting users' privacy, we evaluate it on four real-world applications and one CTF (capture-the-flag) challenge: the multimedia player ffmpeg, the PHP language interpreter php, the JavaScript engine chakra, the web browser firefox, and the DEFCON 2015 challenge tachikoma. We collect 13,390 crash reports from 86 known bugs and emulated attacks, including 11,875 coredumps and 1,515 minidumps. The result shows that on average, DESENSITIZATION can remove 80.9% of all non-zero bytes from each collected coredump and remove 49.0% of that from each minidump. Further, DESENSITIZATION helps reduce the file sizes of coredumps by half, which saves network bandwidth for end-users to report the bug and reduces disk usage for developers to store the reports. Meanwhile, the desensitized crash reports still contain sufficient information to support common bug-analysis and attack-detection techniques. Specifically, the call-stack-based analysis produces the same result for reports before and after applying DESENSITIZATION . For example, we submit the original and desensitized reports to socorro - the crash-analysis framework of firefox. The platform groups them into the same group, indicating that our tool keeps the necessary information for bug classification. Our Type Semantics Examples Cookies website tokens Geo=(4.3267961,52.096922) Forms current user-input <form ... enctype=\"multipart-formdata\"> Autofilling user-input history <form ... autocomplete=\"on\"> Passwd: <input ... autocomplete=\"on\"> TABLE I: Possible privacy leakage from minidumps of firefox, including website tokens and user inputs. See § V-B3 for more details. manual inspection on several attack-caused crashes confirms that DESENSITIZATION keeps all attack residues necessary for developers to analyze these attacks. DESENSITIZATION can complete its work with reasonable resources, taking less than 15 seconds process each crash. Therefore, DESENSITIZATION is a practical yet effective method to generate privacy-aware and attack-preserving crash reports. We make the following contributions in this paper: • Privacy-first crash report . We design a new format of crash report that can protect users' privacy while retaining sufficient information for server-side bug detection and attack analysis. The new format is compatible with most mainstream crash-report systems. • Techniques to generate a new report . We implement one general and four specific techniques to construct crash reports in the new format from crashed processes. Our tool is easily extensible for future analysis techniques. • End-to-end system . Our evaluation shows that our tool is practical for generating crash reports that protect user privacy while keeping attack residues. DESENSITIZATION is a push-button solution for privacy- aware crash reports; developers just have to include the library of DESENSITIZATION in their products. We have released the source code of our tool and the collected crash reports at https://github.com/sslab-gatech/desensitization. II. P ROBLEM DEFINITION In this section, we first present one example to illustrate the DESENSITIZATION problem. Then we define our threat model. A. Motivating Example We inspect the source code of firefox and its runtime, and identify several scenarios in which users' private information 2"
+      },
+      {
+        "source": "selected",
+        "value": "Software vendors collect crash reports from endusers to assist in the debugging and testing of their products. However, crash reports may contain users' private information, like names and passwords, rendering the user hesitant to share the reports with developers. We need a mechanism to protect users' privacy in crash reports on the client side while keeping sufficient information to support server-side debugging and analysis. In this paper, we propose the DESENSITIZATION technique, which generates privacy-aware and attack-preserving crash reports from crashed executions. Our tool adopts lightweight methods to identify bug-related and attack-related data from the memory, and removes other data to protect users' privacy. Since a large portion of the desensitized memory contains null bytes, we store crash reports in spare files to save the network bandwidth and the server-side storage. We prototype DESENSITIZATION and apply it to a large number of crashes of real-world programs, like browsers and the JavaScript engine. The result shows that our DESENSITIZATION technique can eliminate 80.9% of nonzero bytes from coredumps, and 49.0% from minidumps. The desensitized crash report can be 50.5% smaller than the original one, which significantly saves resources for report submission and storage. Our DESENSITIZATION technique is a pushbutton solution for the privacy-aware crash report."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ren Ding",
+          "email": "rding@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Hong Hu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Wen Xu",
+          "email": "wen.xu@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.edu",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ren Ding",
+          "email": "rding@gatech.edu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Hong Hu",
+          "email": "hhu86@gatech.edu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Wen Xu",
+          "email": "wen.xu@gatech.edu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.edu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 115,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DESENSITIZATION: Privacy-Aware and Attack-Preserving Crash Report",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/desensitization-privacy-aware-and-attack-preserving-crash-report/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ren Ding",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Hong Hu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Wen Xu",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Taesoo Kim",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

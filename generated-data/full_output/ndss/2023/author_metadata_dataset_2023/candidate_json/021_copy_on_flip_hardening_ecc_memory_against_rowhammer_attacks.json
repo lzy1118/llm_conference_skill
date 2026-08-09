@@ -1,0 +1,235 @@
+{
+  "paper_id": "021_copy_on_flip_hardening_ecc_memory_against_rowhammer_attacks",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks"
+      },
+      {
+        "source": "selected",
+        "value": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": ""
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Despite nearly decade-long mitigation efforts in academia and industry, the community is yet to find a prac- tical solution to the Rowhammer vulnerability. Comprehensive software mitigations require complex changes to commodity systems, yielding significant run-time overhead and deterring practical adoption. Hardware mitigations, on the other hand, have generally grown more robust and efficient, but are difficult to deploy on commodity systems. Until recently, ECC memory implemented by the memory controller on server platforms seemed to provide the best of both worlds: use hardware features already on commodity systems to efficiently turn Rowhammer into a denial-of-service attack vector. Unfortunately, researchers have recently shown that attackers can perform one-bit-at-a-time memory templating and mount ECC-aware Rowhammer attacks. In this paper, we reconsider ECC memory as an avenue for Rowhammer mitigations and show that not all hope is lost. In particular, we show that it is feasible to devise a software- based design to both efficiently and effectively harden commod- ity ECC memory against ECC-aware Rowhammer attacks. To support this claim, we present Copy-on-Flip (CoF), an ECC- based software mitigation which uses a combination of memory migration and offlining to stop Rowhammer attacks on commodity server systems in a practical way. The key idea is to let the operating system interpose on all the error correction events and offline the vulnerable victim page as soon as the attacker has successfully templated a sufficient number of bit flips- while transparently migrating the victim data to a new page. We present a CoF prototype on Linux, where we also show it is feasible to operate simple memory management changes to support migration for the relevant user and kernel memory pages. Our evaluation shows CoF incurs low performance and memory overhead, while significantly reducing the Rowhammer attack surface. On typical benchmarks such as SPEC CPU2017 and Google Chrome, CoF reports a <1.5% overhead, and, on extreme I/O-intensive scenarios (saturated nginx), up to ∼11%. I. I NTRODUCTION from a mere ‘side effect' caused by ever-increasing DRAM density to a real security vulnerability which can be exploited ∗The work on this submission has been performed while Koen Koning was employed at the Vrije Universiteit Amsterdam. on a wide variety of systems. Unfortunately, existing de- fenses have proven to be impractical (e.g., requiring complex hardware or software changes) and/or ineffective (e.g., only stopping specific Rowhammer variants). Research has shown that Rowhammer is a threat even on Error-Correcting Code (ECC) memory implemented by the memory controller [10], which is heavily deployed on server platforms. In this paper, we show ECC memory is not a lost cause in the fight against Rowhammer. To this end, we present Copy-on-Flip (CoF), a practical software mitigation which hardens ECC memory against Rowhammer. Our design takes advantage of ECC's ability to detect vulnerable pages, allowing our mitigation to render these unavailable to the attacker with a combination of memory migration and offlining1. Rowhammer. The research community has devised an abun- dance of Rowhammer exploits which compromise a wide array of different systems, including native environments on both x86 [16], [17], [22], [48], [50] and ARM [15], [57], virtualized environments [46], browser sandboxes via JavaScript [8], [13], [18] and networked systems [33], [51]. In addition, research has shown that the Rowhammer vulnerability can also be used as a powerful side channel for information leakage [30]. Early on, it was believed that Rowhammer attacks could be mitigated by deploying Error-Correcting Code (ECC) mem- ory [25]. Typical ECC memory follows the SECDED scheme: single error correction, double error detection. Thus, it is able to correct single-bit errors per code word, by adding control bits to each chunk of data bits. This significantly hinders the effect Rowhammer can have, since bit flips are often automatically fixed. In the worst case, two or more bit flips in a word crash the system with high probability, effectively turning Rowhammer into a mere denial-of-service (DoS) attack vector. However, research by Cojocar et al. [10] shows that exploiting Rowhammer deterministically on ECC memory is attainable, by carefully combining three or more specific bit flips in the same word, effectively bypassing the ECC function. The most critical step for an attacker to exploit Rowham- mer on ECC-capable memory is the so-called templating phase, in which an attacker has to find vulnerable memory areas which are susceptible to bit flips at the desired offsets. In ECCploit-like attacks [10], the attacker has to be very careful to inject only single-bit errors in a code word in any given 1We use the term memory (or page) offlining as used in the Linux kernel source and by hardware vendors to refer to those pages which are poisoned and rendered unavailable to the system [19], [26]. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24337 www.ndss-symposium.org templating attempt (i.e., correctable errors), in order to avoid system crashes due to detectable but uncorrectable errors. While many other mitigations beyond ECC have been proposed by both industry and academia, these all fall short in terms of comprehensiveness and practicality. Most of the mitigations have either been hardware-based [5], [23], [37], [44], [47], [61] or software-based [6], [21], [29], [43], [58], [63], with only a few proposals of hybrid defenses which involve cooperation between hardware and software compo- nents [3], [9]. Both approaches have pitfalls which make them ineffective at defending from Rowhammer attacks in realistic settings. New hardware-only defenses are impossible to deploy on commodity systems and are associated with higher costs to implement tracking algorithms. On top of that, hardware-based defenses have also been shown to be vulnerable to targeted attacks, with fixes unavailable for years to come [13], [16], [22]. In contrast, while software-only defenses are easier to deploy, comprehensive ones [29] require complex software changes and incur high performance/memory overhead. Copy-on-Flip. In this paper, our key observation is that, while ECC by itself is insufficient to protect against Rowhammer attacks, it may still serve as an advance warning system to detect that an attack is in progress and trigger strong mitigating action in software to stop it in its tracks. In particular, with Copy-on-Flip (CoF), we augment the operating system (OS) kernel to detect templating attempts causing (correctable) ECC errors and safeguard the data in that area by migrating it out of harm's way before the attacker has caused a potentially dangerous number of corrections in an ECC code word. To prevent attackers from reusing partially templated memory post migration, we also immediately offline the vulnerable areas of memory at migration time. Our defense prevents templating of ECC memory, thereby removing the ability to mount a targeted attack. In particular, CoF fully restores the security guarantees that ECC memory was assumed to have prior to ECCploit [10] (but did not) and reduces the Rowhammer threat to that of a DoS attack at worst. The key challenge to implement our design is the need to support migration for memory that may be used by the attacker for templating purposes. This includes user memory (the common target in existing exploits), but also kernel memory such as slabs and page tables that may be allocated by the kernel on the attacker's behalf (a target in more advanced exploits). Unfortunately, while user memory is relatively easy to migrate, kernel memory is normally not migratable on commodity systems. In particular, the memory management of the kernel itself typically relies on physical addressing, so memory cannot be transparently remapped through virtual address translation. To address this challenge, we propose a simple design based on removing the kernel's strict depen- dency on physical addressing. We show our design is practical with a Linux-based CoF prototype of only around 600 LoC. While simple and amenable to further extensions, we show our design can support migration of all the relevant user and kernel pages, resulting in a quantifiable attack surface reduction of over 95%. Moreover, CoF incurs almost negligible runtime overhead for most programs (0.2% geomean for SPEC CPU2017 and 1.1% for browsers), with a worst case of∼11% overhead for I/O intensive workloads on saturated systems. Contributions. To summarize, our contributions are: 1) The design and open source implementation 2 of Copy-on-Flip (CoF), a new software mitigation to harden ECC memory and provide low-overhead pro- tection from Rowhammer attacks. 2) An analysis of the spatial distribution of Rowhammer induced bit flips using state-of-the-art Rowhammer fuzzer data [22]. This analysis helped shape our design and determine its memory overhead guaran- tees, but the results are broadly applicable to other mitigations. 3) An evaluation of our CoF prototype, showing its practicality and comprehensiveness, running a variety of workloads including web browsers, showing little to no runtime overhead. II. B ACKGROUND In this section we describe several concepts crucial to understanding the remainder of the paper: the Rowhammer vulnerability, and how to apply it on ECC implemented by the memory controller. The Rowhammer vulnerability allows attackers to flip a bit in a row of memory that they do not own by repeatedly activating (“hammering”) one or more neighboring rows [25]. Attackers do not know in advance which, if any, bit will flip in the victim row, but once they find a bit that flips, they can flip the same bit again with high probability. Besides the number of activations, the occurrence of bit flips also depends on the data (if the cells in the neighboring row contain the same value, bit flips are unlikely), and on the specific activation patterns. To enforce the desired activation patterns, an attacker needs some knowledge of memory addressing. From the CPU perspective, only a single physical address space is visible, abstracting away the underlying DRAM geometry. On top of this, software only sees its own virtual address space , where virtual addresses are dynamically mapped to physical page frames (e.g., 4 KB) by the operating system. While these levels of abstraction complicate Rowhammer attacks, an attacker can massage the memory mappings in such a way that the underlying physical memory is hammerable via virtual memory. While the suitable activation patterns to trigger Rowhammer bit flips depend on the target system and the memory modules used, even the latest memory modules have been shown to be vulnerable [13], [16], [17], [22]. In general, modern Rowhammer attacks (especially ECC-aware ones) consist of three steps: 1) Memory templating: Find vulnerable locations (where bits flip) in memory allocated by the attacker. 2) Memory massaging: Manipulate the memory layout so that sensitive data is now stored at a vulnerable location. 3) Hammering: Perform targeted, rapid, and uncached memory accesses to flip a bit in the sensitive data. Existing defenses are unable to prevent Rowhammer at- tacks in today's memory chips, are expensive, or result in false positives. In particular, the TRR Rowhammer defense [23], 2https://github.com/vusec/Copy-on-Flip 2"
+      },
+      {
+        "source": "selected",
+        "value": "Despite nearly decade-long mitigation efforts in academia and industry, the community is yet to find a prac- tical solution to the Rowhammer vulnerability. Comprehensive software mitigations require complex changes to commodity systems, yielding significant run-time overhead and deterring practical adoption. Hardware mitigations, on the other hand, have generally grown more robust and efficient, but are difficult to deploy on commodity systems. Until recently, ECC memory implemented by the memory controller on server platforms seemed to provide the best of both worlds: use hardware features already on commodity systems to efficiently turn Rowhammer into a denial-of-service attack vector. Unfortunately, researchers have recently shown that attackers can perform one-bit-at-a-time memory templating and mount ECC-aware Rowhammer attacks. In this paper, we reconsider ECC memory as an avenue for Rowhammer mitigations and show that not all hope is lost. In particular, we show that it is feasible to devise a software- based design to both efficiently and effectively harden commod- ity ECC memory against ECC-aware Rowhammer attacks. To support this claim, we present Copy-on-Flip (CoF), an ECC- based software mitigation which uses a combination of memory migration and offlining to stop Rowhammer attacks on commodity server systems in a practical way. The key idea is to let the operating system interpose on all the error correction events and offline the vulnerable victim page as soon as the attacker has successfully templated a sufficient number of bit flips- while transparently migrating the victim data to a new page. We present a CoF prototype on Linux, where we also show it is feasible to operate simple memory management changes to support migration for the relevant user and kernel memory pages. Our evaluation shows CoF incurs low performance and memory overhead, while significantly reducing the Rowhammer attack surface. On typical benchmarks such as SPEC CPU2017 and Google Chrome, CoF reports a <1.5% overhead, and, on extreme I/O-intensive scenarios (saturated nginx), up to ∼11%. I. I NTRODUCTION from a mere ‘side effect' caused by ever-increasing DRAM density to a real security vulnerability which can be exploited ∗The work on this submission has been performed while Koen Koning was employed at the Vrije Universiteit Amsterdam. on a wide variety of systems. Unfortunately, existing de- fenses have proven to be impractical (e.g., requiring complex hardware or software changes) and/or ineffective (e.g., only stopping specific Rowhammer variants). Research has shown that Rowhammer is a threat even on Error-Correcting Code (ECC) memory implemented by the memory controller [10], which is heavily deployed on server platforms. In this paper, we show ECC memory is not a lost cause in the fight against Rowhammer. To this end, we present Copy-on-Flip (CoF), a practical software mitigation which hardens ECC memory against Rowhammer. Our design takes advantage of ECC's ability to detect vulnerable pages, allowing our mitigation to render these unavailable to the attacker with a combination of memory migration and offlining1. Rowhammer. The research community has devised an abun- dance of Rowhammer exploits which compromise a wide array of different systems, including native environments on both x86 [16], [17], [22], [48], [50] and ARM [15], [57], virtualized environments [46], browser sandboxes via JavaScript [8], [13], [18] and networked systems [33], [51]. In addition, research has shown that the Rowhammer vulnerability can also be used as a powerful side channel for information leakage [30]. Early on, it was believed that Rowhammer attacks could be mitigated by deploying Error-Correcting Code (ECC) mem- ory [25]. Typical ECC memory follows the SECDED scheme: single error correction, double error detection. Thus, it is able to correct single-bit errors per code word, by adding control bits to each chunk of data bits. This significantly hinders the effect Rowhammer can have, since bit flips are often automatically fixed. In the worst case, two or more bit flips in a word crash the system with high probability, effectively turning Rowhammer into a mere denial-of-service (DoS) attack vector. However, research by Cojocar et al. [10] shows that exploiting Rowhammer deterministically on ECC memory is attainable, by carefully combining three or more specific bit flips in the same word, effectively bypassing the ECC function. The most critical step for an attacker to exploit Rowham- mer on ECC-capable memory is the so-called templating phase, in which an attacker has to find vulnerable memory areas which are susceptible to bit flips at the desired offsets. In ECCploit-like attacks [10], the attacker has to be very careful to inject only single-bit errors in a code word in any given 1We use the term memory (or page) offlining as used in the Linux kernel source and by hardware vendors to refer to those pages which are poisoned and rendered unavailable to the system [19], [26]. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24337 www.ndss-symposium.org templating attempt (i.e., correctable errors), in order to avoid system crashes due to detectable but uncorrectable errors. While many other mitigations beyond ECC have been proposed by both industry and academia, these all fall short in terms of comprehensiveness and practicality. Most of the mitigations have either been hardware-based [5], [23], [37], [44], [47], [61] or software-based [6], [21], [29], [43], [58], [63], with only a few proposals of hybrid defenses which involve cooperation between hardware and software compo- nents [3], [9]. Both approaches have pitfalls which make them ineffective at defending from Rowhammer attacks in realistic settings. New hardware-only defenses are impossible to deploy on commodity systems and are associated with higher costs to implement tracking algorithms. On top of that, hardware-based defenses have also been shown to be vulnerable to targeted attacks, with fixes unavailable for years to come [13], [16], [22]. In contrast, while software-only defenses are easier to deploy, comprehensive ones [29] require complex software changes and incur high performance/memory overhead. Copy-on-Flip. In this paper, our key observation is that, while ECC by itself is insufficient to protect against Rowhammer attacks, it may still serve as an advance warning system to detect that an attack is in progress and trigger strong mitigating action in software to stop it in its tracks. In particular, with Copy-on-Flip (CoF), we augment the operating system (OS) kernel to detect templating attempts causing (correctable) ECC errors and safeguard the data in that area by migrating it out of harm's way before the attacker has caused a potentially dangerous number of corrections in an ECC code word. To prevent attackers from reusing partially templated memory post migration, we also immediately offline the vulnerable areas of memory at migration time. Our defense prevents templating of ECC memory, thereby removing the ability to mount a targeted attack. In particular, CoF fully restores the security guarantees that ECC memory was assumed to have prior to ECCploit [10] (but did not) and reduces the Rowhammer threat to that of a DoS attack at worst. The key challenge to implement our design is the need to support migration for memory that may be used by the attacker for templating purposes. This includes user memory (the common target in existing exploits), but also kernel memory such as slabs and page tables that may be allocated by the kernel on the attacker's behalf (a target in more advanced exploits). Unfortunately, while user memory is relatively easy to migrate, kernel memory is normally not migratable on commodity systems. In particular, the memory management of the kernel itself typically relies on physical addressing, so memory cannot be transparently remapped through virtual address translation. To address this challenge, we propose a simple design based on removing the kernel's strict depen- dency on physical addressing. We show our design is practical with a Linux-based CoF prototype of only around 600 LoC. While simple and amenable to further extensions, we show our design can support migration of all the relevant user and kernel pages, resulting in a quantifiable attack surface reduction of over 95%. Moreover, CoF incurs almost negligible runtime overhead for most programs (0.2% geomean for SPEC CPU2017 and 1.1% for browsers), with a worst case of∼11% overhead for I/O intensive workloads on saturated systems. Contributions. To summarize, our contributions are: 1) The design and open source implementation 2 of Copy-on-Flip (CoF), a new software mitigation to harden ECC memory and provide low-overhead pro- tection from Rowhammer attacks. 2) An analysis of the spatial distribution of Rowhammer induced bit flips using state-of-the-art Rowhammer fuzzer data [22]. This analysis helped shape our design and determine its memory overhead guaran- tees, but the results are broadly applicable to other mitigations. 3) An evaluation of our CoF prototype, showing its practicality and comprehensiveness, running a variety of workloads including web browsers, showing little to no runtime overhead. II. B ACKGROUND In this section we describe several concepts crucial to understanding the remainder of the paper: the Rowhammer vulnerability, and how to apply it on ECC implemented by the memory controller. The Rowhammer vulnerability allows attackers to flip a bit in a row of memory that they do not own by repeatedly activating (“hammering”) one or more neighboring rows [25]. Attackers do not know in advance which, if any, bit will flip in the victim row, but once they find a bit that flips, they can flip the same bit again with high probability. Besides the number of activations, the occurrence of bit flips also depends on the data (if the cells in the neighboring row contain the same value, bit flips are unlikely), and on the specific activation patterns. To enforce the desired activation patterns, an attacker needs some knowledge of memory addressing. From the CPU perspective, only a single physical address space is visible, abstracting away the underlying DRAM geometry. On top of this, software only sees its own virtual address space , where virtual addresses are dynamically mapped to physical page frames (e.g., 4 KB) by the operating system. While these levels of abstraction complicate Rowhammer attacks, an attacker can massage the memory mappings in such a way that the underlying physical memory is hammerable via virtual memory. While the suitable activation patterns to trigger Rowhammer bit flips depend on the target system and the memory modules used, even the latest memory modules have been shown to be vulnerable [13], [16], [17], [22]. In general, modern Rowhammer attacks (especially ECC-aware ones) consist of three steps: 1) Memory templating: Find vulnerable locations (where bits flip) in memory allocated by the attacker. 2) Memory massaging: Manipulate the memory layout so that sensitive data is now stored at a vulnerable location. 3) Hammering: Perform targeted, rapid, and uncached memory accesses to flip a bit in the sensitive data. Existing defenses are unable to prevent Rowhammer at- tacks in today's memory chips, are expensive, or result in false positives. In particular, the TRR Rowhammer defense [23], 2https://github.com/vusec/Copy-on-Flip 2"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Andrea Di Dio",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Koen Koning",
+          "email": "koen.koning@intel.com",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Herbert Bos",
+          "email": "herbertb@cs.vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Cristiano Giuffrida",
+          "email": "giuffrida@cs.vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Andrea Di Dio",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Koen Koning",
+          "email": "koen.koning@intel.com",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Herbert Bos",
+          "email": "herbertb@cs.vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Cristiano Giuffrida",
+          "email": "giuffrida@cs.vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 116,
+      "author_count": 4,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Andrea Di Dio",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Koen Koning",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Herbert Bos",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Cristiano Giuffrida",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Copy-on-Flip: Hardening ECC Memory Against Rowhammer Attacks",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/copy-on-flip-hardening-ecc-memory-against-rowhammer-attacks/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Andrea Di Dio",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Koen Koning",
+          "affiliations": [
+            "Intel"
+          ]
+        },
+        {
+          "name": "Herbert Bos",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Cristiano Giuffrida",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_abstract_from_pdf",
+      "stage": "abstract_arbitration",
+      "field": "abstract",
+      "source": "pdfplumber_section_boundary"
+    }
+  ]
+}

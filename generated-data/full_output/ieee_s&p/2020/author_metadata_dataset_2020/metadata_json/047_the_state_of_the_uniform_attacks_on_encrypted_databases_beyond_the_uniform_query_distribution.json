@@ -1,0 +1,2361 @@
+{
+  "title": "The State of the Uniform: Attacks on Encrypted Databases Beyond the Uniform Query Distribution",
+  "year": "2020",
+  "abstract": "Recent foundational work on leakage-abuse attacks on encrypted databases has broadened our understanding of what an adversary can accomplish with a standard leakage profile. Nevertheless, all known value reconstruction attacks succeed under strong assumptions that may not hold in the real world. The most prevalent assumption is that queries are issued uniformly at random by the client. We present the first value reconstruction attacks that succeed without any knowledge about the query or data distribution . Our approach uses the search- pattern leakage, which exists in all known structured encryption schemes but has not been fully exploited so far . At the core of our method lies a support size estimator, a technique that utilizes the repetition of search tokens with the same response to estimate distances between encrypted values without any assump- tions about the underlying distribution. We develop distribution- agnostic reconstruction attacks for both range queries and k- nearest-neighbor (k-NN) queries based on information extracted from the search-pattern leakage. Our new range attack follows a different algorithmic approach than state-of-the-art attacks, which are fine-tuned to succeed under the uniformly distributed queries. Instead, we reconstruct plaintext values under a variety of skewed query distributions and even outperform the accuracy of previous approaches under the uniform query distribution. Our new k-NN attack succeeds with far fewer samples than previous attacks and scales to much larger values of k.W e demonstrate the effectiveness of our attacks by experimentally testing them on a wide range of query distributions and database densities, both unknown to the adversary. I. I NTRODUCTION In searchable encryption [15], [31], [41], a client encrypts a privacy-sensitive data collection and outsources an encrypted database to a server that can efficiently answer search queries without ever decrypting the database. Known constructions handle rich and expressive queries [ 17], [ 22] under the definitional framework of structured encryption (STE) [ 13]. For an overview of the area, see the survey by Fuller et al. [23]. To strike a balance between efficiency and privacy, structured encryption schemes reveal, by design, certain information about the query and its corresponding response-this is the so-called leakage. Despite cryptographic proofs guaranteeing that nothing more is leaked but what the designer allowed, the implications of the legitimately leaked information have not been fully grasped yet. The first generation of leakage-based attacks [8], [ 30], [ 45] focused on query reconstruction under various assumptions. The next generation of attacks [ 27], [ 32], [33], [ 34] supported plaintext value reconstruction by a server answering expressive queries, e.g. range and k-NN, on a one- dimensional database under strong assumptions about the query Plaintext Values Reconstructed Values Fig. 1. Visual comparison between plaintext values of real-world private geolocation dataset Spitz (in red) and values reconstructed by our attack AGNOSTIC -RECONSTRUCTION -KNN on k-NN queries under a Gaussian distribution and k =1 0 (in black). Our attack achieves an approximate reconstruction (1) under a non-uniform query distribution and (2) with half the queries and larger k values compared to previous work [33]. and/or data distribution. In this paper, we take the next step and demonstrate the first efficient reconstruction attacks for range andk-NN queries where the adversary has no knowledge about the query distribution or the underlying data. A. Motivation and Approach We overview the limitations of the four state-of-the-art attacks supported by a theoretical analysis and experimental evaluation [27], [ 32], [ 33], [ 34] and outline our new approach. Uniform Query Distribution Assumption. The first value reconstruction attack for range queries was proposed by Kellaris-Kollios-Nissim-O'Neil (KKNO) [32]. It assumes that queries are issued uniformly at random . Lacharit ´e-Minaud- Paterson (LMP) [34] studied the same problem for the special case of dense databases-this is a simpler problem since reconstructing order is equivalent to reconstructing values. The work by Grubbs-Lacharit ´e-Minaud-Paterson (GLMP) [27] gives three reconstruction attacks for range queries under different assumptions: attacks G ENERALIZED KKNO and APPROX VALUE assume an underlying uniform query distribution, extend the underlying ideas of KKNO, and present a new analysis on the query complexity; attack AOR-to-ADR does not assume uniform queries but assumes that the attacker knows both the query distribution and an approximation of the data distribution . Kornaropoulos- Papamanthou-Tamassia (KPT) [ 33] propose reconstruction attacks for k-nearest neighbor queries under the uniform query 1223 DOI 10.1109/SP40000.2020.00029 TABLE I ASSUMPTIONS OF STA TE -OF-THE -ART V ALUE RECONSTRUCTION A TTACKS AND OUR NEW A TTACKS Value Reconstruction Query Type Assumptions Exploited Leakage Attack Algorithms Query Data V alues in a Known Dense Search-Pattern Access-Pattern Distribution Fixed Region Data Distribution Database Leakage Leakage KPT [33] k-NN Uniform - - - - • KKNO [32] Range Uniform - - - - • LMP [34] Range Agnostic - - • - • GLMP [27] G ENERALIZED KKNO Range Uniform - - - - • GLMP [27] A PPROX VALUE Range Uniform • - - - • GLMP [27] AOR to ADR Range Known - • - - • This Work k-NN & Range Agnostic - - - • • distribution. The above attacks, summarized in Table I, set the foundations for understanding the implications of leakage but only succeed under strong assumptions that potentially do not hold in the real world, e.g., uniform query distribution. Thus, the following question still remains open: “Is it possible to devise attacks that reconstruct an approxi- mation of the plaintext values without any knowledge about the query distribution or the data distribution?” Our work answers this question in the affirmative and presents reconstruction techniques that are query and data distribution agnostic. The key to achieve such a generalization lies in the search-pattern leakage which is revealed in all known STE schemes [ 23] but has been overlooked so far. See Figure 1 for an illustration of the quality of our reconstruction. Fundamental Limitations of Current Range Attacks. A natural approach for answering the above question would be to extend existing algorithmic techniques to work for arbitrary query distributions. To explore this possibility, we first give a high-level intuition of the range reconstruction attacks KKNO, G ENERALIZED KKNO, and A PPROX VALUE . Through the access-pattern leakage, which appears in the vast majority of STE schemes, the attacker can see which and how many queries return a given encrypted record. Assume the attacker knows the space of possible plaintext values, e.g., values from 0 to 100 representing attribute age. If range queries are generated uniformly, the attacker expects values in the middle (e.g. age=5 0) to be returned more often than values towards the ends (e.g. age=1 ). Formally, the reference probabilityof a valuev captures the likelihood that value v will be returned in a response to a query. It is defined as ∑ r∈Rv Pr[r], where Rv is the set of ranges containing v and Pr[r] is the probability of querying range r. Reference probabilities can be easily pre-computed by an attacker who knows the query distribution. The reference probability of plaintext values for two query distributions is shown with histograms in Figure 2(b). Given enough queries, the attacker computes the frequency of each encrypted value and finds the closest match of each frequency to a pre-computed reference probability. Each matched reference probability corresponds to a plaintext value which is returned as the reconstructed value. This frequency-analysis works well for the uniform query case because the reference probabilities (blue histogram) vary significantly over the universe of plaintext values, therefore, one can accurately map the observed frequen- cies to reference probabilities. However, there are fundamental limitations when trying to extend this approach . (a) (b) Fig. 2. (a) Heatmap of the Span distribution of range queries on values from 0 to 100, where the probability of query [a,b] is proportional to (N − b+a)25. (b) Reference probabilities of plaintext values under the uniform query distribution (blue histogram) and Span query distribution (red histogram). Reconstructing the values of an encrypted database, shown with solid bars, from their empirical reference probabilities, is easy under the uniform query distribution but hard under the Span query distribution. For instance consider the Span range query distribution, inspired by a realistic behavior from a client that issues “short ranges”, depicted as a heatmap in Figure 2(a), where the lower boundary of the range is on the Y -axis, the upper boundary is on the X-axis and the color of each square denotes the probability of issuing this query. One can visually confirm that queries around the diagonal, i.e., queries with short span, have brighter color, hence are more likely to be issued. The reference probability for the Span query distribution is shown with the red histogram in Figure 2(b). Note that the reference probabilities of 60% of potential plaintext values differ by less than 10−8, i.e., the middle part of the red histogram is almost flat, and as a result, the adversary can not make an accurate mapping from observed frequencies to reconstructed plaintext values. Thus, the Span query distribution causes all state-of-the-art attacks to fail. More generally, one can define query distributions where the reference probabilities are identical so no matter how many queries are observed, the adversary cannot distinguish between potential plaintext reconstructions in the information-theoretic sense. Interestingly, the fact that frequency-based attacks fail in “smooth” distributions is used as a form of mitigation by Lacharit´e-Paterson [35], who introduce multiplicities in the records and spread the frequency of among the copies. From the above example we see that for range queries we need a radically different reconstruction approachto generalize. How Many Queries Return a Response? Taking a step back to rethink reconstruction attacks, there is a piece of information that has not been fully exploited to overcome the 1224",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Evgenios M. Kornaropoulos",
+      "email": "",
+      "affiliations": [
+        "UC Berkeley"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 1,
+      "name": "Charalampos Papamanthou",
+      "email": "",
+      "affiliations": [
+        "University of Maryland"
+      ],
+      "affiliation_source": "ieee_sp_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 2,
+      "name": "Roberto Tamassia",
+      "email": "",
+      "affiliations": [
+        "Brown University"
+      ],
+      "affiliation_source": "ieee_sp_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Evgenios M. Kornaropoulos"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "UC Berkeley"
+  ],
+  "first_affiliation": "UC Berkeley",
+  "participating_affiliations": [
+    "UC Berkeley",
+    "University of Maryland",
+    "Brown University"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Evgenios M. Kornaropoulos",
+      "affiliation": "UC Berkeley",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Charalampos Papamanthou",
+      "affiliation": "University of Maryland",
+      "source": "ieee_sp_pdf"
+    },
+    {
+      "author": "Roberto Tamassia",
+      "affiliation": "Brown University",
+      "source": "ieee_sp_pdf"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "The State of the Uniform: Attacks on Encrypted Databases Beyond the Uniform Query Distribution"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2020"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Evgenios MKornaropoulos",
+        "order": 0,
+        "email": "",
+        "affiliations": [
+          "University of Maryland, Brown University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "U CBerkeley",
+        "order": 1,
+        "email": "",
+        "affiliations": [
+          "University of Maryland, Brown University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Charalampos Papamanthou",
+        "order": 2,
+        "email": "",
+        "affiliations": [
+          "University of Maryland, Brown University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Roberto Tamassia",
+        "order": 3,
+        "email": "",
+        "affiliations": [
+          "University of Maryland, Brown University"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "The State of the Uniform: Attacks on Encrypted"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Databases Beyond the Uniform Query Distribution"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Evgenios M. Kornaropoulos"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "UC Berkeley"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Charalampos Papamanthou"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "University of Maryland"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:6",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Roberto Tamassia"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:7",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Brown University"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          200.68,
+          762.0,
+          394.18,
+          772.0
+        ],
+        "font_size": 10.0,
+        "raw_text": "2020 IEEE Symposium on Security and Privacy",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          67.161,
+          720.768,
+          87.861,
+          721.768
+        ],
+        "font_size": 1.0,
+        "raw_text": "The State of the Uniform: Attacks on Encrypted",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          56.39,
+          692.872,
+          77.54,
+          693.872
+        ],
+        "font_size": 1.0,
+        "raw_text": "Databases Beyond the Uniform Query Distribution",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          95.702,
+          661.49,
+          106.952,
+          662.49
+        ],
+        "font_size": 1.0,
+        "raw_text": "Evgenios M. Kornaropoulos",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          268.74,
+          661.49,
+          279.091,
+          662.49
+        ],
+        "font_size": 1.0,
+        "raw_text": "Charalampos Papamanthou",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          436.64,
+          661.49,
+          443.84,
+          662.49
+        ],
+        "font_size": 1.0,
+        "raw_text": "Roberto Tamassia",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          132.332,
+          649.014,
+          137.282,
+          650.014
+        ],
+        "font_size": 1.0,
+        "raw_text": "UC Berkeley",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          281.486,
+          649.014,
+          291.385,
+          650.014
+        ],
+        "font_size": 1.0,
+        "raw_text": "University of Maryland",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          440.46,
+          649.014,
+          447.66,
+          650.014
+        ],
+        "font_size": 1.0,
+        "raw_text": "Brown University",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          601.583,
+          62.527,
+          602.583
+        ],
+        "font_size": 1.0,
+        "raw_text": "Abstract",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          89.842,
+          601.583,
+          112.342,
+          602.583
+        ],
+        "font_size": 1.0,
+        "raw_text": "-Recent foundational work on leakage-abuse attacks",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          346.785,
+          594.408,
+          353.985,
+          595.408
+        ],
+        "font_size": 1.0,
+        "raw_text": "Plaintext Values",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          591.62,
+          74.615,
+          592.62
+        ],
+        "font_size": 1.0,
+        "raw_text": "on encrypted databases has broadened our understanding of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          346.785,
+          584.808,
+          355.785,
+          585.808
+        ],
+        "font_size": 1.0,
+        "raw_text": "Reconstructed Values",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.642,
+          581.658,
+          73.842,
+          582.658
+        ],
+        "font_size": 1.0,
+        "raw_text": "what an adversary can accomplish with a standard leakage",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          571.696,
+          76.415,
+          572.696
+        ],
+        "font_size": 1.0,
+        "raw_text": "profile. Nevertheless, all known value reconstruction attacks",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          561.733,
+          76.865,
+          562.733
+        ],
+        "font_size": 1.0,
+        "raw_text": "succeed under strong assumptions that may not hold in the real",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.642,
+          551.772,
+          76.992,
+          552.772
+        ],
+        "font_size": 1.0,
+        "raw_text": "world. The most prevalent assumption is that queries are issued",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          541.809,
+          76.415,
+          542.809
+        ],
+        "font_size": 1.0,
+        "raw_text": "uniformly at random by the client. We present the first value",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          531.846,
+          64.715,
+          532.846
+        ],
+        "font_size": 1.0,
+        "raw_text": "reconstruction attacks that succeed",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          521.885,
+          62.465,
+          522.885
+        ],
+        "font_size": 1.0,
+        "raw_text": "the query or data distribution",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          511.922,
+          77.765,
+          512.922
+        ],
+        "font_size": 1.0,
+        "raw_text": "pattern leakage, which exists in all known structured encryption",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          501.96,
+          76.415,
+          502.96
+        ],
+        "font_size": 1.0,
+        "raw_text": "schemes but has not been fully exploited so far . At the core",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          491.998,
+          76.415,
+          492.998
+        ],
+        "font_size": 1.0,
+        "raw_text": "of our method lies a support size estimator, a technique that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          482.035,
+          78.665,
+          483.035
+        ],
+        "font_size": 1.0,
+        "raw_text": "utilizes the repetition of search tokens with the same response to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          472.073,
+          77.315,
+          473.073
+        ],
+        "font_size": 1.0,
+        "raw_text": "estimate distances between encrypted values without any assump-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          462.111,
+          78.215,
+          463.111
+        ],
+        "font_size": 1.0,
+        "raw_text": "tions about the underlying distribution. We develop distribution-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          452.149,
+          75.065,
+          453.149
+        ],
+        "font_size": 1.0,
+        "raw_text": "agnostic reconstruction attacks for both range queries and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          298.525,
+          452.149,
+          299.525,
+          453.149
+        ],
+        "font_size": 1.0,
+        "raw_text": "-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          449.345,
+          344.379,
+          450.345
+        ],
+        "font_size": 1.0,
+        "raw_text": "Fig. 1. Visual comparison between plaintext values of real-world private",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          442.187,
+          57.065,
+          443.187
+        ],
+        "font_size": 1.0,
+        "raw_text": "nearest-neighbor (",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          120.082,
+          442.187,
+          144.492,
+          443.187
+        ],
+        "font_size": 1.0,
+        "raw_text": "k -NN) queries based on information extracted",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          440.379,
+          320.529,
+          441.379
+        ],
+        "font_size": 1.0,
+        "raw_text": "geolocation dataset",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          432.223,
+          76.415,
+          433.223
+        ],
+        "font_size": 1.0,
+        "raw_text": "from the search-pattern leakage. Our new range attack follows",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.866,
+          431.412,
+          321.006,
+          432.412
+        ],
+        "font_size": 1.0,
+        "raw_text": "A GNOSTIC",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          357.788,
+          431.412,
+          363.638,
+          432.412
+        ],
+        "font_size": 1.0,
+        "raw_text": "ECONSTRUCTION",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          458.383,
+          431.412,
+          466.933,
+          432.412
+        ],
+        "font_size": 1.0,
+        "raw_text": "-NN queries under a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          422.446,
+          317.379,
+          423.446
+        ],
+        "font_size": 1.0,
+        "raw_text": "distribution",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          422.26,
+          77.315,
+          423.26
+        ],
+        "font_size": 1.0,
+        "raw_text": "a different algorithmic approach than state-of-the-art attacks,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          413.479,
+          343.479,
+          414.479
+        ],
+        "font_size": 1.0,
+        "raw_text": "reconstruction (1) under a non-uniform query distribution and (2) with",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.642,
+          412.298,
+          76.992,
+          413.298
+        ],
+        "font_size": 1.0,
+        "raw_text": "which are fine-tuned to succeed under the uniformly distributed",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          404.513,
+          316.929,
+          405.513
+        ],
+        "font_size": 1.0,
+        "raw_text": "the queries",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          402.335,
+          78.215,
+          403.335
+        ],
+        "font_size": 1.0,
+        "raw_text": "queries. Instead, we reconstruct plaintext values under a variety",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          392.371,
+          76.865,
+          393.371
+        ],
+        "font_size": 1.0,
+        "raw_text": "of skewed query distributions and even outperform the accuracy",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          389.224,
+          339.879,
+          390.224
+        ],
+        "font_size": 1.0,
+        "raw_text": "and/or data distribution. In this paper, we take the next step",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          382.41,
+          75.965,
+          383.41
+        ],
+        "font_size": 1.0,
+        "raw_text": "of previous approaches under the uniform query distribution.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          377.269,
+          339.879,
+          378.269
+        ],
+        "font_size": 1.0,
+        "raw_text": "and demonstrate the first efficient reconstruction attacks for",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.965,
+          372.447,
+          52.115,
+          373.447
+        ],
+        "font_size": 1.0,
+        "raw_text": "Our new",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          95.25,
+          372.447,
+          116.4,
+          373.447
+        ],
+        "font_size": 1.0,
+        "raw_text": "-NN attack succeeds with far fewer samples than",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          365.314,
+          316.029,
+          366.314
+        ],
+        "font_size": 1.0,
+        "raw_text": "range and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          353.378,
+          365.314,
+          380.479,
+          366.314
+        ],
+        "font_size": 1.0,
+        "raw_text": "k -NN queries where the adversary has no knowledge",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          362.485,
+          72.364,
+          363.485
+        ],
+        "font_size": 1.0,
+        "raw_text": "previous attacks and scales to much larger values of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          280.26,
+          362.485,
+          282.06,
+          363.485
+        ],
+        "font_size": 1.0,
+        "raw_text": ".W e",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          353.358,
+          335.379,
+          354.358
+        ],
+        "font_size": 1.0,
+        "raw_text": "about the query distribution or the underlying data.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.963,
+          352.523,
+          76.863,
+          353.523
+        ],
+        "font_size": 1.0,
+        "raw_text": "demonstrate the effectiveness of our attacks by experimentally",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.963,
+          342.56,
+          77.763,
+          343.56
+        ],
+        "font_size": 1.0,
+        "raw_text": "testing them on a wide range of query distributions and database",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.963,
+          332.598,
+          67.413,
+          333.598
+        ],
+        "font_size": 1.0,
+        "raw_text": "densities, both unknown to the adversary.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          331.457,
+          323.679,
+          332.457
+        ],
+        "font_size": 1.0,
+        "raw_text": "A. Motivation and Approach",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.941,
+          315.037,
+          347.141,
+          316.037
+        ],
+        "font_size": 1.0,
+        "raw_text": "We overview the limitations of the four state-of-the-art",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          135.62,
+          309.485,
+          137.42,
+          310.485
+        ],
+        "font_size": 1.0,
+        "raw_text": "I. I",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          303.082,
+          338.979,
+          304.082
+        ],
+        "font_size": 1.0,
+        "raw_text": "attacks supported by a theoretical analysis and experimental",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          291.268,
+          59.927,
+          292.268
+        ],
+        "font_size": 1.0,
+        "raw_text": "In",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          163.966,
+          291.268,
+          228.023,
+          292.268
+        ],
+        "font_size": 1.0,
+        "raw_text": "15 ], [ 31 ], [ 41 ], a client encrypts a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          291.126,
+          317.379,
+          292.126
+        ],
+        "font_size": 1.0,
+        "raw_text": "evaluation [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          358.846,
+          291.126,
+          370.609,
+          292.126
+        ],
+        "font_size": 1.0,
+        "raw_text": "27 ], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          391.156,
+          291.126,
+          392.956,
+          292.126
+        ],
+        "font_size": 1.0,
+        "raw_text": "], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          413.503,
+          291.126,
+          415.303,
+          292.126
+        ],
+        "font_size": 1.0,
+        "raw_text": "], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          435.849,
+          291.126,
+          449.799,
+          292.126
+        ],
+        "font_size": 1.0,
+        "raw_text": "] and outline our new approach.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          279.313,
+          76.414,
+          280.313
+        ],
+        "font_size": 1.0,
+        "raw_text": "privacy-sensitive data collection and outsources an encrypted",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.941,
+          278.792,
+          339.041,
+          279.792
+        ],
+        "font_size": 1.0,
+        "raw_text": "Uniform Query Distribution Assumption.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          267.358,
+          77.314,
+          268.358
+        ],
+        "font_size": 1.0,
+        "raw_text": "database to a server that can efficiently answer search queries",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          266.837,
+          336.729,
+          267.837
+        ],
+        "font_size": 1.0,
+        "raw_text": "reconstruction attack for range queries was proposed by",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.605,
+          255.403,
+          74.255,
+          256.403
+        ],
+        "font_size": 1.0,
+        "raw_text": "without ever decrypting the database. Known constructions",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          254.882,
+          329.529,
+          255.882
+        ],
+        "font_size": 1.0,
+        "raw_text": "Kellaris-Kollios-Nissim-O'Neil (KKNO) [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          482.864,
+          254.882,
+          500.926,
+          255.882
+        ],
+        "font_size": 1.0,
+        "raw_text": "32 ]. It assumes that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          243.447,
+          65.164,
+          244.447
+        ],
+        "font_size": 1.0,
+        "raw_text": "handle rich and expressive queries [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          222.971,
+          243.447,
+          224.771,
+          244.447
+        ],
+        "font_size": 1.0,
+        "raw_text": "], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          248.523,
+          243.447,
+          253.472,
+          244.447
+        ],
+        "font_size": 1.0,
+        "raw_text": "] under the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          242.927,
+          320.079,
+          243.927
+        ],
+        "font_size": 1.0,
+        "raw_text": "queries are issued",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          521.798,
+          242.927,
+          525.848,
+          243.927
+        ],
+        "font_size": 1.0,
+        "raw_text": "e-Minaud-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          231.492,
+          60.214,
+          232.492
+        ],
+        "font_size": 1.0,
+        "raw_text": "definitional framework of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          295.843,
+          230.972,
+          319.179,
+          232.492
+        ],
+        "font_size": 1.0,
+        "raw_text": "]. Paterson (LMP) [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          382.253,
+          230.972,
+          411.115,
+          231.972
+        ],
+        "font_size": 1.0,
+        "raw_text": "34 ] studied the same problem for the special",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          219.537,
+          72.814,
+          220.537
+        ],
+        "font_size": 1.0,
+        "raw_text": "For an overview of the area, see the survey by Fuller",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          286.111,
+          219.016,
+          315.129,
+          220.537
+        ],
+        "font_size": 1.0,
+        "raw_text": "23 ]. case of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.926,
+          207.061,
+          86.826,
+          208.061
+        ],
+        "font_size": 1.0,
+        "raw_text": "To strike a balance between efficiency and privacy, structured",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          207.061,
+          338.979,
+          208.061
+        ],
+        "font_size": 1.0,
+        "raw_text": "reconstructing order is equivalent to reconstructing values.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          195.106,
+          74.614,
+          196.106
+        ],
+        "font_size": 1.0,
+        "raw_text": "encryption schemes reveal, by design, certain information",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.67,
+          195.106,
+          323.82,
+          196.106
+        ],
+        "font_size": 1.0,
+        "raw_text": "The work by Grubbs-Lacharit",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          431.399,
+          195.106,
+          443.099,
+          196.106
+        ],
+        "font_size": 1.0,
+        "raw_text": "e-Minaud-Paterson (GLMP) [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          549.823,
+          195.106,
+          560.786,
+          196.106
+        ],
+        "font_size": 1.0,
+        "raw_text": "27 ]",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          183.151,
+          75.064,
+          184.151
+        ],
+        "font_size": 1.0,
+        "raw_text": "about the query and its corresponding response-this is the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          183.151,
+          338.079,
+          184.151
+        ],
+        "font_size": 1.0,
+        "raw_text": "gives three reconstruction attacks for range queries under",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          171.196,
+          53.014,
+          172.196
+        ],
+        "font_size": 1.0,
+        "raw_text": "so-called",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          119.685,
+          171.196,
+          139.035,
+          172.196
+        ],
+        "font_size": 1.0,
+        "raw_text": ". Despite cryptographic proofs guaranteeing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          171.196,
+          326.379,
+          172.196
+        ],
+        "font_size": 1.0,
+        "raw_text": "different assumptions: attacks G",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          159.241,
+          50.764,
+          160.241
+        ],
+        "font_size": 1.0,
+        "raw_text": "that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.839,
+          159.241,
+          321.934,
+          160.241
+        ],
+        "font_size": 1.0,
+        "raw_text": "A PPROX",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          354.393,
+          159.241,
+          356.193,
+          160.241
+        ],
+        "font_size": 1.0,
+        "raw_text": "ALUE",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          147.285,
+          75.964,
+          148.285
+        ],
+        "font_size": 1.0,
+        "raw_text": "implications of the legitimately leaked information have not",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          147.285,
+          317.379,
+          148.285
+        ],
+        "font_size": 1.0,
+        "raw_text": "distribution",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          359.215,
+          147.285,
+          378.115,
+          148.285
+        ],
+        "font_size": 1.0,
+        "raw_text": ", extend the underlying ideas of KKNO, and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b102",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          135.33,
+          76.414,
+          136.33
+        ],
+        "font_size": 1.0,
+        "raw_text": "been fully grasped yet. The first generation of leakage-based",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b103",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          135.33,
+          336.279,
+          136.33
+        ],
+        "font_size": 1.0,
+        "raw_text": "present a new analysis on the query complexity; attack",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b104",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          123.375,
+          53.014,
+          124.375
+        ],
+        "font_size": 1.0,
+        "raw_text": "attacks [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b105",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          83.718,
+          123.375,
+          90.5,
+          124.375
+        ],
+        "font_size": 1.0,
+        "raw_text": "8 ], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b106",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          111.362,
+          123.375,
+          113.162,
+          124.375
+        ],
+        "font_size": 1.0,
+        "raw_text": "], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b107",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          134.025,
+          123.375,
+          139.425,
+          124.375
+        ],
+        "font_size": 1.0,
+        "raw_text": "] focused on",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b108",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.839,
+          123.375,
+          336.139,
+          124.375
+        ],
+        "font_size": 1.0,
+        "raw_text": "AOR-to-ADR does not assume uniform queries but assumes",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b109",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.715,
+          111.42,
+          72.565,
+          112.42
+        ],
+        "font_size": 1.0,
+        "raw_text": "various assumptions. The next generation of attacks [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b110",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          273.267,
+          111.42,
+          275.067,
+          112.42
+        ],
+        "font_size": 1.0,
+        "raw_text": "], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b111",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          295.577,
+          111.42,
+          322.329,
+          112.42
+        ],
+        "font_size": 1.0,
+        "raw_text": "], that the attacker knows",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b112",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.963,
+          99.465,
+          63.978,
+          100.465
+        ],
+        "font_size": 1.0,
+        "raw_text": "[ 33 ], [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b113",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          84.565,
+          99.465,
+          89.515,
+          100.465
+        ],
+        "font_size": 1.0,
+        "raw_text": "] supported",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b114",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          99.465,
+          330.429,
+          100.465
+        ],
+        "font_size": 1.0,
+        "raw_text": "an approximation of the data distribution",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b115",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          87.51,
+          68.764,
+          88.51
+        ],
+        "font_size": 1.0,
+        "raw_text": "answering expressive queries, e.g. range and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b116",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          239.186,
+          87.51,
+          245.487,
+          88.51
+        ],
+        "font_size": 1.0,
+        "raw_text": "-NN, on a one-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b117",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          458.387,
+          87.51,
+          469.187,
+          88.51
+        ],
+        "font_size": 1.0,
+        "raw_text": "] propose reconstruction",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b118",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          87.509,
+          324.579,
+          88.509
+        ],
+        "font_size": 1.0,
+        "raw_text": "Papamanthou-Tamassia (KPT) [",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b119",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          75.554,
+          76.414,
+          76.554
+        ],
+        "font_size": 1.0,
+        "raw_text": "dimensional database under strong assumptions about the query",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b120",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.979,
+          75.554,
+          316.929,
+          76.554
+        ],
+        "font_size": 1.0,
+        "raw_text": "attacks for",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b121",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          362.461,
+          75.554,
+          378.211,
+          76.554
+        ],
+        "font_size": 1.0,
+        "raw_text": "-nearest neighbor queries under the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b122",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          38.0,
+          240.4,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "© 2020, Evgenios Kornaropoulos. Under license to IEEE.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b123",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          297.1,
+          38.0,
+          311.5,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "1223",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b124",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          30.0,
+          154.0,
+          38.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "DOI 10.1109/SP40000.2020.00029",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b125",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          86.179,
+          21.908,
+          514.579,
+          28.908
+        ],
+        "font_size": 7.0,
+        "raw_text": "Authorized licensed use limited to: Yanshan University. Downloaded on June 24,2026 at 02:19:46 UTC from IEEE Xplore. Restrictions apply.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b126",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          0.0,
+          0.0,
+          21.15,
+          1.0
+        ],
+        "font_size": 1.0,
+        "raw_text": "without any knowledge about . Our approach uses the search- k k k NTRODUCTION searchable encryption [ 17 22 structured encryption (STE) [ 13 et al. [ leakage nothing more is leaked but what the designer allowed, the 30 45 query reconstruction under 27 32 34 plaintext value reconstruction by a server k Spitz (in red) and values reconstructed by our attack -R -KNN on k Gaussian and k =1 0 (in black). Our attack achieves an approximate half and larger k values compared to previous work [33]. 32 33 34 The first value uniformly at random . Lacharit ´ dense databases-this is a simpler problem since ´ ENERALIZED KKNO and V assume an underlying uniform query both the query distribution and . Kornaropoulos- 33 k uniform query",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Recent foundational work on leakage-abuse attacks on encrypted databases has broadened our understanding of what an adversary can accomplish with a standard leakage profile. Nevertheless, all known value reconstruction attacks succeed under strong assumptions that may not hold in the real world. The most prevalent assumption is that queries are issued uniformly at random by the client. We present the first value reconstruction attacks that succeed without any knowledge about the query or data distribution . Our approach uses the search- pattern leakage, which exists in all known structured encryption schemes but has not been fully exploited so far . At the core of our method lies a support size estimator, a technique that utilizes the repetition of search tokens with the same response to estimate distances between encrypted values without any assump- tions about the underlying distribution. We develop distribution- agnostic reconstruction attacks for both range queries and k- nearest-neighbor (k-NN) queries based on information extracted from the search-pattern leakage. Our new range attack follows a different algorithmic approach than state-of-the-art attacks, which are fine-tuned to succeed under the uniformly distributed queries. Instead, we reconstruct plaintext values under a variety of skewed query distributions and even outperform the accuracy of previous approaches under the uniform query distribution. Our new k-NN attack succeeds with far fewer samples than previous attacks and scales to much larger values of k.W e demonstrate the effectiveness of our attacks by experimentally testing them on a wide range of query distributions and database densities, both unknown to the adversary. I. I NTRODUCTION In searchable encryption [15], [31], [41], a client encrypts a privacy-sensitive data collection and outsources an encrypted database to a server that can efficiently answer search queries without ever decrypting the database. Known constructions handle rich and expressive queries [ 17], [ 22] under the definitional framework of structured encryption (STE) [ 13]. For an overview of the area, see the survey by Fuller et al. [23]. To strike a balance between efficiency and privacy, structured encryption schemes reveal, by design, certain information about the query and its corresponding response-this is the so-called leakage. Despite cryptographic proofs guaranteeing that nothing more is leaked but what the designer allowed, the implications of the legitimately leaked information have not been fully grasped yet. The first generation of leakage-based attacks [8], [ 30], [ 45] focused on query reconstruction under various assumptions. The next generation of attacks [ 27], [ 32], [33], [ 34] supported plaintext value reconstruction by a server answering expressive queries, e.g. range and k-NN, on a one- dimensional database under strong assumptions about the query Plaintext Values Reconstructed Values Fig. 1. Visual comparison between plaintext values of real-world private geolocation dataset Spitz (in red) and values reconstructed by our attack AGNOSTIC -RECONSTRUCTION -KNN on k-NN queries under a Gaussian distribution and k =1 0 (in black). Our attack achieves an approximate reconstruction (1) under a non-uniform query distribution and (2) with half the queries and larger k values compared to previous work [33]. and/or data distribution. In this paper, we take the next step and demonstrate the first efficient reconstruction attacks for range andk-NN queries where the adversary has no knowledge about the query distribution or the underlying data. A. Motivation and Approach We overview the limitations of the four state-of-the-art attacks supported by a theoretical analysis and experimental evaluation [27], [ 32], [ 33], [ 34] and outline our new approach. Uniform Query Distribution Assumption. The first value reconstruction attack for range queries was proposed by Kellaris-Kollios-Nissim-O'Neil (KKNO) [32]. It assumes that queries are issued uniformly at random . Lacharit ´e-Minaud- Paterson (LMP) [34] studied the same problem for the special case of dense databases-this is a simpler problem since reconstructing order is equivalent to reconstructing values. The work by Grubbs-Lacharit ´e-Minaud-Paterson (GLMP) [27] gives three reconstruction attacks for range queries under different assumptions: attacks G ENERALIZED KKNO and APPROX VALUE assume an underlying uniform query distribution, extend the underlying ideas of KKNO, and present a new analysis on the query complexity; attack AOR-to-ADR does not assume uniform queries but assumes that the attacker knows both the query distribution and an approximation of the data distribution . Kornaropoulos- Papamanthou-Tamassia (KPT) [ 33] propose reconstruction attacks for k-nearest neighbor queries under the uniform query 1223 DOI 10.1109/SP40000.2020.00029 TABLE I ASSUMPTIONS OF STA TE -OF-THE -ART V ALUE RECONSTRUCTION A TTACKS AND OUR NEW A TTACKS Value Reconstruction Query Type Assumptions Exploited Leakage Attack Algorithms Query Data V alues in a Known Dense Search-Pattern Access-Pattern Distribution Fixed Region Data Distribution Database Leakage Leakage KPT [33] k-NN Uniform - - - - • KKNO [32] Range Uniform - - - - • LMP [34] Range Agnostic - - • - • GLMP [27] G ENERALIZED KKNO Range Uniform - - - - • GLMP [27] A PPROX VALUE Range Uniform • - - - • GLMP [27] AOR to ADR Range Known - • - - • This Work k-NN & Range Agnostic - - - • • distribution. The above attacks, summarized in Table I, set the foundations for understanding the implications of leakage but only succeed under strong assumptions that potentially do not hold in the real world, e.g., uniform query distribution. Thus, the following question still remains open: “Is it possible to devise attacks that reconstruct an approxi- mation of the plaintext values without any knowledge about the query distribution or the data distribution?” Our work answers this question in the affirmative and presents reconstruction techniques that are query and data distribution agnostic. The key to achieve such a generalization lies in the search-pattern leakage which is revealed in all known STE schemes [ 23] but has been overlooked so far. See Figure 1 for an illustration of the quality of our reconstruction. Fundamental Limitations of Current Range Attacks. A natural approach for answering the above question would be to extend existing algorithmic techniques to work for arbitrary query distributions. To explore this possibility, we first give a high-level intuition of the range reconstruction attacks KKNO, G ENERALIZED KKNO, and A PPROX VALUE . Through the access-pattern leakage, which appears in the vast majority of STE schemes, the attacker can see which and how many queries return a given encrypted record. Assume the attacker knows the space of possible plaintext values, e.g., values from 0 to 100 representing attribute age. If range queries are generated uniformly, the attacker expects values in the middle (e.g. age=5 0) to be returned more often than values towards the ends (e.g. age=1 ). Formally, the reference probabilityof a valuev captures the likelihood that value v will be returned in a response to a query. It is defined as ∑ r∈Rv Pr[r], where Rv is the set of ranges containing v and Pr[r] is the probability of querying range r. Reference probabilities can be easily pre-computed by an attacker who knows the query distribution. The reference probability of plaintext values for two query distributions is shown with histograms in Figure 2(b). Given enough queries, the attacker computes the frequency of each encrypted value and finds the closest match of each frequency to a pre-computed reference probability. Each matched reference probability corresponds to a plaintext value which is returned as the reconstructed value. This frequency-analysis works well for the uniform query case because the reference probabilities (blue histogram) vary significantly over the universe of plaintext values, therefore, one can accurately map the observed frequen- cies to reference probabilities. However, there are fundamental limitations when trying to extend this approach . (a) (b) Fig. 2. (a) Heatmap of the Span distribution of range queries on values from 0 to 100, where the probability of query [a,b] is proportional to (N − b+a)25. (b) Reference probabilities of plaintext values under the uniform query distribution (blue histogram) and Span query distribution (red histogram). Reconstructing the values of an encrypted database, shown with solid bars, from their empirical reference probabilities, is easy under the uniform query distribution but hard under the Span query distribution. For instance consider the Span range query distribution, inspired by a realistic behavior from a client that issues “short ranges”, depicted as a heatmap in Figure 2(a), where the lower boundary of the range is on the Y -axis, the upper boundary is on the X-axis and the color of each square denotes the probability of issuing this query. One can visually confirm that queries around the diagonal, i.e., queries with short span, have brighter color, hence are more likely to be issued. The reference probability for the Span query distribution is shown with the red histogram in Figure 2(b). Note that the reference probabilities of 60% of potential plaintext values differ by less than 10−8, i.e., the middle part of the red histogram is almost flat, and as a result, the adversary can not make an accurate mapping from observed frequencies to reconstructed plaintext values. Thus, the Span query distribution causes all state-of-the-art attacks to fail. More generally, one can define query distributions where the reference probabilities are identical so no matter how many queries are observed, the adversary cannot distinguish between potential plaintext reconstructions in the information-theoretic sense. Interestingly, the fact that frequency-based attacks fail in “smooth” distributions is used as a form of mitigation by Lacharit´e-Paterson [35], who introduce multiplicities in the records and spread the frequency of among the copies. From the above example we see that for range queries we need a radically different reconstruction approachto generalize. How Many Queries Return a Response? Taking a step back to rethink reconstruction attacks, there is a piece of information that has not been fully exploited to overcome the 1224",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "IEEE Issue ID": "9152199",
+          "Producer": "OpenPDF 1.0.0-SNAPSHOT; modified using iText® 7.1.1 ©2000-2018 iText Group NV (AGPL-version)",
+          "IEEE Article ID": "9152800",
+          "Title": "The State of the Uniform: Attacks on Encrypted Databases Beyond the Uniform Query Distribution",
+          "IEEE Publication ID": "9144328",
+          "Meeting Ending Date": "21 May 2020",
+          "Meeting Starting Date": "18 May 2020",
+          "Subject": "2020 IEEE Symposium on Security and Privacy (SP);2020; ; ;10.1109/SP40000.2020.00029",
+          "ModDate": "D:20200729102607-04'00'",
+          "CreationDate": "D:20200623003123Z"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Evgenios Kornaropoulos",
+        "affiliations": [
+          "UC Berkeley"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Charalampos Papamanthou",
+        "affiliations": [
+          "University of Maryland"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Roberto Tamassia",
+        "affiliations": [
+          "Brown University"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "The State of the Uniform: Attacks on Encrypted Databases Beyond the Uniform Query Distribution"
+        },
+        {
+          "source": "selected",
+          "value": "The State of the Uniform: Attacks on Encrypted Databases Beyond the Uniform Query Distribution"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2020"
+        },
+        {
+          "source": "selected",
+          "value": "2020"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Recent foundational work on leakage-abuse attacks on encrypted databases has broadened our understanding of what an adversary can accomplish with a standard leakage profile. Nevertheless, all known value reconstruction attacks succeed under strong assumptions that may not hold in the real world. The most prevalent assumption is that queries are issued uniformly at random by the client. We present the first value reconstruction attacks that succeed without any knowledge about the query or data distribution . Our approach uses the search- pattern leakage, which exists in all known structured encryption schemes but has not been fully exploited so far . At the core of our method lies a support size estimator, a technique that utilizes the repetition of search tokens with the same response to estimate distances between encrypted values without any assump- tions about the underlying distribution. We develop distribution- agnostic reconstruction attacks for both range queries and k- nearest-neighbor (k-NN) queries based on information extracted from the search-pattern leakage. Our new range attack follows a different algorithmic approach than state-of-the-art attacks, which are fine-tuned to succeed under the uniformly distributed queries. Instead, we reconstruct plaintext values under a variety of skewed query distributions and even outperform the accuracy of previous approaches under the uniform query distribution. Our new k-NN attack succeeds with far fewer samples than previous attacks and scales to much larger values of k.W e demonstrate the effectiveness of our attacks by experimentally testing them on a wide range of query distributions and database densities, both unknown to the adversary. I. I NTRODUCTION In searchable encryption [15], [31], [41], a client encrypts a privacy-sensitive data collection and outsources an encrypted database to a server that can efficiently answer search queries without ever decrypting the database. Known constructions handle rich and expressive queries [ 17], [ 22] under the definitional framework of structured encryption (STE) [ 13]. For an overview of the area, see the survey by Fuller et al. [23]. To strike a balance between efficiency and privacy, structured encryption schemes reveal, by design, certain information about the query and its corresponding response-this is the so-called leakage. Despite cryptographic proofs guaranteeing that nothing more is leaked but what the designer allowed, the implications of the legitimately leaked information have not been fully grasped yet. The first generation of leakage-based attacks [8], [ 30], [ 45] focused on query reconstruction under various assumptions. The next generation of attacks [ 27], [ 32], [33], [ 34] supported plaintext value reconstruction by a server answering expressive queries, e.g. range and k-NN, on a one- dimensional database under strong assumptions about the query Plaintext Values Reconstructed Values Fig. 1. Visual comparison between plaintext values of real-world private geolocation dataset Spitz (in red) and values reconstructed by our attack AGNOSTIC -RECONSTRUCTION -KNN on k-NN queries under a Gaussian distribution and k =1 0 (in black). Our attack achieves an approximate reconstruction (1) under a non-uniform query distribution and (2) with half the queries and larger k values compared to previous work [33]. and/or data distribution. In this paper, we take the next step and demonstrate the first efficient reconstruction attacks for range andk-NN queries where the adversary has no knowledge about the query distribution or the underlying data. A. Motivation and Approach We overview the limitations of the four state-of-the-art attacks supported by a theoretical analysis and experimental evaluation [27], [ 32], [ 33], [ 34] and outline our new approach. Uniform Query Distribution Assumption. The first value reconstruction attack for range queries was proposed by Kellaris-Kollios-Nissim-O'Neil (KKNO) [32]. It assumes that queries are issued uniformly at random . Lacharit ´e-Minaud- Paterson (LMP) [34] studied the same problem for the special case of dense databases-this is a simpler problem since reconstructing order is equivalent to reconstructing values. The work by Grubbs-Lacharit ´e-Minaud-Paterson (GLMP) [27] gives three reconstruction attacks for range queries under different assumptions: attacks G ENERALIZED KKNO and APPROX VALUE assume an underlying uniform query distribution, extend the underlying ideas of KKNO, and present a new analysis on the query complexity; attack AOR-to-ADR does not assume uniform queries but assumes that the attacker knows both the query distribution and an approximation of the data distribution . Kornaropoulos- Papamanthou-Tamassia (KPT) [ 33] propose reconstruction attacks for k-nearest neighbor queries under the uniform query 1223 DOI 10.1109/SP40000.2020.00029 TABLE I ASSUMPTIONS OF STA TE -OF-THE -ART V ALUE RECONSTRUCTION A TTACKS AND OUR NEW A TTACKS Value Reconstruction Query Type Assumptions Exploited Leakage Attack Algorithms Query Data V alues in a Known Dense Search-Pattern Access-Pattern Distribution Fixed Region Data Distribution Database Leakage Leakage KPT [33] k-NN Uniform - - - - • KKNO [32] Range Uniform - - - - • LMP [34] Range Agnostic - - • - • GLMP [27] G ENERALIZED KKNO Range Uniform - - - - • GLMP [27] A PPROX VALUE Range Uniform • - - - • GLMP [27] AOR to ADR Range Known - • - - • This Work k-NN & Range Agnostic - - - • • distribution. The above attacks, summarized in Table I, set the foundations for understanding the implications of leakage but only succeed under strong assumptions that potentially do not hold in the real world, e.g., uniform query distribution. Thus, the following question still remains open: “Is it possible to devise attacks that reconstruct an approxi- mation of the plaintext values without any knowledge about the query distribution or the data distribution?” Our work answers this question in the affirmative and presents reconstruction techniques that are query and data distribution agnostic. The key to achieve such a generalization lies in the search-pattern leakage which is revealed in all known STE schemes [ 23] but has been overlooked so far. See Figure 1 for an illustration of the quality of our reconstruction. Fundamental Limitations of Current Range Attacks. A natural approach for answering the above question would be to extend existing algorithmic techniques to work for arbitrary query distributions. To explore this possibility, we first give a high-level intuition of the range reconstruction attacks KKNO, G ENERALIZED KKNO, and A PPROX VALUE . Through the access-pattern leakage, which appears in the vast majority of STE schemes, the attacker can see which and how many queries return a given encrypted record. Assume the attacker knows the space of possible plaintext values, e.g., values from 0 to 100 representing attribute age. If range queries are generated uniformly, the attacker expects values in the middle (e.g. age=5 0) to be returned more often than values towards the ends (e.g. age=1 ). Formally, the reference probabilityof a valuev captures the likelihood that value v will be returned in a response to a query. It is defined as ∑ r∈Rv Pr[r], where Rv is the set of ranges containing v and Pr[r] is the probability of querying range r. Reference probabilities can be easily pre-computed by an attacker who knows the query distribution. The reference probability of plaintext values for two query distributions is shown with histograms in Figure 2(b). Given enough queries, the attacker computes the frequency of each encrypted value and finds the closest match of each frequency to a pre-computed reference probability. Each matched reference probability corresponds to a plaintext value which is returned as the reconstructed value. This frequency-analysis works well for the uniform query case because the reference probabilities (blue histogram) vary significantly over the universe of plaintext values, therefore, one can accurately map the observed frequen- cies to reference probabilities. However, there are fundamental limitations when trying to extend this approach . (a) (b) Fig. 2. (a) Heatmap of the Span distribution of range queries on values from 0 to 100, where the probability of query [a,b] is proportional to (N − b+a)25. (b) Reference probabilities of plaintext values under the uniform query distribution (blue histogram) and Span query distribution (red histogram). Reconstructing the values of an encrypted database, shown with solid bars, from their empirical reference probabilities, is easy under the uniform query distribution but hard under the Span query distribution. For instance consider the Span range query distribution, inspired by a realistic behavior from a client that issues “short ranges”, depicted as a heatmap in Figure 2(a), where the lower boundary of the range is on the Y -axis, the upper boundary is on the X-axis and the color of each square denotes the probability of issuing this query. One can visually confirm that queries around the diagonal, i.e., queries with short span, have brighter color, hence are more likely to be issued. The reference probability for the Span query distribution is shown with the red histogram in Figure 2(b). Note that the reference probabilities of 60% of potential plaintext values differ by less than 10−8, i.e., the middle part of the red histogram is almost flat, and as a result, the adversary can not make an accurate mapping from observed frequencies to reconstructed plaintext values. Thus, the Span query distribution causes all state-of-the-art attacks to fail. More generally, one can define query distributions where the reference probabilities are identical so no matter how many queries are observed, the adversary cannot distinguish between potential plaintext reconstructions in the information-theoretic sense. Interestingly, the fact that frequency-based attacks fail in “smooth” distributions is used as a form of mitigation by Lacharit´e-Paterson [35], who introduce multiplicities in the records and spread the frequency of among the copies. From the above example we see that for range queries we need a radically different reconstruction approachto generalize. How Many Queries Return a Response? Taking a step back to rethink reconstruction attacks, there is a piece of information that has not been fully exploited to overcome the 1224"
+        },
+        {
+          "source": "selected",
+          "value": "Recent foundational work on leakage-abuse attacks on encrypted databases has broadened our understanding of what an adversary can accomplish with a standard leakage profile. Nevertheless, all known value reconstruction attacks succeed under strong assumptions that may not hold in the real world. The most prevalent assumption is that queries are issued uniformly at random by the client. We present the first value reconstruction attacks that succeed without any knowledge about the query or data distribution . Our approach uses the search- pattern leakage, which exists in all known structured encryption schemes but has not been fully exploited so far . At the core of our method lies a support size estimator, a technique that utilizes the repetition of search tokens with the same response to estimate distances between encrypted values without any assump- tions about the underlying distribution. We develop distribution- agnostic reconstruction attacks for both range queries and k- nearest-neighbor (k-NN) queries based on information extracted from the search-pattern leakage. Our new range attack follows a different algorithmic approach than state-of-the-art attacks, which are fine-tuned to succeed under the uniformly distributed queries. Instead, we reconstruct plaintext values under a variety of skewed query distributions and even outperform the accuracy of previous approaches under the uniform query distribution. Our new k-NN attack succeeds with far fewer samples than previous attacks and scales to much larger values of k.W e demonstrate the effectiveness of our attacks by experimentally testing them on a wide range of query distributions and database densities, both unknown to the adversary. I. I NTRODUCTION In searchable encryption [15], [31], [41], a client encrypts a privacy-sensitive data collection and outsources an encrypted database to a server that can efficiently answer search queries without ever decrypting the database. Known constructions handle rich and expressive queries [ 17], [ 22] under the definitional framework of structured encryption (STE) [ 13]. For an overview of the area, see the survey by Fuller et al. [23]. To strike a balance between efficiency and privacy, structured encryption schemes reveal, by design, certain information about the query and its corresponding response-this is the so-called leakage. Despite cryptographic proofs guaranteeing that nothing more is leaked but what the designer allowed, the implications of the legitimately leaked information have not been fully grasped yet. The first generation of leakage-based attacks [8], [ 30], [ 45] focused on query reconstruction under various assumptions. The next generation of attacks [ 27], [ 32], [33], [ 34] supported plaintext value reconstruction by a server answering expressive queries, e.g. range and k-NN, on a one- dimensional database under strong assumptions about the query Plaintext Values Reconstructed Values Fig. 1. Visual comparison between plaintext values of real-world private geolocation dataset Spitz (in red) and values reconstructed by our attack AGNOSTIC -RECONSTRUCTION -KNN on k-NN queries under a Gaussian distribution and k =1 0 (in black). Our attack achieves an approximate reconstruction (1) under a non-uniform query distribution and (2) with half the queries and larger k values compared to previous work [33]. and/or data distribution. In this paper, we take the next step and demonstrate the first efficient reconstruction attacks for range andk-NN queries where the adversary has no knowledge about the query distribution or the underlying data. A. Motivation and Approach We overview the limitations of the four state-of-the-art attacks supported by a theoretical analysis and experimental evaluation [27], [ 32], [ 33], [ 34] and outline our new approach. Uniform Query Distribution Assumption. The first value reconstruction attack for range queries was proposed by Kellaris-Kollios-Nissim-O'Neil (KKNO) [32]. It assumes that queries are issued uniformly at random . Lacharit ´e-Minaud- Paterson (LMP) [34] studied the same problem for the special case of dense databases-this is a simpler problem since reconstructing order is equivalent to reconstructing values. The work by Grubbs-Lacharit ´e-Minaud-Paterson (GLMP) [27] gives three reconstruction attacks for range queries under different assumptions: attacks G ENERALIZED KKNO and APPROX VALUE assume an underlying uniform query distribution, extend the underlying ideas of KKNO, and present a new analysis on the query complexity; attack AOR-to-ADR does not assume uniform queries but assumes that the attacker knows both the query distribution and an approximation of the data distribution . Kornaropoulos- Papamanthou-Tamassia (KPT) [ 33] propose reconstruction attacks for k-nearest neighbor queries under the uniform query 1223 DOI 10.1109/SP40000.2020.00029 TABLE I ASSUMPTIONS OF STA TE -OF-THE -ART V ALUE RECONSTRUCTION A TTACKS AND OUR NEW A TTACKS Value Reconstruction Query Type Assumptions Exploited Leakage Attack Algorithms Query Data V alues in a Known Dense Search-Pattern Access-Pattern Distribution Fixed Region Data Distribution Database Leakage Leakage KPT [33] k-NN Uniform - - - - • KKNO [32] Range Uniform - - - - • LMP [34] Range Agnostic - - • - • GLMP [27] G ENERALIZED KKNO Range Uniform - - - - • GLMP [27] A PPROX VALUE Range Uniform • - - - • GLMP [27] AOR to ADR Range Known - • - - • This Work k-NN & Range Agnostic - - - • • distribution. The above attacks, summarized in Table I, set the foundations for understanding the implications of leakage but only succeed under strong assumptions that potentially do not hold in the real world, e.g., uniform query distribution. Thus, the following question still remains open: “Is it possible to devise attacks that reconstruct an approxi- mation of the plaintext values without any knowledge about the query distribution or the data distribution?” Our work answers this question in the affirmative and presents reconstruction techniques that are query and data distribution agnostic. The key to achieve such a generalization lies in the search-pattern leakage which is revealed in all known STE schemes [ 23] but has been overlooked so far. See Figure 1 for an illustration of the quality of our reconstruction. Fundamental Limitations of Current Range Attacks. A natural approach for answering the above question would be to extend existing algorithmic techniques to work for arbitrary query distributions. To explore this possibility, we first give a high-level intuition of the range reconstruction attacks KKNO, G ENERALIZED KKNO, and A PPROX VALUE . Through the access-pattern leakage, which appears in the vast majority of STE schemes, the attacker can see which and how many queries return a given encrypted record. Assume the attacker knows the space of possible plaintext values, e.g., values from 0 to 100 representing attribute age. If range queries are generated uniformly, the attacker expects values in the middle (e.g. age=5 0) to be returned more often than values towards the ends (e.g. age=1 ). Formally, the reference probabilityof a valuev captures the likelihood that value v will be returned in a response to a query. It is defined as ∑ r∈Rv Pr[r], where Rv is the set of ranges containing v and Pr[r] is the probability of querying range r. Reference probabilities can be easily pre-computed by an attacker who knows the query distribution. The reference probability of plaintext values for two query distributions is shown with histograms in Figure 2(b). Given enough queries, the attacker computes the frequency of each encrypted value and finds the closest match of each frequency to a pre-computed reference probability. Each matched reference probability corresponds to a plaintext value which is returned as the reconstructed value. This frequency-analysis works well for the uniform query case because the reference probabilities (blue histogram) vary significantly over the universe of plaintext values, therefore, one can accurately map the observed frequen- cies to reference probabilities. However, there are fundamental limitations when trying to extend this approach . (a) (b) Fig. 2. (a) Heatmap of the Span distribution of range queries on values from 0 to 100, where the probability of query [a,b] is proportional to (N − b+a)25. (b) Reference probabilities of plaintext values under the uniform query distribution (blue histogram) and Span query distribution (red histogram). Reconstructing the values of an encrypted database, shown with solid bars, from their empirical reference probabilities, is easy under the uniform query distribution but hard under the Span query distribution. For instance consider the Span range query distribution, inspired by a realistic behavior from a client that issues “short ranges”, depicted as a heatmap in Figure 2(a), where the lower boundary of the range is on the Y -axis, the upper boundary is on the X-axis and the color of each square denotes the probability of issuing this query. One can visually confirm that queries around the diagonal, i.e., queries with short span, have brighter color, hence are more likely to be issued. The reference probability for the Span query distribution is shown with the red histogram in Figure 2(b). Note that the reference probabilities of 60% of potential plaintext values differ by less than 10−8, i.e., the middle part of the red histogram is almost flat, and as a result, the adversary can not make an accurate mapping from observed frequencies to reconstructed plaintext values. Thus, the Span query distribution causes all state-of-the-art attacks to fail. More generally, one can define query distributions where the reference probabilities are identical so no matter how many queries are observed, the adversary cannot distinguish between potential plaintext reconstructions in the information-theoretic sense. Interestingly, the fact that frequency-based attacks fail in “smooth” distributions is used as a form of mitigation by Lacharit´e-Paterson [35], who introduce multiplicities in the records and spread the frequency of among the copies. From the above example we see that for range queries we need a radically different reconstruction approachto generalize. How Many Queries Return a Response? Taking a step back to rethink reconstruction attacks, there is a piece of information that has not been fully exploited to overcome the 1224"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Evgenios MKornaropoulos",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Maryland, Brown University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "U CBerkeley",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Maryland, Brown University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Charalampos Papamanthou",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Maryland, Brown University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Roberto Tamassia",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Maryland, Brown University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 3
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Evgenios M. Kornaropoulos",
+            "email": "",
+            "affiliations": [
+              "University of Maryland"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Charalampos Papamanthou",
+            "email": "",
+            "affiliations": [
+              "University of Maryland"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Roberto Tamassia",
+            "email": "",
+            "affiliations": [
+              "Brown University"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 9,
+        "author_count": 3,
+        "matched_author_count": 0,
+        "exact_author_match_count": 0,
+        "dominant_author_font_size": 0.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 3,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "The State of the Uniform: Attacks on Encrypted Databases Beyond the Uniform Query Distribution",
+        "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Evgenios Kornaropoulos",
+            "affiliations": [
+              "UC Berkeley"
+            ]
+          },
+          {
+            "name": "Charalampos Papamanthou",
+            "affiliations": [
+              "University of Maryland"
+            ]
+          },
+          {
+            "name": "Roberto Tamassia",
+            "affiliations": [
+              "Brown University"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      },
+      {
+        "action": "remove_organization_author",
+        "stage": "post_strategy_author_cleanup",
+        "field": "authors",
+        "removed_name": "UC Berkeley"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      }
+    ]
+  }
+}

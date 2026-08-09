@@ -1,0 +1,167 @@
+{
+  "paper_id": "184_eaudit_a_fast_scalable_and_deployable_audit_data_collection_system",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "eAudit: A Fast, Scalable and Deployable Audit Data Collection System *"
+      },
+      {
+        "source": "selected",
+        "value": "eAudit: A Fast, Scalable and Deployable Audit Data Collection System *"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Today's advanced cyber attack campaigns can often bypass all existing protections. The primary defense against them is after-the-fact detection, followed by a forensic analysis to understand their impact. Such an analysis requires audit logs (also called provenance logs) that faithfully capture all activities and data flows on each host. While the Linux auditing daemon (auditd) and sysdig are the most popular tools for audit data collection, a number of other systems, authored by researchers and practitioners, are also available. Through a motivating experimental study, we show that these systems impose high overheads, slowing workloads by 2× to 8×; lose a majority of events under sustained workloads; and are vulnerable to log tampering that erases log entries before they are committed to persistent storage. We present a new approach that overcomes these challenges. By relying on the extended Berkeley Packet Filter (eBPF) framework built into recent Linux versions, we avoid changes to the kernel code, and hence our data collector works out of the box on most Linux distributions. We present new design, tuning and optimization techniques that enables our system to sustain workloads that are an order of magnitude more intense than those causing major data loss with existing systems. Moreover, our system incurs only a fraction of the overhead of previous systems, while considerably reducing data volumes, and shrinking the log tampering window by ∼ 100×. • Large data volume: Existing systems produce logs ranging from several GBs to hundreds of GBs per host per day. The costs of storing this much data can be prohibitive since many APT campaigns are uncovered months later [74], [21], [75]. In this paper, we present a new audit log collection approach 3571 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Today's advanced cyber attack campaigns can often bypass all existing protections. The primary defense against them is after-the-fact detection, followed by a forensic analysis to understand their impact. Such an analysis requires audit logs (also called provenance logs) that faithfully capture all activities and data flows on each host. While the Linux auditing daemon (auditd) and sysdig are the most popular tools for audit data collection, a number of other systems, authored by researchers and practitioners, are also available. Through a motivating experimental study, we show that these systems impose high overheads, slowing workloads by 2× to 8×; lose a majority of events under sustained workloads; and are vulnerable to log tampering that erases log entries before they are committed to persistent storage. We present a new approach that overcomes these challenges. By relying on the extended Berkeley Packet Filter (eBPF) framework built into recent Linux versions, we avoid changes to the kernel code, and hence our data collector works out of the box on most Linux distributions. We present new design, tuning and optimization techniques that enables our system to sustain workloads that are an order of magnitude more intense than those causing major data loss with existing systems. Moreover, our system incurs only a fraction of the overhead of previous systems, while considerably reducing data volumes, and shrinking the log tampering window by ∼ 100×. 1. Introduction We are in an era of long-running cyber attack campaigns involving “Advanced and Persistent Threats” (APTs) [64], [9]. Carried out by sophisticated actors that prioritize stealth over other goals, these campaigns often remain undetected for many months [74], [21], [75], [7], [70]. During this period, attackers remain hidden in a victim's network, while moving across hosts, installing malware, and gathering data. Because of the stealthy nature of APTs, the primary recourse against them is after-the-fact detection, followed by forensic analysis to understand their full impact. Such an analysis requires logs that faithfully capture all important system activity across the hosts in an enterprise. While application logs (e.g., web server logs) are useful, they are incomplete because they don't cover the activities of all applications on the system. For instance, there are no application logs that cover malware activity, or the activities carried out in a remote login session by an attacker. Hence it is necessary to collect system-wide logs that cover all applications. Most recent research works on APT investi- gation [39], [37], [30], [69], [40], [89], [98], [96], [22], [99], [35], [8], [59], [13], [78] rely on system audit logs that operate roughly at the level of system calls. Coarse- grained provenance tracking enabled by these logs ensures *This work was supported by NSF grants 1918667 and 2153056. the completeness of forensic analysis, i.e., the analysis won't miss any of the effects of an attack. For server systems that tend to be based on Linux, the Linux auditing daemon auditd is an obvious choice for audit data collection [31], [54], [43]. Unfortunately, auditd incurs very high overheads for system-call granularity data collection, slowing down programs by 5× or more. This prompted research on higher performance audit data collection systems [79], [63], [77], [61], [58]. However, these systems require OS kernel modifications, making them a challenge from a deployment perspective. Operators of production systems are reluctant to make changes to kernel code because it can impact system stability and/or introduce compatibility problems. Moreover, implementations of these log collection systems are typically tied to specific kernel versions, adding concerns about update and upgrade options. In addition to these portability and deployability con- cerns, we show that existing audit data collection systems suffer from serious data loss and performance problems: • Data loss: Under moderate to heavy loads, most ex- isting systems drop a significant fraction of the events. This happens even on single-core workloads. Data loss increases proportionately with multi-core loads, leading to a situation where most of the data is dropped. This defeats the primary purpose of audit data collection, namely, ensuring that every link between attack activity and subsequent effects is captured. • High overhead: Even when operating at loads they can cope with, today's log collection systems incur high overheads, slowing down workloads by 2× to 8×. • Vulnerability to log data tampering [76]: In APT attacks, attackers can gain sufficient privilege to tamper with the auditing system. The typical defense is to log the data to a remote host beyond the attacker's reach. If data is immediately sent to the remote host, evidence of attack will be preserved in the log even if the attacker is able to control all records logged after attack completion. Unfortunately, we show that existing systems can buffer hundreds of thousands of log records in memory before the data is output. A successful attack can wipe these buffers, thus removing all attack evidence from the logs. • Large data volume: Existing systems produce logs rang- ing from several GBs to hundreds of GBs per host per day. The costs of storing this much data can be prohibitive since many APT campaigns are uncovered months later [74], [21], [75]. In this paper, we present a new audit log collection approach 3571 DOI 10.1109/SP54263.2024.00087 that overcomes these challenges. It has been implemented into a light-weight and easily deployable system called eAu- dit. Below, we summarize our approach and contributions. 1.1. Approach Overview, Results and Contributions eAudit is based on the Extended Berkeley Packet Filter (eBPF) framework built into recent Linux versions. This framework enables the deployment of safe probes at various hooks defined in the Linux kernel, such as the Linux tra- cepoints and LSM (Linux Security Module) hooks. Probes use a restricted interface and are statically verified for safety properties such as termination and memory safety. Consequently, they cannot crash the operating system, or use excessive amounts of CPU or other resources. eBPF probes can be dynamically loaded into stock Linux kernels such as those packaged with most Linux distributions. Con- sequently, eAudit can be readily deployed on these kernels without loading kernel modules, or changing the kernel code. Consequently, eAudit works “as is” on most recent Linux distributions. Our main contributions are: • Performance study of existing tools:Our motivating study in Sec. 2 includes two widely available software tools auditd [34] and sysdig [49]; two research systems for which working software is available, namely, CamFlow [77] and PROVBPF [58]; and two more eBPF-based tools Tracee [82], [83] and Tetragon [17] studied in Sec. 4. We show that all these systems: - incur high performance overheads, slowing down sys- tems by 2x to 8x, - can drop a large fraction of events, and - store events in memory for substantial periods, making it easier for attackers to wipe out suspicious activities before they are logged permanently. • Design of an efficient and resilient audit collection sys- tem: In Sec. 3, we describe eAudit design, focusing specifically on features for avoiding data loss, reducing runtime overhead, and minimizing opportunities for log tampering. Specifically, we present: - a compact data encoding scheme that results in log files that are 10× smaller than those of other systems; - a two-level buffer design that reduces contention and avoids data loss; - a simple analytical model that underpins an optimal balancing of system throughput and latency; and - a granular and tunable event prioritization scheme that further reduces log tampering opportunities. Our techniques can be applied to other eBPF-based sys- tems as well, and improve their performance. • Experimental evaluation: This evaluation establishes sev- eral key benefits of our design: - eAudit avoids data loss even on peak loads that cause the best previous systems to lose over 90% of the data. - Our two-level buffer design and parameter tuning op- timizations are very effective, reducing overheads by an average of 18.4× across our benchmarks (Fig. 17). - With the benchmarks and metrics used in our motiva- tional study, eAudit's overhead is just 4.5% (Fig. 20). - Our design and optimizations reduce the log tamper window by about 100× over previous systems. Our event prioritization scheme shrinks this window by another 100× for the most important system calls. The source code for eAudit can be found at https://eprov. org and our lab website http://seclab.cs.stonybrook.edu/ download. 2. Motivating Experimental Study We motivate our research with an experimental study that shows the drawbacks of existing systems: lost events (Sec. 2.1), high overhead (Sec. 2.2), large tamper window (Sec. 2.3) and high data volume (Sec. 2.4). Our study includes (a) two major software systems that are in wide use, namely, the Linux audit daemon ( auditd) and sysdig [49]; and (b) two research prototypes for which we could obtain working systems, namely, P ROVBPF and CamFlow. We omitted older research systems such as PASS [71], HiFi [79] and LPM [11] because they are based on Linux kernels from 10+ years ago, making it nontrivial to get them to work with today's Linux distributions, or to draw meaningful performance comparisons with other systems that run on today's Linux kernels. P ROTRACER [63] and K CAL [61] were also omitted because of the unavailability of their code. Finally, we did not consider fine-grained provenance collection systems such as R AIN [44] since they prioritize precision even if it decreases performance. However, note that many coarse- and fine- grained provenance collection systems, including T RACE [43], Spade [31], Winnower [89], MCI [53], MPI [62], BEEP [54] and ALchemist [97], rely on auditd, and hence inherit all of auditd's performance challenges shown below. To the extent feasible, we configured all four systems to collect roughly the same provenance information. We followed the documentation that came with the respective systems, and followed the best practices suggested in online resources. Every available performance-relevant configura- tion parameter was tried out, and we used the settings that produced the best performance. The only thing we insisted on is full provenance collection for all processes. PROVBPF and CamFlow are both intended to capture whole system provenance, so they don't need further con- figuration beyond turning them on. In contrast, auditd and sysdig both need to be configured to log specific system calls of interest to us. We configured them to log all system calls relevant for coarse-grained provenance, including all operations for reading/writing (or sending/receiving) data. Since these system calls use file descriptors, it is also necessary to log operations that create or modify file de- scriptors. Operations for creating, modifying or changing the privileges of processes, and those for modifying file names and permissions are also recorded. The full list of logged calls is shown in Table 1. Some of these systems (e.g., sysdig) can produce outputs in a binary format while others support only a printable for- 3572"
+      },
+      {
+        "source": "selected",
+        "value": "Today's advanced cyber attack campaigns can often bypass all existing protections. The primary defense against them is after-the-fact detection, followed by a forensic analysis to understand their impact. Such an analysis requires audit logs (also called provenance logs) that faithfully capture all activities and data flows on each host. While the Linux auditing daemon (auditd) and sysdig are the most popular tools for audit data collection, a number of other systems, authored by researchers and practitioners, are also available. Through a motivating experimental study, we show that these systems impose high overheads, slowing workloads by 2× to 8×; lose a majority of events under sustained workloads; and are vulnerable to log tampering that erases log entries before they are committed to persistent storage. We present a new approach that overcomes these challenges. By relying on the extended Berkeley Packet Filter (eBPF) framework built into recent Linux versions, we avoid changes to the kernel code, and hence our data collector works out of the box on most Linux distributions. We present new design, tuning and optimization techniques that enables our system to sustain workloads that are an order of magnitude more intense than those causing major data loss with existing systems. Moreover, our system incurs only a fraction of the overhead of previous systems, while considerably reducing data volumes, and shrinking the log tampering window by ∼ 100×. • Large data volume: Existing systems produce logs ranging from several GBs to hundreds of GBs per host per day. The costs of storing this much data can be prohibitive since many APT campaigns are uncovered months later [74], [21], [75]. In this paper, we present a new audit log collection approach 3571 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "RSekar",
+          "email": "sekar@cs.stonybrook.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University, NY, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Hanke Kimm",
+          "email": "hkimm@cs.stonybrook.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University, NY, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Rohit Aich",
+          "email": "raich@cs.stonybrook.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University, NY, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hanke Kimm",
+          "email": "hkimm@cs.stonybrook.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University, NY, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Rohit Aich",
+          "email": "raich@cs.stonybrook.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University, NY, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 111,
+      "author_count": 2,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "eAUDIT: A Fast, Scalable and Deployable Audit Data Collection System",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "R. Sekar",
+          "affiliations": [
+            "Stony Brook University, USA"
+          ]
+        },
+        {
+          "name": "Hanke Kimm",
+          "affiliations": [
+            "Stony Brook University, USA"
+          ]
+        },
+        {
+          "name": "Rohit Aich",
+          "affiliations": [
+            "Stony Brook University, USA"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 2,
+      "country_values_restored": 2,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

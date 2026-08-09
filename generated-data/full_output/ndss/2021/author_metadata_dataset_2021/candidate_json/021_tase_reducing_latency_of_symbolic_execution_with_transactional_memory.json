@@ -1,0 +1,255 @@
+{
+  "paper_id": "021_tase_reducing_latency_of_symbolic_execution_with_transactional_memory",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "TASE: Reducing Latency of Symbolic Execution with Transactional Memory"
+      },
+      {
+        "source": "selected",
+        "value": "TASE: Reducing Latency of Symbolic Execution with Transactional Memory"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "We present the design and implementation of a tool called TASE that uses transactional memory to reduce the latency of symbolic-execution applications with small amounts of symbolic state. Execution paths are executed natively while operating on concrete values, and only when execution encounters symbolic values (or modeled functions) is native execution suspended and interpretation begun. Execution then returns to its native mode when symbolic values are no longer encountered. The key innovations in the design of TASE are a technique for amortizing the cost of checking whether values are symbolic over few instructions, and the use of hardware-supported transactional memory (TSX) to implement native execution that rolls back with no effect when use of a symbolic value is detected (perhaps belatedly). We show that TASE has the potential to dramatically improve some latency-sensitive applications of symbolic execution, such as methods to verify the behavior of a client in a client-server application."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "We present the design and implementation of a tool called TASE that uses transactional memory to reduce the latency of symbolic-execution applications with small amounts of sym- bolic state. Execution paths are executed natively while operating on concrete values, and only when execution encounters symbolic values (or modeled functions) is native execution suspended and interpretation begun. Execution then returns to its native mode when symbolic values are no longer encountered. The key innova- tions in the design of TASE are a technique for amortizing the cost of checking whether values are symbolic over few instructions, and the use of hardware-supported transactional memory (TSX) to implement native execution that rolls back with no effect when use of a symbolic value is detected (perhaps belatedly). We show that TASE has the potential to dramatically improve some latency-sensitive applications of symbolic execution, such as methods to verify the behavior of a client in a client-server application. I. I NTRODUCTION Since its introduction [7], [29], symbolic execution has found myriad applications for security analysis and defense (e.g., [31], [9], [11], [52], [20], [51], [35], [46], [41], [57]), software testing (e.g., [50], [25], [43], [49], [2], [40], [26], [12]), and debugging (e.g., [56], [54]). Whereas regular, “con- crete” execution of a program maintains a specific value for each variable, symbolic execution allows some “symbolic” variables to be undetermined but possibly constrained (e.g., to be in some range). Upon reaching a branch condition involving a symbolic variable, each branch is executed under the constraint on the symbolic variable implied by having taken that branch. Any execution path thus explored yields a set of constraints on the symbolic variables implied by having taken that path. In an example use case, these constraints could be provided to an SMT solver [36] to compute a concrete assignment to the symbolic inputs that would cause that path to be executed. When applied to testing, the speed of symbolic execution is typically a secondary concern. However, several security applications place symbolic execution on the critical path of defensive response in time-critical circumstances. For example, some works (e.g., [9], [20]) leverage symbolic execution to generate vulnerability signatures upon detecting an exploit attempt, and so the speed of symbolic execution is a limiting factor in the speed with which vulnerability signatures can be created and deployed to other sites. Other examples are intrusion-detection systems in which a server-side verifier symbolically executes a client program to find an execution path that is consistent with messages received from the client, without knowing all inputs driving the client (e.g., [19], [16]). If each message could be verified before delivering it to the server, then the server would be protected from exploit traffic that a legitimate client would not send (e.g., Heartbleed packets to an OpenSSL server [16]). However, such tools are not yet fast enough to perform this checking on the critical path of delivering messages to the server, reducing them to detecting exploits alongside server processing. Conventional wisdom holds that SMT solving and state explosion are the primary latency bottlenecks in symbolic execution. However, the speed of straightline, concrete ex- ecution has been found to be the primary culprit in some contexts (e.g., [19], [55]). Most symbolic execution tools incur a substantial performance penalty to straightline execution because they interpret the program under analysis, even when it is performing operations on concrete data. For example, Yun et al. [55] report straightline-execution overheads of 3000× and 321,000× native execution speed for KLEE [10] and angr [46], due to interpretation. The need to interpret the program in these tools arises from the need to track symbolic variables, to accumulate constraints on those variables along each execution path, and to explore multiple execution paths. Even attempts to optimize symbolic execution when processing only instructions with concrete arguments must typically incur overheads due to lightweight interpretation; e.g., S 2E [18] encounters an overhead of roughly 6× vanilla QEMU [4] execution speed on purely concrete data due its use of memory sharing between QEMU and KLEE. In our microbenchmark evaluations (see Sec. VI-A), these overheads in S 2E resulted in concrete execution costs of up to ≈ 72× native execution. In this paper, we provide a solution that supports fast native execution of instructions with concrete values-while still using interpretation to do the “symbolic parts” of sym- bolic execution-on modern x86 platforms. Our design and associated tool, called TASE1, accomplish this through two key innovations. Though TASE instruments the executable to test whether variables are concrete or symbolic (like EXE [11]), our first innovation amortizes the costs of these tests by batch- ing many into a few instructions. To maximize the benefits of this amortization, TASE defers these checks to ensure 1TASE stands for “Transactional Acceleration for Symbolic Execution”. Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.24327 www.ndss-symposium.org that only variables actually used are checked; this deferment, together with the amortization, means that instructions may be concretely executed on symbolic variables. Therefore, a critical second innovation in TASE is a way of rolling back such erroneous computations so they have no effect. TASE uses hardware transactions as supported by Intel TSX extensions for this purpose, though as we will see, accomplishing with low overhead is nontrivial. This paper outlines the design of TASE, and evaluates its potential to accelerate symbolic execution of applications with small amounts of symbolic state. We first show where TASE improves over modern alternatives such as KLEE, S2E, and QSYM [55], through a microbenchmark comparison. This comparison shows that while TASE can perform poorly relative to some of these alternatives for applications with large amounts of symbolic data, it can perform much better than them when the amount of symbolic data is small. Second, we show how TASE qualitatively improves the deployment options for a specific defensive technique, namely behavioral verification of a client program [19], [16] as in- troduced above. Though Chi et al. were able to show the verification of OpenSSL client messages in TLS 1.2 sessions induced by a Gmail workload at a speed that coarsely keeps pace with these sessions [16], their verification was not fast enough to perform on the critical path of message delivery. We show that replacing the symbolic execution component of their tool with TASE substantially improves the prospects for performing verification as a condition of message delivery. More specifically, we show that TASE's optimizations reduce the average, median, and maximum lag suffered by any client- to-server message by over 90%, 94%, and 79%, where lag is defined as the delay between arrival of a message to the verifier and its delivery to the server after verification completes. In doing so, TASE brings these lags into ranges that are practical for performing inline verification of TLS sessions driven by applications, like Gmail, that are paced by human activity. Third, we demonstrate the flexibility of the techniques in TASE by using it to prototype memory protections (stack canaries and buffer under- or over-run detection, while either reading or writing) for program execution. This demonstration is of interest primarily due to its minimality, requiring changes to TASE and associated components of fewer than 140 source lines of code. The resulting protections add less than 15% to our microbenchmarks' execution times with TASE, as well. To summarize, our contributions are as follows: • We introduce a method to limit tests for determining whether variables are symbolic to only those variables that are actually used, and to batch many such tests into few instructions. Since this deferred testing can result in our erroneously executing instructions on symbolic data, we show how transactional memory can be leveraged to undo the effects of these erroneous computations. • We detail the numerous optimizations necessary to realize the promise of this approach, in terms of achieving com- pelling performance improvements for some applications of symbolic execution. We show through microbench- mark tests where TASE outperforms modern alternatives, KLEE, S2E, and QSYM. We also compare to contempora- neously developed symbolic execution tool SymCC [39]. • We show that TASE improves a specific defense using symbolic execution, namely behavioral verification [19], [16], to an extent that qualitatively improves how such a defense can be deployed on TLS traffic. Specifically, we show that TASE reduces the costs of this defense to permit its application inline for all but very latency-sensitive applications. In doing so, TASE enables preemptively protecting the server from exploits using this approach, versus its current ability to only detect malformed client messages alongside their processing by the server. We also demonstrate the flexibility of TASE by developing memory protections as an application of its techniques. The rest of this paper is structured as follows. We discuss related work in Sec. II. We provide background and describe challenges that we must overcome to realize TASE in Sec. III, and present the design of TASE in Sec. IV. We discuss ad- ditional aspects of TASE's implementation in Sec. V. Sec. VI contains an evaluation of TASE for a symbolic execution-based application, and microbenchmarks. We discuss limitations of TASE in Sec. VII and conclude in Sec. VIII. II. R ELATED WORK We now outline prior work on symbolic execution systems and work using Intel's Transactional Synchronization Instruc- tions. A. Symbolic Execution Engines Symbolic execution engines DART [25] and CUTE [43] represent some of the earliest modern attempts to mix concrete and symbolic execution [12]. Their approach, called concolic testing, analyzes a program by choosing an initial set of concrete input values V to a given program. The program is then executed with instrumentation to determine when control flow instructions are encountered, and constraints are accumulated at these branch locations in terms of their relation to the concrete inputs. After execution with input V terminates or is suspended, the constraints gathered from execution on V are analyzed to determine a new set of concrete inputs V ′ to guide execution down a different path. The process can be run repeatedly until all paths are explored, or until the tester wishes to cease path exploration. Although we prioritize native execution in TASE and mix concrete and symbolic execution, our approach differs from concolic execution in that we do not require entirely concrete inputs to drive symbolic execution. We also do not require re-execution of a program from a new set of concrete values to reach different execution paths, as we employ native forking (see Sec. IV-E) to explore different branches of program execution when control flow depends on the value of a symbolic variable. QSYM is another example of a concolic execution tool that requires re-execution to explore new execution paths [55]. Like TASE, QSYM incorporates optimizations to reduce the cost of interpretation. However, unlike TASE, QSYM sacrifices soundness to optimize its performance for fuzzing. Another recent tool, SymCC [39], implements concolic execution using compile-time instrumen- tation inserted into the LLVM IR of a program before machine code is generated. Rather than using a program's native execution state as its primary representation, the KLEE symbolic execution en- gine [10] instead analyzes a program by interpreting its source"
+      },
+      {
+        "source": "selected",
+        "value": "We present the design and implementation of a tool called TASE that uses transactional memory to reduce the latency of symbolic-execution applications with small amounts of symbolic state. Execution paths are executed natively while operating on concrete values, and only when execution encounters symbolic values (or modeled functions) is native execution suspended and interpretation begun. Execution then returns to its native mode when symbolic values are no longer encountered. The key innovations in the design of TASE are a technique for amortizing the cost of checking whether values are symbolic over few instructions, and the use of hardware-supported transactional memory (TSX) to implement native execution that rolls back with no effect when use of a symbolic value is detected (perhaps belatedly). We show that TASE has the potential to dramatically improve some latency-sensitive applications of symbolic execution, such as methods to verify the behavior of a client in a client-server application."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Adam Humphries",
+          "email": "humphries@cs.unc.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of North Carolina, University of Colorado, Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Kartik Cating-Subramanian",
+          "email": "kartik@simplescientist.net",
+          "orcid": "",
+          "affiliations": [
+            "University of North Carolina, University of Colorado, Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Michael KReiter",
+          "email": "michael.reiter@duke.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of North Carolina, University of Colorado, Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Adam Humphries",
+          "email": "humphries@cs.unc.edu",
+          "affiliations": [
+            "University of North Carolina"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Kartik Cating-Subramanian",
+          "email": "kartik@simplescientist.net",
+          "affiliations": [
+            "University of Colorado"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Michael K. Reiter",
+          "email": "michael.reiter@duke.edu",
+          "affiliations": [
+            "Duke University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 114,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Adam Humphries",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Kartik Cating-Subramanian",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Michael K. Reiter",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Adam Humphries",
+          "affiliation_raw": "University of North Carolina",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "email_raw": "humphries@cs.unc.edu",
+          "email_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 7.175,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Kartik Cating-Subramanian",
+          "affiliation_raw": "University of Colorado",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "email_raw": "kartik@simplescientist.net",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 0.192,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Michael K. Reiter",
+          "affiliation_raw": "Duke University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "email_raw": "michael.reiter@duke.edu",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 2.842,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "TASE: Reducing Latency of Symbolic Execution with Transactional Memory",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/tase-reducing-latency-of-symbolic-execution-with-transactional-memory/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Adam Humphries",
+          "affiliations": [
+            "University of North Carolina"
+          ]
+        },
+        {
+          "name": "Kartik Cating-Subramanian",
+          "affiliations": [
+            "University of Colorado"
+          ]
+        },
+        {
+          "name": "Michael K. Reiter",
+          "affiliations": [
+            "Duke University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Adam Humphries",
+      "field": "email",
+      "restored_value": "humphries@cs.unc.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

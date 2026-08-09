@@ -1,0 +1,307 @@
+{
+  "paper_id": "054_eclipse_attacks_on_monero_apos_s_peer_to_peer_network",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Eclipse Attacks on Monero's Peer-to-Peer Network"
+      },
+      {
+        "source": "selected",
+        "value": "Eclipse Attacks on Monero's Peer-to-Peer Network"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Eclipse attack is a major threat to the blockchain network layer, wherein an attacker isolates a target node by monopolizing all its connections, cutting it off from the rest of the network. Despite the attack's demonstrated effectiveness in Bitcoin (Usenix'15, SP'20, Usenix'21, CCS'21, SP'23) and partially in Ethereum (NDSS'23, SP'23), its applicability to a wider range of blockchain systems remains uncertain. In this paper, we investigate eclipse attacks against Monero, a blockchain system known for its strong anonymity and pioneering the use of Dandelion++ (the state-of-the-art blockchain network layer protocol for transaction privacy protection). Our analysis of Monero's connection management mechanism reveals that existing eclipse attacks are surprisingly ineffective against Monero. We accordingly introduce the first practical eclipse attack against Monero by proposing a connection reset approach, which forces the target node to drop all benign connections and reconnect with malicious nodes. Specifically, we outline two methods for executing such an attack. The first one exploits the private transaction mechanisms, while the second method leverages the differences in propagation between stem transactions and fluff transactions under Dandelion++. Our attack is not only applicable to Monero but to all blockchain systems utilizing Dandelion++ and similar connection management strategies. We conduct experiments on the Monero mainnet. Evaluation results confirm the feasibility of our attack. Unlike existing eclipse attacks, our connection reset-based approach does not require restarting the target node, significantly accelerating the attack process and making it more controllable. We also provide countermeasures to mitigate the proposed eclipse attack while minimizing the impact on Monero. In addition, we have ethically reported our investigation to Monero official team."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Eclipse attack is a major threat to the blockchain network layer, wherein an attacker isolates a target node by monopolizing all its connections, cutting it off from the rest of the network. Despite the attack's demonstrated effectiveness partially in Ethereum (NDSS'23, SP'23), its applicability to a wider range of blockchain systems remains uncertain. In this paper, we investigate eclipse attacks against Monero, a blockchain system known for its strong anonymity and pioneering the use of Dandelion++ (the state-of-the-art blockchain network layer protocol for transaction privacy protection). Our analysis of Monero's connection management mechanism reveals that ex- isting eclipse attacks are surprisingly ineffective against Monero. We accordingly introduce the first practical eclipse attack against Monero by proposing a connection reset approach, which forces the target node to drop all benign connections and reconnect with malicious nodes. Specifically, we outline two methods for executing such an attack. The first one exploits the private transaction mechanisms, while the second method leverages the differences in propagation between stem transactions and fluff transactions under Dandelion++. Our attack is not only applicable to Monero but to all blockchain systems utilizing Dandelion++ and similar connection management strategies. We conduct experiments on the Monero mainnet. Evaluation results confirm the feasibility of our attack. Unlike existing eclipse attacks, our connection reset-based approach does not require restarting the target node, significantly accelerating the attack process and making it more controllable. We also provide countermeasures to mitigate the proposed eclipse attack while minimizing the impact on Monero. In addition, we have ethically reported our investigation to Monero official team. I. I NTRODUCTION The peer-to-peer (P2P) network forms the foundation of the entire cryptocurrency/blockchain system. It serves as the medium for transmitting information (e.g., protocol messages, transaction data, and block data) between nodes, and ensures the state consistency. The line of research covers a wide range of topics, including but not limited to network-level attacks (e.g., eclipse attacks, network partition) [1][2][3][4][5][6][7], network topology measurement [8][9][10][11][12][13][14], and network layer deanonymization [15][16][17][18][19]. Eclipse attack [1] is a method of compromising a node's connections. Through the attack, an attacker can control all the network connections of a target node, gaining complete control over all its incoming and outgoing information. Building upon eclipse attacks, an attacker can engage in more malicious ac- tivities, such as identifying the origin of transactions from the target node [15][16][17][18][19][20], disrupting its consensus state [7], and conducting selfish mining [21][22][23]. Previous research on eclipse attacks can be summarized into two categories: outgoing connection occupation methods based on peerlist attacks and incoming connection occupation meth- ods based on connection eviction mechanisms. The basic idea behind occupying outgoing connections is to execute a peerlist populating attack and wait for the target node to restart. This causes the target node to actively establish connections with the malicious peers in the peerlist. Although researchers [1][2] have proposed various peerlist populating attack methods, these approaches share common drawbacks: high attack time costs (ranging from hours to weeks) and uncontrollable attack processes (which can only be triggered by restarting the node). The occupation of incoming connections primarily relies on the node's connection eviction mechanism. For instance, the default maximum number of incoming connections in Bitcoin for each node is 114 [24]. When a node reaches this limit and receives a new incoming connection request, it decides whether to evict an existing connection and accept the new one based on Bitcoin's connection eviction strategy. Using this mechanism, an attacker can gradually occupy the incoming connections of the target node by continuously attempting to establish new incoming connections with it [25][26]. However, many blockchain systems (e.g., Ethereum, Mon- ero) lack a connection eviction mechanism similar to Bit- coin's, rendering the previous methods of incoming connection occupation ineffective. In Ethereum, the default maximum number of incoming connections for a node is 34 [7]. Once this limit is reached, all new incoming connection requests are rejected. Thus, the attacker's connection request cannot disrupt the benign connections already established by the node. The attacker has to wait for the original benign connections to disconnect, then occupies the vacant connection slots to gradually occupy all incoming connections [5][7]. In Monero, incoming connections are set to unlimited by default - a deliberate strategy to counter eclipse attacks. Consequently, such nodes unconditionally accept new incoming connection Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240095 www.ndss-symposium.org requests, and the attacker's connection attempts do not impact the existing benign connections. For blockchain systems with- out a connection eviction mechanism and without constraints on the number of incoming connections, devising an effective eclipse attack remains an unresolved issue. In this paper, we propose the concept of connection reset at- tack, a new attacking vector overlooked before. Based on this, we present the first practical eclipse attack against Monero. The connection reset attack not only achieves the occupation of incoming connections, but also significantly improves the speed of occupying outgoing connections (shortened to several minutes) and the controllability of the attack process. The essence of our connection reset attack is to drop the current connections between the target node and all its benign peers, then force the target node to restart the selection process for outgoing connections. We provide two constructions. The first construction for such an attack (see Sec.III-C1) is to create a specific type of incident that triggers Monero's connection dropping mechanism and to control these incidents occurring at the target node, resulting in its disconnection. The method involves three essential elements: (i) drop the connection, (ii) design triggering incidents, and (iii) control the location where these incidents occur. We use double- spending transaction conflicts as the triggering incidents for the connection dropping. While it is relatively straightforward for an attacker to generate these incidents, they are still ineffective if incidents do not occur at the target node. The challenge thus lies in how to ensure the incidents occur at a target node . Our paper represents the investigation into controlling the location of the triggering incident . In the Bitcoin P2P network, the occurrence of a double- spending incident is unpredictable because Bitcoin nodes propagate the transaction to all of their connected neighbors. Double-spending transactions cannot consistently reach the nodes at the times or in the conditions where conflicts are anticipated1. However, the adoption of state-of-the-art pro- tocols (e.g., Dandelion++ [27][28]) and new features (e.g., private transactions2) in Monero network enables attackers to control the location where double-spending conflicts occur. For instance, private transactions can precisely control the occurrence of double-spending conflicts on the target node's connection because private transactions are only received by the specified target node. By utilizing double-spending conflicts based on private transactions, attackers can achieve a connection reset attack on the target node. However, a limitation arises from the fact that not all nodes are willing to open the RPC port to offer private transaction services. It is necessary to find more universal solutions. Fortunately, we observe that every Monero node is obligated to comply with the Dandelion++ protocol. We accordingly 1The InvBlock attack proposed in the TxProbe (FC '19) paper[10] can achieve similar effects to private transaction, i.e. only one node in the Bitcoin network stores transaction details. However, this vulnerability has been fixed in February 2019 (https://github.com/bitcoin/bitcoin/pull/14897) 2Enabling the transaction initiator to restrict the transaction to a single node, thereby preventing the node from forwarding the transaction. devise a second construction (cf. Sec.III-C2) by utilizing the transaction propagation characteristics of the Dandelion++ protocol to enable the attack to target any node . The working principle is that stem transactions only propagate to one outgoing connection and stem transactions propagate much slower than fluff transactions (deferred to Sec.II-E). The competitive relationship between a pair of double-spending transactions allows the fast-propagating fluff transaction to confine the dissemination of the slow-propagating stem trans- action within the range of the target node and a few other nodes. This facilitates the occurrence of double-spending transaction conflicts between the target node and a majority of its neighboring nodes, resulting in a disconnection from these neighboring nodes. Therefore, attackers can control the occurrence of double-spending transaction conflicts at specific locations with a very high probability. We note that the connection dropping mechanism and trans- action privacy protection mechanism are essential components of security mechanisms in all cryptocurrencies. However, these mechanisms are a double-edged sword that can be exploited by attackers to carry out our connection reset attacks. We summarise our contributions as follows: • We present the first eclipse attack against Monero. Our attack comprises three major components (Sec.III): the graylist attack, the whitelist attack, and the connection reset attack. The connection reset introduces a new attack vector, for which we provide two practical strategies (i.e., separately via private transactions and Dandelion++): ▷ The connection reset attack based on private transactions. We reveal that public service nodes providing RPC ser- vices to wallets are vulnerable to eclipse attacks. Since these nodes are responsible for serving a considerable number of wallet users, being subjected to eclipse attacks could pose a significant risk to the transaction security and privacy of a substantial user base. ▷ The connection reset attack based on Dandelion++. We have identified a security threat in the form of an eclipse attack that has existed in Monero network since 2020, coinciding with the adoption of the Dandelion++ protocol. None of the nodes within the Monero network is immune to this type of attack. • We implement and evaluate our eclipse attack on Monero mainnet. Experimental results prove its effectiveness. • We provide countermeasures that can mitigate our eclipse attack and examine their potential negative effects. Responsible disclosure : For ethical reasons, we have reported our detected vulnerabilities to Monero official team via Hackerone with the report #2590695 and have received confirmation of the vulnerabilities from Monero official team (pull request #9218). II. M ONERO P2P N ETWORK We discuss the network layer behavior of Monero nodes. Our investigation is based on Monero source code, version 2"
+      },
+      {
+        "source": "selected",
+        "value": "Eclipse attack is a major threat to the blockchain network layer, wherein an attacker isolates a target node by monopolizing all its connections, cutting it off from the rest of the network. Despite the attack's demonstrated effectiveness in Bitcoin (Usenix'15, SP'20, Usenix'21, CCS'21, SP'23) and partially in Ethereum (NDSS'23, SP'23), its applicability to a wider range of blockchain systems remains uncertain. In this paper, we investigate eclipse attacks against Monero, a blockchain system known for its strong anonymity and pioneering the use of Dandelion++ (the state-of-the-art blockchain network layer protocol for transaction privacy protection). Our analysis of Monero's connection management mechanism reveals that existing eclipse attacks are surprisingly ineffective against Monero. We accordingly introduce the first practical eclipse attack against Monero by proposing a connection reset approach, which forces the target node to drop all benign connections and reconnect with malicious nodes. Specifically, we outline two methods for executing such an attack. The first one exploits the private transaction mechanisms, while the second method leverages the differences in propagation between stem transactions and fluff transactions under Dandelion++. Our attack is not only applicable to Monero but to all blockchain systems utilizing Dandelion++ and similar connection management strategies. We conduct experiments on the Monero mainnet. Evaluation results confirm the feasibility of our attack. Unlike existing eclipse attacks, our connection reset-based approach does not require restarting the target node, significantly accelerating the attack process and making it more controllable. We also provide countermeasures to mitigate the proposed eclipse attack while minimizing the impact on Monero. In addition, we have ethically reported our investigation to Monero official team."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ruisheng Shi",
+          "email": "shiruisheng@bupt.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zhiyuan Peng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Lina Lan",
+          "email": "lanlina@bupt.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yulian Ge",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Peng Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Pennsylvania State University, Pennsylvania, US"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Qin Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CSIRO Data61, Sydney, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Juan Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Wuhan University, Wuhan, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ruisheng Shi",
+          "email": "shiruisheng@bupt.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 1,
+          "name": "Zhiyuan Peng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Lina Lan",
+          "email": "lanlina@bupt.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 3,
+          "name": "Yulian Ge",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Peng Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Pennsylvania State University, Pennsylvania, US"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Qin Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CSIRO Data61, Sydney, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Juan Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Wuhan University, Wuhan, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 98,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Eclipse Attacks on Monero’s Peer-to-Peer Network",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/eclipse-attacks-on-moneros-peer-to-peer-network/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ruisheng Shi",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications"
+          ]
+        },
+        {
+          "name": "Zhiyuan Peng",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications"
+          ]
+        },
+        {
+          "name": "Lina Lan",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications"
+          ]
+        },
+        {
+          "name": "Yulian Ge",
+          "affiliations": [
+            "Beijing University of Posts and Telecommunications"
+          ]
+        },
+        {
+          "name": "Peng Liu",
+          "affiliations": [
+            "Penn State University"
+          ]
+        },
+        {
+          "name": "Qin Wang",
+          "affiliations": [
+            "CSIRO Data61"
+          ]
+        },
+        {
+          "name": "Juan Wang",
+          "affiliations": [
+            "Wuhan University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 7,
+      "country_values_restored": 7,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

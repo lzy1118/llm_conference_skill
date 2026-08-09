@@ -1,0 +1,220 @@
+{
+  "paper_id": "123_separation_is_good_a_faster_order_fairness_byzantine_consensus",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Separation is Good: A Faster Order-Fairness Byzantine Consensus"
+      },
+      {
+        "source": "selected",
+        "value": "Separation is Good: A Faster Order-Fairness Byzantine Consensus"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Order-fairness has been introduced recently as a new property for Byzantine Fault-Tolerant (BFT) consensus protocol to prevent unilaterally deciding the final order of transactions, which allows mitigating the threat of adversarial transaction order manipulation attacks (e.g., front-running) in blockchain networks and decentralized finance (DeFi). However, existing leader-based order-fairness protocols (which do not rely on synchronized clocks) still suffer from poor performance since they strongly couple fair ordering with consensus processes. In this paper, we propose SpeedyFair, a high-performance orderfairness consensus protocol, which is motivated by our insight that the ordering of transactions does not rely on the execution results of transactions in previous proposals (after consensus). SpeedyFair achieves its efficiency through a decoupled design that performs fair ordering individually and consecutively, separating from consensus. In addition, by decoupling fair ordering from consensus, SpeedyFair enables parallelizing the order/verify mode that was originally executed serially in the consensus process, which further speeds up the performance. We implement a prototype of SpeedyFair on the top of the Hotstuff protocol. Extensive experimental results demonstrate that SpeedyFair significantly outperforms the state-of-the-art order-fairness protocol (i.e., Themis), which achieves a throughput of 1.5×-2.45× greater than Themis while reducing latency by 35%-59%."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Order-fairness has been introduced recently as a new property for Byzantine Fault-Tolerant (BFT) consensus protocol to prevent unilaterally deciding the final order of transactions, which allows mitigating the threat of adversarial transaction order manipulation attacks (e.g., front-running) in blockchain networks and decentralized finance (DeFi). However, existing leader-based order-fairness protocols (which do not rely on synchronized clocks) still suffer from poor performance since they strongly couple fair ordering with consensus processes. In this paper, we propose SpeedyFair, a high-performance order- fairness consensus protocol, which is motivated by our insight that the ordering of transactions does not rely on the execution results of transactions in previous proposals (after consensus). SpeedyFair achieves its efficiency through a decoupled design that performs fair ordering individually and consecutively, sepa- rating from consensus. In addition, by decoupling fair ordering from consensus, SpeedyFair enables parallelizing the order/verify mode that was originally executed serially in the consensus process, which further speeds up the performance. We implement a prototype of SpeedyFair on the top of the Hotstuff protocol. Extensive experimental results demonstrate that SpeedyFair sig- nificantly outperforms the state-of-the-art order-fairness protocol (i.e., Themis), which achieves a throughput of 1.5 ×-2.45× greater than Themis while reducing latency by 35%-59%. I. I NTRODUCTION Decentralized finance ( DeFi), as a financial instrument deployed on the blockchain, allows users to conduct financial transactions without intermediaries and thus has attracted much interest in recent years. Although DeFi continues to gain popu- larity, recent works [5, 11, 12, 17, 33, 44] have shown that DeFi suffers from adversarial transaction order manipulation attacks, where the malicious miners (or leaders) have the power to select transactions sent by users for agreement and determine the final order of them to maximize their profits. For instance, consider a victim transaction txv that purchases a particular asset, the price of which will increase after the execution of txv. Then a malicious miner can launch the sandwich attack: (1) front-runs one transaction txa1 before txv to buy the asset (typically at a low price) to let the victim buy at a higher price and then (2) back-runs another transaction txa2 after ∗Xuetao Wei is the corresponding author. txv to sell the assets (typically at a high price) to gain profits. Such sandwich attacks and other order manipulation attacks allow attackers to profit at the expense ofordinary users. The profit gained through adversarial manipulating transactions within blocks can be measured by Miner extractable value (MEV) [11] or blockchain extractable value (BEV) [33]. In the Ethereum network, the amount earned by attackers for BEV is estimated at more than 540M USD [33]. The core reason why the order of transactions can be manipulated lies in the consensus protocol. The traditional Byzantine fault-tolerant (BFT) consensus protocol guarantees a total order: all correct replicas obtain the same sequence of transactions ( safety), and all valid transactions are eventually delivered in a reasonable time ( liveness). However, these properties do not constrain how to order the transactions and which order is chosen . Specifically, existing leader-based consensus protocols usually have a leader that receives transac- tions from clients, determines the order of each transaction and wraps these transactions in a proposal, and then initiates the agreement on the ordered proposal among all replicas. Thus, an adversarial leader can fully control the inclusion and ordering of transactions within the proposal it creates without violating safety or liveness. To address this issue, a recent line of work [3, 8, 19, 20, 21, 25, 26, 43] has introduced a new safety property oforder- fairness in the BFT consensus protocol to prevent adversarial manipulation of transaction ordering. The core idea oforder- fairness is to make the final order of transactions reflect the wishes of most replicas on the order of transactions rather than being determined by a single replica. Specifically, in each round of an order-fairness protocol, each replica collects transactions from clients and constructs a local order according to the receive time. Then, all the replicas send the local orders to a leader. The leader adopts enough local orders to generate a global fair order of transactions through a fair ordering algorithm. At last, the leader packages these ordered transactions into a proposal and initiates a consensus protocol to agree on this order. Pompe [43], and Wendy [25, 26] tried to obtain an absolute order of transactions for final ordering by relying on the synchronized clocks. However, they are impractical in an asynchronous network. Another series of work [3, 8, 20, 21] considered relative order of transactions received by replicas to construct final ordering, which realizes “stronger” fairness properties [20] than Pompe and Wendy. However, Aequitas [21] and Quick order-fairness [8] only ensure weak liveness, which means transactions may have to Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.24693 www.ndss-symposium.org wait for an indefinite period before getting committed [20]. Themis [20] solves the weak liveness issue and provides the first implementation of the relative fair ordering protocol (do not rely on the synchronized clocks). However, Themis has a considerable performance overhead, making it unsuitable for real-world applications. Rashnu [3] introduces a data- dependent order-fairness, which only orders the transactions that access the same object (dependent transactions) to reduce the complexity of fair ordering. Problem. Existing relative order-fairness protocols still suffer from poor performance due to two issues: (i) expensive fair ordering: To achieve order-fairness, the fair ordering algorithm requires the leader to collect local orderings from all replicas. Since adopting a relative order rather than an indicator (able to clearly indicate the order relationship, e.g., timestamp) to describe the sequence of a set of transactions, relative order- fairness schemes require the leader to build a dependency graph for all transactions to consider the transaction order preferences of a sufficient number of replicas. The leader can then construct the global fair ordering according to this graph. Since building a dependency graph requires checking and processing the order of each pair of transactions, the complexity of graph computation will grow quadratically with the batch size of local ordering. Thus, achieving a fair order among all transactions is time-consuming, especially when the batch size increases. For instance, as shown in Figure 1, we investigate the latency of fair ordering/verification and the total latency oforder-fairness consensus in one round in Themis under different network sizes ( n = 5, 21) and different batch sizes (50,100,200,400). The latency of fair ordering and validation accounts for 35%-70% of the overall latency and the proportion grows with the increase of batch size. (ii) strongly coupled consensus and ordering : In existing schemes [3, 8, 20, 21], the consensus and fair ordering pro- cesses are strongly coupled (shown in Figure 2). Specifically, to create a new proposal during a consensus round, the leader must wait until the fair ordering calculation is finished. After obtaining the proposal from a leader, replicas are required to verify the correctness oforder-fairness by re-computing the fair ordering algorithm (time-consuming), which delays the advancement of the subsequent consensus phases. In addition, executing a new round of fair ordering also needs to wait for the end of the current consensus. Therefore, mutual waiting between the consensus protocol and fair ordering hinders the overall performance. Note that Rashnu [3] alleviates the first issue by introducing data-dependent order-fairness, which captures the order for the transactions that access the same data object rather than for all transactions. Our work mainly focuses on solving the second issue. Solution. Fair ordering of transactions is essential since the order determines the execution results for these transactions. However, starting a new round of fair ordering does not rely on the transaction execution result after the consensus is completed. It only depends on the valid fair ordering result from the previous round. Based on this observation, a key insight of our work is that the fair ordering process can be decoupled from the consensus and performed individually and consecutively without waiting for consensus . Note that the fair ordering method (requires complicated dependency graph calculations when using relative receive order) consid- ered in our paper is computationally intensive, whereas consen- /uni00000018/uni00000013/uni00000014/uni00000013/uni00000013/uni00000015/uni00000013/uni00000013/uni00000017/uni00000013/uni00000013 /uni00000025/uni00000044/uni00000057/uni00000046/uni0000004b/uni00000003/uni00000036/uni0000004c/uni0000005d/uni00000048/uni00000003/uni0000000b/uni00000051/uni00000020/uni00000018/uni0000000c /uni00000018/uni00000013 /uni00000014/uni00000013/uni00000013 /uni00000014/uni00000018/uni00000013 /uni00000015/uni00000013/uni00000013 /uni00000015/uni00000018/uni00000013/uni0000002f/uni00000044/uni00000057/uni00000048/uni00000051/uni00000046/uni0000005c/uni00000003/uni0000003e/uni00000050/uni00000056/uni00000040 Fair Ordering Total /uni00000018/uni00000013/uni00000014/uni00000013/uni00000013/uni00000015/uni00000013/uni00000013/uni00000017/uni00000013/uni00000013 /uni00000025/uni00000044/uni00000057/uni00000046/uni0000004b/uni00000003/uni00000036/uni0000004c/uni0000005d/uni00000048/uni00000003/uni0000000b/uni00000051/uni00000020/uni00000015/uni00000014/uni0000000c /uni00000014/uni00000013/uni00000013 /uni00000015/uni00000013/uni00000013 /uni00000016/uni00000013/uni00000013 /uni00000017/uni00000013/uni00000013 /uni00000018/uni00000013/uni00000013/uni0000002f/uni00000044/uni00000057/uni00000048/uni00000051/uni00000046/uni0000005c/uni00000003/uni0000003e/uni00000050/uni00000056/uni00000040 Fair Ordering Total Fig. 1: Compare the latency of fair ordering and total latency in Themis (in one round). sus protocols are usually communication intensive. Adopting a decoupled paradigm also enables better utilization of computing and bandwidth resources. Separating transaction ordering and verification (not strongly related to the consensus) from the critical path of consensus into a different protocol enables direct concurrency to enhance overall performance. Replica 1 (Leader) Replica 2 Replica 3 Replica 4 Collect Prepare- Propose Verify Tx Order Verify Tx Order Verify Tx Order Remaining Phases of BFT Consensus Tx Fair Ordering Round i i+1 … Collect … Order Verify Consensus Fig. 2: Execution flow of a round in a leader-based order- fairness consensus protocol. The protocol proceeds by consec- utive rounds. In this paper, we propose SpeedyFair, a high-performance order-fairness BFT consensus protocol. In SpeedyFair, we decouple the fair ordering process from the critical path of the consensus protocol to improve the overall performance (shown in Figure 3). Specifically, we introduce a new protocol called optimistic fair ordering (OFO) to perform the fair ordering process individually and consecutively (shown in Figure 4). As a result, when the current fair ordering ends, a new round oforder operations can be started immediately without waiting for consensus. To further accelerate the ordering phase and reduce latency, OFO enables the virtual leader and replicas to calculate the expensive fair order in parallel. In a round of OFO, the virtual leader only broadcasts a notify message to the"
+      },
+      {
+        "source": "selected",
+        "value": "Order-fairness has been introduced recently as a new property for Byzantine Fault-Tolerant (BFT) consensus protocol to prevent unilaterally deciding the final order of transactions, which allows mitigating the threat of adversarial transaction order manipulation attacks (e.g., front-running) in blockchain networks and decentralized finance (DeFi). However, existing leader-based order-fairness protocols (which do not rely on synchronized clocks) still suffer from poor performance since they strongly couple fair ordering with consensus processes. In this paper, we propose SpeedyFair, a high-performance orderfairness consensus protocol, which is motivated by our insight that the ordering of transactions does not rely on the execution results of transactions in previous proposals (after consensus). SpeedyFair achieves its efficiency through a decoupled design that performs fair ordering individually and consecutively, separating from consensus. In addition, by decoupling fair ordering from consensus, SpeedyFair enables parallelizing the order/verify mode that was originally executed serially in the consensus process, which further speeds up the performance. We implement a prototype of SpeedyFair on the top of the Hotstuff protocol. Extensive experimental results demonstrate that SpeedyFair significantly outperforms the state-of-the-art order-fairness protocol (i.e., Themis), which achieves a throughput of 1.5×-2.45× greater than Themis while reducing latency by 35%-59%."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ke Mu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Southern University of Science and Technology, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Bo Yin",
+          "email": "yinbo@hnu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Changsha University of Science and Technology, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Alia Asheralieva",
+          "email": "aasheralieva@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Loughborough University, UK"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Xuetao Wei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Southern University of Science and Technology, China",
+            "Guangdong Provincial Key Laboratory of Brain-inspired Intelligent Computation, SUSTech, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ke Mu",
+          "email": "",
+          "affiliations": [
+            "Southern University of Science and Technology, China"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Bo Yin",
+          "email": "yinbo@hnu.edu.cn",
+          "affiliations": [
+            "Changsha University of Science and Technology, China"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Alia Asheralieva",
+          "email": "aasheralieva@gmail.com",
+          "affiliations": [
+            "Loughborough University, UK"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Xuetao Wei",
+          "email": "weixt@sustech.edu.cn",
+          "affiliations": [
+            "Southern University of Science and Technology, China",
+            "Guangdong Provincial Key Laboratory of Brain-inspired Intelligent Computation, SUSTech, China"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 94,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Separation is Good: A Faster Order-Fairness Byzantine Consensus",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/separation-is-good-a-faster-order-fairness-byzantine-consensus/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ke Mu",
+          "affiliations": [
+            "Southern University of Science and Technology, China"
+          ]
+        },
+        {
+          "name": "Bo Yin",
+          "affiliations": [
+            "Changsha University of Science and Technology, China"
+          ]
+        },
+        {
+          "name": "Alia Asheralieva",
+          "affiliations": [
+            "Loughborough University, UK"
+          ]
+        },
+        {
+          "name": "Xuetao Wei",
+          "affiliations": [
+            "Southern University of Science and Technology, China & Guangdong Provincial Key Laboratory of Brain-inspired Intelligent Computation, SUSTech, China"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xuetao Wei",
+      "field": "email",
+      "restored_value": "weixt@sustech.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 4,
+      "country_values_restored": 5,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

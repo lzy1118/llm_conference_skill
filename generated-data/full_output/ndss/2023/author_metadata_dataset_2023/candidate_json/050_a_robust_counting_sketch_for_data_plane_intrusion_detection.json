@@ -1,0 +1,296 @@
+{
+  "paper_id": "050_a_robust_counting_sketch_for_data_plane_intrusion_detection",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "A Robust Counting Sketch for Data Plane Intrusion Detection"
+      },
+      {
+        "source": "selected",
+        "value": "A Robust Counting Sketch for Data Plane Intrusion Detection"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Demands are increasing to measure per-flow statistics in the data plane of high-speed switches. However, the resource constraint of the data plane is the biggest challenge. Although existing in-data plane solutions improve memory efficiency by accommodating Zipfian distribution of network traffic, they cannot adapt to various flow size distributions due to their static data structure. In other words, they cannot provide robust flow measurement under complex traffic patterns (e.g., under attacks). Recent works suggest dynamic data structure management schemes, but the high complexity is the major obstruction for the data plane deployment. In this paper, we present CountLess (CL) sketch that enables robust and accurate network measurement under a wide variety of traffic distributions without dynamic data structure updates. CountLess adopts a novel sketch update strategy, called minimum update (CL-MU), which approximates the conservative update strategy of Count-Min for fitting into in-network switches. Not only theoretical proof on CL-MU's estimation but also comprehensive experimental results are presented in terms of estimation accuracy and throughput of CL-MU, compared to Count-Min (baseline), Elastic sketch, and FCM sketch. More specifically, experiment results on security applications including estimation errors under various skewness parameters are provided. CL-MU is much more accurate in all measurement tasks than Count-Min and outperforms FCM sketch and Elastic sketch, state-of-the-art algorithms without the help of any special hardware like TCAM. To prove its feasibility in the data plane of a high-speed switch, CL-MU prototype on an ASIC-based programmable switch (Tofino) is implemented in P4 language and evaluated. In terms of data plane latency, CL-MU is faster than FCM, while consuming fewer resources such as hash bits, SRAM, and ALU of a programmable switch."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Demands are increasing to measure per-flow statis- tics in the data plane of high-speed switches. However, the resource constraint of the data plane is the biggest challenge. Although existing in-data plane solutions improve memory effi- ciency by accommodating Zipfian distribution of network traffic, they cannot adapt to various flow size distributions due to their static data structure. In other words, they cannot provide robust flow measurement under complex traffic patterns (e.g., under attacks). Recent works suggest dynamic data structure manage- ment schemes, but the high complexity is the major obstruction for the data plane deployment. In this paper, we present Count- Less (CL) sketch that enables robust and accurate network measurement under a wide variety of traffic distributions without dynamic data structure updates. Count-Less adopts a novel sketch update strategy, called minimum update (CL-MU), which approximates the conservative update strategy of Count-Min for fitting into in-network switches. Not only theoretical proof on CL-MU's estimation but also comprehensive experimental results are presented in terms of estimation accuracy and throughput of CL-MU, compared to Count-Min (baseline), Elastic sketch, and FCM sketch. More specifically, experiment results on security applications including estimation errors under various skewness parameters are provided. CL-MU is much more accurate in all measurement tasks than Count-Min and outperforms FCM sketch and Elastic sketch, state-of-the-art algorithms without the help of any special hardware like TCAM. To prove its feasibility in the data plane of a high-speed switch, CL-MU prototype on an ASIC-based programmable switch (Tofino) is implemented in P4 language and evaluated. In terms of data plane latency, CL-MU is faster than FCM, while consuming fewer resources such as hash bits, SRAM, and ALU of a programmable switch. I. I NTRODUCTION To detect malicious flows in networks, per-flow measure- ment is essential. The network flow measurement can be done either at a gateway or in the network. The gateway approach, like network function virtualization, gives more flexibility and scalability. However, the operational cost is high [39]. Recently, the networking community has been moving towards in-network intrusion detection with programmable switches to distribute the overhead and reduce the cost. Nevertheless, the in-network approach also faces several challenges, such as the constraints of hardware resources in switches, packet processing speed, and the distribution of the traffic to be measured. Especially, the traffic distribution is commonly accepted to follow Zipfian distribution, but in reality, it varies †The first two authors contributed equally to this work. so widely across time and application type to show a variety of Zipf parameters. Current in-network measurement solutions for anomaly detection fall into three categories: hardware-based, sampling- based, and sketch-based approaches. Hardware-based ap- proaches take advantage of the advanced ternary content- addressable memory (TCAM) to perform non-delayed mea- surement [46], thanks to its parallel searching capability, but they have suffered from scalability issues owing to the scarcity of TCAM (i.e., tens of megabytes). Thus, sampling-based approaches become a viable option due to their simplicity and scalability. However, the traffic sampling approach is often criticized for the poor measurement accuracy or communi- cation overhead with remote sample collectors [54]. Sketch- based approaches are yet another promising option for per- flow measurement [10], [11], [13], [15], [16], [27], [33], [34], [37], [40], [47], [59], [61], [63], [64], [66], [58]. In general, a sketch, as an approximate measurement solution, provides a good estimation accuracy under computation and memory constraints. Particularly, their lightweight encoding/decoding functions guarantee low-latency packet processing in a switch's data plane. Among many interesting sketches, Count-Min sketch [10] is a simple yet powerful sketch that approximately counts a large volume of data stream using a small amount of memory. The simplicity of its operations (i.e., encoding and decoding) and data structure have led to its use for multiple security applications, such as DDoS, superspreader, heavy hitter, and heavy changer detections [19], [21], [25], [60], [62], [64], [65]. Moreover, several efforts have been made to improve its accuracy by applying different encoding strategies [12], [20], [51], [52]. On the other hand, the network community had a long-term observation on the Zipfian (Zipf) flow size distribution (FSD) of network traffic, thus motivated a series of works to tune the Count-Min's data structure for adapting the distribution [58], [62], [63], [66]. Intuitively, these sketches use a multi-layer filtering approach to break down and cascade flow measurement based on the flow size and in a certain order (e.g., mouse→elephant or elephant→mouse), as shown in Fig. 1. To adapt to the network FSD (i.e., Zipf), these approaches define more smaller-sized counters (e.g., 8-bit) to the mouse layer and assign fewer larger counters to the medium and elephant layers (i.e., pyramid-shaped data structure). The above data structure has to be tuned to a certain FSD by adjusting the number of counters in each layer. Our observation is that although this approach can improve the accuracy by assigning more counters to mouse flows (i.e., hash collision reduction and memory efficiency improvement), it cannot adapt to a sudden change of the FSD (caused by attack flows) since the data structure is fixed to be installed in the data plane before performing a measurement task. In general, the data structure Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.23102 www.ndss-symposium.org is configured based on the historical record of the on-site FSD (i.e., usually benign network traffic). Unfortunately, given the broad spectrum of attack patterns, the approach cannot provide a robust flow measurement performance, in turn, a robust performance of intrusion detection. While a sketch can be configured to target a certain attack, it degrades the accuracy of the benign flow measurement and may result in false negative alarms (i.e., report benign flow as malicious). Therefore, it is crucial for a sketch to provide consistent accuracy across different FSDs. In this paper, we answer an important question of how to design a robust sketch to embrace various Zipf distributions, including attack traffic, without dynamic adjustment of data structure. Especially, we aim to design a sketch that can robustly perform both benign and attack flow measurements, with all the implementation constraints of in-network devices (i.e., switches). Our sketch, called Count-Less, takes advantage of the pyramid-shaped data structure but proposes a novel update strategy, called the cross-layer counting with minimum update, or minimum update in short. With minimum update , Count-Less can flexibly utilize idle counters across all layers to guarantee a better flow survival rate, under various FSDs (see section V-C). Moreover, minimum update is a pipeline design approximation of the famous conservative update strategy of Count-Min, which improves the accuracy by minimizing redundant counter updates in our sketch. Last but not least, with the approximation, Count-Less is feasible in a switch's data plane for robust in-network flow measurement (see sec- tion VI for details). Through comprehensive experiments, Count-Less's approach is shown to be superior in terms of accuracy at a constant memory footprint and to be better in terms of data plane latency and packet processing throughput (see section V and VI). Our contributions are as follows: 1) We present Count-Less sketch that enables robust and accurate network flow measurement under both attack and normal traffic scenarios without dynamic adjust- ment of data structure. Count-Less applies a novel sketch update strategy, called minimum update (CL- MU), which approximates the conservative update strategy for fitting into in-network switches. 2) Comprehensive analyses, including theoretical proof on the error bound of CL-MU and experimental anal- ysis, are presented. Extensive experiments confirm that CL-MU is superior to state-of-the-art schemes such as Elastic sketch [62] and FCM [62] in flow measurement and various security applications. 3) We verify CL-MU's feasibility by implementing a prototype in a programmable switch. The hardware version's performance is comparatively analyzed in terms of resource consumption and latency. We fur- ther reproduce the security applications in the data plane to verify their correctness. Organization: The rest of the paper is organized as follows: we introduce our motivation, including arguments for and against existing approaches, and the design choice of Count- Less sketch in section II. In section III, we introduce our Count-Less sketch with the analysis in section IV. We evaluate Count-Less sketch in section V. We demonstrate our data plane implementation of Count-Less sketch and evaluate it in (a) Cold Filter (b) Elastic Sketch (c) Pyramid (FCM) Fig. 1: Cascaded multi-sketch approaches with flow filters section VI. Lastly, we review the literature in section VII, and conclude in section VIII. II. M OTIVATING COUNT-L ESS Network traffic's Flow Size Distribution (FSD) is often skewed, following the Zipf's law. To date, there have been several efforts to address inefficient data structures designed for the skewed data streams [58], [62], [63], [66], as shown in Fig. 1. These approaches all fall in the same category, namely multi-stage filtering , a concept that was first introduced by Estan et al. [15]. Recent works cascade a number of sketches (i.e., shared counter/bit arrays) for a sequential flow filtering according to their size, thus we call them the cascaded multi- sketch approaches. To adapt to the Zipf FSD, these works preferentially assign more small counters to mouse flow filter and fewer large counters to medium and elephant filters. As shown in Fig. 1(a), Cold Filter [66] concatenates two counting bloom filters with small counters (e.g., 8-bit) for filtering out mouse and medium flows sequentially, and finally stores elephants in an additional full-size (i.e., 32-bit per counter) data structure such as CM-CU, Space-Saving [41], FlowRadar [36]. On the contrary, Elastic sketch [62] counts and filters out elephant flows first using TCAM, then records mouse flows using the Count-Min sketch with 8-bit coun- ters, as shown Fig. 1(b). For systematic filtering, Pyramid Sketch [63] presented a tree-based data structure that enlarges the size of each layer's counters as the decrements of the tree depth, as shown in Fig. 1(c). Recently, FCM sketch [58] ex- tended a similar idea with a multi-tree design and implemented it in a programmable switch (state-of-the-art). Intuitively, these approaches achieve better accuracy than Count-Min mainly because of their data structure design reflecting a skewness. Moreover, they can adapt to various FSDs by reconfiguring parameters like adjusting the number of counters or the number of layers, etc. For example, we might be able to reconfigure the data structure actively based on either historical records or attack detection results. However, the sketch configured with the historical records cannot deal with a sudden change of FSDs (e.g., attack traffic), and one with the attack detection suffers from a high latency caused by information gathering on the FSD of the ongoing attack traffic for proper parameter selection. Also, a large number of packets are missed while reconfiguring and installing sketches in the data plane. Due to those issues, a data structure for a sketch cannot be easily reconfigured on-the-fly without those 2"
+      },
+      {
+        "source": "selected",
+        "value": "Demands are increasing to measure per-flow statistics in the data plane of high-speed switches. However, the resource constraint of the data plane is the biggest challenge. Although existing in-data plane solutions improve memory efficiency by accommodating Zipfian distribution of network traffic, they cannot adapt to various flow size distributions due to their static data structure. In other words, they cannot provide robust flow measurement under complex traffic patterns (e.g., under attacks). Recent works suggest dynamic data structure management schemes, but the high complexity is the major obstruction for the data plane deployment. In this paper, we present CountLess (CL) sketch that enables robust and accurate network measurement under a wide variety of traffic distributions without dynamic data structure updates. CountLess adopts a novel sketch update strategy, called minimum update (CL-MU), which approximates the conservative update strategy of Count-Min for fitting into in-network switches. Not only theoretical proof on CL-MU's estimation but also comprehensive experimental results are presented in terms of estimation accuracy and throughput of CL-MU, compared to Count-Min (baseline), Elastic sketch, and FCM sketch. More specifically, experiment results on security applications including estimation errors under various skewness parameters are provided. CL-MU is much more accurate in all measurement tasks than Count-Min and outperforms FCM sketch and Elastic sketch, state-of-the-art algorithms without the help of any special hardware like TCAM. To prove its feasibility in the data plane of a high-speed switch, CL-MU prototype on an ASIC-based programmable switch (Tofino) is implemented in P4 language and evaluated. In terms of data plane latency, CL-MU is faster than FCM, while consuming fewer resources such as hash bits, SRAM, and ALU of a programmable switch."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sian Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Changhun Jung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Rhongho Jang",
+          "email": "r.jang@wayne.edu",
+          "orcid": "",
+          "affiliations": [
+            "Wayne State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "David Mohaisen",
+          "email": "david.mohaisen@ucf.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Central Florida"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Daehun Nyang",
+          "email": "nyang@ewha.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sian Kim",
+          "email": "",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Changhun Jung",
+          "email": "",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Rhongho Jang",
+          "email": "r.jang@wayne.edu",
+          "affiliations": [
+            "Wayne State University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "David Mohaisen",
+          "email": "David.Mohaisen@ucf.edu",
+          "affiliations": [
+            "University of Central Florida"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "DaeHun Nyang",
+          "email": "nyang@ewha.ac.kr",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 125,
+      "author_count": 5,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "David Mohaisen",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "DaeHun Nyang",
+          "block_id": "pdf:p1:b2",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "David Mohaisen",
+          "affiliation_raw": "University of Central Florida",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "email_raw": "r.jang@wayne.edu",
+          "email_block_ids": [
+            "pdf:p1:b18"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b18",
+            "pdf:p1:b18"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 68.644,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "DaeHun Nyang",
+          "affiliation_raw": "University of Central Florida",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "email_raw": "r.jang@wayne.edu",
+          "email_block_ids": [
+            "pdf:p1:b18"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b18",
+            "pdf:p1:b18"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 16.435,
+          "center_distance": 11.553,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "A Robust Counting Sketch for Data Plane Intrusion Detection",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/a-robust-counting-sketch-for-data-plane-intrusion-detection/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sian Kim",
+          "affiliations": [
+            "Ewha Womans University"
+          ]
+        },
+        {
+          "name": "Changhun Jung",
+          "affiliations": [
+            "Ewha Womans University"
+          ]
+        },
+        {
+          "name": "RhongHo Jang",
+          "affiliations": [
+            "Wayne State University"
+          ]
+        },
+        {
+          "name": "David Mohaisen",
+          "affiliations": [
+            "University of Central Florida"
+          ]
+        },
+        {
+          "name": "DaeHun Nyang",
+          "affiliations": [
+            "Ewha Womans University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "DaeHun Nyang",
+      "field": "email",
+      "restored_value": "nyang@ewha.ac.kr",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

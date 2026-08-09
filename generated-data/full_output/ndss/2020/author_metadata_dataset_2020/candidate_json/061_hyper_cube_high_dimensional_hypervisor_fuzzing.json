@@ -1,0 +1,234 @@
+{
+  "paper_id": "061_hyper_cube_high_dimensional_hypervisor_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "HYPER-CUBE: High-Dimensional Hypervisor Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "HYPER-CUBE: High-Dimensional Hypervisor Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Virtual machine monitors (VMMs, also called hypervisors) represent a very critical part of a modern software stack: compromising them could allow an attacker to take full control of the whole cloud infrastructure of any cloud provider. Hence their security is critical for many applications, especially in the context of Infrastructure-as-a-Service. In this paper, we present the design and implementation of HYPER-CUBE, a novel fuzzer that aims explicitly at testing hypervisors in an efficient, effective, and precise way. Our approach is based on a custom operating system that implements a custom bytecode interpreter. This high-throughput design for long-running, interactive targets allows us to fuzz a large number of both open source and proprietary hypervisors. In contrast to one-dimensional fuzzers such as AFL, HYPER-CUBE can interact with any number of interfaces in any order. Our evaluation results show that we can find more bugs (over 2×) and coverage (as much as 2×) than state-of-the-art hypervisor fuzzers. In most cases, we were even able to do so using multiple orders of magnitude less time than comparable fuzzers. HYPER-CUBE was also able to rediscover a set of well-known hypervisor vulnerabilities, such as VENOM, in less than five minutes. In total, we found 54 novel bugs, and so far obtained 43 CVEs. Our evaluation results demonstrate that nextgeneration coverage-guided fuzzers should incorporate a higherthroughput design for long-running targets such as hypervisors."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Virtual machine monitors (VMMs, also called hy- pervisors) represent a very critical part of a modern software stack: compromising them could allow an attacker to take full control of the whole cloud infrastructure of any cloud provider. Hence their security is critical for many applications, especially in the context of Infrastructure-as-a-Service. In this paper, we present the design and implementation of H YPER -CUBE, a novel fuzzer that aims explicitly at testing hypervisors in an efficient, effective, and precise way. Our approach is based on a custom operating system that implements a custom bytecode interpreter. This high-throughput design for long-running, interactive targets allows us to fuzz a large number of both open source and proprietary hypervisors. In contrast to one-dimensional fuzzers such as AFL, H YPER -CUBE can interact with any number of interfaces in any order. Our evaluation results show that we can find more bugs (over 2 ×) and coverage (as much as 2 ×) than state-of-the-art hypervisor fuzzers. In most cases, we were even able to do so using multiple orders of magnitude less time than comparable fuzzers. H YPER -CUBE was also able to rediscover a set of well-known hypervisor vulnerabilities, such as VENOM, in less than five minutes. In total, we found 54 novel bugs, and so far obtained 43 CVEs. Our evaluation results demonstrate that next- generation coverage-guided fuzzers should incorporate a higher- throughput design for long-running targets such as hypervisors. I. I NTRODUCTION Since several years, cloud-based Infrastructure-as-a-Service (IaaS) is rapidly expanding in the IT business landscape. This paradigm is powered by cloud providers using multi- tenancy and economy of scale to provide computational resources significantly cheaper than an individual customer could. While this approach greatly increases cost efficiency, there are confidentiality, integrity, and availability risks for customers: lacking proper isolation might allow a malicious actor to compromise the infrastructure of a given customer, typically by exploiting a vulnerability in the software stack. To provide strong isolation between individual virtual machines (VMs), high-performance, hardware-supported virtual machine monitors (VMMs, also called hypervisors) are used by all major cloud providers. These hypervisors are hence part of an essential, trusted code base which the entire cloud infras- tructure relies on. As a result, we need efficient and scaleable techniques to identify potential software vulnerabilities in hypervisor given their crucial role in modern software stacks. In the past, fuzz testing (“fuzzing”) has proven to be a very successful technique for uncovering novel vulnerabilities in complex applications [11], [17], [38], [40], [45], [53], [54]. Unfortunately, only a limited number of resources on fuzzing hypervisors is available at the moment. The reason behind this lack of support for fuzzing this type of software applications is the fact that there are several additional challenges for fuzzing this lower-level component: In contrast to current fuzzers that mostly support interaction with a single interface (e.g., stdin [54] or syscalls [5]), fuzzing hypervisors requires to interact with several different devices using a variety of interfaces and protocols. For example, the guest system can trigger arbitrary hypercalls, perform arbitrary I/O operations, and access and modify emulated memory-mapped I/O (MMIO) regions. Hypervisor fuzzing also introduces additional perfor- mance issues: Modern feedback-driven fuzzing usually restarts the target application for each fuzzing iteration. However, restarting a hypervisor is prohibitively expensive in terms of run-time. Furthermore, performance-increasing tricks such as a fork server [54] cannot be applied to hypervisors easily. To add to this complexity, there are multiple implementations of different hypervisor, some of which are proprietary and no source code is available. Therefore, existing methods are not trivial to adapt for hypervisor fuzzing. As a consequence, there are few research projects on fuzzing hypervisors [6], [7], [25], [26], [30], [35], [46]. The state-of-the-art hypervisor fuzzer is VDF [30]. Based on a classic fuzzing design, VDF is a fork of the famous AFL fuzzer [54] that interacts with QEMU device emulators. As a result of this design, VDF is limited to low-dimensional fuzzing (i.e., only able to interact with memory and port mapped I/O). Another example of a hypervisor fuzzer, is IOFUZZ [35]. IOFUZZ is even more limited and only writes random values to random I/O ports, without any support for other common interfaces such as MMIO, DMA, or hypercalls. A similar tool was developed as part of Intel CHIPSEC suite [25]. Compared to the state-of-the-art approaches for fuzzing userspace programs (ring 3) or OS kernels (ring 0), fuzzing at the VMM level (ring -1) is still lacking. In this paper, we tackle this challenge and present the de- sign and implementation of a hypervisor-independent fuzzing approach based on a custom operating system. Our goal is to evaluate the security and stability of various open source and proprietary hypervisors. To this end, we suggest three goals to improve upon current designs. First, an efficient hypervisor fuzzer needs to provide a high test case throughput. Second, an effective hypervisor fuzzer should be able to simultaneously interact with all available interfaces to enable Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.23096 www.ndss-symposium.org a multi-dimensional fuzzing. Third, a precise fuzzer should be able to produce a stable and deterministic test cases for a diverse set of hypervisors. Considering these three goals, we designed H YPER -C UBE, a novel hypervisor fuzzer based on a fully custom and minimalist Operating System (OS) that implements a custom bytecode interpreter. Having a custom minimal OS allows us to take full control of our environment, yielding stable and deterministic test cases. Additionally, we can boot our OS on nearly any hypervisor, which effectively allows us to evaluate a diverse set of targets. Our custom bytecode interpreter enables a high test case throughput while accessing any number of interfaces simultaneously. As our evaluation results show, this design and our pro- totype implementation of H YPER -C UBE allows us to achieve all three goals. Most importantly, we were able to uncover and report 54 bugs in six different hypervisors such as QE- MU/KVM, VirtualBox, VMware Fusion, and Intel ACRN. So far, we obtained 43 CVEs, the remaining bugs are currently being investigated by the maintainers and CVEs are not yet assigned. We directly compare our performance on QEMU device emulators against VDF. H YPER -C UBE is able to find bugs in eight out of 14 emulators, while VDF only finds bugs in three. Additionally, H YPER -CUBE produces more test coverage-in many cases significantly-than VDF. Interest- ingly, we are orders of magnitudes faster: we were able to find both the bugs and the coverage in less than ten minutes, while VDF took nearly 60 days of fuzzing to achieve these results. This result is somewhat surprising, since in contrast to VDF, H YPER -CUBE is not coverage guided. However, using a higher test case throughput, and a smart bytecode interpreter, we are able to drastically increase the efficiency of our fuzzer, while at the same time increasing its flexibility. Finally, in contrast to existing hypervisor fuzzing approaches that we are aware of, H YPER -C UBE is not limited to one specific or open source hypervisors. Because of our generic design, we can easily target even proprietary hypervisors as long as the hypervisor is able to boot commercial off-the-shelf (COTS) OSs. Based on these evaluation results, we conclude that our design is superior to existing state-of-the-art hypervisor fuzzers and significantly outperforms them in almost every aspect. In summary, we make the following three contributions: • We design a multi-dimensional, platform-independent fuzzing method that can test different interfaces and their interactions in an efficient and effective way. • We describe a highly efficient method to perform fuzz testing against hypervisors. Our approach is indepen- dent of the hypervisor that should be tested. • We implement our techniques in a custom operat- ing system called H YPER -C UBE. Our experiments demonstrate that HYPER -C UBE is able to find security vulnerabilities in many real-world hypervisors. To foster research on this topic, we release H YPER -C UBE at https://github.com/RUB-SysSec/hypercube. Host Guest QEMUUser Space Guest's Memory Device Emulators Event Loop DMA Call Device Emulator VM-Reentry(kvm_vcpu_run) Request Processed Emulation Request ɠvCPU VM-Exit (I/O) KVM Code ... mov ax, 0xFFFF mov dx, 0x03F1 out dx, al xor ebx, ebx Linux Kernel Data … ɡ ɢ ɣ ɤvCPU VM-Entry Fig. 1: Device emulation and its trap and emulate handling of privileged instructions in KVM and QEMU. II. T ECHNICAL BACKGROUND Before presenting our approach to test hypervisors, we briefly recap various aspects of x86 virtualization and the way hypervisors are implemented. As our fuzzer is implemented using a custom OS, we also describe essential aspects of the boot process of an OS on the x86 architecture. Finally, we describe the interfaces that the hypervisor uses to interact with the OS running as a guest inside of the Virtual Machine (VM) because they are relevant targets for our fuzz testing. In principle, most design choices for a hypervisor fuzzer are independent of the CPU architecture and it is merely an engineering effort to implement similar approaches for other architectures. However, given that we implement a custom OS, we also need to consider several aspects related to the underlying processor architecture and its quirks. In this paper, we target hypervisors on Intel x86 CPUs and their back- ends for devices emulation. Thus, in the following, we focus on the Intel x86 architecture, which is-to the best of our knowledge-the most commonly used virtualization platform in practice. A. x86 Boot Process One of the first programs which run on an x86 machine is the Basic Input/Output System (BIOS) or the more mod- ern version of it, the Unified Extensible Firmware Interface (UEFI). In this paper, we call this program firmware. It is the firmware's job to test and initialize the hardware such as CPU and the main memory after turning on the machine. The next step of the x86 boot process is executing the OS bootloader. The bootloader is a small piece of code that launches and prepares everything needed to start the OS. One example of a well-known OS bootloader is GRUB (GRand Unified Bootloader). Finally, the bootloader calls the OS kernel code. The kernel then configures the remaining hardware, such as interrupt controllers, paging, or PCI devices. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Virtual machine monitors (VMMs, also called hypervisors) represent a very critical part of a modern software stack: compromising them could allow an attacker to take full control of the whole cloud infrastructure of any cloud provider. Hence their security is critical for many applications, especially in the context of Infrastructure-as-a-Service. In this paper, we present the design and implementation of HYPER-CUBE, a novel fuzzer that aims explicitly at testing hypervisors in an efficient, effective, and precise way. Our approach is based on a custom operating system that implements a custom bytecode interpreter. This high-throughput design for long-running, interactive targets allows us to fuzz a large number of both open source and proprietary hypervisors. In contrast to one-dimensional fuzzers such as AFL, HYPER-CUBE can interact with any number of interfaces in any order. Our evaluation results show that we can find more bugs (over 2×) and coverage (as much as 2×) than state-of-the-art hypervisor fuzzers. In most cases, we were even able to do so using multiple orders of magnitude less time than comparable fuzzers. HYPER-CUBE was also able to rediscover a set of well-known hypervisor vulnerabilities, such as VENOM, in less than five minutes. In total, we found 54 novel bugs, and so far obtained 43 CVEs. Our evaluation results demonstrate that nextgeneration coverage-guided fuzzers should incorporate a higherthroughput design for long-running targets such as hypervisors."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sergej Schumilo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Cornelius Aschermann",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Ali Abbasi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Simon Wörner",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Thorsten Holz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sergej Schumilo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Cornelius Aschermann",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Ali Abbasi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Simon Wörner",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Thorsten Holz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 121,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "HYPER-CUBE: High-Dimensional Hypervisor Fuzzing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/hyper-cube-high-dimensional-hypervisor-fuzzing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sergej Schumilo",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ]
+        },
+        {
+          "name": "Cornelius Aschermann",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ]
+        },
+        {
+          "name": "Ali Abbasi",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ]
+        },
+        {
+          "name": "Simon Wörner",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ]
+        },
+        {
+          "name": "Thorsten Holz",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

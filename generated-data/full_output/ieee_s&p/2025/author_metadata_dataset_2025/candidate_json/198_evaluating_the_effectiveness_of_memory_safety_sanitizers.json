@@ -1,0 +1,225 @@
+{
+  "paper_id": "198_evaluating_the_effectiveness_of_memory_safety_sanitizers",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Evaluating the Effectiveness of Memory Safety Sanitizers"
+      },
+      {
+        "source": "selected",
+        "value": "Evaluating the Effectiveness of Memory Safety Sanitizers"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "C and C++ are programming languages designed for developing high-performance applications, such as web browsers and operating systems. This performance is partly achieved by sacrificing memory safety, which introduces the risk of memory bugs-the root cause of many of today's most severe vulnerabilities. Numerous solutions have been proposed to detect and prevent memory bugs, with the most effective employing dynamic program analysis to sanitize memory accesses. These memory safety sanitizers vary greatly in their capabilities, covering different memory regions and detecting different subsets of memory bugs. While conceptual classifications of these sanitizers exist, practical and quantitative evaluations have primarily focused on performance rather than their actual bug-finding capabilities. To bridge this gap, we present MSET, a tool for evaluating memory safety sanitizers, along with an extensive functional evaluation of the most powerful and widely used memory safety sanitizers. We systematically deconstruct memory safety bugs into distinct properties, such as the memory region, the method of memory corruption, and the type of access to the target buffer. Using this systematization, our tool generates test cases that combine small and unique code templates, covering all typical memory bugs, including various forms of buffer overflows, underflows, and use-after-frees. Our functional evaluation highlights the differences between the conceptual detection potential of sanitization techniques and the bug-finding capabilities of sanitizers with similar objectives. Furthermore, it reveals that multiple sanitizers fail to achieve their conceptual potential due to incomplete or faulty implementations. Our tool is available as open source software, enabling researchers and practitioners to test their sanitizers and uncover lost potential, conceptual shortcomings, and implementation errors. 774 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "C and C ++ are programming languages designed for developing high-performance applications, such as web browsers and operating systems. This performance is partly achieved by sacrificing memory safety, which introduces the risk of memory bugs-the root cause of many of today's most severe vulnerabilities. Numerous solutions have been proposed to detect and prevent memory bugs, with the most effective employing dynamic program analysis to sanitize memory ac- cesses. These memory safety sanitizers vary greatly in their capabilities, covering different memory regions and detecting different subsets of memory bugs. While conceptual classi- fications of these sanitizers exist, practical and quantitative evaluations have primarily focused on performance rather than their actual bug-finding capabilities. To bridge this gap, we present MSET, a tool for evaluating memory safety sanitizers, along with an extensive functional evaluation of the most powerful and widely used memory safety sanitizers. We systematically deconstruct memory safety bugs into distinct properties, such as the memory region, the method of memory corruption, and the type of access to the target buffer. Using this systematization, our tool generates test cases that combine small and unique code templates, covering all typical memory bugs, including various forms of buffer overflows, underflows, and use-after-frees. Our functional eval- uation highlights the differences between the conceptual de- tection potential of sanitization techniques and the bug-finding capabilities of sanitizers with similar objectives. Furthermore, it reveals that multiple sanitizers fail to achieve their conceptual potential due to incomplete or faulty implementations. Our tool is available as open source software, enabling researchers and practitioners to test their sanitizers and uncover lost potential, conceptual shortcomings, and implementation errors. 1. Introduction C and C ++ are system programming languages known for their speed and memory efficiency. However, these ad- vantages come at a cost, as C and C ++ are prone to memory bugs, which can lead to severe vulnerabilities such as data corruption, information leaks, or control-flow hijacking [1]. Studies conducted by Microsoft [2] and Google [3] revealed that memory bugs remain prevalent and highly exploitable in modern software. The White House has issued a state- ment [4] urging the industry to acknowledge the significant risks associated with vulnerabilities arising from memory bugs. Memory bugs can be classified into two categories: temporal bugs, which occur when pointers reference objects that have been deallocated (e.g., use-after-free accesses), and spatial bugs, which involve accessing objects outside their allocated memory (e.g., buffer overflows). To detect memory bugs, numerous solutions have been proposed by both the research community and the industry. These solutions can be divided into two categories: those aimed at finding memory bugs during testing and those focused on mitigating them in actively used programs. For testing, static code analysis tools examine the code without executing it, identifying potential execution paths where memory bugs may arise [5], [6]. In contrast, dynamic program analysis tools monitor and control the program during runtime, considering the runtime context to identify memory bugs [7]. Consequently, they can be utilized for both testing and productive use. In this paper, we focus on dynamic solutions, specifically memory (safety) sanitizers. These sanitizers can be directly compiled into C and C ++ programs or loaded as shared libraries. The adoption of memory safety sanitizers-particularly for software testing-has been steadily growing in recent years. Sanitizers such as ASan [18] have become integral parts of major compilers and are now easier to use than ever. However, a pertinent question arises: Are deployed sanitiz- ers reliably detecting memory bugs in software projects? Unfortunately, the community has yet to establish a widely accepted and user-friendly metric to assess the quality of memory sanitizers. As a result, authors have employed various methods to evaluate the effectiveness of their san- itizers and only conceptual comparisons of sanitizers have been possible thus far [7]. For our work, we consider 45 sanitizers, using the comprehensive list provided by Song et al. [7] and adding 18 prominent or innovative sanitizers from recent years. We focus exclusively on memory safety sanitizers, i.e., those that can detect or prevent spatial or temporal memory bugs. Sanitizers targeting other types of bugs, such as uninitialized reads or race conditions, are not considered. Table 1 lists the sanitizers along with a summary of the functional evaluations provided by their respective authors, sorted by spatial bug detection techniques. Among the 45 sanitizers considered, only 22 were pub- lished with evaluations using purpose-built test suites that theoretically yield consistent and comparable results. How- 774 DOI 10.1109/SP61157.2025.00088 TABLE 1. O VERVIEW OF MEMORY SAFETY SANITIZERS Sanitizer Year Published Spatial technique Temporal technique Available online Tested /w MSET Number of test cases used by authors Detection rate reported by authors Real-world bugs Electric Fence [8] '93 G I ✓ ✓ PageHeap [9] '00 G I D&A Dangling [10] '06 G O Scudo [11] '16 G I ✓ ✓ FreeGuard [12] '17 G I ✓ ✓ ✓ Oscar [13] '17 G O Purify [14] '92 R I Memcheck [15] '05 R I ✓ ✓ ✓* Dr. Memory [16] '11 R I ✓ ✓ ✓* LBC [17] '12 R ✓ 869B,R,S 90.3% ✓ ASan [18] '12 R I ✓ ✓ ✓* QASan [19] '20 R I ✓ ✓ 12515J 77.5% ✓ RetroWrite [20] '20 R I ✓ 5871J 55.45% ASan-- [21] '22 R I ✓ ✓ 5644J 100% ✓ J&K [22] '97 O ✓* CRED [23] '04 O 20W 100% ✓ D&A Bounds [24] '06 O 14Z 100% BBC [25] '09 O 18W 94.4% PAriCheck [26] '10 O LowFat [27], [28], [29] '17 O ✓ ✓ 87C,R,W 96.5% ✓ CUP [30] '18 O L 4038J 100% HW ASAN [31] '18 O L ✓ ✓ RedFat [32] '21 O I ✓ ✓ 484C,J 100% PACMem [33] '22 O L 11531J 99.4% ✓ CryptSan [34] '23 O L ✓ 5364J 98.7% ✓ MTSan [35] '23 O L 11378J 75.83% ✓ CAMP [36] '24 O T ✓ 5372C,J 100% ✓ RTCC [37] '92 P ✓* P&F [38] '97 P L ✓* MSCC [39] '04 P L ✓* SoftBound [40] '09 P ✓ ✓ 33B,W 100% ✓ IPC [41] '12 P T Delta Pointers [42] '18 P ✓ ✓ 8C 87.5% EffectiveSan [43] '18 P I ✓ ✓ ✓* SoftBound+CETS [44] '24 P L ✓ ✓ 5438J 100% FFmalloc [45] '21 O ✓ ✓ DangZero [46] '22 O ✓ n/aJ 100% ✓ PUMM [47] '23 O ✓ 33C,U 100% ✓ Undangle [48] '12 T ✓* DangNull [49] '15 T ✓ FreeSentry [50] '15 T ✓ 5C 100% ✓* DangSan [51] '17 T ✓ MarkUs [52] '20 T ✓ CETS [53] '10 L ✓ ✓ 30S 100% PTAuth [54] '22 L ✓ 150J 100% ✓ Spatial techniques G Guard pages Test suites BBugBench [55] O Per-object bounds tracking CDerived from CVE database [56] P Per-pointer bounds tracking JJuliet Test Suite [57] R Red-zones RRIPE [58] SPredecessor of Juliet [57] Temporal techniques I Deallocated memory UUAFBench [59] invalidation WWilander et al. [60] L Lock-and-key ZZitser et al. [61] O One-time allocators *Authors have also detected T Dangling pointer tagging previously unknown bugs ever, in practice, we found that no particular test suite has been used for more than 12 sanitizers. This can be attributed to the lack of general acceptance of these test suites and their unsuitability for the functional testing of memory safety sanitizers. The test suites used often focus on evaluating Control-Flow Integrity (CFI) [62], [63] rather than memory safety (RIPE [58], Wilander et al. [60]), are designed for evaluating static code analysis tools (Juliet Test Suite [57]), or lack specificity for precise memory safety evaluation (BugBench [55], UAFBench [59], Zitser et al. [61]), as discussed in Sections 3 and 7. This is supported by the high reported detection rates, often reaching 100%, for many sanitizers evaluated with these suites. Furthermore, when using diverse collections of test cases such as the Juliet Test Suite, which covers various categories from the Common Weakness Enumeration (CWE) [64], most of which are unrelated to memory safety, authors tend to select-and sometimes are forced to, due to incompatibilities-only a subset of relevant test cases. This high variability in test suites leads to vastly inconsistent results, making it virtually impossible to compare the capabilities of these sanitizers. In addition to test suites, 27 sanitizers have been evaluated on real-world bugs. While these results are valuable, au- thors rarely provide detailed information about the types of memory bugs that escaped detection, further complicating comparisons among sanitizers. In this paper, we aim to bridge this gap by introducing a novel Memory Sanitizer Evaluation Tool (MSET) 1 that enables the measurement of sanitizer effectiveness through functional testing. Additionally, we provide a comprehensive comparison of existing memory sanitizers. From the 45 sanitizers listed in Table 1, we evaluate 16 for which suit- able implementations are available online (see Table 1, and Table 2 for the versions used) and compare their actual bug finding capabilities with their conceptual capabilities, reveal- ing significant differences in many cases. The remaining 10 sanitizers with implementations available online could not be evaluated, either because they were non-functional, required specific hardware, or were designed as mitigations that cannot detect bugs (refer to Section A of the Appendix for details). Our evaluation tool generates small C/C ++ test cases, each containing a memory bug, as a combination of code templates from multiple orthogonal bug dimensions. The tool assesses each sanitizer based on its ability to detect these memory bugs. The simplicity of the generated code allows for the evaluation of both fully developed sanitizers and those that support only a basic set of C/C ++ features (e.g., lacking support for multi-threading or vectorization). In total, MSET generates 232 test cases in 820 variants and can evaluate a variety of sanitizers, including compiler-based universal solutions such as ASan [18], hardened heap allo- cators such as Scudo [11], and hardware-assisted sanitizers such as HW ASAN [31]. Our evaluation reveals that none of the tested sanitizers provide complete memory safety in practice. ASan [18], likely the most popular sanitizer, achieves average detection 1. Source code: www.github.com/Fraunhofer-AISEC/MSET 775"
+      },
+      {
+        "source": "selected",
+        "value": "C and C++ are programming languages designed for developing high-performance applications, such as web browsers and operating systems. This performance is partly achieved by sacrificing memory safety, which introduces the risk of memory bugs-the root cause of many of today's most severe vulnerabilities. Numerous solutions have been proposed to detect and prevent memory bugs, with the most effective employing dynamic program analysis to sanitize memory accesses. These memory safety sanitizers vary greatly in their capabilities, covering different memory regions and detecting different subsets of memory bugs. While conceptual classifications of these sanitizers exist, practical and quantitative evaluations have primarily focused on performance rather than their actual bug-finding capabilities. To bridge this gap, we present MSET, a tool for evaluating memory safety sanitizers, along with an extensive functional evaluation of the most powerful and widely used memory safety sanitizers. We systematically deconstruct memory safety bugs into distinct properties, such as the memory region, the method of memory corruption, and the type of access to the target buffer. Using this systematization, our tool generates test cases that combine small and unique code templates, covering all typical memory bugs, including various forms of buffer overflows, underflows, and use-after-frees. Our functional evaluation highlights the differences between the conceptual detection potential of sanitization techniques and the bug-finding capabilities of sanitizers with similar objectives. Furthermore, it reveals that multiple sanitizers fail to achieve their conceptual potential due to incomplete or faulty implementations. Our tool is available as open source software, enabling researchers and practitioners to test their sanitizers and uncover lost potential, conceptual shortcomings, and implementation errors. 774 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Emanuel QVintila",
+          "email": "emanuel.vintila@tum.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Philipp Zieris",
+          "email": "philipp.zieris@aisec.fraunhofer.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Julian Horsch",
+          "email": "julian.horsch@aisec.fraunhofer.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Emanuel Q. Vintila",
+          "email": "emanuel.vintila@tum.de",
+          "affiliations": [
+            "Technical University of Munich"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Philipp Zieris",
+          "email": "philipp.zieris@aisec.fraunhofer.de",
+          "affiliations": [
+            "Technical University of Munich"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Julian Horsch",
+          "email": "julian.horsch@aisec.fraunhofer.de",
+          "affiliations": [
+            "Technical University of Munich"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 109,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Emanuel Q. Vintila",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Philipp Zieris",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Julian Horsch",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Emanuel Q. Vintila",
+          "affiliation_raw": "Technical University of Munich",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 2.343,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Evaluating the Effectiveness of Memory Safety Sanitizers",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Emanuel Vintila",
+          "affiliations": [
+            "Technical University of Munich"
+          ]
+        },
+        {
+          "name": "Philipp Zieris",
+          "affiliations": [
+            "Fraunhofer AISEC"
+          ]
+        },
+        {
+          "name": "Julian Horsch",
+          "affiliations": [
+            "Fraunhofer AISEC"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Philipp Zieris",
+      "field": "affiliations",
+      "restored_value": [
+        "Technical University of Munich"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Julian Horsch",
+      "field": "affiliations",
+      "restored_value": [
+        "Technical University of Munich"
+      ],
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

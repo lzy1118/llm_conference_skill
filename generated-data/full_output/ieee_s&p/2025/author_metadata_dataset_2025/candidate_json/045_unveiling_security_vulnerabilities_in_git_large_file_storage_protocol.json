@@ -1,0 +1,281 @@
+{
+  "paper_id": "045_unveiling_security_vulnerabilities_in_git_large_file_storage_protocol",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Unveiling Security Vulnerabilities in Git Large File Storage Protocol"
+      },
+      {
+        "source": "selected",
+        "value": "Unveiling Security Vulnerabilities in Git Large File Storage Protocol"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "As an extension to the Git version control system that optimizes the handling of large files and binary content, Git Large File Storage (LFS) has been widely adopted by nearly all Git platforms. While Git LFS offers significant improvements in managing large files, it introduces new security implications that remain largely unexplored. This paper presents the first comprehensive security analysis of Git LFS, identifying 11 critical security properties that LFS servers must uphold. Building on our analysis of these property violations, we propose four new attack vectors: Private LFS File Leakage, LFS File Replacement, Quota-based Denial of Service (DoS), and Quota Escape. These attacks exploit weaknesses in practical LFS server implementations and can lead to serious consequences, including unauthorized access to sensitive files, malware injection, denial of service affecting all public repositories, and resource abuse. To evaluate the security of LFS implementations, we develop a semi-automated black-box testing tool and apply it to 14 major Git platforms. We uncover 36 previously unknown vulnerabilities and have responsibly disclosed them to the respective platform maintainers, receiving positive feedback and over $1800 in bug bounty rewards."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "As an extension to the Git version control system that optimizes the handling of large files and binary content, Git Large File Storage (LFS) has been widely adopted by nearly all Git platforms. While Git LFS offers significant improvements in managing large files, it introduces new security implications that remain largely unexplored. This paper presents the first comprehensive security analysis of Git LFS, identifying 11 critical security properties that LFS servers must uphold. Building on our analysis of these property violations, we propose four new attack vectors: Private LFS File Leak- age, LFS File Replacement, Quota-based Denial of Service (DoS), and Quota Escape. These attacks exploit weaknesses in practical LFS server implementations and can lead to se- rious consequences, including unauthorized access to sensitive files, malware injection, denial of service affecting all public repositories, and resource abuse. To evaluate the security of LFS implementations, we develop a semi-automated black-box testing tool and apply it to 14 major Git platforms. We uncover 36 previously unknown vulnerabilities and have responsibly disclosed them to the respective platform maintainers, receiving positive feedback and over $1800 in bug bounty rewards. 1. Introduction Git Large File Storage (LFS) [ 1] is an extension to the Git version control system specifically designed to optimize the management of large files and binary content, such as images, videos, and AI model files. Traditional Git work- flows struggle with these large files primarily because Git stores complete file histories, and binary files cannot be efficiently diffed or compressed [ 2], [ 3]. Git LFS tackles this problem by replacing large files in the repository with lightweight pointer files and uploading actual files to the LFS server. This approach significantly reduces the reposi- tory size, improves performance, and ensures that large file content is only retrieved when necessary. Nowadays, Git LFS is widely adopted across most Git hosting platforms, from mainstream services like GitHub [ 4] to lightweight solutions like Gogs [ 5]. Even AI-focused platforms, such as Hugging Face [ 6], rely on Git LFS to store and distribute large datasets and model files efficiently. However, the introduction of Git LFS expands the sys- tem's attack surface through the addition of the LFS server component. This new component necessitates robust access ∗The authors contributed equally to this work. Shouling Ji is the corresponding author . control mechanisms to prevent unauthorized file uploads and protect private user files from being leaked. For instance, CVE-2019-6786 [ 7] highlights a GitLab vulnerability that allowed attackers to steal private LFS files. More alarmingly, inadequately implemented LFS servers can be susceptible to file overwrite attacks, which compromise data integrity and could lead to severe supply-chain attacks. Such at- tacks enable indirect compromise oforganizations through trusted third-party dependencies. This risk is particularly pronounced in the realm of AI, where large datasets and model files are commonly stored using LFS. Without proper permission checks and content verification, attackers can covertly embed backdoors into model files, facilitating a range of trojaning and poisoning attacks [ 8], [ 9], [ 10]. Additionally, weaknesses in quota mechanisms may allow adversaries to bypass storage restrictions or conduct denial- of-service (DoS) attacks by exhausting victims' storage quo- tas. This can severely disrupt their service usage. Moreover, the financial impact of quota bypasses could be substantial. For instance, an attacker uploading 10TB of data could potentially misappropriate storage worth $12,288 annually on GitHub or $115,302 on TencentCloud [ 11] without being charged. To the best of our knowledge, no comprehensive security analysis of Git LFS has been conducted, with prior work limited to documented CVEs targeting LFS client [ 12], [13], [14] and GitLab server [ 7], [ 15], [ 16], [ 17] vulnerabilities, discovered through ad-hoc efforts. The broader security implications of LFS implementations across different Git providers remain largely unexplored and face three key challenges: Challenge 1: Protocol Complexity. In contrast to tradi- tional Git's simple client-server architecture, Git LFS in- troduces additional layers of complexity by incorporating multiple components, including the client, Git SSH server, LFS server, and storage server. This complexity hampers comprehensive security assessments by expanding the attack surface and increasing the difficulty of analyzing vulnera- bilities across the system. Challenge 2: Compositional Intricacy. The interplay be- tween Git LFS and auxiliary features, such as repository archiving and forking, introduces subtle and often over- looked security risks. For instance, when a repository is archived (marked as read-only), LFS may still allow new uploads without updating the quota usage, potentially en- abling a quota escape attack. These nuanced interactions highlight the need for rigorous investigation into possible 468 DOI 10.1109/SP61157.2025.00123 exploitation vectors within this complex system. Challenge 3: Infrastructure Heterogeneity. The varied implementation approaches, including cloud storage integra- tion, verification API call enforcements, and quota enforce- ment, significantly impede systematic vulnerability detection across different platforms. To address Challenge 1, we adopt a feature-based, property-driven approach to systematically formalize Git LFS security analysis. We thoroughly examine the protocol's interactions and complexities across diverse infrastructures. Through this comprehensive analysis, we distill 11 criti- cal security properties that LFS servers must uphold, with special attention to functional compositions and identifying new attack surfaces, thereby resolving Challenge 2. We then propose four new attack vectors that may arise if these security properties are violated: • Private LFS File Leakage : This attack allows an adver- sary to download sensitive files from private repositories, compromising user confidentiality. • LFS File Replacement : Without proper content verifi- cation, an attacker can replace uploaded files and, even more severe, cross-user files, thereby bypassing malware scans and executing supply-chain attacks, which poses a particular risk in AI model sharing contexts. • Quota-based DoS Attack : This attack targets public repositories by consuming their LFS quota, rendering the service unusable to legitimate users. • Quota Escape: This attack permits an attacker to upload and download large amounts of data without incurring associated costs, leading to severe resource abuse. In addition to identifying these attacks in the wild, we develop a semi-automated tool that employs a black- box testing approach to detect vulnerabilities in LFS server implementations. In response to Challenge 3, we design our tool with a modular architecture that adapts to the distinct LFS features of each platform, ensuring thorough security assessments across diverse environments. Utilizing our tool, we systematically evaluate the security of 14 major Git plat- forms and have uncovered 36 previously unknown vulnera- bilities. The evaluation results highlight the effectiveness of the proposed security properties and underscore the critical need for robust access control, file integrity verification, and systematic quota management. All vulnerabilities were responsibly disclosed to the respective platform maintainers, who have acknowledged the issues and provided positive feedback. In recognition of our efforts, we also received bug bounty rewards totaling over $1800. The key contributions are summarized as follows. • We conduct the first comprehensive security analysis of Git LFS servers, establishing 11 essential security properties that platforms should adhere to. Based on these security properties, we propose four novel attacks, including LFS File Leakage, LFS File Replacement, Quota-based DoS Attack, and Quota Escape. • We develop a semi-automated testing framework to fa- cilitate vulnerability detection in Git LFS, designed to be modular and extensible. We release it to facilitate future research at https://github.com/NESA-Lab/LFSonar. • Through systematic analysis, we have identified 36 pre- viously unknown vulnerabilities-including private file leakages, malware scanning bypasses, and various quota escape weaknesses-across the 14 Git platforms. Our findings have been validated through responsible disclo- sure to the affected platforms. 2. Background 2.1. LFS Protocol This section provides an overview of the LFS protocol interactions. When a user has installed Git LFS extension by git lfs install , and marked a file as tracked by LFS using git lfs track filename , the LFS client will be triggered during git push and git pull/git clone operations. The client interacts with the LFS server to upload or download the relevant large files. As illustrated in Figure 1, we outline the steps involved in uploading an LFS object according to the LFS protocol. Step 1: Authentication via SSH to Obtain an Au- thorization Token. In a typical LFS setup, LFS clients get an authentication token by connecting to the SSH server and executing git-lfs-authenticate. This command allows the server to generate a token, enabling secure HTTP-based interactions for LFS operations. Example: $ ssh git@github.com git-lfs-authenticate user/repo.git upload↪→ { \"href\": \"https://github.com/user/repo.git/info/lfs\",↪→ \"header\": { \"Authorization\": \"Bearer <token>\" }, \"expires_in\": 3600} Alternatively, if the SSH server lacks LFS support or the Git platform only uses the HTTP protocol, users can authenticate by providing their username and password (or access token) via Basic Authentication. In this case, the Authorization header used subsequently will follow the format: Basic base64encode(username:password) . Step 2: Batch API Interaction for Getting Actions. With the authorization token in hand, the client proceeds to interact with the LFS server's Batch API. The API allows clients to request actions for multiple files in a single HTTP request, optimizing network efficiency and reducing latency. For file uploads, the client sends a POST request to the Batch API endpoint with a JSON payload listing the objects (oid and size) to be uploaded: POST /user/repo.git/info/lfs/objects/batch Authorization: Bearer <token> Content-Type: application/vnd.git-lfs+json Accept: application/vnd.git-lfs+json { \"operation\": \"upload\", \"objects\": [{ \"oid\": \"<object ID (file SHA-256)>\" , \"size\": <file size in bytes> },...]} 469"
+      },
+      {
+        "source": "selected",
+        "value": "As an extension to the Git version control system that optimizes the handling of large files and binary content, Git Large File Storage (LFS) has been widely adopted by nearly all Git platforms. While Git LFS offers significant improvements in managing large files, it introduces new security implications that remain largely unexplored. This paper presents the first comprehensive security analysis of Git LFS, identifying 11 critical security properties that LFS servers must uphold. Building on our analysis of these property violations, we propose four new attack vectors: Private LFS File Leakage, LFS File Replacement, Quota-based Denial of Service (DoS), and Quota Escape. These attacks exploit weaknesses in practical LFS server implementations and can lead to serious consequences, including unauthorized access to sensitive files, malware injection, denial of service affecting all public repositories, and resource abuse. To evaluate the security of LFS implementations, we develop a semi-automated black-box testing tool and apply it to 14 major Git platforms. We uncover 36 previously unknown vulnerabilities and have responsibly disclosed them to the respective platform maintainers, receiving positive feedback and over $1800 in bug bounty rewards."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yuanchao Chen",
+          "email": "chenyuan@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University National University of Defense Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Qinying Wang",
+          "email": "wangqinying@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University National University of Defense Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yong Yang",
+          "email": "yangyong2022@zju.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University National University of Defense Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yuwei Li",
+          "email": "liyuwei@nudt.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University National University of Defense Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Shouling Ji",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University National University of Defense Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yuan Chen",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University ‡National University of Defense Technology"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Qinying Wang",
+          "email": "wangqinying@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University ‡National University of Defense Technology"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yong Yang",
+          "email": "yangyong2022@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University ‡National University of Defense Technology"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yuanchao Chen",
+          "email": "chenyuan@zju.edu.cn",
+          "affiliations": [
+            "Zhejiang University ‡National University of Defense Technology"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yuwei Li",
+          "email": "liyuwei@nudt.edu.cn",
+          "affiliations": [
+            "Zhejiang University ‡National University of Defense Technology"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Shouling Ji",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University ‡National University of Defense Technology"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 18,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Unveiling Security Vulnerabilities in Git Large File Storage Protocol",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yuan Chen",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Qinying Wang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Yong Yang",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Yuanchao Chen",
+          "affiliations": [
+            "National University of Defense Technology"
+          ]
+        },
+        {
+          "name": "Yuwei Li",
+          "affiliations": [
+            "National University of Defense Technology"
+          ]
+        },
+        {
+          "name": "Shouling Ji",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Qinying Wang",
+      "field": "email",
+      "restored_value": "wangqinying@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yong Yang",
+      "field": "email",
+      "restored_value": "yangyong2022@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yuanchao Chen",
+      "field": "email",
+      "restored_value": "chenyuan@zju.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yuwei Li",
+      "field": "email",
+      "restored_value": "liyuwei@nudt.edu.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

@@ -1,0 +1,251 @@
+{
+  "paper_id": "056_blag_improving_the_accuracy_of_blacklists",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BLAG: Improving the Accuracy of Blacklists"
+      },
+      {
+        "source": "selected",
+        "value": "BLAG: Improving the Accuracy of Blacklists"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "IP address blacklists are a useful source of information about repeat attackers. Such information can be used to prioritize which traffic to divert for deeper inspection (e.g., repeat offender traffic), or which traffic to serve first (e.g., traffic from sources that are not blacklisted). But blacklists also suffer from overspecialization-each list is geared towards a specific purpose-and they may be inaccurate due to misclassification or stale information. We propose BLAG, a system that evaluates and aggregates multiple blacklists feeds, producing a more useful, accurate and timely master blacklist, tailored to the specific customer network. BLAG uses a sample of the legitimate sources of the customer network's inbound traffic to evaluate the accuracy of each blacklist over regions of address space. It then leverages recommendation systems to select the most accurate information to aggregate into its master blacklist. Finally, BLAG identifies portions of the master blacklist that can be expanded into larger address regions (e.g. /24 prefixes) to uncover more malicious addresses with minimum collateral damage. Our evaluation of 157 blacklists of various attack types and three ground-truth datasets shows that BLAG achieves high specificity up to 99%, improves recall by up to 114 times compared to competing approaches, and detects attacks up to 13.7 days faster, which makes it a promising approach for blacklist generation."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "IP address blacklists are a useful source of infor- mation about repeat attackers. Such information can be used to prioritize which traffic to divert for deeper inspection (e.g., repeat offender traffic), or which traffic to serve first (e.g., traffic from sources that are not blacklisted). But blacklists also suffer from overspecialization - each list is geared towards a specific purpose - and they may be inaccurate due to misclassification or stale information. We propose BLAG, a system that evaluates and aggregates multiple blacklists feeds, producing a more useful, accurate and timely master blacklist , tailored to the specific customer network. BLAG uses a sample of the legitimate sources of the customer network's inbound traffic to evaluate the accuracy of each blacklist over regions of address space. It then leverages recommendation systems to select the most accurate information to aggregate into its master blacklist. Finally, BLAG identifies portions of the master blacklist that can be expanded into larger address regions (e.g. /24 prefixes) to uncover more malicious addresses with minimum collateral damage. Our evaluation of 157 blacklists of various attack types and three ground-truth datasets shows that BLAG achieves high specificity up to 99%, improves recall by up to 114 times compared to competing approaches, and detects attacks up to 13.7 days faster, which makes it a promising approach for blacklist generation. I. I NTRODUCTION IP blacklists (“blacklists” for short), which contain iden- tities of prior known offenders, are usually used to aid more sophisticated defenses, such as spam filters or security infor- mation and event management (SIEM) systems, in identifying traffic that warrants further analysis [15]. Blacklists do not have to be very accurate to be used in this advisory mode, since they merely aid another, more sophisticated system, which decides traffic's destiny. In fact, prior works [66], [60], [63], [70], [74] show that blacklists are often not very accurate or useful. They do not misclassify many legitimate sources, but they miss the majority of malicious sources. What if a network suffers a novel attack, which bypasses its sophisticated defenses? Or what if the attack has such a large volume that the more sophisticated system cannot keep up? In these situations, networks usually resort to crude defenses, such as rate-limiting traffic or filtering all incoming traffic to a given port number or a destination [65], [67], [1], [54]. IP blacklists could be used as emergency response , in case of a novel or large-scale attacks, to filter attacks from prior known malicious sources, and act as the first layer of defense. For example, an email server hit by a heavy phishing campaign, whose signature does not yet exist in the server's spam filters, could use blacklists to drop emails sent by prior known malicious sources. Or a network under a distributed denial-of-service attack could use blacklists to drop all traffic sent by prior known malicious sources, to lessen its load. Blacklists are easy to implement since only the source IP address of incoming traffic is checked, which can be cheap at line speed. In this emergency mode, blacklists would have to be very accurate, since they would actively drop traffic. This means that blacklists should be able to identify the majority of attack sources while keeping misclassification of legitimate sources low. This paper explores how to generate sufficiently accurate blacklists for emergency use. Individual blacklists today suffer from several drawbacks that limit their accuracy in malicious source identification. Firstly, individual blacklists miss many malicious sources. This effect may come from their limited vantage points - e.g., blacklist maintainers may have honeypots in the United States but not in India - or from their limited scope - e.g., blacklists are created for specific attack classes, like spam. On the other hand, compromised devices are constantly being drafted into botnets and misused for different attacks, such as sending spam one day and participating in denial-of-service attacks on a different day. Aggregating blacklists from different maintainers and across various attack types can improve the accuracy of malicious source identification over any individual blacklist. Secondly, blacklists are snapshots of malicious sources at a given time. Attackers are known to evade blacklisting by staying dormant, only to resume malicious activities later [66]. Historical blacklist data can provide additional intelligence on active past offenders that are likely to re-offend in the future. Finally, malicious sources have historically been known to concentrate in a few mismanaged networks [81]. Thus, ex- panding certain blacklisted IP addresses into IP prefixes could improve the accuracy of malicious source identification. But the aggregation of data from multiple lists and past periods, and expansion of addresses into prefixes may greatly increase misclassifications of legitimate traffic if applied naïvely . We propose BLAG (BLacklist AGgregator), which performs smart aggregation of blacklist data , and tailors this data to the customer network 1. BLAG's blacklists have a much higher accuracy of malicious source identification and they keep collateral damage to legitimate sources low. BLAG overcomes problems of existing blacklists as follows: 1A customer network is a network, which is deploying BLAG for its own emergency response. Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24232 www.ndss-symposium.org 0 50 100 150 0 10 20 30 40 50 60 routable /24 unique routable /24 (#) of blacklists (%) of blacklisted routable /24 (a) Blacklist coverage in routable /24 pre- fixes that are blacklisted. MalwareReputationSpam Attack Malware Reputation Spam Attack Blacklist category overlapping percentage 100% 14.63% 13.2% 10.74% 1.67% 100% 71.6% 9.87% 0.15% 7.08% 100% 0.37% 9.56% 77.09% 29.56% 100% (b) Blacklist overlap across different black- list categories. 20 40 60 80 100 Number of blacklisted address in the same /24 prefix (%) of /24 (c) IP addresses blacklisted in the same /24 prefix. Figure 1: Blacklists have low coverage and tend to overlap with other categories of blacklists. Therefore, aggregating blacklists of different types can improve coverage. Also blacklisted addresses tend to be collocated, thus expanding IP addresses to prefixes may further improve malicious source identification. 1) Aggregation: BLAG aggregates IP addresses from 157 blacklists of different attack types to improve coverage. BLAG also includes historical listings from these bla- cklists and assigns relevance score that determines which historical IP addresses are more likely to re-offend. 2) Estimate misclassifications: BLAG uses a recommen- dation system, together with a sample of sources that send inbound traffic to a customer network to tailor its blacklist to this customer. BLAG identifies portions of individual blacklists that may lead to the legitimate source misclassifications and prunes them out. Other portions are aggregated into the master blacklist for this customer. 3) Selective expansion: BLAG selects a subset of IP addresses on the master blacklist to expand into /24 prefixes. Only those IP addresses are expanded, where the expansion is not likely to increase legitimate source misclassifications for the given customer. We present three real-world deployment scenarios for BLAG2 covering different attacks, where customer networks can reduce the burden on resource-intensive technologies. BLAG improves existing blacklisting approaches by increas- ing recall (malicious source identification) from 0.1-18.4% to 6.4-69.7%, while maintaining high specificity (legitimate source identification) of 95-99.5%. BLAG also outperforms PRESTA [78], a proposed blacklist aggregation approach by achieving 11.5-84.4% higher specificity, with comparable re- call. BLAG also improves the detection delay, discovering malicious sources 8.8-13.4 days faster than competing ap- proaches. II. P ROBLEMS WITH CURRENT BLACKLISTS In this section, we illustrate the drawbacks that blacklists have, that limit their usefulness in emergency scenarios. We then discuss possible solutions to improve blacklisting and some challenges that we must address. We first show that bla- cklists generally have low coverage and blacklists of different attack types tend to overlap with one another (Section II-A). This motivates the need for aggregating multiple blacklists 2Blacklist dataset and code to deploy BLAG can be found at https://steel. isi.edu/Projects/BLAG/ of different attack types to improve coverage of malicious sources. We further show IP addresses that were blacklisted in the past get blacklisted again, and sometimes soon after they were removed from a blacklist (Section II-B). This motivates the need for inclusion of historical blacklist data to further improve coverage of malicious sources. Finally, we show that blacklisted IP addresses are often collocated within the same /24 prefix, thus, expanding some IP addresses to prefixes can improve attack detection (Section II-C). In all cases, some addresses that appear on blacklists may be “wrongly accused”, i.e., they may be misclassified, legit- imate sources or they may be previously malicious sources, which were since cleaned. We illustrate this in Section II-D to motivate the need for smart, selective aggregation and expansion only of those portions of blacklists that are unlikely to contain legitimate sources. In this section, we leverage our Blacklist dataset, whose details are given in Section IV-A. It consists of 157 publicly available, popular blacklists. We collected their data regularly for 11 months in 2016. We have roughly categorized each blacklist into four categories, based on the type of malicious activities they capture. Spam blacklists monitor email spam or emails that contain malicious content and Malware blacklists monitor IP addresses that host or distribute malware. Attack blacklists, on the other hand, contain IP addresses that initiate DDoS attacks, bruteforce or attacks on specific protocols such as V oIP or SSH. Finally,Reputation blacklists list IP addresses that have a low reputation, e.g., because they send unwanted traffic. The algorithm to calculate this reputation is known only to blacklist maintainers. A. Fragmented Information Monitoring the entire Internet accurately is impossible. By necessity, each blacklist will gather data from some limited area of the Internet, and thus information about malicious sources will be fragmented over many blacklists. Figure 1(a) illustrates the coverage of individual blacklists in our Blacklist dataset and the unique contribution of blacklists over the dataset “Black24,” containing all routable /24 prefixes (ex- tracted from Routeviews [71]) that have at least one blacklisted 2"
+      },
+      {
+        "source": "selected",
+        "value": "IP address blacklists are a useful source of information about repeat attackers. Such information can be used to prioritize which traffic to divert for deeper inspection (e.g., repeat offender traffic), or which traffic to serve first (e.g., traffic from sources that are not blacklisted). But blacklists also suffer from overspecialization-each list is geared towards a specific purpose-and they may be inaccurate due to misclassification or stale information. We propose BLAG, a system that evaluates and aggregates multiple blacklists feeds, producing a more useful, accurate and timely master blacklist, tailored to the specific customer network. BLAG uses a sample of the legitimate sources of the customer network's inbound traffic to evaluate the accuracy of each blacklist over regions of address space. It then leverages recommendation systems to select the most accurate information to aggregate into its master blacklist. Finally, BLAG identifies portions of the master blacklist that can be expanded into larger address regions (e.g. /24 prefixes) to uncover more malicious addresses with minimum collateral damage. Our evaluation of 157 blacklists of various attack types and three ground-truth datasets shows that BLAG achieves high specificity up to 99%, improves recall by up to 114 times compared to competing approaches, and detects attacks up to 13.7 days faster, which makes it a promising approach for blacklist generation."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sivaramakrishnan Ramanathan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "California/ Information Sciences Institute, University of Southern, Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jelena Mirkovic",
+          "email": "mirkovic@isi.edu",
+          "orcid": "",
+          "affiliations": [
+            "California/ Information Sciences Institute, University of Southern, Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Minlan Yu",
+          "email": "minlanyu@g.harvard.edu",
+          "orcid": "",
+          "affiliations": [
+            "California/ Information Sciences Institute, University of Southern, Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sivaramakrishnan Ramanathan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "California/ Information Sciences Institute, University of Southern, Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jelena Mirkovic",
+          "email": "mirkovic@isi.edu",
+          "orcid": "",
+          "affiliations": [
+            "California/ Information Sciences Institute, University of Southern, Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Minlan Yu",
+          "email": "minlanyu@g.harvard.edu",
+          "orcid": "",
+          "affiliations": [
+            "California/ Information Sciences Institute, University of Southern, Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 117,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Sivaramakrishnan Ramanathan",
+          "block_id": "pdf:p1:b1",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Jelena Mirkovic",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Minlan Yu",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Sivaramakrishnan Ramanathan",
+          "affiliation_raw": "University of Southern California/ Information Sciences Institute",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b1",
+          "affiliation_block_ids": [
+            "pdf:p1:b4",
+            "pdf:p1:b7"
+          ],
+          "email_raw": "satyaman@usc.edu",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 8.458,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Jelena Mirkovic",
+          "affiliation_raw": "University of Southern California/ Information Sciences Institute",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5",
+            "pdf:p1:b8"
+          ],
+          "email_raw": "mirkovic@isi.edu",
+          "email_block_ids": [
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 5.312,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Minlan Yu",
+          "affiliation_raw": "Harvard University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "email_raw": "minlanyu@g.harvard.edu",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 3.222,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BLAG: Improving the Accuracy of Blacklists",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/blag-improving-the-accuracy-of-blacklists/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sivaramakrishnan Ramanathan",
+          "affiliations": [
+            "University of Southern California/Information Sciences Institute"
+          ]
+        },
+        {
+          "name": "Jelena Mirkovic",
+          "affiliations": [
+            "University of Southern California/Information Sciences Institute"
+          ]
+        },
+        {
+          "name": "Minlan Yu",
+          "affiliations": [
+            "Harvard University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

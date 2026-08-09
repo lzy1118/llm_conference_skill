@@ -1,0 +1,216 @@
+{
+  "paper_id": "035_omegalog_high_fidelity_attack_investigation_via_transparent_multi_layer_log_analysis",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "OmegaLog: High-Fidelity Attack Investigation via Transparent Multi-layer Log Analysis"
+      },
+      {
+        "source": "selected",
+        "value": "OmegaLog: High-Fidelity Attack Investigation via Transparent Multi-layer Log Analysis"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Recent advances in causality analysis have enabled investigators to trace multi-stage attacks using provenance graphs. Based on system-layer audit logs (e.g., syscalls), these approaches omit vital sources of application context (e.g., email addresses, HTTP response codes) that can be found in higher layers of the system. Although such information is often essential to understanding attack behaviors, it is difficult to incorporate this evidence into causal analysis engines because of the semantic gap that exists between system layers. To address that shortcoming, we propose the notion of universal provenance, which encodes all forensically relevant causal dependencies regardless of their layer oforigin. To transparently realize that vision on commodity systems, we present OmegaLog, a provenance tracker that bridges the semantic gap between system and application logging contexts. OmegaLog analyzes program binaries to identify and model application-layer logging behaviors, enabling accurate reconciliation of application events with system-layer accesses. OmegaLog then intercepts applications' runtime logging activities and grafts those events onto the system-layer provenance graph, allowing investigators to reason more precisely about the nature of attacks. We demonstrate that our system is widely applicable to existing software projects and can transparently facilitate execution partitioning of provenance graphs without any training or developer intervention. Evaluation on real-world attack scenarios shows that our technique generates concise provenance graphs with rich semantic information relative to the state-of-the-art, with an average runtime overhead of 4%."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Recent advances in causality analysis have en- abled investigators to trace multi-stage attacks using provenance graphs. Based on system-layer audit logs (e.g., syscalls), these approaches omit vital sources of application context (e.g., email addresses, HTTP response codes) that can be found in higher layers of the system. Although such information is often essential to understanding attack behaviors, it is difficult to incorporate this evidence into causal analysis engines because of the semantic gap that exists between system layers. To address that short- coming, we propose the notion of universal provenance , which encodes all forensically relevant causal dependencies regardless of their layer oforigin. To transparently realize that vision on commodity systems, we present OmegaLog, a provenance tracker that bridges the semantic gap between system and appli- cation logging contexts. OmegaLog analyzes program binaries to identify and model application-layer logging behaviors, enabling accurate reconciliation of application events with system-layer accesses. OmegaLog then intercepts applications' runtime logging activities and grafts those events onto the system-layer provenance graph, allowing investigators to reason more precisely about the nature of attacks. We demonstrate that our system is widely applicable to existing software projects and can transparently facilitate execution partitioning of provenance graphs without any training or developer intervention. Evaluation on real-world attack scenarios shows that our technique generates concise provenance graphs with rich semantic information relative to the state-of-the-art, with an average runtime overhead of 4%. I. I NTRODUCTION System intrusions are becoming progressively more subtle and complex. Using an approach exemplified by the “low and slow” attack strategy of Advanced Persistent Threats, attackers now lurk in target systems for extended periods to extend their reach before initiating devastating attacks. By avoiding actions that would immediately arouse suspicion, attackers can achieve dwell times that range from weeks to months, as was the case in numerous high-profile data breaches including Target [14], Equifax [12], and the Office of Personnel Management [13]. Against such odds, advancements in system auditing have proven invaluable in detecting, investigating, and ultimately responding to threats. The notion of data provenance has been applied to great effect on traditional system audit logs, parsing individual system events into provenance graphs that encode the history of a system's execution [17], [26], [51], [32], [36], [40], [31]. Such provenance graphs allow investigators to trace the root causes and ramifications of an attack by using causality analysis. Leveraging this principal capability, causality analysis has matured from a costly offline investigation tool to a highly- efficient method of tracing attackers in real-time [31], [16]. Given the importance of threat investigation to system defense, it is perhaps surprising that prior work on causality analysis has been oblivious to application-layer semantics. As an example, consider the execution of the web service shown in Fig. 1. Fig. 1(a) describes the event sequence of the example, in which the server responds to two HTTP requests for index.html and form.html, respectively, yielding the system log shown in Fig. 1(b). As a normal part of its execution, the server also maintains its own event logs that contain additional information (e.g., user-agent strings) shown in Fig. 1(c), that is opaque to the system layer. State-of-the-art causality analysis engines, using system audit logs, produce a provenance graph similar to Fig. 1(d); however, the forensic evidence disclosed by the application itself is not encoded in this graph. That is unfortunate, as recent studies [25], [21], [49] have shown that developers explicitly disclose the occurrence of important events through application logging. Further, we observe that the well-studied problem of dependency explosion [39], [42], [41], which considers the difficulty of tracing dependencies through high-fanout processes, is itself a result of unknown application semantics. For example, the dependency graph in Fig. 1 (d) is not aware that the NGINX vertex can be subdivided into two autonomous units of work, marked by the two HTTP requests found in the application event log. Prior work on log analysis has not provided a generic and reliable (i.e., causality-based) solution to cross-layer at- tack investigation. Techniques for execution partitioning miti- gate dependency explosion by identifying limited and coarse- grained application states, e.g., when a program starts its main event-handling loop [39], but require invasive instru- mentation [39], [41] or error-prone training [39], [40], [42]. Past frameworks for layered provenance tracking [57], [28], [17], [47] technically support application semantics, but rather than harness the developer's original event logs, instead call for costly (and redundant!) instrumentation efforts. Elsewhere in the literature, application event logs have been leveraged for program debugging [24], [59], [60], profiling [65], [64], and runtime monitoring [48]; however, these approaches are application-centric, considering only one application's siloed event logs at a time, and thus cannot reconstruct complex workflows between multiple processes. Attempts to “stitch” application logs together to trace multi-application workflows [50], [65], [64] commonly ignore the system layer, but also Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24270 www.ndss-symposium.org - Receives HTTP request - Reads index.html - Sends HTTP - Logs event in access.log - Receives HTTP request - Reads form.html - Sends HTTP - Logs event in access.log 1. Socket_Read(“10.0.0.1”) 2. FRead(index.html) 3. Socket_Write(“10.0.0.1”) 4. FWrite(access.log) 5. Socket_Read(“10.0.8.1”) 6. FRead(form.html) 7. Socket_Write(“10.0.8.1”) 8. FWrite(access.log) Nginx index.html /var/log/nginx/access.log form.html 10.0.0.1 10.0.0.1 10.0.8.1 10.0.8.1 1. [16/Apr/2019:20:21:56 +0100] \"GET / index.html HTTP/1.1\" 200 3804 \"-\" \"Mozilla/5.0 (Windows NT 6.0; WOW64; rv:45.0) Gecko/20100101 Firefox/45.0\" 2. [16/Apr/2019:20:21:56 +0100] \"GET / form.html HTTP/1.1\" 200 3804 \"-\" \"Mozilla/5.0 (Windows NT 6.0; WOW64; rv:45.0) Gecko/20100101 Firefox/45.0\" (a) Execution (b) System Log (c) Application Log (d) System Provenance Graph Fig. 1: NGINX application execution while two different HTTP requests are being served. (a) Actual execution behavior of NGINX. (b) System logs generated by whole-system provenance tracker. (c) Application event logs generated by NGINX. (d) Provenance graph generated using system logs by traditional solutions. use ad hoc rules and co-occurrence of log events to assume a causal relationship; this assumption introduces error and could potentially undermine threat investigations. In this work, we argue that attack investigation capabilities can be dramatically improved through the unification of all forensically relevant events on the system in a single holistic log. To achieve that vision transparently and effortlessly on today's commodity systems, we present OmegaLog, an end- to-end provenance tracker that merges application event logs with the system log to generate a universal provenance graph (UPG). This graph combines the causal reasoning strengths of whole-system logging with the rich semantic context of application event logs. To construct the UPG, OmegaLog automatically parses dispersed, intertwined, and heterogeneous application event log messages at runtime and associates each record with the appropriate abstractions in the whole-system provenance graph. Generating UPG allows OmegaLog to trans- parently solve both the dependency explosion problem (by identifying event-handling loops through the application event sequences) and the semantic gap problem (by grafting applica- tion event logs onto the whole-system provenance graph). Most excitingly, OmegaLog does not require any instrumentation on the applications or underlying system. Several challenges exist in the design of a universal provenance collection system. First, the ecosystem of software logging frameworks is heterogeneous, and event logging is fundamentally similar to any other file I/O, making it difficult to automatically identify application logging activity. Second, event logs are regularly multiplexed across multiple threads in an application, making it difficult to differentiate concurrent units of work. Finally, each unit of work in an application will generate log events whose occurrence and ordering vary based on the dynamic control flow, requiring a deep understanding of the application's logging behavior to identify meaningful boundaries for execution unit partitioning. To solve those challenges, OmegaLog performs static analysis on application binaries to automatically identify log message writing procedures, using symbolic execution and em- ulation to extract descriptive Log Message Strings (LMS) for each of the call sites. Then, OmegaLog performs control flow analysis on the binary to identify the temporal relationships between LMSes, generating a set of all valid LMS control flow paths that may occur during execution. At runtime, OmegaLog then uses a kernel module that intercepts write syscall and catches all log events emitted by the application, associating each event with the correct PID/TID and timestamp to de- tangle concurrent logging activity. Finally, those augmented application event logs are merged with system-level logs into a unified universal provenance log. Upon attack investigation, OmegaLog is able to use the LMS control flow paths to parse the flattened stream of application events in the universal log, partition them into execution units, and finally add them as vertices within the whole-system provenance graph in causally correct manner. The main contributions of this paper are as follows: ⋆ We propose the concept of the universal provenance that combines the advantages of whole-system provenance with applications' innate event-logging activity, providing a trans- parent and generic solution for the semantic gap problem in threat investigations. ⋆ We develop robust binary analysis techniques to auto- matically extract logging behaviors from an application. Our proof-of-concept implementation, OmegaLog, non- intrusively collects and integrates applications' event logs with the Linux audit logs [5]. ⋆ We evaluate OmegaLog for performance, accuracy, and efficacy. Our results indicate that OmegaLog exhibits low runtime overheads (4%), is broadly deployable to existing software projects, and enables semantically rich attack re- constructions in real-world attack scenarios. II. M OTIVATION In this section, we explain the motivation for our approach by considering a data exfiltration and defacement attack on an online shopping website. We use this example to illustrate the limitations of existing provenance tracking systems [17], [42], [41], [16], [36], [37], [38]. Consider a simple WordPress website hosted on a web server. Requests to the website are first received by an HAProxy, which balances load across different Apache instances running on the web server, while customer transactions are recorded in a PostgreSQL database. The administrator has turned on application event logging for Apache httpd, HAProxy, and PostgreSQL. In addition, the server is performing system-level logging, e.g., through Linux Audit (auditd) [5] or Linux Provenance Modules (LPM) [17], which continuously collect system logs. One day, the adminis- trator discovers that the online store has been defaced and that some of the sensitive customer information has been posted to a public Pastebin website. On average, the shopping website 2"
+      },
+      {
+        "source": "selected",
+        "value": "Recent advances in causality analysis have enabled investigators to trace multi-stage attacks using provenance graphs. Based on system-layer audit logs (e.g., syscalls), these approaches omit vital sources of application context (e.g., email addresses, HTTP response codes) that can be found in higher layers of the system. Although such information is often essential to understanding attack behaviors, it is difficult to incorporate this evidence into causal analysis engines because of the semantic gap that exists between system layers. To address that shortcoming, we propose the notion of universal provenance, which encodes all forensically relevant causal dependencies regardless of their layer oforigin. To transparently realize that vision on commodity systems, we present OmegaLog, a provenance tracker that bridges the semantic gap between system and application logging contexts. OmegaLog analyzes program binaries to identify and model application-layer logging behaviors, enabling accurate reconciliation of application events with system-layer accesses. OmegaLog then intercepts applications' runtime logging activities and grafts those events onto the system-layer provenance graph, allowing investigators to reason more precisely about the nature of attacks. We demonstrate that our system is widely applicable to existing software projects and can transparently facilitate execution partitioning of provenance graphs without any training or developer intervention. Evaluation on real-world attack scenarios shows that our technique generates concise provenance graphs with rich semantic information relative to the state-of-the-art, with an average runtime overhead of 4%."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Wajih Ul Hassan",
+          "email": "whassan3@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Mohammad ANoureddine",
+          "email": "nouredd2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Pubali Datta",
+          "email": "pdatta2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Adam Bates",
+          "email": "batesa@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Wajih Ul Hassan",
+          "email": "whassan3@illinois.edu",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Mohammad A. Noureddine",
+          "email": "nouredd2@illinois.edu",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Pubali Datta",
+          "email": "pdatta2@illinois.edu",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Adam Bates",
+          "email": "batesa@illinois.edu",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 107,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "OmegaLog: High-Fidelity Attack Investigation via Transparent Multi-layer Log Analysis",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/omegalog-high-fidelity-attack-investigation-via-transparent-multi-layer-log-analysis/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Wajih Ul Hassan",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Mohammad A. Noureddine",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Pubali Datta",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Adam Bates",
+          "affiliations": [
+            "University of Illinois Urbana-Champaign"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Mohammad A. Noureddine",
+      "field": "email",
+      "restored_value": "nouredd2@illinois.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Adam Bates",
+      "field": "email",
+      "restored_value": "batesa@illinois.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

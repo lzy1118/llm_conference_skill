@@ -1,0 +1,329 @@
+{
+  "paper_id": "222_bridgerouter_automated_capability_upgrading_of_out_of_bounds_write_vulnerabilities_to_arbitrary_memory_write_primitives_in_the_linux_kernel",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BRIDGEROUTER: Automated Capability Upgrading of Out-Of-Bounds Write Vulnerabilities to Arbitrary Memory Write Primitives in the Linux Kernel"
+      },
+      {
+        "source": "selected",
+        "value": "BRIDGEROUTER: Automated Capability Upgrading of Out-Of-Bounds Write Vulnerabilities to Arbitrary Memory Write Primitives in the Linux Kernel"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Memory corruption vulnerabilities pose a significant threat to the Linux kernel, with out-of-bounds (OOB) vulnerabilities receiving particular attention due to their prevalence. The existing kernel OOB exploitation techniques either require strong capabilities from the vulnerabilities, demand that the vulnerable and victim objects reside in the same memory allocator cache, or rely on extensive page table manipulation. These constraints restrict their applicability and lead to low success rates in completing a full exploitation chain. In this paper, we propose a practical approach that enables arbitrary memory writes from kernel OOB vulnerabilities with limited capabilities. Our method leverages two special kinds of kernel objects to upgrade the capability from an uncontrolled overwrite to a controlled overwrite, ultimately achieving arbitrary memory write. We develop a system to automatically identify and utilize these two kinds of kernel objects. Evaluations on a crafted vulnerability and 14 representative real-world vulnerabilities, along with a comparison against two state-of-the-art works, demonstrate the broad applicability of our approach. 810 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Memory corruption vulnerabilities pose a significant threat to the Linux kernel, with out-of-bounds (OOB) vulnera- bilities receiving particular attention due to their prevalence. The existing kernel OOB exploitation techniques either require strong capabilities from the vulnerabilities, demand that the vulnerable and victim objects reside in the same memory allocator cache, or rely on extensive page table manipulation. These constraints restrict their applicability and lead to low success rates in completing a full exploitation chain. In this paper, we propose a practical approach that enables arbitrary memory writes from kernel OOB vulnerabilities with limited capabilities. Our method leverages two special kinds of kernel objects to upgrade the capability from an uncontrolled overwrite to a controlled overwrite, ultimately achieving arbitrary memory write. We develop a system to automatically identify and utilize these two kinds of kernel objects. Evaluations on a crafted vulnerability and 14 representative real-world vulnerabilities, along with a comparison against two state-of-the-art works, demonstrate the broad applicability of our approach. 1. Introduction The Linux kernel is a fundamental component of modern computing infrastructure, making its security critically im- portant. Memory corruption vulnerabilities pose a significant threat to the Linux kernel. According to CVEdetails [6], memory corruption vulnerabilities accounted for 77% of all Linux kernel vulnerabilities from 2014 to 2024. These vulnerabilities can lead to severe consequences, such as privilege escalation that grants attackers full control over the targeted system. For most Linux kernel vulnerabilities, a proof-of-concept (PoC) is often available to demonstrate that the vulnerability can be triggered. However, it is frequently unclear whether a given vulnerability is actually exploitable, such as whether it can be used for privilege escalation. Fixing vulnerabilities is typically a lengthy and tedious process [31]. To streamline this process, it is crucial to identify the most critical vul- nerabilities among the vast number and prioritize those that are exploitable. Automatic exploit generation (AEG) [10], *Wei You is the corresponding author. [12], [39], [47], [52] has emerged as a valuable solution. It can automatically generate exploits, allowing developers to focus on addressing high-risk vulnerabilities. Out-of-bounds (OOB) vulnerabilities are particularly critical in the Linux kernel. Statistics indicate that OOB vul- nerabilities have consistently ranked among the top three [5]. In response, various approaches [15], [16], [17], [40] have been developed to automate the exploitation of kernel OOB vulnerabilities. These methods focus on optimizing memory layouts and manipulating memory allocations to facilitate exploitation. However, they either require strong capabilities from the vulnerabilities, demand that the vulnerable and victim objects reside in the same memory allocator cache, or rely on extensive page table manipulation. As a result, these methods suffer from restricted applicability and generally exhibit low success rates in achieving an exploitation chain. In this work, we propose a practical approach to kernel OOB write exploitation that enables arbitrary memory writes from vulnerabilities with limited capabilities . The basic idea of our method is to leverage two special kinds of kernel objects, which we refer to as bridge and router objects, to upgrade the capability. Specifically, a bridge object converts an uncontrolled overwrite capability that writes to an adjacent location in one memory allocator cache into a controlled overwrite capability that writes to an adjacent location in a different memory allocator cache. Meanwhile, a router object directs the destination and/or the source buffers of a memory copy operation, resulting in an arbitrary memory write primitive. We develop a system, named BRIDGE ROUTER , to auto- matically identify and utilize the bridge and router objects for exploiting kernel OOB vulnerabilities. Starting with the source code of the target kernel, we employ static analysis to identify bridge and router objects, and use fuzzing to generate the system call sequences needed to trigger the allocation and memory copy operations for the identified objects. Given a PoC of an OOB vulnerability, we match the corresponding vulnerable object with the appropriate bridge and router objects, and explore their potential capabilities for generating a prototype exploit. Finally, the complete exploit is assembled by integrating the prototype exploit with carefully designed memory management and system call scheduling strategies. 810 DOI 10.1109/SP61157.2025.00132 We evaluated BRIDGE ROUTER on Linux kernel v6.6. Sampling experiments show that identifying bridge and router objects yields low false positive (FP) and false negative (FN) rates, with a 16% FP rate for bridge objects, a 38% FP rate for router objects, and an overall 0% FN rate. In practice, this performance is highly satisfactory. We believe that, for a potentially exploitable OOB vulnerability, BRIDGE ROUTER can effectively identify the bridge and router objects needed to generate a complete exploit. We also demonstrated that BRIDGE ROUTER is applicable to generic memory allocator caches in the Linux kernel and effective in exploiting 14 rep- resentative real-world vulnerabilities by chaining appropriate bridge and router objects to achieve arbitrary memory write capabilities. Comparison with two state-of-the-art (SOTA) tools (KOOBE [15] and SLUBStick [40]) further highlights the advantages of our approach. Our contributions are summarized as follows. • A practical exploitation technique is proposed that upgrades the limited capabilities of a kernel OOB vulnerability to enable arbitrary memory writes, fa- cilitating further attacks such as privilege escalation. • A prototype system is developed to automate the pro- posed exploitation approach. The experimental data and source code are available at a GitHub repository https://github.com/CheUhxg/BridgeRouter. • A comprehensive evaluation is conducted to assess the accuracy of identifying bridge and router objects in the Linux kernel, the applicability across different memory allocator caches, and the effectiveness in exploiting real-world kernel vulnerabilities. 2. Background Kernel Heap Memory Management. The Linux kernel employs a combination of the Buddy allocator [2] and the SLAB/SLUB allocator [8] for heap memory management. The Buddy allocator provides large, contiguous memory in chunks of page-order size (i.e., 2n×PAGE SIZE) to the SLAB/SLUB allocator, which organizes the memory into caches, each holding kernel objects of the same type (for dedicated caches) or similar sizes (for generic caches). Within each cache, memory is further divided into slabs, which are partitioned into multiple individual slots to store objects. When the objects are deallocated, they are returned to the corresponding slabs. If an entire slab is emptied, the SLAB/SLUB allocator releases the associated memory pages back to the Buddy allocator. This layered approach allows the Buddy allocator to manage overall memory allocation, while the SLAB/SLUB allocator efficiently handles small, fixed-size objects. Exploitation of Heap OOB Write Vulnerability. The basic idea of exploiting a heap OOB write vulnerability is to overwrite a victim object containing critical data or pointer fields, which is positioned adjacent to a vulnerable object intended to be accessed. Figure 1 illustrates the typical exploitation workflow. Given a vulnerability, an adversary Capability Summarization vulobj value size length Heap Feng Shui Match a Victim Object vulobj victim obj offset Figure 1: The typical exploitation workflow of heap OOB. first summarizes its capability in terms of how far the write can reach ( offset), how many bytes can be written ( length), and what content can be written ( value). The adversary then carefully selects a victim object that matches the vulnerable object, and leverages various heap feng shui techniques [17], [22], [32] to manipulate the memory layout, ensuring a victim object can be positioned adjacent to the vulnerable object. Exploiting a heap OOB write in the Linux kernel is challenging due to its unique heap memory management mechanism. Objects must be of the same type or similar sizes to be placed in the same cache, allowing them to potentially be adjacent. In many cases, the adversary cannot find a suitable victim object that can be placed in the same cache as the vulnerable object. To overcome this challenge, cross- cache reuse techniques [33] have been proposed. Specifically, the adversary frees all slots of a slab page, causing the SLAB/SLUB allocator to return the page containing the vulnerable object to the Buddy allocator (i.e., recycling). This page can then be allocated for other slab caches (i.e., reclaiming), enabling the reuse of memory slot across slab caches with different types, allocation sizes, and properties. Note that the capabilities of most heap OOB vulner- abilities are generally limited. A common approach in real-world exploits is to upgrade the OOB capability to arbitrary memory write primitives, enabling further attacks such as privilege escalation [34] and container escape [3]. For example, the exploit [4] for CVE-2022-0185 upgrades the OOB write vulnerability to arbitrary memory write, allowing it to overwrite the euid field of the cred structure associated with the current process to GLOBAL ROOT UID (i.e., a value of 0), thereby gaining root privilege. Scope and Assumptions. This work is dedicated to develop- ing an automatic exploitation technique that upgrades kernel heap OOB write vulnerabilities to arbitrary memory write primitives. We assume that the target kernel is protected by widely-deployed defenses, including kernel address space layout randomization (KASLR), kernel control flow integrity (KCFI), kernel page table isolation (KPTI), supervisor mode execution prevention (SMEP), and supervisor mode access prevention (SMAP). The automatic capability upgrade 811"
+      },
+      {
+        "source": "selected",
+        "value": "Memory corruption vulnerabilities pose a significant threat to the Linux kernel, with out-of-bounds (OOB) vulnerabilities receiving particular attention due to their prevalence. The existing kernel OOB exploitation techniques either require strong capabilities from the vulnerabilities, demand that the vulnerable and victim objects reside in the same memory allocator cache, or rely on extensive page table manipulation. These constraints restrict their applicability and lead to low success rates in completing a full exploitation chain. In this paper, we propose a practical approach that enables arbitrary memory writes from kernel OOB vulnerabilities with limited capabilities. Our method leverages two special kinds of kernel objects to upgrade the capability from an uncontrolled overwrite to a controlled overwrite, ultimately achieving arbitrary memory write. We develop a system to automatically identify and utilize these two kinds of kernel objects. Evaluations on a crafted vulnerability and 14 representative real-world vulnerabilities, along with a comparison against two state-of-the-art works, demonstrate the broad applicability of our approach. 810 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Dongchen Xie",
+          "email": "dongchenx@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Information, Renmin University of China, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Dongnan He",
+          "email": "hedongnan@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Wei You",
+          "email": "youwei@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Information, Renmin University of China, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jianjun Huang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Information, Renmin University of China, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Bin Liang",
+          "email": "liangb@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Information, Renmin University of China, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Shuitao Gan",
+          "email": "ganshuitao@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "School of Information, Renmin University of China, Beijing, China",
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Wenchang Shi",
+          "email": "wenchang@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Information, Renmin University of China, Beijing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Dongchen Xie",
+          "email": "dongchenx@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "1School of Information, Renmin University of China, Beijing, China 2Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Dongnan He",
+          "email": "hedongnan@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "1School of Information, Renmin University of China, Beijing, China 2Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Wei You",
+          "email": "youwei@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "1School of Information, Renmin University of China, Beijing, China 2Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 3,
+          "name": "Jianjun Huang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "1School of Information, Renmin University of China, Beijing, China 2Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Bin Liang",
+          "email": "liangb@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "1School of Information, Renmin University of China, Beijing, China 2Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Shuitao Gan",
+          "email": "ganshuitao@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "1School of Information, Renmin University of China, Beijing, China 2Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Wenchang Shi",
+          "email": "wenchang@ruc.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "1School of Information, Renmin University of China, Beijing, China 2Laboratory for Advanced Computing and Intelligence Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 114,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.2,
+        "candidates": [
+          {
+            "name": "RIDGE OUTER",
+            "block_id": "pdf:p1:b2",
+            "font_size": 11.2,
+            "support_ids": []
+          },
+          {
+            "name": "Dongchen Xie , Dongnan He , Wei You",
+            "block_id": "pdf:p1:b6",
+            "font_size": 11.0,
+            "support_ids": []
+          },
+          {
+            "name": ", Jianjun Huang , Bin Liang , Shuitao Gan",
+            "block_id": "pdf:p1:b9",
+            "font_size": 11.0,
+            "support_ids": [
+              "pdf:p1:b16"
+            ]
+          },
+          {
+            "name": ", Wenchang Shi",
+            "block_id": "pdf:p1:b13",
+            "font_size": 11.0,
+            "support_ids": []
+          }
+        ],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 6,
+          "author": "Wenchang Shi",
+          "block_id": "pdf:p1:b13",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BridgeRouter: Automated Capability Upgrading of Out-Of-Bounds Write Vulnerabilities to Arbitrary Memory Write Primitives in the Linux Kernel",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Dongchen Xie",
+          "affiliations": [
+            "Renmin University of China"
+          ]
+        },
+        {
+          "name": "Dongnan He",
+          "affiliations": [
+            "Renmin University of China"
+          ]
+        },
+        {
+          "name": "Wei You",
+          "affiliations": [
+            "Renmin University of China"
+          ]
+        },
+        {
+          "name": "Jianjun Huang",
+          "affiliations": [
+            "Renmin University of China"
+          ]
+        },
+        {
+          "name": "Bin Liang",
+          "affiliations": [
+            "Renmin University of China"
+          ]
+        },
+        {
+          "name": "Shuitao Gan",
+          "affiliations": [
+            "Labortory for Advanced Computing and Intelligence Engineering"
+          ]
+        },
+        {
+          "name": "Wenchang Shi",
+          "affiliations": [
+            "Renmin University of China"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

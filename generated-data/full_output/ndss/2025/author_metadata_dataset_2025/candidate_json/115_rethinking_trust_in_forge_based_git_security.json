@@ -1,0 +1,229 @@
+{
+  "paper_id": "115_rethinking_trust_in_forge_based_git_security",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Rethinking Trust in Forge-Based Git Security"
+      },
+      {
+        "source": "selected",
+        "value": "Rethinking Trust in Forge-Based Git Security"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Git is the most popular version control system today, with Git forges such as GitHub, GitLab, and Bitbucket used to add functionality. Significantly, these forges are used to enforce security controls. However, due to the lack of an open protocol for ensuring a repository's integrity, forges cannot prove themselves to be trustworthy, and have to carry the responsibility of being non-verifiable trusted third parties in modern software supply chains. In this paper, we present gittuf, a system that decentralizes Git security and enables every user to contribute to collectively enforcing the repository's security. First, gittuf enables distributing of policy declaration and management responsibilities among more parties such that no single user is trusted entirely or unilaterally. Second, gittuf decentralizes the tracking of repository activity, ensuring that a single entity cannot manipulate repository events. Third, gittuf decentralizes policy enforcement by enabling all developers to independently verify the policy, eliminating the single point of trust placed in the forge as the only arbiter for whether a change in the repository is authorized. Thus, gittuf can provide strong security guarantees in the event of a compromise of the centralized forge, the underlying infrastructure, or a subset of privileged developers trusted to set policy. gittuf also implements policy features that can protect against unauthorized changes to branches and tags (i.e., pushes) as well as files/folders (i.e., commits). Our analysis of gittuf shows that its properties and policy features provide protections against previously seen version control system attacks. In addition, our evaluation of gittuf shows it is viable even for large repositories with a high volume of activity such as those of Git and Kubernetes (less than 4% storage overhead and under 0.59s of time to verify each push). Currently, gittuf is an OpenSSF sandbox project hosted by the Linux Foundation. gittuf is being used in projects hosted by the OpenSSF and the CNCF, and an enterprise pilot at Bloomberg is underway."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Git is the most popular version control system today, with Git forges such as GitHub, GitLab, and Bitbucket used to add functionality. Significantly, these forges are used to enforce security controls. However, due to the lack of an open protocol for ensuring a repository's integrity, forges cannot prove themselves to be trustworthy, and have to carry the responsibility of being non-verifiable trusted third parties in modern software supply chains. In this paper, we present gittuf, a system that decentralizes Git security and enables every user to contribute to collectively enforcing the repository's security. First, gittuf enables distribut- ing of policy declaration and management responsibilities among more parties such that no single user is trusted entirely or unilaterally. Second, gittuf decentralizes the tracking of repos- itory activity, ensuring that a single entity cannot manipulate repository events. Third, gittuf decentralizes policy enforcement by enabling all developers to independently verify the policy, eliminating the single point of trust placed in the forge as the only arbiter for whether a change in the repository is authorized. Thus, gittuf can provide strong security guarantees in the event of a compromise of the centralized forge, the underlying infrastructure, or a subset of privileged developers trusted to set policy. gittuf also implements policy features that can protect against unauthorized changes to branches and tags ( i.e., pushes) as well as files/folders (i.e., commits). Our analysis of gittuf shows that its properties and policy features provide protections against previously seen version control system attacks. In addition, our evaluation of gittuf shows it is viable even for large repositories with a high volume of activity such as those of Git and Kubernetes (less than 4% storage overhead and under 0.59s of time to verify each push). Currently, gittuf is an OpenSSF sandbox project hosted by the Linux Foundation. gittuf is being used in projects hosted by the OpenSSF and the CNCF, and an enterprise pilot at Bloomberg is underway. I. I NTRODUCTION In recent years, there has been a significant surge in software supply chain attacks, with some being carried out by suspected nation-state actors [1], [2]. This trend continues to grow year over year as highlighted in numerous surveys [3]- [5]. While efforts have been made to bolster software supply chain security with increased transparency and verifiability, these solutions have primarily concentrated on other aspects like software builds and distribution [6]-[10], neglecting the crucial but often attacked area of Version Control Systems (VCS) [11]-[17], where source code resides. Of these systems, Git [18] stands out as the most widely used VCS, as indicated by 93.87% of surveyed developers [19]. While Git is a distributed VCS, developers use a synchro- nization point to submit and receive changes, with centralized forges, or social coding platforms, filling this role and provid- ing additional features such as issue trackers, wikis, continuous integration (CI), etc. Today, forges such as GitHub [20], GitLab [21], or Bitbucket [22] are used to enforce security controls that protect the integrity of a repository's contents. As these security controls are not part of the Git protocol, users are reliant on their forge's opinionated implementations of these features. We identify three key features forges provide that are imperative for ensuring the integrity of a repository. First, forges have mechanisms for policy declaration that can enu- merate a repository's trusted users and rules about which user can write to which portion of a repository. Forge policy declaration capabilities do not apply the principles of least privilege and separation of duties. Instead, these capabilities are concentrated in a small set of privileged users who can each act unilaterally, exposing the repository to the compromise of a single privileged user [11], [16]. Second, the forge is responsible for activity tracking by maintaining an audit log of all actions. Such a log is used to monitor and inspect actions performed in a repository. Third, when a user makes a change, the forge performs policy enforcement to ensure the change is valid. Unfortunately, users cannot verify the integrity of the repository's audit log them- selves, nor can they validate the forge's policy enforcement and integrity checks, meaning that a compromised forge can subvert the enforcement of repository policies [12]-[16]. At the same time, the forge cannot prove itself trustworthy, and has to carry the responsibility of being a non-verifiable trusted third party. This has been highlighted in software supply chain security threat models in academia [23], the industry [24] by the Supply-chain Levels for Software Artifacts (SLSA) [8] project, and in NIST recommendations [25], [26]. In this paper, we introduce gittuf, a forge-agnostic Git security system. Like forges, gittuf implements policy se- mantics that can protect the contents and metadata of a Git repository. Specifically, gittuf can be used to ensure pushes to a repository's branches and tags as well as modifications to its files/folders (especially important in monorepos 1) are 1In a monorepo setup, a single repository is used to house multiple projects, with each project stored in a different folder. This is used by several enterprises (e.g., Google [27], Uber [28], [29], and X [30], formerly known as Twitter). Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.241008 www.ndss-symposium.org performed by authorized users. However, unlike forges, gittuf empowers every developer to enforce the repository's secu- rity. gittuf achieves this by decentralizing the aforementioned three aspects of repository security: policy declaration, activity tracking, and policy enforcement. First, gittuf distributes the responsibility of declaring policy among multiple privileged users and ensures consensus. In other words, gittuf policy can be configured to ensure that no user can unilaterally make policy changes. Further, gittuf allows for granular authentication: a developer who is also a repository owner can authenticate separately for each role, minimizing the chances of exposing the higher privileged credentials. Similarly, gittuf makes policy declaration more granular: a privileged user can be allowed to extend (and not override) existing policy, and only for specified parts of the repository (branches, tags, files/folders). Implemented using namespaced delegations, this feature enables distributing policy declaration responsibilities amongst more users without overprivileging them. In this manner, gittuf allows more users to take an active role in policy declaration, enabling shared responsibility. Simultaneously, gittuf limits the impact of com- promising any one privileged user trusted to declare repository policy, mitigating the causes of some prior incidents [11], [16]. Second, gittuf decentralizes the tracking of repository ac- tivity. To do this, gittuf implements a “reference state log” (RSL) that tracks pushes to Git branches, tags, changes to gittuf policy, and code review approvals. The RSL is an au- thenticated, ordered, append-only log maintained collectively by all users of the repository. Every time a user pushes to the synchronization point, they add a cryptographically signed entry to this log. As it is designed to be append-only, gittuf ensures that any attempts to drop, reorder, or otherwise tamper with the entries in the log are detected by other users. Thus, no single entity is entirely trusted to maintain the log of repository activity. The RSL was originally proposed to address the related class of “metadata manipulation attacks” [31]. gittuf extends its design with improved developer authentication management as well as support for common Git workflows such as force pushes. Third, gittuf decentralizes the enforcement of the reposi- tory's security policies by enabling every developer to indepen- dently verify and enforce its security policies. Rather than have the forge be the sole arbiter of whether a repository change is authorized, gittuf makes policy enforcement a collective undertaking and ensures that the compromise of any one point is not sufficient to subvert the repository's security [12]-[16]. Note that gittuf enables all collaborating parties to partake in enforcing a repository's security controls, including the forge itself as one of the parties. With gittuf, the forge can prove itself trustworthy by adding transparency and verifiability to its existing policy mechanisms. gittuf has been designed and developed in collaboration with the industry as an open source security project. As such, all significant feature additions to gittuf were authored and reviewed by participants from both academia and industry. gittuf has a growing open source community spanning multiple academic institutions, companies, and independent individual contributors. Seeing potential in gittuf, the Open Source Secu- rity Foundation (OpenSSF) [32] Technical Advisory Council (composed of representatives of GitHub, Google, IBM, Intel, Snyk, and Kusari) accepted the project into the OpenSSF sandbox, part of the Linux Foundation. gittuf is being used in projects hosted by the OpenSSF and the Cloud Native Computing Foundation (CNCF) [33]. Finally, gittuf is being piloted for enterprise use at Bloomberg [34]. To summarize our contributions, we present in this paper: • our analysis of the current forge security model used by Git repositories • the shortcomings in forge features for policy manage- ment, activity tracking, and policy enforcement • the architecture of gittuf, a novel system that decen- tralizes policy declaration, activity tracking, and policy enforcement • our analysis of gittuf's properties and its ability to mitigate prior attacks • our evaluation of gittuf's performance in terms of storage and runtime overhead introduced In the rest of this paper, we present a more detailed description of Git as well as the centralized security model operated by forges (Section II). We then describe gittuf's threat model and system goals (Section III), and gittuf's design and implementation (Section IV). This is followed by our security analysis of gittuf including its ability to handle prior incidents(Section V), its performance evaluation and current deployments (Section VI), and a discussion of various gittuf properties and present limitations (Section VII). We close with an analysis of related work (Section VIII) and our conclusions (Section IX). II. B ACKGROUND Before describing gittuf, we review Git internals, Git's se- curity features and collaboration model, and features provided by forges, including their limitations. We also define general terms used in the paper. A developer is any user performing commits or other ac- tions in a Git repository. A privileged set of repository owners serve as the root of trust for gittuf. Client devices, repositories, and other services like CI/CD systems can act as verifiers, which means they perform verification over repository actions. In the most common use case, a single repository will serve as the synchronization point where developers discover each others' changes. All these parties, whether developers, reposi- tory owners, or authorized bots, are identified by their signing keys or identities when they make changes to the repository. Finally, a forge is a centralized social coding platform that often serves as a repository's synchronization point. A. Git Git implements a content-addressable store [35], henceforth known as the Git object store, for each repository. Every Git object is addressed using its SHA-1 hash, which serves as the object's ID. The store records several types of Git objects that collectively represent the software tracked in the repository. An essential Git object is a commit which is a self-"
+      },
+      {
+        "source": "selected",
+        "value": "Git is the most popular version control system today, with Git forges such as GitHub, GitLab, and Bitbucket used to add functionality. Significantly, these forges are used to enforce security controls. However, due to the lack of an open protocol for ensuring a repository's integrity, forges cannot prove themselves to be trustworthy, and have to carry the responsibility of being non-verifiable trusted third parties in modern software supply chains. In this paper, we present gittuf, a system that decentralizes Git security and enables every user to contribute to collectively enforcing the repository's security. First, gittuf enables distributing of policy declaration and management responsibilities among more parties such that no single user is trusted entirely or unilaterally. Second, gittuf decentralizes the tracking of repository activity, ensuring that a single entity cannot manipulate repository events. Third, gittuf decentralizes policy enforcement by enabling all developers to independently verify the policy, eliminating the single point of trust placed in the forge as the only arbiter for whether a change in the repository is authorized. Thus, gittuf can provide strong security guarantees in the event of a compromise of the centralized forge, the underlying infrastructure, or a subset of privileged developers trusted to set policy. gittuf also implements policy features that can protect against unauthorized changes to branches and tags (i.e., pushes) as well as files/folders (i.e., commits). Our analysis of gittuf shows that its properties and policy features provide protections against previously seen version control system attacks. In addition, our evaluation of gittuf shows it is viable even for large repositories with a high volume of activity such as those of Git and Kubernetes (less than 4% storage overhead and under 0.59s of time to verify each push). Currently, gittuf is an OpenSSF sandbox project hosted by the Linux Foundation. gittuf is being used in projects hosted by the OpenSSF and the CNCF, and an enterprise pilot at Bloomberg is underway."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Aditya Sirish",
+          "email": "aditya.sirish@nyu.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "AYelgundhalli",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Patrick Zielinski",
+          "email": "patrick.z@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Reza Curtmola",
+          "email": "reza.curtmola@njit.edu",
+          "orcid": "",
+          "affiliations": [
+            "New Jersey Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Justin Cappos",
+          "email": "jcappos@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Aditya Sirish",
+          "email": "aditya.sirish@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "email_domain_same_paper",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Patrick Zielinski",
+          "email": "patrick.z@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Reza Curtmola",
+          "email": "reza.curtmola@njit.edu",
+          "orcid": "",
+          "affiliations": [
+            "New Jersey Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Justin Cappos",
+          "email": "jcappos@nyu.edu",
+          "orcid": "",
+          "affiliations": [
+            "New York University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 99,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Rethinking Trust in Forge-Based Git Security",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/rethinking-trust-in-forge-based-git-security/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Aditya Sirish A Yelgundhalli",
+          "affiliations": [
+            "New York University"
+          ]
+        },
+        {
+          "name": "Patrick Zielinski",
+          "affiliations": [
+            "New York University"
+          ]
+        },
+        {
+          "name": "Reza Curtmola",
+          "affiliations": [
+            "New Jersey Institute of Technology"
+          ]
+        },
+        {
+          "name": "Justin Cappos",
+          "affiliations": [
+            "New York University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_affiliation_from_email_domain",
+      "stage": "field_level_pdf_merge",
+      "field": "affiliations",
+      "author": "Aditya Sirish",
+      "selected": [
+        "New York University"
+      ],
+      "email_domain": "nyu.edu",
+      "seed_authors": [
+        "Patrick Zielinski",
+        "Justin Cappos"
+      ]
+    }
+  ]
+}

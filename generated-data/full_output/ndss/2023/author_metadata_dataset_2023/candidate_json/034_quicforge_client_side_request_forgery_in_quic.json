@@ -1,0 +1,241 @@
+{
+  "paper_id": "034_quicforge_client_side_request_forgery_in_quic",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "QUICforge: Client-side Request Forgery in QUIC"
+      },
+      {
+        "source": "selected",
+        "value": "QUICforge: Client-side Request Forgery in QUIC"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The QUIC protocol is gaining more and more traction through its recent standardization and the rising interest by various big tech companies, developing new implementations. QUIC promises to make security and privacy a first-class citizen; yet, challenging these claims is of utmost importance. To this end, this paper provides an initial analysis of client-side request forgery attacks that directly emerge from the QUIC protocol design and not from common vulnerabilities. In particular, we investigate three request forgery attack modalities with respect to their capabilities to be used for protocol impersonation and traffic amplification. We analyze the controllable attack space of the respective protocol messages and demonstrate that one of the attack modalities can indeed be utilized to impersonate other UDP-based protocols, e.g., DNS requests. Furthermore, we identify traffic amplification vectors. Although the QUIC protocol specification states anti-amplification limits, our evaluation of 13 QUIC server implementations shows that in some cases these mitigations are missing or insufficiently implemented. Lastly, we propose mitigation approaches for protocol impersonation and discuss ambiguities in the specification."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The QUIC protocol is gaining more and more traction through its recent standardization and the rising interest by various big tech companies, developing new implementations. QUIC promises to make security and privacy a first-class citizen; yet, challenging these claims is of utmost importance. To this end, this paper provides an initial analysis of client-side request forgery attacks that directly emerge from the QUIC protocol design and not from common vulnerabilities. In particular, we investigate three request forgery attack modalities with respect to their capabilities to be used for protocol impersonation and traffic amplification. We analyze the controllable attack space of the respective protocol messages and demonstrate that one of the attack modalities can indeed be utilized to impersonate other UDP-based protocols, e.g., DNS requests. Furthermore, we identify traffic amplification vectors. Although the QUIC protocol specification states anti-amplification limits, our evaluation of 13 QUIC server implementations shows that in some cases these mitigations are missing or insufficiently implemented. Lastly, we propose mitigation approaches for protocol impersonation and discuss ambiguities in the specification. I. I NTRODUCTION The QUIC protocol is an innovative development of transport layer stream abstraction. It combines the capabilities of TCP and TLS 1.3 to reduce the amount of required round-trip times (RTTs) during the connection setup. It can achieve a true 0-RTT connection setup for known endpoints, improving performance in high-latency networks [1]. With recent standardization efforts of the QUIC protocol by the IETF in 2021 [2]-[5] and through the support of many well known companies like Apple, Cloudflare, Facebook, Google, and Mozilla, QUIC is gaining more traction. Lastly, QUIC's importance increased by choosing it to be the core protocol of the new HTTP/3 standard. The adoption of QUIC results in one of the biggest changes to the web's protocol stack [6] and spawned the development of various new implementations [7]. In order to achieve compatibility with the Internet protocol stack, QUIC was built on top of UDP [3]. While providing transport layer functionality, QUIC is technically an application layer protocol with its own addressing scheme [1]. QUIC's addressing allows the underlying UDP port and IP address to change, while the connection persists. The QUIC protocol handles the migration of endpoints. To this end, a server has to send UDP datagrams to an unknown endpoint. The same Client-Side Request Forgery SIRFCMRFVNRF Protocol Impersonation Traffic Amplification Attack Concept (Section II-B) Attack Modalities (Section II-C) Exploits (Section III and IV) Fig. 1: Scope of the paper: feasibility analysis of client-side request forgery (RF) for three RF attack modalities, which can be used for two different exploits. holds true for the handshake, where the first message is always directed to an unvalidated endpoint. As a consequence, QUIC seems particularly vulnerable to address spoofing and request forgery. The specification acknowledges the vulnerabilities and provides first security considerations [3]. While the importance of QUIC is undeniable, research on attacks in general and for request forgery in QUIC in particular is still in its infancy [7]-[14]. In particular, the manifold new implementations together with a rather new protocol design require more in-depth security analysis. In this paper, we take a detailed look at client-side request forgery in QUIC and provide the first feasibility analysis. To this end, we focus on request forgery attacks initiated by a QUIC client (the attacker). In this scenario, request forgery induces a QUIC server (the victim) to send packets that the attacker controls. The attacker can use the server's position in the network to gain higher privileges (e.g., ambient authority) and to gain access to greater resources (e.g., bandwidth). Specifically, we evaluate two request forgery attack modalities introduced in the QUIC specification [3]. They are based on the connection migration (CMRF) and version negotiation mechanism (VNRF) in QUIC. In addition, we introduce a third request forgery attack modality utilizing server initial messages in the standard handshake (SIRF). They all result in the QUIC server to issue an “unintended” request to a target host. We analyze the feasibility of client-side request forgery in QUIC for two main exploits: First, protocol impersonation . Since request forgery happens on the transport layer, it enables an attacker to mimic protocol messages of other application layer protocols, similar to cross-protocol request forgery. Second, traffic amplification. An attacker can utilize the imbalance of the size between forged messages and the messages required to trigger the request forgery in amplification denial of service (DoS) scenarios. A summary of our paper's scope is illustrated in Figure 1. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.23072 www.ndss-symposium.org As a result, we provide an analysis of the controllable attack space. In particular, we show that request forgery exploiting the version negotiation is indeed vulnerable to protocol impersonation. To this end, we provide a proof of concept of the attack vector, which can induce the victim to send valid DNS requests. We further evaluate 13 open-source QUIC implementations and show that they are generally vulnerable to at least one request forgery attack modality. Besides the general vulnerabilities, we identify pitfalls in the specification that lead to ambiguities, which are demonstrated by non-compliance with anti-amplification limits in nine of the 13 implementations. Lastly, we discuss changes to the specification that can mitigate the impact of request forgery attacks. The remainder is structured as follows. In Section II, we introduce our threat model and describe three request forgery attack modalities in QUIC. With these modalities in mind, we analyze the QUIC protocol's vulnerability to protocol impersonation in Section III and to traffic amplification in Section IV. In Section V, we evaluate the attack modalities against 13 open source implementations followed by a general discussion in Section VI. Before we conclude our work in Section VIII, we discuss related work in Section VII. II. R EQUEST FORGERY IN QUIC In this section, we provide the relevant groundwork on and describe three client-side request forgery attack modalities in QUIC. While connection migration request forgery (CMRF) and version negotiation request forgery (VNRF) are based on security considerations of the QUIC specification, server initial request forgery (SIRF) is a new modality, which we introduce here. We utilize the terms endpoint, QUIC packet, frame, address, CID, and stream as they are defined in RFC 9000 [3]. A. QUIC Basics The adoption of QUIC results in one of the biggest changes to the web's protocol stack illustrated in Fig. 2. QUIC is a connection oriented protocol, i.e., the client and server have a shared state that is used to provide data reliably and in order to the application. To identify connections, QUIC introduces connection IDs (CIDs) as endpoint identifiers to allow for network-path changes of the UDP port and IP address. In the current version, CIDs are variable in length, but not more than 20 bytes, and must not contain any information that can be used to correlate CIDs. Therefore, all CIDs for a connection have to be generated independently at random. The length of a CID is communicated in the handshake or over NEW_CONNECTION_ID frames during the connection. Regular packets have a short header format containing the destination CID (DCID) only. Thus, the endpoint needs to remember the corresponding lengths. A peer can store multiple CIDs for future use for a connection. The QUIC handshake(Fig. 3) combines the transport layer handshake and the TLS cryptographic handshake. The initial packets resemble the 3-way handshake of TCP, while the TLS parameters are carried “piggybacked” in CRYPTO frames. All packets in the handshake use the long header format and contain a source CID (SCID) as well as a DCID with the corresponding lengths. As an alternative to a server's initial packet, the server can send a retry packet containing a token. This token has IP TCP TLS HTTP/2 Stream Abstraction UDP Multistreaming QUIC Stream Abstraction HTTP/3 Multistreaming TLS Network Transport \"Security\" Application Fig. 2: HTTP/2 and HTTP/3 Protocol Stack Comparison. Client ServerInitial[0] : CRYTPTO[CH] Initial[0] : CRYPTO[CH] Handshake[0] : CRYPTO[EE, CERT, CV, FIN] 1-RTT[0] : STREAM[1, \"...\"] Initial[1] : ACK[0] Handshake[0] : CRYPTO[FIN], ACK[0] 1-RTT[0] : STREAM[0, \"...\"], ACK[0] Handshake[1] : ACK[0] 1-RTT[1] : HANDSHAKE_DONE, STREAM[3, \"...\"], ACK[0] Fig. 3: QUIC 1-RTT handshake [3]. to be mirrored in a second initial packet from the client to validate the path. The normal handshake without a retry does also perform path validation implicitly. By using retry packets, however, the server can avoid sending the significantly larger cryptographic information to an unvalidated endpoint [3]. If a server receives an unknown version, it will answer with a version negotiation packet, providing a list of supported versions. Version negotiation packets must always have the version identifier 0x00000000 [3]. One fairly unique feature of QUIC is connection migration. The usage of CIDs allows connections to survive endpoint address changes after a connection is established. If a migrated endpoint is detected by the server, it has to perform a path validation to the new host. To validate the path, the server sends a PATH_CHALLENGE frame, containing a token that has to be mirrored by the client in a PATH_RESPONSE frame [3]. B. System and Threat Model Request forgery attacks occur when an attacker is able to trigger a host (victim) to send one or more “unintended” network requests to another host (target). Generally, this is achieved by abusing protocol features or by abusing logic flaws in an application [15]-[17]. In this paper, we explore request forgery attacks initiated by a client, i.e., client-side request forgery. Therefore, the words client and attacker as well as server and victim are used synonymously. An attacker can leverage the request forgery for achieving two goals, which are illustrated in Fig. 4: First, utilizing the higher authority of the victim, i.e., internal/restricted network access or higher privileges. Second, utilizing the higher bandwidth available from the server to a target. For our attacks, we assume that the attacker is able to fully control the content of packets sent to the victim, including IP address and port spoofing. We restrict the attacker to modifications of messages that are still understood by the 2"
+      },
+      {
+        "source": "selected",
+        "value": "The QUIC protocol is gaining more and more traction through its recent standardization and the rising interest by various big tech companies, developing new implementations. QUIC promises to make security and privacy a first-class citizen; yet, challenging these claims is of utmost importance. To this end, this paper provides an initial analysis of client-side request forgery attacks that directly emerge from the QUIC protocol design and not from common vulnerabilities. In particular, we investigate three request forgery attack modalities with respect to their capabilities to be used for protocol impersonation and traffic amplification. We analyze the controllable attack space of the respective protocol messages and demonstrate that one of the attack modalities can indeed be utilized to impersonate other UDP-based protocols, e.g., DNS requests. Furthermore, we identify traffic amplification vectors. Although the QUIC protocol specification states anti-amplification limits, our evaluation of 13 QUIC server implementations shows that in some cases these mitigations are missing or insufficiently implemented. Lastly, we propose mitigation approaches for protocol impersonation and discuss ambiguities in the specification."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yuri Gbur",
+          "email": "yuri.gbur@posteo.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Berlin Berlin, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Florian Tschorsch",
+          "email": "florian.tschorsch@tu-berlin.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Berlin Berlin, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yuri Gbur",
+          "email": "yuri.gbur@posteo.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Berlin Berlin, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Florian Tschorsch",
+          "email": "florian.tschorsch@tu-berlin.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Berlin Berlin, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 113,
+      "author_count": 2,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 13.0,
+        "candidates": [
+          {
+            "name": "(Section II-C)",
+            "block_id": "pdf:p1:b97",
+            "font_size": 13.0,
+            "support_ids": []
+          },
+          {
+            "name": "Attack Modalities",
+            "block_id": "pdf:p1:b104",
+            "font_size": 13.0,
+            "support_ids": []
+          },
+          {
+            "name": "(Section II-B)",
+            "block_id": "pdf:p1:b110",
+            "font_size": 13.0,
+            "support_ids": []
+          },
+          {
+            "name": "Client-Side Request Forgery",
+            "block_id": "pdf:p1:b111",
+            "font_size": 13.0,
+            "support_ids": []
+          },
+          {
+            "name": "Attack Concept",
+            "block_id": "pdf:p1:b112",
+            "font_size": 13.0,
+            "support_ids": []
+          }
+        ],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Yuri Gbur",
+          "block_id": "pdf:p1:b1",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Florian Tschorsch",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Yuri Gbur",
+          "affiliation_raw": "Technische Universit¨at Berlin Berlin, Germany",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b1",
+          "affiliation_block_ids": [
+            "pdf:p1:b4",
+            "pdf:p1:b5"
+          ],
+          "email_raw": "yuri.gbur@posteo.de",
+          "email_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b5",
+            "pdf:p1:b7"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 7.451,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Florian Tschorsch",
+          "affiliation_raw": "Technische Universit¨at Berlin Berlin, Germany",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b3",
+            "pdf:p1:b6"
+          ],
+          "email_raw": "florian.tschorsch@tu-berlin.de",
+          "email_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b6",
+            "pdf:p1:b8"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 5.49,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "QUICforge: Client-side Request Forgery in QUIC",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/quicforge-client-side-request-forgery-in-quic/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yuri Gbur",
+          "affiliations": [
+            "Technische Universität Berlin"
+          ]
+        },
+        {
+          "name": "Florian Tschorsch",
+          "affiliations": [
+            "Technische Universität Berlin"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 2,
+      "country_values_restored": 2,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

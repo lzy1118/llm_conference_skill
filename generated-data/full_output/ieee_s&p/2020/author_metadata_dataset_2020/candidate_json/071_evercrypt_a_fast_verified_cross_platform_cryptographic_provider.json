@@ -1,0 +1,588 @@
+{
+  "paper_id": "071_evercrypt_a_fast_verified_cross_platform_cryptographic_provider",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "EverCrypt: A Fast, Verified, Cross-Platform Cryptographic Provider"
+      },
+      {
+        "source": "selected",
+        "value": "EverCrypt: A Fast, Verified, Cross-Platform Cryptographic Provider"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "We present EverCrypt: a comprehensive collection of verified, high-performance cryptographic functionalities available via a carefully designed API. The API provably supports agility (choosing between multiple algorithms for the same functionality) and multiplexing (choosing between multiple implementations of the same algorithm). Through abstraction and zero-cost generic programming, we show how agility can simplify verification without sacrificing performance, and we demonstrate how C and assembly can be composed and verified against shared specifications. We substantiate the effectiveness of these techniques with new verified implementations (including hashes, Curve25519, and AES-GCM) whose performance matches or exceeds the best unverified implementations. We validate the API design with two high-performance verified case studies built atop EverCrypt, resulting in line-rate performance for a secure network protocol and a Merkle-tree library, used in a production blockchain, that supports 2.7 million insertions/sec. Altogether, EverCrypt consists of over 124K verified lines of specs, code, and proofs, and it produces over 29K lines of C and 14K lines of assembly code."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "We present EverCrypt: a comprehensive collection of verified, high-performance cryptographic functionalities avail- able via a carefully designed API. The API provably supports agility (choosing between multiple algorithms for the same functionality) and multiplexing (choosing between multiple im- plementations of the same algorithm). Through abstraction and zero-cost generic programming, we show how agility can simplify verification without sacrificing performance, and we demonstrate how C and assembly can be composed and verified against shared specifications. We substantiate the effectiveness of these techniques with new verified implementations (including hashes, Curve25519, and AES-GCM) whose performance matches or exceeds the best unverified implementations. We validate the API design with two high-performance verified case studies built atop EverCrypt, resulting in line-rate performance for a secure network protocol and a Merkle-tree library, used in a production blockchain, that supports 2.7 million insertions/sec. Altogether, EverCrypt consists of over 124K verified lines of specs, code, and proofs, and it produces over 29K lines of C and 14K lines of assembly code. I. I NTRODUCTION Application developers seldom write their own cryptographic code; instead they rely on a cryptographic provider, such as OpenSSL's libcrypto [65], Windows Cryptography API [58], or libsodium[7]. Developers expect their provider to be comprehensivein supplying all of the functionalities they need (asymmetric and symmetric encryption, signing, hashing, key derivation, . . . ) for all the platforms they support. Further, a modern cryptographic provider should beagile; that is, it should provide multiple algorithms (e.g., ChaCha-Poly and AES-GCM) for the same functionality (e.g., authenticated encryption) and all algorithms should employ a single unified API, to make it simple to change algorithms if one is broken. A modern cryptographic provider should also supportmulti- plexing, that is, the ability to choose between multiple imple- mentations of the same algorithm. This allows the provider to employ high-performance implementations on popular hardware platforms (OpenSSL, for example, supports dozens), while still providing a fallback implementation that will work on any platform. Ideally, these disparate implementations should be exposed to the developer via a single unified API, so that she need not change her code when a new optimized version is deployed, and so that the provider can automatically choose the optimal implementation, rather than force the developer to do so. Historically, this process has been error prone (due in part to Intel and AMD reporting CPU features inconsistently [78]), with various cryptographic providers invoking illegal instructions on specific platforms [74], leading to killed processes and even crashing kernels. Since a cryptographic provider is the linchpin of most security-sensitive applications, itscorrectnessand security are crucial. However, for most applications (e.g., TLS, cryptocur- rencies, or disk encryption), the provider is also on the critical path of the application'sperformance. Historically, it has been notoriously difficult to produce cryptographic code that is fast, correct, and secure (e.g., free of leaks via side channels). For instance, OpenSSL'slibcryptoreported 24 vulnerabilities between January 1, 2016 and May 1, 2019 (Figure15 ). Such critical, complex code is a natural candidate for formal verification, which can mathematically guarantee correctness and security even for complex low-level implementations. Indeed, in recent years, multiple research groups have produced exciting examples of verified cryptographic code. However, as we discuss in detail in§II, previous work has not produced a verified cryptographicprovider comparable to the unverified providers in use today. Instead, some papers verify a single algorithm [14, 17, 80], or even just a portion thereof [26, 67, 75]. Others focus on many variants of a single functionality, with elliptic curves being a popular choice [36, 81]. Finally, a few works include several classes of functionality (e.g., hashing and encryption) but either in small number for specific platforms [25, 39], or with speeds below those of state-of-the-art providers [10, 44, 73, 82]. All of these works contribute important techniques and insights into how to best verify cryptographic code, but they all fall short of what application developers want from a cryptographic provider. Building on previous algorithm verification efforts [ 25, 39, 82], we present EverCrypt, a comprehensive, provably correct and secure, cryptographic provider that supports agility, multiplexing, and auto-configuration. EverCrypt's agility means that multiple algorithms provably provide the same API to clients, and its multiplexing demonstrates multiple disparate implementations (almost all entirely new, including several platform-specific implementations that beat state-of-the-art unverified libraries) verifying against the same cryptographic specification. The API is carefully designed to be usable by both verified and unverified (e.g., C) clients. To support the former, we show that multiple layers of abstraction, both in the 983 DOI 10.1109/SP40000.2020.00114 implementation and (more surprisingly) in the specification of cryptographic algorithms, naturally leads to agile code while also improving verification efficiency. We also demonstrate how the judicious use of generic programming can enhance developer productivity and simplify specifications by cleanly extracting commonality from related algorithms. To illustrate the benefits of multiplexing, and as part of our efforts to ensure state-of-the-art performance for EverCrypt, we present new verified implementations of a large variety of algorithms (Figure4 ). These include, e.g., Curve25519 [18], hash functions, and authenticated encryption with additional data (AEAD) that transparently multiplex between a generic C implementation and a hand-tuned x64 assembly implementation. When run on x64, they match or exceed the performance of the best unverified code, while the C implementations provide support across all other platforms (and offer performance competitive with unverified C code as well). To illustrate the utility of EverCrypt's API, we develop two applications atop it. First, a new Merkle-tree [56] library leverages EverCrypt's agile hashing API. The Merkle trees support high-performance secure logging, providing over 2.7M transactions/s. They also come with comprehensive safety, correctness, and cryptographic security properties, illustrating EverCrypt's value when building formally-verified applications. Second, we build a verified transport security layer for the QUIC network protocol [45] and, by connecting it to unverified QUIC implementations, show that it supports line-rate performance. All EverCrypt code is proven safe and functionally correct.1 Safety means the code respects memory abstractions (e.g., never reading outside the bounds of an array) and does not perform illegal operations (e.g., divide by zero). Functional correctness means the code's computational behavior is precisely described by a pure mathematical function. Further, all EverCrypt code is proven side-channel resistant; specifically, the sequence of instructions executed and the memory addresses accessed do not depend on secret inputs; more informally, EverCrypt prov- ably implements “constant-time cryptography” [15]. Together, the guarantees would have prevented all of libcrypto's vulnerabilities, except one related to prime generation (§XIII). EverCrypt does not (yet) include cryptographic proofs of security (e.g., we do not prove that counter-mode encryption is secure if the underlying cipher is secure). As future work, we plan to apply techniques similar to those of Bhargavan et al. [22] to provide such proofs for common security assumptions atop EverCrypt's functionalities. For now, we illustrate such proofs of high-level security properties on our sample applications, e.g., we prove that collisions on our Merkle tree can be reduced to collisions of the underlying hash function. While EverCrypt provides provably correct and secure cryptography, like any verified artifact, its guarantees rely on the correctness of both our specifications and our verification tools. All EverCrypt code is proven using the F⋆ proof assistant, so F⋆ and its toolchain are part of EverCrypt's trusted computing base (TCB), which we discuss at length in§II-C. EverCrypt also currently lacks support for older algorithms like RSA and DES, and it includes hand-optimized assembly only for x64 platforms. We plan to support additional platforms in the future. 1The specs, proofs, and code of EverCrypt are all available as open source. In summary, this paper makes the following contributions: 1) EverCrypt, a comprehensive, verified cryptographic provider that offers agility, multiplexing, and speed; 2) the design of a principled, abstract, agile API, usable by verified (F⋆) and unverified (C) clients alike; 3) its multiplexing implementation, coupled with verified zero-cost generic programming techniques to streamline the verification of cryptographic algorithms without sacri- ficing performance; 4) a new approach based on dependently typed generic programming [12] to prove the safety and correctness of fine-grained interoperation between C and assembly; 5) new verified cryptographic implementations (including hashes, Curve25519, and AES-GCM) whose performance matches or exceeds the best unverified implementations; 6) case studies on real applications of Merkle trees and QUIC transport security to demonstrate the utility of EverCrypt's API and the performance it enables. The specifications, proofs, and code of EverCrypt are all available as open source (§IX). II. B ACKGROUND AND RELATED WORK Multiple research projects have contributed to our understand- ing of how to produce verified cryptographic code, but none provide the performance, comprehensiveness, and convenience that developers expect from a cryptographic provider, and none investigate the challenges of agility or automatic multiplexing. Some work verifies parts of individual algorithms, particu- larly portions of Curve25519. For example, Chen et al. [26] verify the correctness of a Montgomery ladder using Coq [72] and an SMT solver, while Tsai et al. [ 75] and Polyakov et al. [67] do so using an SMT solver and a computer algebra system. All three focus on implementations written in assembly- like languages. Almeida et al. [10], in contrast, use a domain- specific language (DSL) and verified compilation (via Coq, Dafny [51], and custom scripting) to verify memory safety and side-channel resistance, and, in more recent work [ 11], correctness for ChaCha20 and Poly1305 using EasyCrypt [16]. Other papers verify a single algorithm, e.g., SHA- 256 [14], HMAC instantiated with SHA-256 [17], or HMAC- DRBG [80]. Each is written in Coq using the Verified Software Toolchain [13] and yields C code, which is compiled by CompCert [52]. Using the Foundational Cryptography Frame- work [66], they prove the cryptographic constructions secure. The SAW tool [ 31] proves the correctness of C code (via LLVM) and Java code with respect to mathematical specifications written in Cryptol. Dawkins et al. use it to verify reference implementations and simple in-house implementations of AES, ZUC, FFS, ECDSA, and the SHA-384 inner loop [73], but they do not report performance, nor verify assembly. Other works verify multiple algorithms for the same function- ality, typically for elliptic curves. For example, Zinzindohou´e et al. develop a generic library based on templates, and instantiate it for three popular curves [ 81], including Curve25519, but they report 100× performance overheads compared with C code. FiatCrypto [36] employs a verified, generic compilation scheme from a high-level Coq specification to C code for"
+      },
+      {
+        "source": "selected",
+        "value": "We present EverCrypt: a comprehensive collection of verified, high-performance cryptographic functionalities available via a carefully designed API. The API provably supports agility (choosing between multiple algorithms for the same functionality) and multiplexing (choosing between multiple implementations of the same algorithm). Through abstraction and zero-cost generic programming, we show how agility can simplify verification without sacrificing performance, and we demonstrate how C and assembly can be composed and verified against shared specifications. We substantiate the effectiveness of these techniques with new verified implementations (including hashes, Curve25519, and AES-GCM) whose performance matches or exceeds the best unverified implementations. We validate the API design with two high-performance verified case studies built atop EverCrypt, resulting in line-rate performance for a secure network protocol and a Merkle-tree library, used in a production blockchain, that supports 2.7 million insertions/sec. Altogether, EverCrypt consists of over 124K verified lines of specs, code, and proofs, and it produces over 29K lines of C and 14K lines of assembly code."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jonathan Protzenko",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Bryan Parno",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Aymeric Fromherz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Chris Hawblitzel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Marina Polubelova",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Karthikeyan Bhargavan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Benjamin Beurdouche",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Joonwon Choi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Antoine Delignat-Lavaud",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Cédric Fournet",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Natalia Kulatova",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "Tahina Ramananandro",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "Aseem Rastogi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 12
+        },
+        {
+          "order": 13,
+          "name": "Nikhil Swamy",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 13
+        },
+        {
+          "order": 14,
+          "name": "Christoph MWintersteiger",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 14
+        },
+        {
+          "order": 15,
+          "name": "Santiago Zanella-Beguelin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 15
+        },
+        {
+          "order": 16,
+          "name": "Microsoft Research",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 16
+        },
+        {
+          "order": 17,
+          "name": "Carnegie Mellon University",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 17
+        },
+        {
+          "order": 18,
+          "name": "Inria § Mit",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 18
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jonathan Protzenko",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Bryan Parno",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Aymeric Fromherz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Chris Hawblitzel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Marina Polubelova",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Karthikeyan Bhargavan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Benjamin Beurdouche",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Joonwon Choi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Antoine Delignat-Lavaud",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Cédric Fournet",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Natalia Kulatova",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 11,
+          "name": "Tahina Ramananandro",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 12,
+          "name": "Aseem Rastogi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 13,
+          "name": "Nikhil Swamy",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 14,
+          "name": "Christoph MWintersteiger",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 15,
+          "name": "Santiago Zanella-Beguelin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 142,
+      "author_count": 16,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 5,
+          "author": "Karthikeyan Bhargavan",
+          "block_id": "pdf:p1:b11",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 10,
+          "author": "Natalia Kulatova",
+          "block_id": "pdf:p1:b19",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 15,
+          "author": "Santiago Zanella-Beguelin",
+          "block_id": "pdf:p1:b27",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 10,
+          "author": "Natalia Kulatova",
+          "affiliation_raw": "MIT",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b19",
+          "affiliation_block_ids": [
+            "pdf:p1:b32"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 28.586,
+          "center_distance": 45.092,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 15,
+          "author": "Santiago Zanella-Beguelin",
+          "affiliation_raw": "MIT",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b27",
+          "affiliation_block_ids": [
+            "pdf:p1:b32"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 15.764,
+          "center_distance": 44.43,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_unique_fuzzy",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 16,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "EverCrypt: A Fast, Verified, Cross-Platform Crytographic Provider",
+      "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jonathan Protzenko",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Bryan Parno",
+          "affiliations": [
+            "Carnegie Melon University"
+          ]
+        },
+        {
+          "name": "Aymeric Fromherz",
+          "affiliations": [
+            "Carnegie Melon University"
+          ]
+        },
+        {
+          "name": "Chris Hawblitzel",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Marina Polubelova",
+          "affiliations": [
+            "Inria, France"
+          ]
+        },
+        {
+          "name": "Karthikeyan Bhargavan",
+          "affiliations": [
+            "Inria, France"
+          ]
+        },
+        {
+          "name": "Benjamin Beurdouche",
+          "affiliations": [
+            "Inria, France"
+          ]
+        },
+        {
+          "name": "Joonwon Choi",
+          "affiliations": [
+            "MIT / Microsoft Research"
+          ]
+        },
+        {
+          "name": "Antione Delignat-Lavaud",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Cédric Fournet",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Natalia Kulatova",
+          "affiliations": [
+            "Inria, France"
+          ]
+        },
+        {
+          "name": "Tahina Ramananandro",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Aseem Rastogi",
+          "affiliations": [
+            "Microsoft Research, India"
+          ]
+        },
+        {
+          "name": "Nikhil Swamy",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Christoph Wintersteiger",
+          "affiliations": [
+            "Microsoft Research, UK"
+          ]
+        },
+        {
+          "name": "Santiago Zanella-Beguelin",
+          "affiliations": [
+            "Microsoft Research, UK"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

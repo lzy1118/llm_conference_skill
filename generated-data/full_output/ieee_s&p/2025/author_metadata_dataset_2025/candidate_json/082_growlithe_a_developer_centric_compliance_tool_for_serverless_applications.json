@@ -1,0 +1,234 @@
+{
+  "paper_id": "082_growlithe_a_developer_centric_compliance_tool_for_serverless_applications",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Growlithe: A Developer-Centric Compliance Tool for Serverless Applications"
+      },
+      {
+        "source": "selected",
+        "value": "Growlithe: A Developer-Centric Compliance Tool for Serverless Applications"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Serverless applications consist of functions written in heterogeneous programming languages, use diverse data stores and communication services, and evolve rapidly. Consequently, it is challenging for serverless tenants to protect their application data from inadvertent leaks due to bugs, misconfigurations, and human errors. Cloud security tools, such as Identity and Access Management (IAM), lack observability into a tenant's application, whereas the state-of-the-art dataflow tracking tools require support from the cloud platform and incur significant runtime overheads. We present Growlithe, a tool that integrates with the serverless application development toolchain and enables continuous compliance with data policies by design. Growlithe allows declarative specification of access and data flow control policies over a language-and platformindependent dataflow graph abstraction of a serverless application, and enforces these policies through a combination of static analysis and runtime enforcement. We used Growlithe with applications using Python and JavaScript functions that can be hosted on AWS Lambda and Google Cloud Functions platforms. We empirically demonstrate that Growlithe is crosscutting, portable and efficient, and enables developers to easily adapt their application and policies to evolving requirements."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Serverless applications consist of functions written in heterogeneous programming languages, use diverse data stores and communication services, and evolve rapidly. Consequently, it is challenging for serverless tenants to protect their appli- cation data from inadvertent leaks due to bugs, misconfigura- tions, and human errors. Cloud security tools, such as Iden- tity and Access Management (IAM), lack observability into a tenant's application, whereas the state-of-the-art dataflow tracking tools require support from the cloud platform and incur significant runtime overheads. We present Growlithe, a tool that integrates with the serverless application development toolchain and enables continuous compliance with data policies by design. Growlithe allows declarative specification of access and data flow control policies over a language- and platform- independent dataflow graph abstraction of a serverless appli- cation, and enforces these policies through a combination of static analysis and runtime enforcement. We used Growlithe with applications using Python and JavaScript functions that can be hosted on A WS Lambda and Google Cloud Functions platforms. We empirically demonstrate that Growlithe is cross- cutting, portable and efficient, and enables developers to easily adapt their application and policies to evolving requirements. 1. Introduction Security and compliance is a shared responsibility be- tween cloud providers (e.g., AWS, Azure, Google Cloud) and their tenants [1-4]. In light of the recent data privacy regulations, such as GDPR [5], CCPA [6], CPPA [7], the responsibility of ensuring compliance with the regulations remains with the cloud tenant (the data controller in GDPR parlance1), whereas the cloud platform provider (the data processor) is expected to only process the data according to the tenant's instructions. Cloud providers offer mutual isolation for tenants' code, e.g., through virtual machines, containers, and trusted execution environments (e.g., SGX enclaves), and data, e.g., through identity and access man- agement tools (IAM) [8-10], network access control [11]), and encryption for data in transit. However, a remaining challenge is protecting a tenant's data against its own bugs, vulnerabilities, and misconfigurations. Several tools were designed in the last few decades for securing data in monolithic applications [12-19]. These tools explored language designs for specifying the desired 1. Other regulations [6] also define equivalent roles. data policies and system implementations for enforcing the policies through access control, and static and dynamic in- formation flow control mechanisms. However, organizations are increasingly migrating their applications to serverless platforms (e.g., AWS Lambda, Microsoft Azure Functions, Google Cloud Functions) [20], which offer auto-scaling, high availability, and a pay-per-use model, enabling develop- ers to focus on their business logic. Unfortunately, the pre- serverless era tools cannot address the challenges in ensuring compliance that are pertinent to the serverless computing paradigm and platforms. First, unlike prior work, a tool for serverless appli- cations needs to handle heterogeneity within the applica- tion, which arises from functions written in diverse pro- gramming languages (e.g., JS, Python, C, Go) and relying on diverse services (e.g., queues, key-value stores, and databases) [20]. Second, unlike conventional long-running applications, serverless functions typically have very short startup and execution times (in the order of milliseconds to a couple of seconds) [21], and even the inter-function com- munication over the network adds to the application over- heads. Thus, a compliance tool for serverless must minimize runtime overhead to avoid impacting the overall application performance and ultimately its billing costs. Third, a tool needs to address challenges due to the serverless platform, such as the possibility of leakage of data across client requests due to the container reuse optimization designed for reducing performance overheads. Finally, while most prior work focuses on evaluating their tool on a snapshot of an application and its data, an effective tool must be able to keep up with frequent changes in a serverless application. In particular, different parts of the application, which may be maintained by different development teams, may evolve independently of each other. Ensuring continued end-to-end compliance in such an evolving application is non-trivial. Cloud IAM tools [8-10] allow cloud tenants to restrict access to their applications and resources at a coarse gran- ularity (e.g., allowing read/write access on a database to a specific function or a tenant). However, IAM tools are not sufficient for tenants to ensure compliance for their users' data records, which would require information flow control. Recent work has proposed new tools for cloud tenants to specify and enforce data flow restrictions in serverless appli- cations both at a coarse granularity (similar to IAM) [22, 23] and at a fine granularity (accounting for user-specific poli- cies) [24]. However, these tools either support applications written in a single programming language, incur significant 3161 DOI 10.1109/SP61157.2025.00099 runtime overhead, or depend on custom containers, thus requiring support from cloud providers for adoption. We present Growlithe, a tool that serverless applica- tion developers can integrate in their software development toolchain and achieve compliance without requiring any modifications or support from cloud providers. Growlithe requires modest developer inputs for specifying the policies required by the users, the organization, or the regulations, and enables efficient policy enforcement at the application source code layer. Growlithe builds a language- and platform-independent dataflow graph abstraction of a serverless application (§3.1), on which developers specify data policies, independent of the application implementation. Developers specify fine- grained access control and information flow control poli- cies in a declarative specification language, which capture requirements for storing and processing sensitive data of the applications' end users (§3.2). Growlithe enforces the policies through a combination of static and dynamic enforcement (§3.4). The static en- forcement runs on the abstract application dataflow graph and, therefore, is language- and platform-independent. For runtime enforcement, Growlithe instruments the application source code with assertions that are checked during appli- cation execution. The runtime checks are also implemented largely in a platform-independent manner, though Growlithe may leverage platform-specific tools (e.g., logging services) for performance optimization. Static enforcement helps to reduce performance overheads of the runtime enforcement, while runtime enforcement helps to enforce the policies that could not be checked statically. Growlithe logs policy check failures during offline and runtime enforcement with information about the inputs and the operations involved in the policy violations. Developers can use these logs to revise their application code, configu- ration, or policy specification, and re-run Growlithe before deploying the new version of the application. Contributions. To the best of our knowledge, Growlithe is the first tool designed to empower developers in en- abling continuous policy compliance by design within their serverless applications. Growlithe centralizes specification of data policies for serverless applications consisting of one or more functions, data stores, and communication services, and automates the enforcement of the policies. Together, these two features help to ease the developer's burden in ensuring policy compliance. Concretely, we make the following contributions. (i) We present language- and platform-independent abstractions, a declarative policy specification language, and a hybrid policy enforcement mechanism with a narrow interface for integration with function implementations (§3). (ii) We provide a prototype of Growlithe, which supports Python and JavaScript functions (the two most popular languages for serverless [20]), and can be run on AWS Lambda and Google Cloud Functions (§4). (iii) We demonstrate Growlithe's generality and efficacy in enabling compliance by applying it to three applications, covering different char- acteristics of realistic serverless application architectures (§5.1). (iv) We quantify Growlithe's performance costs (§5.2, §5.3), analyze the costs involved in supporting new programming languages and services and in porting to a different cloud platform (§5.4), and discuss Growlithe's effectiveness in addressing policy violations due to bugs or evolving application requirements (§5.5). 2. Motivation and Goals We first motivate the need for a new security tool for serverless applications, then we discuss the high-level goals of this tool and the threat model it targets. 2.1. A Primer on Serverless Paradigm Serverless computing is a new paradigm, in which appli- cations are architected as a collection of multiple stateless functions that are run as independent units of computation, rely on external data stores for persisting their data, and communicate with each other via network or external data stores. Cloud platforms run these functions in containers, manage the allocated resources, and automatically scale them to adapt to variable loads. Protecting data in a serverless application requires un- derstanding where the data is stored and accessed, and how the data is communicated between different components of the application. Communication to/from functions can occur in several ways. First, the functions may communicate with each other via data stores (e.g., databases, key-value stores, file systems), or communication services (e.g., message queues or broker services). Second, a function may directly invoke another function (e.g., using a remote procedure call, or REST APIs), where data may be passed through arguments to the invoked function and results returned from the called functions. Third, orchestration services [25] may mediate routing of the control and results from one function to another according to the control flow configuration of the application. Functions may also call other external services, e.g., data store services, by invoking the public APIs of the services. Similarly, functions may be invoked in response to specific “event triggers” which may originate from external services, client requests to the functions, or periodic events. Additionally, data may flow between different invoca- tions of a function that end up executing in the same “warm” containers, which are reused to reduce function startup times. Since container scheduling policies are opaque to serverless applications, it is challenging to predict which dataflows across invocations may be potentially sensitive. In this paper, we propose Growlithe to enforce con- straints on such data access and data flow patterns to achieve compliance with user-defined data policies. 2.2. Motivating Example Consider the example of a fictitious insurance company iClaim, which runs a claim processing application called ClaimApp as a serverless application. Several companies 3162"
+      },
+      {
+        "source": "selected",
+        "value": "Serverless applications consist of functions written in heterogeneous programming languages, use diverse data stores and communication services, and evolve rapidly. Consequently, it is challenging for serverless tenants to protect their application data from inadvertent leaks due to bugs, misconfigurations, and human errors. Cloud security tools, such as Identity and Access Management (IAM), lack observability into a tenant's application, whereas the state-of-the-art dataflow tracking tools require support from the cloud platform and incur significant runtime overheads. We present Growlithe, a tool that integrates with the serverless application development toolchain and enables continuous compliance with data policies by design. Growlithe allows declarative specification of access and data flow control policies over a language-and platformindependent dataflow graph abstraction of a serverless application, and enforces these policies through a combination of static analysis and runtime enforcement. We used Growlithe with applications using Python and JavaScript functions that can be hosted on AWS Lambda and Google Cloud Functions platforms. We empirically demonstrate that Growlithe is crosscutting, portable and efficient, and enables developers to easily adapt their application and policies to evolving requirements."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Praveen Gupta",
+          "email": "pvgupta@cs.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Arshia Moghimi",
+          "email": "amoghimi@student.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Devam Sisodraker",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Mohammad Shahrad",
+          "email": "mshahrad@ece.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Aastha Mehta",
+          "email": "aasthakm@cs.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Praveen Gupta",
+          "email": "pvgupta@cs.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Arshia Moghimi",
+          "email": "amoghimi@student.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Devam Sisodraker",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Mohammad Shahrad",
+          "email": "mshahrad@ece.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Aastha Mehta",
+          "email": "aasthakm@cs.ubc.ca",
+          "orcid": "",
+          "affiliations": [
+            "The University of British Columbia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 5,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Growlithe: A Developer-Centric Compliance Tool for Serverless Applications",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Praveen Gupta",
+          "affiliations": [
+            "University of British Columbia"
+          ]
+        },
+        {
+          "name": "Arshia Moghimi",
+          "affiliations": [
+            "University of British Columbia"
+          ]
+        },
+        {
+          "name": "Devam Sisodraker",
+          "affiliations": [
+            "University of British Columbia"
+          ]
+        },
+        {
+          "name": "Mohammad Shahrad",
+          "affiliations": [
+            "University of British Columbia"
+          ]
+        },
+        {
+          "name": "Aastha Mehta",
+          "affiliations": [
+            "University of British Columbia"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

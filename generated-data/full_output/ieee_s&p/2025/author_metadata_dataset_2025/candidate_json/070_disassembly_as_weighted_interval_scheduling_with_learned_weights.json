@@ -1,0 +1,346 @@
+{
+  "paper_id": "070_disassembly_as_weighted_interval_scheduling_with_learned_weights",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Disassembly as Weighted Interval Scheduling with Learned Weights"
+      },
+      {
+        "source": "selected",
+        "value": "Disassembly as Weighted Interval Scheduling with Learned Weights"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Disassembly is the first step of a variety of binary analysis and transformation techniques, such as reverse engineering, or binary rewriting. Recent disassembly approaches consist of three phases: an exploration phase, that overapproximates the binary's code; an analysis phase, that assigns weights to candidate instructions or basic blocks; and a conflict resolution phase, that downselects the final set of instructions. We present a disassembly algorithm that generalizes this pattern for a wide range of architectures, namely x86, x64, arm32, and aarch64. Our algorithm presents a novel conflict resolution method that reduces disassembly to weighted interval scheduling. Additionally, we present a weight assignment algorithm that allows us to learn optimal weights for the various disassembly heuristics in the analysis phase. Learned weights outperform manually tuned weights in most cases while reducing the number of necessary heuristics by 40% (by setting their weights to zero). Our implementation, built on top of Ddisasm, outperforms state-of-the-art disassemblers in several metrics and achieves the largest proportion of perfectly disassembled binaries by a wide margin in all evaluated datasets. 3033 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Disassembly is the first step of a variety of binary analysis and transformation techniques, such as reverse engi- neering, or binary rewriting. Recent disassembly approaches consist of three phases: an exploration phase, that overap- proximates the binary's code; an analysis phase, that assigns weights to candidate instructions or basic blocks; and a conflict resolution phase, that downselects the final set of instructions. We present a disassembly algorithm that generalizes this pattern for a wide range of architectures, namely x86, x64, arm32, and aarch64. Our algorithm presents a novel conflict resolution method that reduces disassembly to weighted inter- val scheduling. Additionally, we present a weight assignment algorithm that allows us to learn optimal weights for the various disassembly heuristics in the analysis phase. Learned weights outperform manually tuned weights in most cases while reducing the number of necessary heuristics by 40% (by setting their weights to zero). Our implementation, built on top of Ddisasm, outperforms state-of-the-art disassemblers in several metrics and achieves the largest proportion of perfectly disas- sembled binaries by a wide margin in all evaluated datasets. 1. Introduction Disassembly is the process of recovering assembly in- structions from binary code. This amounts to deciding, for each byte in the binary program, whether it belongs to an instruction or should be interpreted as data. Disassembly is an essential first step of a variety of binary analysis and transformation techniques, including reverse engineering, binary rewriting, or vulnerability discovery. Traditional approaches rely on linear sweep or recursive disassembly. Linear sweep starts decoding instructions at the beginning of the code section and proceeds sequentially. This approach results in errors when data is interleaved with code. Recursive disassembly recovers the assembly code by traversing the control flow of the program, but is disadvantaged in resolving indirect branches limiting its coverage. Modern reverse engineering frameworks [3], [6], [8], [13], [16], [22], [29] often use a combination of both linear and recursive disassembly, relying on heuristics to find additional code or make decisions among conflicting code blocks [23]. These techniques and heuristics are often Instruction Set Architecture (ISA) specific. Several of the more recent techniques [15], [21], [26], [32] can be thought of as having the following steps: 1) An exploration phase in which a superset of all the potential instructions or data blocks is collected. 2) An analysis phase in which static analysis is per- formed to gather evidence for and against candidate instructions or data blocks, usually in the form of dependencies between candidates or weights as- signed to each candidate. 3) A conflict resolution phase in which the evidence is aggregated to reach a final decision. For example, D-ARM [32] proposes an approach for ARM in which the exploration phase considers all possibil- ities, i.e. every aligned address can be ARM code, Thumb code, or data; and expresses the conflict resolution problem as maximum weight independent set (MWIS) optimization problem [28]. Note that MWIS is NP-hard and D-ARM's implementation needs to resort to a greedy approximation. Ddisasm [15], D-ARM [32], and other comparable ap- proaches suffer what we will refer to as the weight as- signment problem. Given a set of analyses, heuristics and a conflict resolution method, what are the optimal weights that should be assigned to each of the heuristics to maximize per- formance? Are all heuristics necessary? Previous approaches rely on hand-tuned weights [15] or ISA-specific statistical studies combined and ad-hoc aggregation methods [26]. In our work, we present a multi-ISA (with support for x86, x64, arm32, and aarch64 binaries) disassembly approach that follows the three generic steps described above, but presents two key innovations. First, it relies on a tractable yet powerful conflict resolution algorithm. Our disassembly algorithm expresses the conflict resolution problem as a Weighted Interval Scheduling (WIS) problem, for which there is a complete and efficient dynamic pro- gramming algorithm [18]. In this setting, each code block or data block is considered a “task” to be scheduled with the restriction that tasks cannot overlap with each other. The resulting disassembly corresponds to the optimal schedule (the schedule with maximum aggregated weight). Second, given this conflict resolution algorithm, we provide a solution to the weight assignment problem by encoding the inference of optimal heuristic weights with respect to a set of binaries with known ground truth as a 3033 DOI 10.1109/SP61157.2025.00192 linear programming (LP) problem with soft constraints. This allows us to obtain optimal heuristic weights using off-the- self solvers (like Pulp [2]) even in cases when no perfect solution exists. We build our implementation on top of Ddisasm [15] and evaluate it in comparison with other state-of-the-art tools on several ISAs. We perform this evaluation while accounting for the limitations of the existing approaches to gather ground truth [19], [24]. In addition, we evaluate individual aspects of the algorithm: the completeness of the exploration phase and the generalization properties of the weight inference algorithm. Finally, we discuss some insights about the learned heuristics weights. In summary, our contributions are the following: 1) A multi-ISA disassembly algorithm that performs conflict resolution among candidate instructions and data blocks by solving a weighted interval scheduling (WIS) optimization problem (Sect. 3). 2) A weight assignment algorithm that optimizes the weights assigned to the heuristics used in the dis- assembly algorithm based on a corpus of ground- truth annotated binaries (Sect. 4). This algorithm supports incomplete annotations to account for the limitations in ground truth extraction techniques. 3) An extensive experimental evaluation of the disas- sembly algorithm and its corresponding weight as- signment algorithm that includes a large collection of arm32, aarch64, x86, and x64 stripped binaries compiled with various compilers, optimization lev- els, and binary formats (ELF and PE) including the datasets from [17], [19], [20], [24] (Sect. 5). 2. Static Disassembly Instruction Recovery In this section, we define static disassembly and state some simplifying assumptions that frame the problem. 2.1. Basic Definitions Informally, we refer to disassembly as the process of recovering assembly instructions from binary code, which amounts to deciding the location and decode mode of the assembly instructions in the binary's executable sections. We restrict ourselves to static disassembly, i.e., we only consider instructions present in the binary file. In other words, we do not consider dynamically generated or self- modifying code. Let us first define decode mode and instruction decoding. The default decode mode for any ISA will be referred to as A, and arm32's second decode mode (Thumb, as opposed to ARM) will be referred to as T . Instruction decoding maps a sequence of bytes and a decode mode to an assembly instruction. As such, instruction decoding is deterministic, i.e. an address and a decode mode uniquely determine the instruction located at that address and its size. Thus, given a binary section spanning addresses [s, e), let d ∈ { A, T } be a decode mode and a ∈ [s, e) an address within the binary section. We define a partial function instr (a, d) that defines the assembly instruction starting at address a and using the decode mode d1. The function end (instr (a, d)) denotes the end address of the instruction instr (a, d). Given this characterization of instructions, we define a binary's Code as a set of instructions based on the binary program semantics. Definition 1 (Code). An instruction instr (a, d) is code instr (a, d) ∈ Code if there exists a program trace that contains the instruction instr (a, d). Under this definition, unreachable instructions (dead code) are not considered code, and determining code accu- rately is not decidable (since it is connected to reachability). Engel et al. [14]'s sound disassembly decidability theorems allow overapproximating Code (which is indeed decidable in our setting), whereas our goal is to recover it precisely. This definition also accounts for the challenges in col- lecting ground truth for disassembly [19], [24]. Developers may encode instructions meant to be executed as data, which confuses compiler-based ground truth generation. Similarly, we can define data in a binary program based on its dynamic behavior. Definition 2 (Data). A program address a is data, a ∈ Data, if there exists a program execution trace that reads or writes that memory location. Instruction recovery aims to infer Code. In general, Code and Data are neither complementary nor mutually exclusive. There can be regions of a binary that are neither code (these regions are never executed) nor data (those bytes are never read or written). We call such regions padding since they are introduced by compilers to ensure alignment. Example 1. The assembly listing in Figure 1 contains padding in the address range [94c67 − 94c70). Those bytes are never executed 2 nor are they read by any instructions. Some disassemblers will interpret them as nops (as in the figure) or as data but they are neither according to our definition. A binary region can also be both code and data. The instructions in that region are executed and also read or written during the lifetime of the program. 2.2. Assumptions In the previous subsection, we have provided a general definition of Code and the desired output of the disassembly process. Next, we explicitly state two simplifying assump- tions. In general, we find that while padding is extremely common in compiler-generated binaries, binary regions that are both code and data are uncommon. Thus, our disassem- bly algorithm rests on the following assumption: 1. instr (a, d) is partial because there might be combinations of decode modes and addresses that do not define a valid instruction in the given ISA. 2. Actually proving that those bytes are never executed would be very challenging but we are fairly confident in this particular case. The execution cannot fall through 94c67 and we can find jumps that target 94c70 directly. 3034"
+      },
+      {
+        "source": "selected",
+        "value": "Disassembly is the first step of a variety of binary analysis and transformation techniques, such as reverse engineering, or binary rewriting. Recent disassembly approaches consist of three phases: an exploration phase, that overapproximates the binary's code; an analysis phase, that assigns weights to candidate instructions or basic blocks; and a conflict resolution phase, that downselects the final set of instructions. We present a disassembly algorithm that generalizes this pattern for a wide range of architectures, namely x86, x64, arm32, and aarch64. Our algorithm presents a novel conflict resolution method that reduces disassembly to weighted interval scheduling. Additionally, we present a weight assignment algorithm that allows us to learn optimal weights for the various disassembly heuristics in the analysis phase. Learned weights outperform manually tuned weights in most cases while reducing the number of necessary heuristics by 40% (by setting their weights to zero). Our implementation, built on top of Ddisasm, outperforms state-of-the-art disassemblers in several metrics and achieves the largest proportion of perfectly disassembled binaries by a wide margin in all evaluated datasets. 3033 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Antonio Flores-Montoya",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Junghee Lim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Adam Seitz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Akshay Sood",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Edward Raff",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "James Holt",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Grammatech Inc † Booz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Allen Hamilton",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Antonio Flores-Montoya",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Junghee Lim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Adam Seitz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Akshay Sood",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Edward Raff",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "James Holt",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Allen Hamilton",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 108,
+      "author_count": 7,
+      "matched_author_count": 2,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 5,
+          "author": "James Holt",
+          "block_id": "pdf:p1:b2",
+          "match_score": 0.6667
+        },
+        {
+          "author_index": 6,
+          "author": "Allen Hamilton",
+          "block_id": "pdf:p1:b14",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 6,
+          "author": "Allen Hamilton",
+          "affiliation_raw": "Laboratory for Physical Sciences",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.127,
+          "center_distance": 3.971,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Disassembly as Weighted Interval Scheduling with Learned Weights",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Antonio Flores-Montoya",
+          "affiliations": [
+            "GrammaTech Inc."
+          ]
+        },
+        {
+          "name": "Junghee Lim",
+          "affiliations": [
+            "GrammaTech Inc."
+          ]
+        },
+        {
+          "name": "Adam Seitz",
+          "affiliations": [
+            "GrammaTech Inc."
+          ]
+        },
+        {
+          "name": "Akshay Sood",
+          "affiliations": [
+            "GrammaTech Inc."
+          ]
+        },
+        {
+          "name": "Edward Raff",
+          "affiliations": [
+            "Booz Allen Hamilton"
+          ]
+        },
+        {
+          "name": "James Holt",
+          "affiliations": [
+            "Laboratory for Physical Sciences"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "remove_organization_author",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "removed_name": "GrammaTech Inc."
+    },
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "baseline_count": 7,
+      "proposed_count": 7,
+      "retained_count": 6,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

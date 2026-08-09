@@ -1,0 +1,374 @@
+{
+  "paper_id": "069_utopia_automatic_generation_of_fuzz_driver_using_unit_tests",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "UTOPIA: Automatic Generation of Fuzz Driver using Unit Tests"
+      },
+      {
+        "source": "selected",
+        "value": "UTOPIA: Automatic Generation of Fuzz Driver using Unit Tests"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fuzzing is arguably the most practical approach for detecting security bugs in software, but a non-trivial extent of efforts is required for its adoption. To be effective, high-quality fuzz drivers should be first formulated with a proper sequence of APIs that can exhaustively explore the program states. To alleviate this burden, existing solutions attempt to generate fuzz drivers either by inferring the valid sequences of APIs from the consumer code (i.e., actual uses of APIs) or by directly extracting them from sample executions. Unfortunately, all existing approaches suffer from a common problem: the observed API sequences, either statically inferred or dynamically monitored, are intermingled with custom application logics. However, we observed that the unit tests are carefully crafted by the actual designer of the APIs to validate their proper usages, and importantly, it is a common practice to write the unit tests during their development (e.g., over 70% of popular GitHub projects). In this paper, we propose, UTOPIA, an open-source tool and analysis algorithm that can automatically synthesize effective fuzz drivers from existing unit tests with near-zero human involvement. To demonstrate its effectiveness, we applied UTOPIA to 55 open-source project libraries, including Tizen and Node.js, and automatically generated 5K fuzz drivers from 8K eligible unit tests. In addition, we executed the generated fuzzers for approximately 5 million per-core hours and discovered 123 bugs. More importantly, 2.4K of the generated fuzz drivers were adopted to the continuous integration process of the Tizen project, indicating the quality of the synthesized fuzz driver. The proposed tool and results are publicly available and maintained for a broader adoption among both researchers and practitioners. 2676 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fuzzing is arguably the most practical approach for detecting security bugs in software, but a non-trivial extent of efforts is required for its adoption. To be effective, high-quality fuzz drivers should be first formulated with a proper sequence of APIs that can exhaustively explore the program states. To alleviate this burden, existing solutions attempt to generate fuzz drivers either by inferring the valid sequences of APIs from the consumer code (i.e., actual uses of APIs) or by directly extracting them from sample executions. Unfortunately, all existing approaches suffer from a common problem: the observed API sequences, either statically inferred or dynamically monitored, are intermingled with custom application logics. However, we observed that the unit tests are carefully crafted by the actual designer of the APIs to validate their proper usages, and importantly, it is a common practice to write the unit tests during their development (e.g., over 70% of popular GitHub projects). In this paper, we propose, UTOPIA , an open-source tool and analysis algorithm that can automatically synthesize effective fuzz drivers from existing unit tests with near-zero human involvement. To demonstrate its effectiveness, we applied UTOPIA to 55 open-source project libraries, including Tizen and Node.js, and automatically generated 5K fuzz drivers from 8K eligible unit tests. In addition, we executed the generated fuzzers for approximately 5 million per-core hours and discovered 123 bugs. More importantly, 2.4K of the generated fuzz drivers were adopted to the continuous integration process of the Tizen project, indicating the quality of the synthesized fuzz driver. The proposed tool and results are publicly available and maintained for a broader adoption among both researchers and practitioners. I. I NTRODUCTION Fuzzing is an effective technique for automatically discov- ering software bugs and security vulnerabilities. For instance, Google's OSS-Fuzz [2], that provides continuous fuzzing for open-source software, discovered more than 30,000 bugs in 500 projects since its announcement in 2016. The basic principle of fuzzing is simple: it generates and feeds pseudorandom inputs to a given program and checks if the program properly processes the provided inputs during execution. If the program behaves abnormally (e.g., crashes or hangs) during the exe- cution, it provides the bug-triggering inputs as the proof of existence of a software bug. Essentially, two types of fuzzers exist: an end-to-end fuzzer that aims to test an entire program as a blackbox (e.g., afl [ 27]), and a library fuzzer that focuses on testing specific interfaces or *Corresponding Author. APIs of the library (e.g., libFuzzer [ 25]). As end-to-end fuzzing can enable automatic testing without requiring considerable efforts from the developer for adoption, it has become widely popular, especially when the fuzzer is integrated for the first time. In contrast, a library fuzzer requires manual and deep integration with the library, called fuzz drivers, which describe a sequence of API calls processing the fuzzer-provided inputs. Upon the maturity of a project, such a deep integration is preferred by the developers as its whitebox nature allows deeper state exploration. Recently, researchers have been exploring a means of alleviating the burden of manual integration for library fuzzers by automatically generating or synthesizing fuzz drivers [12, 16, 18, 28]. They formulate a proper sequence of APIs for fuzzing either by stochastically inferring API dependencies from their uses in the source code [ 12, 16], or from the execution traces observed during runtime [ 18, 28]. More specifically, one of the original projects, Fudge [ 12], focuses on directly reducing a proper sequence of API calls from the consumer code, wherein the API uses and the custom application logics are intermingled. A following project, FuzzGen [ 16], can theoretically produce reasonably efficient fuzz drivers (i.e., inferring a valid sequence of API calls) by performing a whole program analysis that reasons about the API dependencies from the multiple consumer codes. Although these approaches are general purpose and broadly applicable, they rely on consumer code that exhibits fundamental limitations. In particular, the intermixed code may end up generating simple API sequences or semantically invalid states (e.g., allocation in one code and uses in other places). Inferring valid API sequences and dependencies from statistical aggregation of consumer code would render stereotypical cases that are not ideal for fuzzers looking for invalid, uncommon inputs. Unlike existing projects that attempt to infer the API dependencies, we utilized the exact sequence of API calls in unit tests (UTs) . We observed that 1) the existing UTs explicitly convey such dependencies on APIs that a developer cares about, 2) UTs check various facets of the functionality provided by a library with more APIs (e.g., internal ones) than consumer code, and 3) numerous existing projects already have well-written UTs-73% from Github on average, Android external and OSS-Fuzz as listed in Table I. In addition, we 2676 DOI 10.1109/SP46215.2023.00043 Category Total # Unit Tested # (rate) Fuzz Tested # (rate) GitHub C/C++ (Top 200) 200 143 (72%) 38 (19%) Android External 316 224 (71%) 61 (19%) OSSFuzz 450 347 (77%) 450 (100%) Table I: Over 70% of popular open-source projects in GitHub contain UTs, but approximately 20% of these projects implemented fuzz drivers. We aim to bridge this gap by automatically converting existing UTs to fuzz drivers. observed that a non-trivial number of open-source projects- nearly 80% of popular open-source projects in GitHub (Table I) have not adopted fuzzing as a means for testing to date. In this paper, we propose UTOPIA that employs techniques to convert each existing UT to an effective fuzz driver in an automated and scalable manner. The key ideas behind UTOPIA are to 1) leverage UT specific properties to unravel the complexity in UT analysis, 2) perform root-definition analysis, a newly introduced technique, to trace back the source of API arguments for proper fuzz input injection that maintains the inter-procedural relations and data-flow intended by the developers, and 3) reflect in fuzz input mutation, the analysis of impacts each argument may have within the internals of its API. This enables UTOPIA to deeply explore the code space and avoid crashes resulting from invalid API usage. Therefore, a push-button solution can be provided to automatically synthesize high-quality fuzz drivers with no human involvement. To demonstrate the effectiveness of automatic fuzz driver synthesis, we applied UTOPIA to 55 open-source project libraries (25 projects from Table I and 30 from Tizen) among projects that satisfy the following conditions: 1) written in C/C++, 2) uses gtest [ 7], boost [ 6], or TCT [ 5] for UT, and 3) supports LLVM build on Linux. We selected 25 projects, considering the diversity of their project size, building systems and UT frameworks, to evaluate UTOPIA by testing with their generated fuzz drivers. For the 30 Tizen projects, the generated fuzz drivers have been adopted by the Tizen community and are continuously executed [ 4], verifying the quality of the generated fuzz drivers. With the use of UTOPIA , we could find and report a total of 123 bugs in popular open-source projects such as Tizen and libaom. Among these bugs, 70 were confirmed by the project communities, 48 are reported but await community response, and the remaining 5 were in exposed APIs that were considered internal by the developers and determined as not required to be fixed. In this paper, we make the following contributions: • We propose a new fuzz driver synthesis approach that em- braces the existing unit tests for automatically generating fuzz drivers. • We implemented a prototype of the present approach, UTOPIA , for C/C++ libraries utilizing the gtest and boost UT frameworks and empirically validate that it can successfully transform 5K UTs into meaningful fuzz drivers for 55 open-source project libraries. UTOPIA is available publicly at https://github.com/Samsung/UTopia. • We have reported 123 new bugs, among which 70 were confirmed during the responsible disclosure process (Table VII). II. C HALLENGES AND PROPOSED APPROACH UTOPIA aims to generate high-quality fuzz drivers in a completely automated and scalable manner. To achieve this goal, UTOPIA should minimize the human involvement during the entire generation process by addressing two major challenges: C1: Synthesize valid API call sequences C2: Synthesize valid API call parameters This is due to the fact that, in a fuzz driver, libraries can crash not only because a provided input hits a bug but also because of invalid API usage caused by C1/2. Such unintended crashes, referred to as spurious crashes, make the fuzzing process ineffective; it diverts the fuzzer to an uninteresting state and demands manual analysis of found crashes. In severe cases, they can even call for manual fixing of drivers, because they might prevent a driver from performing any meaningful fuzzing exploration (e.g., a driver calling a dereferencing API on an uninitialized pointer will assuredly crash with little chance of exploration). In §II-A and §II-B, we describe C1 and C2 with additional difficulties related to these challenges and introduce UT as the key enabler to UTOPIA sidestepping such problems. In § II-C, we address that the seemingly simple idea of using UT presents additional interesting challenges. Running example. We describe the challenges in this section by using a running example in Figure 1, a UT containing the API uses for reading or writing raw data in the OpenCV library, with which UTOPIA could generate a fuzz driver reproducing CVE-2019-5063. Basically, UTOPIA transforms the UT into a fuzz driver by making minor changes to the original UT code in order to assign fuzz input to the existing variables that are analyzed as sources of API arguments. For instance, in Figure 1, UTOPIA respectively transforms lines 5, 9, 14, 22 into lines 6, 10, 18, 23 and inserts an assignment statement (line 17) to provide fuzz input to variables that influence the call parameters of APIs. Note that certain parameters of the APIs are deliberately not fuzzed, because UTOPIA analyzes that changing them could potentially cause severe spurious crashes (details of exclusion criteria are elaborated in § III-D). A. Synthesizing Valid API Call Sequences A major challenge in fuzz driver generation is to figure out which library APIs to call and in what order to call them because APIs may often have strict order dependencies as ob- served in our running example: FileStorage() → writeRaw() → release(). Therefore, the construction of random sequences of APIs for fuzz drivers might simply waste the fuzzing effort (e.g., any crash resulting from writeRaw() calls after a release() without a constructor call would be considered a spurious crash rather than a bug.) 22677"
+      },
+      {
+        "source": "selected",
+        "value": "Fuzzing is arguably the most practical approach for detecting security bugs in software, but a non-trivial extent of efforts is required for its adoption. To be effective, high-quality fuzz drivers should be first formulated with a proper sequence of APIs that can exhaustively explore the program states. To alleviate this burden, existing solutions attempt to generate fuzz drivers either by inferring the valid sequences of APIs from the consumer code (i.e., actual uses of APIs) or by directly extracting them from sample executions. Unfortunately, all existing approaches suffer from a common problem: the observed API sequences, either statically inferred or dynamically monitored, are intermingled with custom application logics. However, we observed that the unit tests are carefully crafted by the actual designer of the APIs to validate their proper usages, and importantly, it is a common practice to write the unit tests during their development (e.g., over 70% of popular GitHub projects). In this paper, we propose, UTOPIA, an open-source tool and analysis algorithm that can automatically synthesize effective fuzz drivers from existing unit tests with near-zero human involvement. To demonstrate its effectiveness, we applied UTOPIA to 55 open-source project libraries, including Tizen and Node.js, and automatically generated 5K fuzz drivers from 8K eligible unit tests. In addition, we executed the generated fuzzers for approximately 5 million per-core hours and discovered 123 bugs. More importantly, 2.4K of the generated fuzz drivers were adopted to the continuous integration process of the Tizen project, indicating the quality of the synthesized fuzz driver. The proposed tool and results are publicly available and maintained for a broader adoption among both researchers and practitioners. 2676 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Bokdeuk Jeong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Joonun Jang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Hayoon Yi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jiin Moon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Junsik Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Intae Jeon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Taesoo Kim †⋆",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea",
+            "Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Woochul Shim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Yong Ho Hwang",
+          "email": "yongh.hwang@samsung.com",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Bokdeuk Jeong",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Joonun Jang",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Hayoon Yi",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jiin Moon",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Junsik Kim",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Intae Jeon",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Taesoo Kim",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "WooChul Shim",
+          "email": "",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Yong Ho Hwang",
+          "email": "yongh.hwang@samsung.com",
+          "affiliations": [
+            "Samsung Research, Republic of Korea ⋆ Georgia Institute of Technology, USA"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 120,
+      "author_count": 9,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Bokdeuk Jeong",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "UTOPIA: Automatic Generation of Fuzz Driver using Unit Tests",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Bokdeuk Jeong",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        },
+        {
+          "name": "Joonun Jang",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        },
+        {
+          "name": "Hayoon Yi",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        },
+        {
+          "name": "Jiin Moon",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        },
+        {
+          "name": "Junsik Kim",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        },
+        {
+          "name": "Intae Jeon",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        },
+        {
+          "name": "Taesoo Kim",
+          "affiliations": [
+            "Samsung Research, Republic of Korea; Georgia Institute of Technology, USA"
+          ]
+        },
+        {
+          "name": "WooChul Shim",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        },
+        {
+          "name": "Yong Ho Hwang",
+          "affiliations": [
+            "Samsung Research, Republic of Korea"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yong Ho Hwang",
+      "field": "email",
+      "restored_value": "yongh.hwang@samsung.com",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 9,
+      "country_values_restored": 9,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

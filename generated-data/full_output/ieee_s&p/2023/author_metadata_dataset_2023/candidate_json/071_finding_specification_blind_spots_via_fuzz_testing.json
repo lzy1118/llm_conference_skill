@@ -1,0 +1,141 @@
+{
+  "paper_id": "071_finding_specification_blind_spots_via_fuzz_testing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Finding Specification Blind Spots via Fuzz Testing"
+      },
+      {
+        "source": "selected",
+        "value": "Finding Specification Blind Spots via Fuzz Testing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "A formally verified program is only as correct as its specifications (SPEC). But how to assure that the SPEC is complete and free of loopholes? This paper presents FAST, short for Fuzzing-Assisted Specification Testing, as a potential answer. The key insight is to exploit and synergize the \"redundancy\" and \"diversity\" in formally verified programs for cross-checking. Specifically, within the same codebase, SPEC, implementation (CODE), and test suites are all derived from the same set of business requirements. Therefore, if some intention is captured in CODE and test case but not in SPEC, this is a strong indication that there is a blind spot in SPEC. FAST examines the SPEC for incompleteness issues in an automated way: it first locates SPEC gaps via mutation testing, i.e., by checking whether a CODE variant conforms to the original SPEC. If so, FAST further leverages the test suites to infer whether the gap is introduced by intention or by mistake. Depending on the codebase size, FAST may choose to generate CODE variants in either an enumerative or evolutionary way. FAST is applied to two open-source codebases that feature formal verification and helps to confirm 13 and 21 blind spots in their SPEC respectively. This highlights the prevalence of SPEC incompleteness in real-world applications. 2708 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "A formally verified program is only as correct as its specifications ( SPEC ). But how to assure that the SPEC is complete and free of loopholes? This paper presents FAST , short for Fuzzing-Assisted Specification Testing, as a potential answer . The key insight is to exploit and synergize the “redundancy” and “diversity” in formally verified programs for cross-checking. Specifically, within the same codebase, SPEC , implementation (CODE ), and test suites are all derived from the same set of business requirements. Therefore, if some intention is captured in CODE and test case but not in SPEC , this is a strong indication that there is a blind spot in SPEC . FAST examines the SPEC for incompleteness issues in an automated way: it first locates SPEC gaps via mutation testing, i.e., by checking whether a CODE variant conforms to the original SPEC . If so, FAST further leverages the test suites to infer whether the gap is introduced by intention or by mistake. Depending on the codebase size, FAST may choose to generate CODE variants in either an enumerative or evolutionary way. FAST is applied to two open-source codebases that feature formal verification and helps to confirm 13 and 21 blind spots in their SPEC respectively. This highlights the prevalence of SPEC incompleteness in real-world applications. 1. Introduction Formal verification delivers high-assurance to computing systems by mathematically checking the correctness of a pro- gram, i.e., the behaviors of a program are fully confined by a desired set of properties-the specifications-described with a formal modeling language. Formal verification has seen its adoption in hardware and software systems for decades. Typical application scenarios include cases where errors may lead to significant losses and irreversible consequences (e.g., in the field of aviation [ 13, 49, 66, 82]) or in cases when the traditional rolling program upgrade model is not feasible such as smart contracts on blockchains [ 1, 67]. Abstractly, applying formal verification to a computing system can be decomposed into two (somewhat) orthogonal processes: 1 developing a complete set of specifications for the target system and 2 proving or disproving that the actual implementation is in conformance with the specifications. In this paper, we use SPEC as an abbreviation of the specifications modeled in predicate calculus with symbolic semantics and CODE to represent the actual implementation in programming languages with concrete and executable semantics. The formal verification process can then be decomposed into 1 devising the SPEC and 2 checking that SPEC ⊒ CODE (i.e., CODE conforms to SPEC ). Recent years have witnessed great progress on addressing problem 2 as evident by the consistent stream of improve- ments on automated theorem provers [ 15, 33, 64, 74, 93, 94], while far less attention has been paid to problem 1 . This can be a dangerous disparity-even a program is thoroughly verified with a perfect verification toolchain, this program is only as correct as its SPEC . Errors in the SPEC can be as bad, if not worse, as errors in the CODE . One of the concerning scenarios is unintended gaps in the SPEC . The gaps will create verification blind spots in which the program behaviors are unconstrained. In the worst case, there is nothing to prevent a malicious developer from hiding backdoors and trojans behind these blind spots [ 29, 30], and such malicious code can survive regardless of how rigorous the verification is- a single blind spot in the SPEC can easily undermine months if not years of verification efforts . The consequences of an incomplete set of SPEC is exacerbated by the high costs of adopting formal methods. As of now, formal verification is still an expensive technique due to the extra effort of writing SPEC . In both case studies covered in the paper ( §4.1 and §5.1), the SPEC is not developed by the team who originally write the CODE . Instead, they are developed by a dedicated team of experts with years of training and practice (including a PhD degree) in formal methods. However, despite the high costs, the industry is willing to pursue this route with an expectation that formally verified programs have higher assurance. While it is true that formally verified programs generally have higher assurance, it is important to boost a general awareness that the formally verified “stamp” should not be blindly trusted without a good understanding of the completeness of the SPEC in the first place. Fortunately, gauging the completeness of SPEC is not a new problem-it has received more attention in hardware verification than software verification, likely because formal methods have a longer history in hardware design. Most of the existing solutions in hardware verification to detect incompleteness in SPEC are based on mutation testing [ 28, 84], where a mutant is created by altering either the SPEC or CODE and check if the mutant can be “killed”, i.e., the mutated CODE or SPEC can be proved to be non-conformant with the unmodified counterpart. As a result, any surviving mutant raises a signal where the SPEC might be incomplete. The mutation testing technique sheds light on how we might find gaps in the SPEC of formally verified software sys- 2708 DOI 10.1109/SP46215.2023.00173 tems. In particular, it is natural to research on 1 whether mu- tation testing is readily applicable in the software verification context; and 2 if not, what improvements should be applied on conventional mutation testing. With an enhanced mutation testing framework oriented towards software verification, we can finally pursue our meta-quest: 3 is incompleteness issues in SPEC prevalent in mature codebases? In this paper , we seek to answer all questions raised above with an integrated tool: FAST , short for Fuzzing-Assisted Specification Testing. In particular, we first confirm that adopting mutation testing in the software verification context can be effective in uncovering SPEC gaps in our case studies- a sizable basket of low-hanging fruits. However, in the face of complicated programs, conventional mutation testing with a random mutation strategy is less effective in finding “deeper” and “more interesting” gaps in the SPEC . To set the context for this paper, consider a procedure in which we attempt to measure SPEC completeness by producing a stream of CODE mutants and checking whether these mutants can be “killed” by the original SPEC . There are at least two challenges in this procedure: • When a mutant passes the verification, how can we tell that the gap in the SPEC is by intention or by mistake? Even though the mutant passes the verification, it is still possible that the CODE is meant to be written freely in the unspecified part, which means the mutant does not indicate an underlying mistake, and the SPEC is intentionally abstract in this part of programming. Therefore, we need a method that automatically categorizes whether a gap in the SPEC is intentional or mistaken. • How to produce a mutant that is more likely to pass the verification? Brute-force enumeration of all possible mutations in the CODE might work for simple software/hardware systems (e.g., UART circuit [ 69]), but such a practice can be futile in complicated software programs with nearly infinite ways to mutate. We need a systematic approach to produce “meaningful” mutants that can pass verification in a reasonable amount of time. To tell whether a gap in the SPEC is by intention or by mistake, the fundamental insight is to exploit and synergize the “redundancy” and “diversity” in formally verified programs. To be exact, SPEC , CODE , and test suites are all derived from the same set of requirements but programmed with different mentalities: for example, in different languages (or even programming paradigms), asynchronously, with different evolution paths, and ideally by different and independent teams. It is therefore less likely that the three derivations will bear the same mistake. This paves the way for finding errors in one component by cross- comparing it against the other two. In fact, this principle is already applied to check the correctness of CODE by both running it against test suites and proving it against the SPEC . In this paper, we show that the same procedures can be used to check incompleteness in SPEC as well (and deficiencies in test suites too, as by-products of our methods). We further solve the mutant generation problem with an evolution strategy adopted from modern software fuzzers. The insight is to simulate the natural selection process by allowing the mutant with higher “fitness” score to have more chances of further mutations. In essence, each CODE mutant is evaluated for “fitness” when verified against the SPEC and only high-quality mutants survive and participate in future rounds of mutation. In this way, all fuzzing efforts are retained, and each generation of mutants gets closer to the evolution goal-passing the verification. The “fitness” metric can be as simple as the number of verification errors triggered when verifying the CODE mutant against the SPEC . Like most fuzz-based tools, FAST cannot guarantee the absence of incompleteness issues in SPEC , but can be used to boost confidence that there are no obvious loopholes in SPEC . In other words, we see FAST as a cheap but effective fortification on the financial and time investment on writing SPEC and also the co-evolution of SPEC and CODE , such that the accumulated formal verification effort can not be easily undermined by unintended omissions by SPEC writers. Summary - This paper makes the following contributions: • Concept. We point out the “redundancy” and “diversity” of SPEC , CODE , and test suites in formally verified programs and exploit this redundancy to solve the problem of judging whether a gap in the SPEC is intentional or mistaken by inviting the test suites as a “referee”. • Design. We enhance the conventional mutation testing practices with an evolutionary feedback loop that guides the production of high quality mutants. Like evolution, each batch of new mutants are increasingly harder to be “killed” by the SPEC until a surviving mutant is found. • Impact. We found 13 and 21 blind spots in the SPEC for DPN and S2N (two case studies in this paper, details will be provided later), respectively. Our findings are concerning and we hope this can be helpful in drawing attention to the quality of SPEC in formally verified codebases. 2. Background and Related Work In this section, we give a brief introduction to formal verification and the SPEC incompleteness problem. We then introduce and differentiate two stochastic testing methods- mutation testing and fuzz testing-which are later combined in our work. In light of the proliferation of research works in mutation and fuzz testing, this section also serves as a best-effort survey of related works with elaborations on how FAST differ from them. 2.1. Formal verification Formal methods have been widely used in hardware and software systems such as CPU design (e.g., Intel floating-point instructions [ 39]), cryptographic libraries (e.g., HACL* [98]), operating systems (e.g., seL4 [ 48]), compilers (e.g., CompCert [ 53]), networking protocols (e.g., Amazon S2N-TLS [ 80]), and more recently, smart contracts (e.g., the Diem Payment Network [ 2]), etc. In these applications, formal verification provides arguably the highest level of 22709"
+      },
+      {
+        "source": "selected",
+        "value": "A formally verified program is only as correct as its specifications (SPEC). But how to assure that the SPEC is complete and free of loopholes? This paper presents FAST, short for Fuzzing-Assisted Specification Testing, as a potential answer. The key insight is to exploit and synergize the \"redundancy\" and \"diversity\" in formally verified programs for cross-checking. Specifically, within the same codebase, SPEC, implementation (CODE), and test suites are all derived from the same set of business requirements. Therefore, if some intention is captured in CODE and test case but not in SPEC, this is a strong indication that there is a blind spot in SPEC. FAST examines the SPEC for incompleteness issues in an automated way: it first locates SPEC gaps via mutation testing, i.e., by checking whether a CODE variant conforms to the original SPEC. If so, FAST further leverages the test suites to infer whether the gap is introduced by intention or by mistake. Depending on the codebase size, FAST may choose to generate CODE variants in either an enumerative or evolutionary way. FAST is applied to two open-source codebases that feature formal verification and helps to confirm 13 and 21 blind spots in their SPEC respectively. This highlights the prevalence of SPEC incompleteness in real-world applications. 2708 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ru Ji",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Meng Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ru Ji",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Meng Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 6,
+      "author_count": 2,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Finding Specification Blind Spots via Fuzz Testing",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ru Ji",
+          "affiliations": [
+            "University of Waterloo"
+          ]
+        },
+        {
+          "name": "Meng Xu",
+          "affiliations": [
+            "University of Waterloo"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

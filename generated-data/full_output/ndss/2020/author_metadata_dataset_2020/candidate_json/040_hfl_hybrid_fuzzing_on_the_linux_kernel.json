@@ -1,0 +1,290 @@
+{
+  "paper_id": "040_hfl_hybrid_fuzzing_on_the_linux_kernel",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "HFL: Hybrid Fuzzing on the Linux Kernel"
+      },
+      {
+        "source": "selected",
+        "value": "HFL: Hybrid Fuzzing on the Linux Kernel"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Hybrid fuzzing, combining symbolic execution and fuzzing, is a promising approach for vulnerability discovery because each approach can complement the other. However, we observe that applying hybrid fuzzing to kernel testing is challenging because the following unique characteristics of the kernel make a naive adoption of hybrid fuzzing inefficient: 1) having indirect control transfers determined by system call arguments, 2) controlling and matching internal system state via system calls, and 3) inferring nested argument type for invoking system calls. Failure to handling such challenges will render both fuzzing and symbolic execution inefficient, and thereby, will result in an inefficient hybrid fuzzing. Although these challenges are essential to both fuzzing and symbolic execution, to the best of our knowledge, existing kernel testing approaches either naively use each technique separately without handling such challenges or imprecisely handle a part of challenges only by static analysis. To this end, this paper proposes HFL, which not only combines fuzzing with symbolic execution for hybrid fuzzing but also addresses kernel-specific fuzzing challenges via three distinct features: 1) converting indirect control transfers to direct transfers, 2) inferring system call sequence to build a consistent system state, and 3) identifying nested arguments types of system calls. As a result, HFL found 24 previously unknown vulnerabilities in recent Linux kernels. Additionally, HFL achieves 15% and 26% higher code coverage than Moonshine and Syzkaller, respectively, and over kAFL/S2E/TriforceAFL, achieving even four times better coverage, using the same amount of resources (CPU, time, etc.). Regarding vulnerability discovery performance, HFL found 13 known vulnerabilities more than three times faster than Syzkaller."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Hybrid fuzzing, combining symbolic execution and fuzzing, is a promising approach for vulnerability discovery because each approach can complement the other. However, we observe that applying hybrid fuzzing to kernel testing is challenging because the following unique characteristics of the kernel make a naive adoption of hybrid fuzzing inefficient: 1) having indirect control transfers determined by system call arguments, 2) controlling and matching internal system state via system calls, and 3) inferring nested argument type for invoking system calls. Failure to handling such challenges will render both fuzzing and symbolic execution inefficient, and thereby, will result in an inefficient hybrid fuzzing. Although these challenges are essential to both fuzzing and symbolic execution, to the best of our knowledge, existing kernel testing approaches either naively use each technique separately without handling such challenges or imprecisely handle a part of challenges only by static analysis. To this end, this paper proposes HFL, which not only combines fuzzing with symbolic execution for hybrid fuzzing but also addresses kernel-specific fuzzing challenges via three distinct features: 1) converting indirect control transfers to direct transfers, 2) inferring system call sequence to build a consistent system state, and 3) identifying nested arguments types of system calls. As a result, HFL found 24 previously unknown vulnera- bilities in recent Linux kernels. Additionally, HFL achieves 15% and 26% higher code coverage than Moonshine and Syzkaller, respectively, and over kAFL/S2E/TriforceAFL, achieving even four times better coverage, using the same amount of resources (CPU, time, etc.). Regarding vulnerability discovery performance, HFL found 13 known vulnerabilities more than three times faster than Syzkaller. I. I NTRODUCTION Fuzzing and symbolic execution are two representative program testing techniques for vulnerability discovery. Fuzzing generates a random input to test the target program (or kernel) in hopes that such a random input triggers a corner case exhibiting a vulnerability [ 21, 46, 52]. Often augmented with a coverage- guided feature, random fuzz testings such as [ 21] have been shown its effectiveness in finding vulnerabilities in a vast number of complex real-world applications. However, such random testing is limited in handling a tight branch condition because generating an input to explore such a branch requires guessing a single value out of a huge search space [ 30, 36, 38]. On the other hand, symbolic execution takes a deterministic and complete testing approach [ 9, 13], unlike fuzzing which relies on a random approach. In particular, symbolic execution takes all input to the target program as symbols and keeps track- ing the program's execution context as symbolic expressions. By interpreting an execution as a set of symbolic constraints, symbolic execution can easily handle the tight branch condition mentioned above; simply solving constraints will generate an input satisfying the branch condition. Unfortunately, symbolic execution suffers from a critical limitation, and that is state explosion. In particular, when symbolic execution faces a branch, it has to explore both sides of a branch (taken and not taken), and thereby, its search complexity grows exponentially. As a result, the application scope of symbolic execution is usually limited to small size programs [11, 15, 28, 37]. Given such advantages and disadvantages of random fuzzing and symbolic execution, hybrid fuzzing [ 32, 34] can be a general extension of these two. Hybrid fuzzing combines fuzzing and symbolic execution so as to complement the aforementioned limitations of each approach. In other words, when random fuzzing is blocked by a tight branch condition, symbolic execution comes to the rescue; when symbolic execution suffers from the state explosion issue, random fuzzing can assist to pinpoint a specific path to explore and thus avoid state explosion. By taking both approaches' advantages, hybrid fuzzing has demonstrated its effectiveness in discovering vulnerabilities [44, 51, 53]. However, our observation is that applying hybrid fuzzing to kernel testing is challenging mainly due to the inherent characteristics of the kernel 1. In the following, we summarize three kernel-specific challenges that make hybrid fuzzing ineffective. First, the Linux kernel uses many indirect control transfers to support polymorphism, and this renders traditional testing inefficient. The kernel is designed to support a large number of different devices and features, and thus throughout the kernel, it is common to see polymorphism using a function pointer table. However, random fuzzing cannot efficiently determine a specific index value fetch the function pointer table if that 1 The discussion throughout this paper particularly focuses on the Linux kernel, but most of descriptions and knowledge can be generally applied to other kernels as well. If not mentioned specifically, the kernel implicates the Linux kernel in this paper. Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24018 www.ndss-symposium.org index comes from an input. Additionally, symbolic execution can neither easily handle such a case because indexing a table with symbols results in symbolic dereference and it requires the exploration of the entire value space by the symbols. Second, it is difficult to infer the right sequence (and de- pendency) of syscalls 2 so as to build the system states required for triggering a vulnerability. Unlike userland programs, the kernel maintains its internal system states during its lifetime and the same syscalls may perform differently depending on its invocation context. Therefore, if fuzzing invokes a syscall without setting up the right pre-context of system states (which should have been performed through syscalls as well), the syscall would be early rejected by the kernel, hindering the deep exploration of the kernel code. Symbolic execution does not handle this issue either since the kernel has many data variables to maintain such system states and they may cause state explosion issues. Third, nested structures in syscall arguments make interface templating difficult. Certain syscalls take a large size of the input from the user space and they use a nested structure in their arguments - i.e., a field member in one structure points to another structure. From the perspective of random fuzzing, such a nested structure is difficult to construct as it has to correctly guess the internal semantics imposed in the nested structure (i.e., a pointer pointing to another or a length field indicating the size of the buffer). These challenges make hybrid fuzzing difficult, and to the best of our knowledge, existing kernel testing approaches [ 26, 35, 40, 43, 49] either naively use each technique separately by not handling such challenges or imprecisely handle a part of challenges only by static analysis [16, 24, 33]. To resolve this, this paper proposes HFL , which takes a hybrid fuzzing approach to test the Linux kernel. In particular, it addresses the aforementioned kernel-specific challenges for efficient hybrid fuzzing: 1) HFL converts indirect control- flows to direct ones, through translating the original kernel at the compilation time; 2) HFL reconstructs system states by inferring the right calling sequence. Specifically, to reduce the scope of symbolic variables, HFL performs static points- to analysis beforehand such that it can selectively symbolize data variables involved in system states; and 3) HFL retrieves nested syscall arguments at runtime by exploiting the domain knowledge on how the kernel handles the arguments. We implemented HFL based on well-known kernel fuzzer Syzkaller and symbolic executor S2E. Then we evaluated various aspects of HFL in finding vulnerabilities of the Linux kernel. First, with regards to vulnerability finding capability, HFL discovered 24 previously unknown vulnerabilities , 17 of which are accordingly confirmed by the Linux kernel community. In order to compare HFL with state-of-the-art kernel fuzzers, we also performed a detailed evaluation as follows. In terms of code coverage, HFL performs better than Moonshine and Syzkaller, overall 15% and 26%, respectively. Compared to kAFL, TriforceAFL and S2E, we observed that the coverage improvement of HFL is more than 4 times. To compare the vulnerability finding capability, we tested how long it takes to uncover known 13 crashes in the Linux kernel. 2We will use syscall to indicate system call herein. Our results showed that HFL found all those vulnerabilities, at least three times faster than Syzkaller. Moreover, each feature of HFL, addressing the challenge stemming from the kernel's unique characteristics, also showed substantial improvements. The key contributions of our paper can be summarized as follows. • The First Hybrid Kernel Fuzzer. We propose a hybrid kernel fuzzing, HFL , leveraging the benefits from both random fuzz and symbolic testing techniques. • Handling Kernel-specific Challenges. We identify three key kernel-specific challenges in applying hybrid fuzzing, and design HFL to resolve such challenges. In particular, we convert indirect control-flows to direct ones, making hybrid fuzzing more effective. We also keep the con- sistency of the kernel's internal states through inferring syscall sequence during the process of HFL. Further, we effectively reason about interfaces of syscall arguments, which are often in the form of complex and multi-layered structures. • Experimental Results in Bug Discovery and Code Coverage. In our evaluation, HFL found 24 previously unknown vulnerabilities in recent Linux kernels. Addi- tionally, HFL achieves around 15% and 26% higher code coverage over Moonshine and Syzkaller, and over kAFL/S2E/TriforceAFL, it achieves even four times better coverage using the same amount of resource (CPU, time, etc.). In terms of vulnerability discovery performance, HFL found the known 13 vulnerabilities over three times faster than Syzkaller. II. B ACKGROUND To overcome the limitations of random testing, a number of recent studies [32, 34, 44, 51, 53] have been applying symbolic execution to complement fuzzing. Composing such a hybrid is popular based on the fact that traditional fuzzing and symbolic execution have a negative correlation as we describe in the following. Traditional Fuzzing. Traditional Fuzzing generally refers to a technique that generates random input to test the target program. Because this random testing is performant and scalable, it can quickly test a vast number of real-world applications. In particular, representative fuzzers such as AFL [ 52], Clus- terFuzz [ 21], and Syzkaller [ 46], have shown remarkable results discovering many software vulnerabilities. However, such random fuzzing techniques are often stuck due to the inherent limitation; testing with randomly generated input cannot explore program paths beyond a tight branch condition, e.g., if (i == 0xdeadbeef) , as it requires to guess a single value out of a huge ( 232) space. This limitation can easily be overcome by symbolic execution as we describe next. Symbolic Execution. Symbolic Execution is a program testing technique that can generate an input that drives the target program's execution to a certain program path. To do this, symbolic execution takes all input to the target program as symbols and keeps tracking the program's runtime context as symbolic expressions. For instance, when a symbolic execution meets a conditional branch, it will keep track of branch conditions as path constraints with respect to symbols. When 2"
+      },
+      {
+        "source": "selected",
+        "value": "Hybrid fuzzing, combining symbolic execution and fuzzing, is a promising approach for vulnerability discovery because each approach can complement the other. However, we observe that applying hybrid fuzzing to kernel testing is challenging because the following unique characteristics of the kernel make a naive adoption of hybrid fuzzing inefficient: 1) having indirect control transfers determined by system call arguments, 2) controlling and matching internal system state via system calls, and 3) inferring nested argument type for invoking system calls. Failure to handling such challenges will render both fuzzing and symbolic execution inefficient, and thereby, will result in an inefficient hybrid fuzzing. Although these challenges are essential to both fuzzing and symbolic execution, to the best of our knowledge, existing kernel testing approaches either naively use each technique separately without handling such challenges or imprecisely handle a part of challenges only by static analysis. To this end, this paper proposes HFL, which not only combines fuzzing with symbolic execution for hybrid fuzzing but also addresses kernel-specific fuzzing challenges via three distinct features: 1) converting indirect control transfers to direct transfers, 2) inferring system call sequence to build a consistent system state, and 3) identifying nested arguments types of system calls. As a result, HFL found 24 previously unknown vulnerabilities in recent Linux kernels. Additionally, HFL achieves 15% and 26% higher code coverage than Moonshine and Syzkaller, respectively, and over kAFL/S2E/TriforceAFL, achieving even four times better coverage, using the same amount of resources (CPU, time, etc.). Regarding vulnerability discovery performance, HFL found 13 known vulnerabilities more than three times faster than Syzkaller."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kyungtae Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Dae RJeong",
+          "email": "dae.r.jeong@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Chung Hwan Kim",
+          "email": "chungkim@nec-labs.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yeongjin Jang",
+          "email": "yeongjin.jang@oregonstate.edu",
+          "orcid": "",
+          "affiliations": [
+            "Oregon State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Insik Shin",
+          "email": "insik.shin@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Byoungyoung Lee",
+          "email": "byoungyoung@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul, National University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Purdue University",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Kaist ¶ Nec",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Laboratories America",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kyungtae Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Dae RJeong",
+          "email": "dae.r.jeong@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Chung Hwan Kim",
+          "email": "chungkim@nec-labs.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yeongjin Jang",
+          "email": "yeongjin.jang@oregonstate.edu",
+          "orcid": "",
+          "affiliations": [
+            "Oregon State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Insik Shin",
+          "email": "insik.shin@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Byoungyoung Lee",
+          "email": "byoungyoung@snu.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Seoul, National University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 122,
+      "author_count": 6,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Kyungtae Kim",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "HFL: Hybrid Fuzzing on the Linux Kernel",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/hfl-hybrid-fuzzing-on-the-linux-kernel/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kyungtae Kim",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Dae R. Jeong",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Chung Hwan Kim",
+          "affiliations": [
+            "NEC Labs America"
+          ]
+        },
+        {
+          "name": "Yeongjin Jang",
+          "affiliations": [
+            "Oregon State University"
+          ]
+        },
+        {
+          "name": "Insik Shin",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Byoungyoung Lee",
+          "affiliations": [
+            "Seoul National University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "remove_organization_author",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "removed_name": "Kaist ¶ Nec"
+    }
+  ]
+}
