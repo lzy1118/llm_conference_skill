@@ -284,6 +284,9 @@ def repair_metadata(metadata, pdf_context, strategy=None, conference_name="", pd
         + layout_reviews
         + email_domain_reviews
     )
+    reviews.extend(
+        layout_analysis.get("classification", {}).get("review_reasons", [])
+    )
     extractor_status = pdf_context.extractor_status or {}
     if extractor_status.get("pdfplumber") != "ok":
         reviews.append({
@@ -300,7 +303,7 @@ def repair_metadata(metadata, pdf_context, strategy=None, conference_name="", pd
             "status": extractor_status.get("pypdf", "unavailable"),
         })
     result["_extraction"] = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "evidence": build_evidence(raw_metadata, pdf_context),
         "candidates": build_candidates(raw_metadata, result, layout_analysis, pdf_abstract),
         "decisions": decisions,

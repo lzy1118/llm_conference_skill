@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Run one PDF-first metadata pipeline for the seven conference cases."""
+"""Run the extensible PDF-first metadata pipeline for conference papers."""
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ CONFERENCE_ALIASES = {
     "euro_crypt": ("crypto", "eurocrypt"),
     "ccs": ("security", "CCS"),
     "ndss": ("security", "NDSS"),
-    "ieee_s&p": ("security", "IEEE_S&P"),
+    "ieee_s_p": ("security", "IEEE_S&P"),
     "ieee_sp": ("security", "IEEE_S&P"),
     "sp": ("security", "IEEE_S&P"),
     "usenix_security": ("security", "USENIX_SECURITY"),
@@ -29,15 +30,15 @@ CONFERENCE_ALIASES = {
 
 
 def normalized_key(value: str) -> str:
-    return value.strip().casefold().replace("-", "_").replace(" ", "_")
+    key = re.sub(r"[^\w]+", "_", value.strip().casefold(), flags=re.UNICODE)
+    return re.sub(r"_+", "_", key).strip("_")
 
 
 def canonical_conference(value: str) -> tuple[str, str]:
-    result = CONFERENCE_ALIASES.get(normalized_key(value))
-    if not result:
-        supported = "ASIACRYPT, CRYPTO, EUROCRYPT, CCS, IEEE S&P, NDSS, USENIX Security"
-        raise ValueError(f"unsupported conference {value!r}; expected one of: {supported}")
-    return result
+    key = normalized_key(value)
+    if not key:
+        raise ValueError("conference must contain at least one letter or number")
+    return CONFERENCE_ALIASES.get(key, ("generic", key))
 
 
 def load_security_runner(repo_root: Path) -> ModuleType:
@@ -70,7 +71,7 @@ def append_path(command: list[str], option: str, value: Path | None) -> None:
         command.extend([option, str(value.expanduser().resolve())])
 
 
-def run_security(args: argparse.Namespace, root: Path, python: str, conference: str) -> int:
+def run_shared(args: argparse.Namespace, root: Path, python: str, conference: str) -> int:
     script = root / "conference-security-research-automation/scripts/run_pipeline.py"
     command = [
         python, str(script), "--repo-root", str(root), "--conference", conference,
@@ -188,9 +189,9 @@ def main(argv: list[str] | None = None) -> int:
     shared = load_security_runner(bootstrap_root)
     root = shared.find_repo_root(args.repo_root)
     python = shared.choose_python(args.python, root)
-    if family == "security":
-        return run_security(args, root, python, conference)
-    return run_crypto(args, root, python, conference, shared)
+    if family == "crypto":
+        return run_crypto(args, root, python, conference, shared)
+    return run_shared(args, root, python, conference)
 
 
 if __name__ == "__main__":

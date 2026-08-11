@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [[ $# -lt 1 ]]; then
   print "用法: $0 <conference> [args...]"
-  print "可选 conference: asiacrypt crypto eurocrypt ndss usenix_security ieee_s&p ccs"
+  print "可选 conference: asiacrypt crypto eurocrypt ndss usenix_security ieee_s&p ccs www neurips icml"
   exit 1
 fi
 
@@ -25,7 +25,7 @@ else
 fi
 
 case "$conference" in
-  asiacrypt|crypto|eurocrypt|ndss|usenix_security|ieee_s\&p|ccs)
+  asiacrypt|crypto|eurocrypt|ndss|usenix_security|ieee_s\&p|ccs|www|neurips|icml)
     if [[ "$CRAWLER_PYTHON" == uv\ run\ * ]]; then
       uv run --project "$DOWNLOAD_DIR" python "$SCRIPT_DIR/spider.py" "$conference" "$@"
     else
@@ -34,7 +34,7 @@ case "$conference" in
     ;;
   *)
     print "不支持的 conference: $conference"
-    print "可选 conference: asiacrypt crypto eurocrypt ndss usenix_security ieee_s&p ccs"
+    print "可选 conference: asiacrypt crypto eurocrypt ndss usenix_security ieee_s&p ccs www neurips icml"
     exit 1
     ;;
 esac

@@ -36,7 +36,7 @@ class RunPipelineTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
-    def test_seven_conferences_are_accepted(self) -> None:
+    def test_validated_cases_and_generic_conferences_are_accepted(self) -> None:
         self.assertEqual(module.canonical_conference("ASIACRYPT"), "ASIACRYPT")
         self.assertEqual(module.canonical_conference("CRYPTO"), "CRYPTO")
         self.assertEqual(module.canonical_conference("EUROCRYPT"), "EUROCRYPT")
@@ -44,10 +44,36 @@ class RunPipelineTests(unittest.TestCase):
         self.assertEqual(module.canonical_conference("IEEE S&P"), "IEEE_S&P")
         self.assertEqual(module.canonical_conference("NDSS"), "NDSS")
         self.assertEqual(module.canonical_conference("USENIX Security"), "USENIX_SECURITY")
+        self.assertEqual(module.canonical_conference("ACM SIGCOMM"), "ACM_SIGCOMM")
+        self.assertEqual(module.canonical_conference("NeurIPS-2026"), "NEURIPS_2026")
+        self.assertEqual(module.canonical_conference("示例会议"), "示例会议")
         with self.assertRaises(ValueError):
-            module.canonical_conference("UNKNOWN")
+            module.canonical_conference("---")
         self.assertEqual(module.conference_slug("CRYPTO"), "crypto")
         self.assertEqual(module.conference_slug("IEEE S&P"), "ieee_s&p")
+        self.assertEqual(module.conference_slug("ACM SIGCOMM"), "acm_sigcomm")
+
+    def test_generic_dry_run_uses_pdf_first_common_stages(self) -> None:
+        completed = subprocess.run([
+            sys.executable,
+            str(SCRIPT),
+            "--repo-root",
+            str(SCRIPT.parents[2]),
+            "--conference",
+            "ACM SIGCOMM",
+            "--year",
+            "2025",
+            "--python",
+            sys.executable,
+            "--dry-run",
+            "--skip-analysis",
+        ], capture_output=True, text=True)
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("--conference acm_sigcomm", completed.stdout)
+        self.assertIn("split_affiliations_raw.py", completed.stdout)
+        self.assertIn("extraction_final/acm_sigcomm/2025/acm_sigcomm_2025_final.csv", completed.stdout)
+        self.assertNotIn("reconcile_security_official_metadata.py", completed.stdout)
 
     def test_dry_run_orders_pdf_web_roles_and_downstream_stages(self) -> None:
         completed = subprocess.run([

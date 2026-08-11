@@ -8,6 +8,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,11 +27,13 @@ REQUIRED_DATASET_ENTRIES = (
 )
 CONFERENCE_ALIASES = {
     "asiacrypt": "ASIACRYPT",
+    "asia_crypt": "ASIACRYPT",
     "crypto": "CRYPTO",
     "eurocrypt": "EUROCRYPT",
+    "euro_crypt": "EUROCRYPT",
     "ccs": "CCS",
     "ndss": "NDSS",
-    "ieee_s&p": "IEEE_S&P",
+    "ieee_s_p": "IEEE_S&P",
     "ieee_sp": "IEEE_S&P",
     "sp": "IEEE_S&P",
     "usenix_security": "USENIX_SECURITY",
@@ -51,18 +54,22 @@ CONFERENCE_SLUGS = {
 SECURITY_CONFERENCES = {"CCS", "NDSS", "IEEE_S&P", "USENIX_SECURITY"}
 
 
+def normalized_conference_key(value: str) -> str:
+    """Return a stable filesystem-safe key for a conference label."""
+    key = re.sub(r"[^\w]+", "_", value.strip().casefold(), flags=re.UNICODE)
+    return re.sub(r"_+", "_", key).strip("_")
+
+
 def canonical_conference(value: str) -> str:
-    key = value.strip().casefold().replace("-", "_").replace(" ", "_")
-    conference = CONFERENCE_ALIASES.get(key)
-    if not conference:
-        raise ValueError(
-            f"unsupported conference {value!r}; expected ASIACRYPT, CRYPTO, EUROCRYPT, CCS, IEEE_S&P, NDSS, or USENIX_SECURITY"
-        )
-    return conference
+    key = normalized_conference_key(value)
+    if not key:
+        raise ValueError("conference must contain at least one letter or number")
+    return CONFERENCE_ALIASES.get(key, key.upper())
 
 
 def conference_slug(value: str) -> str:
-    return CONFERENCE_SLUGS[canonical_conference(value)]
+    conference = canonical_conference(value)
+    return CONFERENCE_SLUGS.get(conference, conference.casefold())
 
 
 # Backward-compatible name for callers importing the old helper.
@@ -227,11 +234,12 @@ def validate_pdf_manifest(manifest: Path, pdf_dir: Path, conference: str, year: 
     if not pdf_dir.is_dir():
         raise FileNotFoundError(f"PDF directory not found: {pdf_dir}")
 
-    expected_conference = conference.casefold()
+    expected_conference = conference_slug(conference)
     accepted: list[dict[str, str]] = []
     with manifest.open(encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
-            if (row.get("conference") or "").strip().casefold() != expected_conference:
+            row_conference = (row.get("conference") or "").strip()
+            if not row_conference or conference_slug(row_conference) != expected_conference:
                 continue
             if (row.get("year") or "").strip() != str(year):
                 continue
@@ -451,9 +459,9 @@ def main() -> int:
              "--conference", slug, "--year", args.year], args.dry_run, root)
         if not args.dry_run:
             verify_dataset(dataset, allow_missing_authors=True)
-        # Official web reconciliation is currently implemented only for the
-        # four security conferences. LNCS conferences retain the GROBID PDF
-        # record as the primary source and continue through the common stages.
+        # Official-web reconciliation is an optional registered enhancement.
+        # Every other conference retains the GROBID PDF record as its primary
+        # source and continues through the conference-neutral common stages.
         if conference in SECURITY_CONFERENCES:
             run([
                 python,

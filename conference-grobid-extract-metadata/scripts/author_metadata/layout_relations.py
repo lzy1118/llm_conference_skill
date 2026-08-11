@@ -742,7 +742,7 @@ def analyze_layout(pdf_context, authors):
         else "unclassified"
     )
     page_author_discovery = discover_page_authors(pdf_context, authors)
-    return {
+    analysis = {
         "schema_version": "1.0",
         "layout_type": layout_type,
         "header_block_count": len(blocks),
@@ -765,6 +765,17 @@ def analyze_layout(pdf_context, authors):
         ],
         "relations": relations,
     }
+    # Classification is field-oriented and conference-independent.  The
+    # existing relation labels remain stable for compatibility with current
+    # repair rules and downstream audits.
+    from author_metadata.layout_classifier import classify_header_layout
+
+    analysis["classification"] = classify_header_layout(
+        pdf_context,
+        authors,
+        relation_analysis=analysis,
+    )
+    return analysis
 
 
 def apply_layout_affiliations(

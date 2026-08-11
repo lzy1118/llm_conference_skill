@@ -1,11 +1,11 @@
 ---
 name: conference-crawler
-description: Crawl conference proceedings and download paper PDFs for ASIACRYPT, CRYPTO, EUROCRYPT, NDSS, USENIX Security, IEEE S&P, and CCS, with resumable downloads, browser-backed access for IEEE/ACM pages, PDF deduplication, official-paper matching, and curated/review output. Use when collecting conference PDFs or preparing verified PDF inputs for GROBID metadata extraction.
+description: Crawl conference proceedings and prepare paper PDFs for downstream GROBID metadata extraction, with source discovery, resumable downloads, browser-backed access where needed, PDF deduplication, official-paper matching, and curated/review output. Use for conference-paper collection workflows; currently registered conferences are examples rather than the boundary of the design.
 ---
 
 # Conference PDF Crawler
 
-Use this skill to collect conference paper PDFs and prepare them for downstream metadata extraction. The crawler is networked and may require an existing Chrome session for IEEE or ACM pages. Treat downloaded files as unverified until the cleaning manifest has been reviewed.
+Use this skill to collect conference paper PDFs and prepare them for downstream metadata extraction. The crawler is networked and may require an existing Chrome session for IEEE or ACM pages. Treat downloaded files as unverified until the cleaning manifest has been reviewed. The project now also includes a source discovery layer that resolves proceedings entry points by conference/year before crawling.
 
 ## Repository layout
 
@@ -14,9 +14,18 @@ The implementation lives under `conference-crawler/scripts`:
 - `spider-pdf/run.sh`: single conference dispatch entry point.
 - `spider-pdf/spider.py`: selects the backend and URL list.
 - `spider-pdf/core.py`: DBLP, IEEE S&P, and ACM/CCS crawling logic.
+- `batch_runner.py`: metadata-only production experiment runner.
+- `configs/conferences.yaml`: supported source-discovery v1.0 conference configuration.
+- `source-discovery/`: conference/year resolver layer and metadata-only smoke tests.
+  - `registry.py`: conference aliases and stable resolver/backend configuration.
+  - `discover.py`: unified source discovery API, source manifest writing, and manifest count updates.
+  - `dblp.py`: DBLP proceedings resolver for DBLP-backed conferences such as CRYPTO and WWW.
+  - `neurips.py`: NeurIPS proceedings resolver.
+  - `pmlr.py`: PMLR proceedings resolver for ICML.
+  - `test_all.py`: metadata-only smoke test for CRYPTO, WWW, NeurIPS, and ICML.
 - `download/clean_and_classify_pdfs.py`: title matching, SHA-256 deduplication, filtering, and curation.
 - `download/official_accepted_papers.csv`: official paper list used by the cleaning stage.
-- `spider-pdf/*_urls.txt`: manually reviewed proceedings URL lists.
+- `spider-pdf/*_urls.txt`: fallback/manual override proceedings URL lists.
 
 Do not use `download/main.py` as the crawler entry point; it is only a placeholder.
 
@@ -31,6 +40,8 @@ Do not use `download/main.py` as the crawler entry point; it is only a placehold
 | `usenix_security` | DBLP/PDF resolution | `usenix_security_urls.txt` |
 | `ieee_s&p` | IEEE browser workflow | `ieee_s&p_urls.txt` |
 | `ccs` | ACM browser workflow | `ccs_urls.txt` |
+| `neurips` | NeurIPS source resolver | n/a |
+| `icml` | PMLR source resolver | n/a |
 
 Use the exact argument spelling above. The shell entry point rejects unsupported conference names.
 
@@ -53,15 +64,64 @@ export SELENIUM_USER_DATA_DIR=/absolute/path/to/chrome-profile
 
 Do not put credentials in URL files, scripts, or generated CSVs. Use a dedicated browser profile when possible.
 
+## Source Discovery Architecture
+
+Source discovery v1.0 resolves conference proceedings entry points before the crawler backend runs:
+
+```text
+Conference Registry
+        ↓
+Resolver
+        ↓
+Unified Source Record
+        ↓
+Spider Backend
+```
+
+The conference registry maps supported conference names and aliases to a source resolver and spider backend. Each resolver returns the same source record shape:
+
+```json
+{
+  "conference": "crypto",
+  "year": 2024,
+  "source": "dblp",
+  "backend": "dblp",
+  "url": "https://dblp.org/db/conf/crypto/crypto2024-1.html",
+  "status": "success"
+}
+```
+
+`discover.py` enriches these records for manifest tracking, then `spider.py` dispatches the discovered URLs to the configured backend. This keeps resolver-specific URL discovery separate from downstream crawling, PDF resolution, metadata extraction, cleaning, and GROBID handoff.
+
+Use source discovery directly when validating entry points:
+
+```bash
+cd /absolute/path/to/conference-crawler
+python scripts/source-discovery/discover.py crypto 2024
+python scripts/source-discovery/test_all.py
+```
+
+Discovery and metadata-only validation write `scripts/download/metadata/source_manifest.csv`. The manifest uses append + deduplicate semantics, so repeated discovery updates existing conference/year/source/url records instead of replacing the whole history. It contains:
+
+- `conference`
+- `year`
+- `source`
+- `backend`
+- `url`
+- `paper_count`
+- `status`
+- `validation_status`
+
 ## Download workflow
 
-1. Inspect the relevant `*_urls.txt` file and confirm the conference/year scope.
-2. Run one conference and a small year subset first. Keep the default sleeps unless a site owner explicitly permits a lower rate.
-3. Let the crawler reuse existing PDFs and CSV statuses. Use `--force` only when a deliberate re-download is required.
-4. Skip any record whose title contains `workshop` (case-insensitive) before resolving a PDF URL; retain it in the result CSV with status `skipped_workshop`.
-5. Inspect the generated summary CSV and failed/missing PDF statuses.
-6. Run the cleaning stage against the download root and official paper table.
-7. Review `metadata/paper_manifest.csv` before passing accepted PDFs to GROBID.
+1. Use source discovery as the default proceedings entry point by running `run.sh <conference> --years <year>`; `spider.py` will resolve URLs before dispatching to the crawler backend.
+2. Treat `spider-pdf/*_urls.txt` as fallback/manual override files for unsupported years, temporary resolver outages, or manually reviewed experiments.
+3. Run one conference and a small year subset first. Keep the default sleeps unless a site owner explicitly permits a lower rate.
+4. Let the crawler reuse existing PDFs and CSV statuses. Use `--force` only when a deliberate re-download is required.
+5. Skip any record whose title contains `workshop` (case-insensitive) before resolving a PDF URL; retain it in the result CSV with status `skipped_workshop`.
+6. Inspect the generated summary CSV, `metadata/source_manifest.csv`, and failed/missing PDF statuses.
+7. Run the cleaning stage against the download root and official paper table.
+8. Review `metadata/paper_manifest.csv` before passing accepted PDFs to GROBID.
 
 Example commands from the repository root:
 
@@ -79,6 +139,23 @@ Set `CONFERENCE_DOWNLOAD_DIR` to an empty batch directory when a run must not co
 summaries or metadata. After crawling, use `scripts/download/build_official_list_from_results.py`
 to build the cleaning input from that batch's newly fetched DBLP result CSVs instead of reusing the
 project-wide official table.
+
+Source discovery runs write `metadata/source_manifest.csv`, and the metadata-only smoke tests write `metadata/discovery_test_report.json`.
+
+For formal metadata-only collection experiments, use:
+
+```bash
+python /absolute/path/to/conference-crawler/scripts/batch_runner.py \
+  --conferences crypto,www,neurips,icml \
+  --years 2024-2025
+```
+
+The runner reads `configs/conferences.yaml`, executes `run.sh <conference> --years <year> --metadata-only`, and writes:
+
+- `scripts/download/metadata/batch_metadata_report.json`
+- `scripts/download/metadata/conference_collection_manifest.csv`
+
+This runner is a readiness/metadata-count gate only; it must not be treated as a PDF download or cleaning step.
 
 When a conference year has multiple proceedings volumes, merge them only after every volume finishes.
 Run `scripts/download/merge_volume_pdfs.py` to sort by numeric volume and then by the paper order in

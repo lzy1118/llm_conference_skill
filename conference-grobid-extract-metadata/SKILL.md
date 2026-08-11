@@ -20,6 +20,7 @@ description: 使用本地 GROBID 从论文 PDF 批量生成 header TEI XML，并
 - `paper_fields.py`：摘要仲裁及第一/参与机构等论文级派生字段；
 - `author_validation.py`、`author_order.py`：作者候选校验和导出顺序；
 - `layout_relations.py`：二维作者—机构关系；
+- `layout_classifier.py`：跨会议的标题、作者、机构、邮箱和角色版式分类与解析器路由；
 - `extraction_trace.py`：证据、候选、决策和复核原因；
 - `artifacts.py`、`exporter.py`：统一生成 JSON、作者 CSV、摘要 CSV 和指标。
 
@@ -113,6 +114,26 @@ conference-grobid-extract-metadata/
 如果迁移后的项目目录不同，再按需调整脚本顶部的 `DATA_DIR` 推导逻辑即可。
 也可以通过环境变量 `GROBID_METADATA_DATA_DIR=/path/to/data` 覆盖默认数据目录。
 
+## 通用版式分类优先
+
+流水线对所有论文先运行 `author_metadata/layout_classifier.py`，会议名称不是分类器输入。
+分类器分别输出标题、作者、机构、邮箱和作者角色五个维度；每个维度包含候选类型、置信度、
+分数间隔、证据块 ID、建议 parser 和是否可自动路由。分类结果写入
+`_extraction.candidates.layout_relations.classification`。低置信、候选分数接近或无法分类的维度
+写入 `review_queue.csv`，不得用弱分类覆盖 TEI 或 PDF 直接证据。
+
+当前通用路由覆盖：
+
+- 标题：单行、多行、主副标题、出版页眉、标题—作者粘连和正文首页后移；
+- 作者：单行、多行、卡片、列矩阵、纵向堆叠、编号机构、符号脚注、分组共享、全体共享和跨页信息；
+- 机构：单行、多行层级、编号/符号列表、作者多机构、共享机构、局部卡片/矩阵、脚注机构、残片和纯地点；
+- 邮箱：单邮箱、集中邮箱、花括号共享域、卡片/矩阵邮箱、通讯脚注邮箱、残片和无法闭合归属；
+- 角色：普通第一作者、共同一作、一般共同贡献、单/多通讯作者和混合角色脚注。
+
+通用分类器负责识别实际 PDF 版式并选择解析路径；会议 strategy 只补充出版商水印、固定页眉、
+特殊字形和经过样本验证的模板差异。新增会议应先直接运行通用分类和复核审计，只有出现稳定、
+可复现且通用规则无法表达的出版格式差异时，才新增会议 strategy。
+
 ## 会议版式专属策略
 
 不同会议的论文模板、出版平台和作者信息排版并不一致，提取和清洗方案必须随会议格式
@@ -130,8 +151,9 @@ conference-grobid-extract-metadata/
 1. 同一 PDF 先由 GROBID 生成结构化 header TEI 主结果；
 2. 用 pdfplumber 校验姓名字符、摘要边界、首页文本块和页面位置；
 3. 用 pypdf 补充 PDF 文档信息和链接/`mailto` 证据；
-4. 按标题、作者、邮箱、机构、作者—机构关系、作者角色和摘要分别合并证据；
-5. 只执行有直接证据的高置信自动修正，冲突或低置信候选保留在 `candidate_json/` 并进入 `review_queue.csv`。
+4. 使用通用多维分类器选择字段级解析器，会议 strategy 仅作可选增强；
+5. 按标题、作者、邮箱、机构、作者—机构关系、作者角色和摘要分别合并证据；
+6. 只执行有直接证据的高置信自动修正，冲突或低置信候选保留在 `candidate_json/` 并进入 `review_queue.csv`。
 
 PDF 首页字符/版式校验依赖 `pdfplumber`，链接与文档信息补证依赖 `pypdf`。自动流水线选用的
 Python 3.11+ 环境必须安装两者；
