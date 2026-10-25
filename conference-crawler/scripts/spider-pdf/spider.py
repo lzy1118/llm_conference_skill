@@ -63,20 +63,29 @@ def _write_discovered_urls_file(records: list[dict[str, object]], conference: st
     return Path(temp_file.name)
 
 
-def _read_summary_counts(summary_path: Path) -> dict[str, int]:
+def _read_summary_counts(summary_path: Path) -> dict[str, int | None]:
     if not summary_path.exists():
         return {}
     with open(summary_path, encoding="utf-8-sig", newline="") as file_obj:
         rows = list(csv.DictReader(file_obj))
-    counts: dict[str, int] = {}
+    counts: dict[str, int | None] = {}
     for row in rows:
         url = row.get("url", "")
         if not url:
             continue
+        status = (row.get("validation_status") or "").strip().lower()
+        raw_total = (row.get("total") or "").strip()
+        raw_error = (row.get("error") or "").strip()
+        if status == "failed":
+            counts[url] = None
+            continue
         try:
-            counts[url] = int(row.get("total", "0") or 0)
+            total = int(raw_total)
+            error_count = int(raw_error) if raw_error else 0
         except ValueError:
-            counts[url] = 0
+            counts[url] = None
+            continue
+        counts[url] = total if total >= 0 and error_count == 0 else None
     return counts
 
 
@@ -92,12 +101,15 @@ def _successful_existing_summary_row(existing_rows: dict[str, dict[str, str]], u
     row = existing_rows.get(url)
     if not row:
         return None
+    raw_total = (row.get("total") or "").strip()
+    if not raw_total:
+        return None
     try:
-        total = int(row.get("total") or 0)
-        error = int(row.get("error") or 0)
+        total = int(raw_total)
+        error = int((row.get("error") or "0").strip())
     except ValueError:
         return None
-    if total > 0 and error == 0:
+    if total >= 0 and error == 0 and (row.get("validation_status") or "validated").lower() != "failed":
         return row
     return None
 
@@ -167,9 +179,11 @@ def _count_pmlr_papers(url: str) -> int:
     return len(seen)
 
 
-def _save_metadata_only_summary(urls_file: Path, output_root: Path, summary_csv: str, years: set[str] | None, kind: str) -> dict[str, int]:
+def _save_metadata_only_summary(urls_file: Path, output_root: Path, summary_csv: str, years: set[str] | None, kind: str) -> dict[str, int | None]:
     crawler = DBLPPDFCrawler(sleep_seconds=0.0)
     urls = _read_urls(urls_file)
+    pmlr_identities: dict[str, tuple[str, str, str]] = {}
+    pmlr_identity_errors: dict[str, Exception] = {}
     if years:
         if kind == "dblp":
             urls = [url for url in urls if parse_generic_toc_identity(url)[1] in years]
@@ -178,28 +192,45 @@ def _save_metadata_only_summary(urls_file: Path, output_root: Path, summary_csv:
         elif kind == "neurips":
             urls = [url for url in urls if _parse_neurips_identity(url)[1] in years]
         elif kind == "pmlr":
-            urls = [url for url in urls if _parse_pmlr_identity(url)[1] in years]
+            filtered_urls = []
+            for url in urls:
+                try:
+                    identity = _parse_pmlr_identity(url)
+                except Exception as exc:
+                    # Keep this URL so its failure is written to the summary without stopping the batch.
+                    pmlr_identity_errors[url] = exc
+                    filtered_urls.append(url)
+                else:
+                    pmlr_identities[url] = identity
+                    if identity[1] in years:
+                        filtered_urls.append(url)
+            urls = filtered_urls
     output_root.mkdir(parents=True, exist_ok=True)
     summary_path = output_root / summary_csv
     existing_rows = _read_existing_summary_rows(summary_path)
-    fieldnames = ["url", "venue", "year", "total", "downloaded", "missing_pdf_url", "error", "output_dir", "output_csv"]
-    counts: dict[str, int] = {}
+    fieldnames = ["url", "venue", "year", "total", "previous_total", "downloaded", "missing_pdf_url", "error", "validation_status", "output_dir", "output_csv"]
+    counts: dict[str, int | None] = {}
     with open(summary_path, "w", newline="", encoding="utf-8-sig") as file_obj:
         writer = csv.DictWriter(file_obj, fieldnames=fieldnames)
         writer.writeheader()
         for toc_index, url in enumerate(urls, start=1):
-            if kind == "dblp":
-                venue, year, _part, slug = parse_generic_toc_identity(url)
-            elif kind == "ccs":
-                venue, year, slug = parse_sp_ccs_toc_identity(url)
-            elif kind == "neurips":
-                venue, year, slug = _parse_neurips_identity(url)
-            elif kind == "pmlr":
-                venue, year, slug = _parse_pmlr_identity(url)
-            else:
-                raise ValueError(f"不支持 metadata-only backend: {kind}")
-            print(f"[CRAWLER] metadata-only TOC {toc_index}/{len(urls)} {slug}")
+            venue = ""
+            year = ""
+            slug = urlparse(url).path.strip("/").replace("/", "_") or url
             try:
+                if url in pmlr_identity_errors:
+                    raise pmlr_identity_errors[url]
+                if kind == "dblp":
+                    venue, year, _part, slug = parse_generic_toc_identity(url)
+                elif kind == "ccs":
+                    venue, year, slug = parse_sp_ccs_toc_identity(url)
+                elif kind == "neurips":
+                    venue, year, slug = _parse_neurips_identity(url)
+                elif kind == "pmlr":
+                    venue, year, slug = pmlr_identities.get(url) or _parse_pmlr_identity(url)
+                else:
+                    raise ValueError(f"不支持 metadata-only backend: {kind}")
+                print(f"[CRAWLER] metadata-only TOC {toc_index}/{len(urls)} {slug}")
                 if kind in {"dblp", "ccs"}:
                     total = len(crawler.fetch_papers(url))
                 elif kind == "neurips":
@@ -209,26 +240,30 @@ def _save_metadata_only_summary(urls_file: Path, output_root: Path, summary_csv:
                 else:
                     raise ValueError(f"不支持 metadata-only backend: {kind}")
                 error = 0
+                validation_status = "validated"
+                previous_total = ""
             except Exception as exc:
                 print(f"[CRAWLER] metadata-only failed url={url} error={exc}")
                 existing_row = _successful_existing_summary_row(existing_rows, url)
                 if existing_row:
-                    total = int(existing_row.get("total") or 0)
-                    error = 0
-                    print(f"[CRAWLER] metadata-only reused previous successful count url={url} total={total}")
+                    previous_total = existing_row.get("total", "")
                 else:
-                    total = 0
-                    error = 1
-            counts[url] = total
+                    previous_total = (existing_rows.get(url) or {}).get("previous_total", "")
+                total = ""
+                error = 1
+                validation_status = "failed"
+            counts[url] = total if error == 0 else None
             writer.writerow(
                 {
                     "url": url,
                     "venue": venue,
                     "year": year,
                     "total": total,
+                    "previous_total": previous_total,
                     "downloaded": 0,
                     "missing_pdf_url": 0,
                     "error": error,
+                    "validation_status": validation_status,
                     "output_dir": "",
                     "output_csv": "",
                 }

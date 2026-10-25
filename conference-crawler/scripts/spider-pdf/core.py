@@ -100,6 +100,17 @@ def safe_filename(name: str) -> str:
     return cleaned[:180] or "paper"
 
 
+def _has_pdf_signature(content: bytes) -> bool:
+    return b"%PDF-" in content[:1024]
+
+
+def _normalize_doi(value: object) -> str:
+    doi = str(value or "").strip().casefold()
+    doi = re.sub(r"^https?://(?:dx\.)?doi\.org/", "", doi)
+    doi = re.sub(r"^doi:\s*", "", doi)
+    return doi.rstrip(".,; ")
+
+
 def is_workshop_title(title: str) -> bool:
     """Skip workshop records before any PDF resolution or browser request."""
     return bool(re.search(r"\bworkshop\b", html.unescape(title or ""), flags=re.IGNORECASE))
@@ -172,6 +183,33 @@ def save_summary(rows: List[BatchResult], output_path: Path) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(asdict(row))
+
+
+def _rewrite_staged_pdf_paths(papers: List[Paper], staged_dir: Path, target_dir: Path) -> None:
+    for paper in papers:
+        if not paper.pdf_path:
+            continue
+        try:
+            relative_path = Path(paper.pdf_path).relative_to(staged_dir)
+        except ValueError:
+            continue
+        paper.pdf_path = str(target_dir / relative_path)
+
+
+def _commit_staged_directory(staged_dir: Path, target_dir: Path) -> None:
+    backup_dir: Path | None = None
+    if target_dir.exists():
+        backup_dir = Path(tempfile.mkdtemp(prefix=f".{target_dir.name}.backup-", dir=target_dir.parent))
+        backup_dir.rmdir()
+        target_dir.replace(backup_dir)
+    try:
+        staged_dir.replace(target_dir)
+    except Exception:
+        if backup_dir and backup_dir.exists() and not target_dir.exists():
+            backup_dir.replace(target_dir)
+        raise
+    if backup_dir:
+        shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 def load_urls(urls_file: Path) -> List[str]:
@@ -307,6 +345,9 @@ class DBLPPDFCrawler:
         year = year_match.group(0) if year_match else ""
 
         for entry in soup.select("li.entry"):
+            entry_classes = {str(value).casefold() for value in entry.get("class", [])}
+            if "inproceedings" not in entry_classes:
+                continue
             title_node = entry.select_one("span.title")
             if title_node is None:
                 continue
@@ -389,6 +430,12 @@ class DBLPPDFCrawler:
                 break
             for item in hits:
                 info: Dict[str, object] = item.get("info", {})
+                entry_type = str(info.get("type", "") or "").strip().casefold()
+                if entry_type and entry_type not in {
+                    "conference and workshop papers",
+                    "inproceedings",
+                }:
+                    continue
                 papers.append(
                     Paper(
                         title=str(info.get("title", "") or ""),
@@ -445,15 +492,14 @@ class DBLPPDFCrawler:
             return
         response = self._get_pdf_or_html_response(paper.pdf_url, referer=paper.ee_url)
         response.raise_for_status()
-        content_type = response.headers.get("Content-Type", "")
         content = response.content
         if not content:
             raise ValueError(f"PDF 内容为空: {paper.pdf_url}")
-        if "pdf" not in content_type.lower() and not content.lstrip().startswith(b"%PDF-"):
+        if not _has_pdf_signature(content):
             html_prefix = content[:4096].decode("utf-8", errors="ignore").lower()
             if 'meta name="access" content="no"' in html_prefix or "meta name='access' content='no'" in html_prefix:
                 raise PermissionError(f"访问受限，无法下载 PDF: {paper.pdf_url}")
-            raise ValueError(f"返回内容不是 PDF: {paper.pdf_url}")
+            raise ValueError(f"返回内容不是 PDF（缺少 %PDF- 文件头）: {paper.pdf_url}")
         with open(target, "wb") as file_obj:
             file_obj.write(content)
         paper.pdf_path = str(target)
@@ -720,8 +766,7 @@ class SPIEEESeleniumCrawler:
             session.cookies.set(cookie["name"], cookie["value"], domain=cookie.get("domain"), path=cookie.get("path", "/"))
         response = session.get(pdf_url, timeout=max(self.timeout, 60), allow_redirects=True)
         response.raise_for_status()
-        ctype = (response.headers.get("content-type") or "").lower()
-        if "pdf" in ctype:
+        if _has_pdf_signature(response.content):
             target.write_bytes(response.content)
             return target.exists() and target.stat().st_size > 0
         iframe_src = self._extract_iframe_src_from_html(response.text)
@@ -729,7 +774,7 @@ class SPIEEESeleniumCrawler:
             return False
         pdf_response = session.get(iframe_src, timeout=max(self.timeout, 60), allow_redirects=True)
         pdf_response.raise_for_status()
-        if "pdf" not in (pdf_response.headers.get("content-type") or "").lower():
+        if not _has_pdf_signature(pdf_response.content):
             return False
         target.write_bytes(pdf_response.content)
         return target.exists() and target.stat().st_size > 0
@@ -741,11 +786,11 @@ class SPIEEEArticleResolver:
 
     def find_article_number(self, doi: str) -> str:
         results = self.crawler.search(keyword=f'"DOI":{doi}', pages=1, rows_per_page=5)
+        expected_doi = _normalize_doi(doi)
+        if not expected_doi:
+            return ""
         for result in results:
-            if result.doi == doi and result.article_number:
-                return result.article_number
-        for result in results:
-            if result.article_number:
+            if _normalize_doi(result.doi) == expected_doi and result.article_number:
                 return result.article_number
         return ""
 
@@ -877,7 +922,7 @@ class ACMCCSSeleniumCrawler:
                 session.cookies.set(cookie["name"], cookie["value"], domain=cookie.get("domain"), path=cookie.get("path", "/"))
             response = session.get(pdf_url, timeout=max(self.timeout, 60), allow_redirects=True)
             response.raise_for_status()
-            if "pdf" not in (response.headers.get("content-type") or "").lower():
+            if not _has_pdf_signature(response.content):
                 return False
             target.write_bytes(response.content)
             return target.exists() and target.stat().st_size > 0
@@ -903,11 +948,6 @@ def run_dblp_batch(urls_file: Path, output_root: Path, summary_csv: str, sleep: 
             target_dir = year_dir / slug
             pdf_dir = target_dir / "pdfs"
             csv_path = target_dir / f"{slug}_results.csv"
-            if force and target_dir.exists():
-                shutil.rmtree(target_dir)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            pdf_dir.mkdir(parents=True, exist_ok=True)
-            existing_statuses = load_existing_statuses(csv_path, ["ee_url", "title"])
             print(f"[TOC] {toc_index}/{len(urls)} {slug}")
             try:
                 papers = crawler.fetch_papers(url)
@@ -915,42 +955,71 @@ def run_dblp_batch(urls_file: Path, output_root: Path, summary_csv: str, sleep: 
                 print(f"[错误] 跳过 {slug}: {exc}")
                 summary_rows.append(BatchResult(url=url, venue=target_venue, year=year, total=0, downloaded=0, missing_pdf_url=0, error=1, output_dir=str(pdf_dir), output_csv=str(csv_path)))
                 continue
-            for paper_index, paper in enumerate(papers, start=1):
-                if is_workshop_title(paper.title):
-                    paper.status = "skipped_workshop"
-                    print(f"[跳过Workshop] {slug} {paper_index}/{len(papers)} {paper.title}")
-                    continue
-                existing = existing_statuses.get(paper.ee_url) or existing_statuses.get(paper.title)
-                target = pdf_dir / f"{paper_index:02d}_{safe_filename(paper.title)}.pdf"
-                if target.exists() and target.stat().st_size > 0:
-                    paper.pdf_path = str(target)
-                    paper.status = "exists"
-                    print(f"[跳过PDF] {slug} {paper_index}/{len(papers)} {paper.title}")
-                    continue
-                flat_pdf = None if force else find_existing_flat_pdf(year_dir, slug, paper.title, paper_index)
-                if flat_pdf:
-                    paper.pdf_url = existing.get("pdf_url", "") if existing else ""
-                    paper.pdf_path = str(flat_pdf)
-                    paper.status = "exists"
-                    print(f"[复用旧PDF] {slug} {paper_index}/{len(papers)} {paper.title}")
-                    continue
-                if existing and existing.get("status") in {"downloaded", "exists", "missing_pdf_url"}:
-                    paper.pdf_url = existing.get("pdf_url", "") or ""
-                    paper.pdf_path = existing.get("pdf_path", "") or ""
-                    paper.status = existing.get("status", "") or ""
-                    print(f"[跳过] {slug} {paper_index}/{len(papers)} {paper.title}")
-                    continue
-                print(f"[处理] {slug} {paper_index}/{len(papers)} {paper.title}")
-                try:
-                    paper.pdf_url = crawler.resolve_pdf_url(paper)
-                    crawler.download_pdf(paper, output_dir=pdf_dir, index=paper_index)
-                except Exception as exc:
-                    paper.status = f"error: {exc}"
-                time.sleep(sleep)
-            save_csv(papers, csv_path)
-            downloaded = sum(1 for paper in papers if paper.status in {"downloaded", "exists"})
-            missing_pdf_url = sum(1 for paper in papers if paper.status == "missing_pdf_url")
-            errors = sum(1 for paper in papers if paper.status.startswith("error:"))
+            if not papers:
+                print(f"[错误] 跳过 {slug}: TOC 返回空论文列表")
+                summary_rows.append(BatchResult(url=url, venue=target_venue, year=year, total=0, downloaded=0, missing_pdf_url=0, error=1, output_dir=str(pdf_dir), output_csv=str(csv_path)))
+                continue
+            staged_dir = None
+            if force:
+                year_dir.mkdir(parents=True, exist_ok=True)
+                staged_dir = Path(tempfile.mkdtemp(prefix=f".{slug}.stage-", dir=year_dir))
+                work_dir = staged_dir
+            else:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                work_dir = target_dir
+            work_pdf_dir = work_dir / "pdfs"
+            work_csv_path = work_dir / f"{slug}_results.csv"
+            work_pdf_dir.mkdir(parents=True, exist_ok=True)
+            existing_statuses = {} if force else load_existing_statuses(csv_path, ["ee_url", "title"])
+            try:
+                for paper_index, paper in enumerate(papers, start=1):
+                    if is_workshop_title(paper.title):
+                        paper.status = "skipped_workshop"
+                        print(f"[跳过Workshop] {slug} {paper_index}/{len(papers)} {paper.title}")
+                        continue
+                    existing = existing_statuses.get(paper.ee_url) or existing_statuses.get(paper.title)
+                    target = work_pdf_dir / f"{paper_index:02d}_{safe_filename(paper.title)}.pdf"
+                    if target.exists() and target.stat().st_size > 0:
+                        paper.pdf_path = str(target)
+                        paper.status = "exists"
+                        print(f"[跳过PDF] {slug} {paper_index}/{len(papers)} {paper.title}")
+                        continue
+                    flat_pdf = None if force else find_existing_flat_pdf(year_dir, slug, paper.title, paper_index)
+                    if flat_pdf:
+                        paper.pdf_url = existing.get("pdf_url", "") if existing else ""
+                        paper.pdf_path = str(flat_pdf)
+                        paper.status = "exists"
+                        print(f"[复用旧PDF] {slug} {paper_index}/{len(papers)} {paper.title}")
+                        continue
+                    if existing and existing.get("status") in {"downloaded", "exists", "missing_pdf_url"}:
+                        paper.pdf_url = existing.get("pdf_url", "") or ""
+                        paper.pdf_path = existing.get("pdf_path", "") or ""
+                        paper.status = existing.get("status", "") or ""
+                        print(f"[跳过] {slug} {paper_index}/{len(papers)} {paper.title}")
+                        continue
+                    print(f"[处理] {slug} {paper_index}/{len(papers)} {paper.title}")
+                    try:
+                        paper.pdf_url = crawler.resolve_pdf_url(paper)
+                        crawler.download_pdf(paper, output_dir=work_pdf_dir, index=paper_index)
+                    except Exception as exc:
+                        paper.status = f"error: {exc}"
+                    time.sleep(sleep)
+                if staged_dir:
+                    _rewrite_staged_pdf_paths(papers, staged_dir, target_dir)
+                save_csv(papers, work_csv_path)
+                downloaded = sum(1 for paper in papers if paper.status in {"downloaded", "exists"})
+                missing_pdf_url = sum(1 for paper in papers if paper.status == "missing_pdf_url")
+                errors = sum(1 for paper in papers if paper.status.startswith("error:"))
+                if staged_dir:
+                    if errors == 0 and missing_pdf_url == 0:
+                        _commit_staged_directory(staged_dir, target_dir)
+                    else:
+                        shutil.rmtree(staged_dir, ignore_errors=True)
+                    staged_dir = None
+            except Exception:
+                if staged_dir and staged_dir.exists():
+                    shutil.rmtree(staged_dir, ignore_errors=True)
+                raise
             summary_rows.append(BatchResult(url=url, venue=target_venue, year=year, total=len(papers), downloaded=downloaded, missing_pdf_url=missing_pdf_url, error=errors, output_dir=str(pdf_dir), output_csv=str(csv_path)))
             print(f"[完成] {slug} downloaded={downloaded} missing_pdf_url={missing_pdf_url} error={errors}")
             if toc_index < len(urls):

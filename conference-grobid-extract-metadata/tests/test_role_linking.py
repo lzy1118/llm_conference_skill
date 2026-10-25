@@ -98,6 +98,47 @@ def test_does_not_match_different_given_name_with_same_surname():
     assert hints["corresponding_names"] == {"yuqing zhang"}
 
 
+def test_corresponding_name_match_requires_token_boundaries():
+    names = ["Ann Lee", "Joann Lee"]
+    context = make_context(["Joann Lee is the corresponding author."])
+
+    hints = extract_role_hints(None, context, names)
+
+    assert hints["corresponding_names"] == {"joann lee"}
+
+
+def test_corresponding_marker_match_requires_token_boundaries():
+    names = ["Ann Lee", "Joann Lee"]
+    context = make_context([
+        "Ann Lee",
+        "Joann Lee∗",
+        "ABSTRACT",
+        "∗Corresponding author.",
+    ])
+
+    hints = extract_role_hints(None, context, names)
+
+    assert hints["corresponding_names"] == {"joann lee"}
+
+
+def test_links_abbreviated_corresponding_reference_when_unique():
+    names = ["John Smith", "Alice Jones"]
+    context = make_context(["Corresponding author: J. Smith."])
+
+    hints = extract_role_hints(None, context, names)
+
+    assert hints["corresponding_names"] == {"john smith"}
+
+
+def test_leaves_ambiguous_abbreviated_corresponding_reference_unresolved():
+    names = ["John Smith", "James Smith"]
+    context = make_context(["Corresponding author: J. Smith."])
+
+    hints = extract_role_hints(None, context, names)
+
+    assert not hints["corresponding_names"]
+
+
 def test_links_envelope_and_encoded_envelope_markers():
     names = ["Yinqian Zhang", "Xiaorui Gong"]
     context = make_context([

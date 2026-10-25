@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -63,7 +64,8 @@ def normalize_author_display_name(value: object) -> str:
 
 def slug_text(value: str) -> str:
     lowered = normalize_space(value).casefold()
-    return re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+    slug = "".join(char if char.isalnum() else "-" for char in lowered)
+    return re.sub(r"-+", "-", slug).strip("-")
 
 
 def stable_key(*parts: str) -> str:
@@ -94,9 +96,12 @@ def parse_author_order(value: object) -> int | None:
     if not text:
         return None
     try:
-        return int(float(text))
-    except ValueError:
+        number = Decimal(text)
+    except (InvalidOperation, ValueError):
         return None
+    if not number.is_finite() or number < 0 or number != number.to_integral_value():
+        return None
+    return int(number)
 
 
 def row_paper_key(row: dict[str, str]) -> str:

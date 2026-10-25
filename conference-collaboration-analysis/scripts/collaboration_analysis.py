@@ -5,6 +5,7 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 import re
+import unicodedata
 
 
 def normalize_author_display_name(name: str) -> str:
@@ -15,8 +16,9 @@ def normalize_author_display_name(name: str) -> str:
 
 
 def normalize_author_identity(name: str) -> str:
-    """Compact identity key for OCR-inserted spaces in author names."""
-    return re.sub(r"[^a-z0-9]", "", normalize_author_display_name(name).casefold())
+    """Compact Unicode identity key for OCR-spaced author names."""
+    text = unicodedata.normalize("NFKC", normalize_author_display_name(name)).casefold()
+    return "".join(char for char in text if char.isalnum())
 
 
 def normalize_institution_display_name(row: dict[str, str]) -> str:
@@ -30,12 +32,12 @@ def split_composite_name(value: str) -> list[str]:
 
 
 def expand_resolved_country_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Expand known country components and discard unresolved fragments."""
+    """Expand country components and preserve unresolved participation as Unknown."""
     candidates: dict[str, set[str]] = defaultdict(set)
     institution_country_candidates: dict[str, set[str]] = defaultdict(set)
     for row in rows:
         components = split_composite_name(row.get("country", ""))
-        if len(components) == 1 and components[0].casefold() not in {"", "unknown"}:
+        if len(components) == 1 and components[0].casefold() not in {"", "unknown", "none", "n/a", "null"}:
             candidates[components[0].casefold()].add(components[0])
             identities = split_composite_name(row.get("institution_id", "") or row.get("institution_key", ""))
             if len(identities) == 1:
@@ -49,28 +51,44 @@ def expand_resolved_country_rows(rows: list[dict[str, str]]) -> list[dict[str, s
     expanded: list[dict[str, str]] = []
     for row in rows:
         components = split_composite_name(row.get("country", ""))
-        if len(components) < 2:
-            expanded.append(row)
-            continue
-        resolved = [registry.get(component.casefold()) for component in components]
-        resolved = [component for component in resolved if component]
-        if not resolved:
-            continue
-        institution_names = split_composite_name(normalize_institution_display_name(row))
         institution_ids = split_composite_name(row.get("institution_id", "") or row.get("institution_key", ""))
+        if len(components) < 2:
+            country = components[0] if components else ""
+            if country.casefold() in {"", "unknown", "none", "n/a", "null"}:
+                country = institution_country_registry.get(institution_ids[0], "Unknown") if len(institution_ids) == 1 else "Unknown"
+                split_row = dict(row)
+                split_row["country"] = country
+                split_row["country_source"] = "resolved_institution_country" if country != "Unknown" else "unresolved"
+                expanded.append(split_row)
+            else:
+                expanded.append(row)
+            continue
+
+        resolved = [registry.get(component.casefold()) for component in components]
+        institution_names = split_composite_name(normalize_institution_display_name(row))
         aligned_institutions = len(institution_names) == len(components) and len(institution_names) > 1
         if not aligned_institutions and len(institution_ids) == 1:
             canonical_country = institution_country_registry.get(institution_ids[0])
-            if canonical_country:
+            split_row = dict(row)
+            split_row["country"] = canonical_country or "Unknown"
+            split_row["country_source"] = "resolved_institution_country" if canonical_country else "unresolved_composite"
+            expanded.append(split_row)
+            continue
+        if aligned_institutions:
+            for index, country in enumerate(resolved):
                 split_row = dict(row)
-                split_row["country"] = canonical_country
-                split_row["country_source"] = "resolved_institution_country"
+                split_row["country"] = country or "Unknown"
+                split_row["country_source"] = "resolved_composite_component" if country else "unresolved_composite"
                 expanded.append(split_row)
             continue
-        for country in dict.fromkeys(resolved):
+
+        countries = list(dict.fromkeys(country for country in resolved if country))
+        if any(country is None for country in resolved):
+            countries.append("Unknown")
+        for country in countries:
             split_row = dict(row)
             split_row["country"] = country
-            split_row["country_source"] = "resolved_composite_component"
+            split_row["country_source"] = "resolved_composite_component" if country != "Unknown" else "unresolved_composite"
             expanded.append(split_row)
     return expanded
 
@@ -175,17 +193,58 @@ def expand_resolved_composite_rows(rows: list[dict[str, str]]) -> list[dict[str,
 
 
 def build_author_key_aliases(rows: list[dict[str, str]]) -> dict[str, str]:
-    compact_to_keys: dict[str, set[str]] = defaultdict(set)
+    fallback_by_name: dict[str, set[str]] = defaultdict(set)
+    explicit_by_name: dict[str, set[str]] = defaultdict(set)
     for row in rows:
-        key = row.get("author_key", "").strip() or row.get("name", "").strip()
-        compact = normalize_author_identity(row.get("name", ""))
-        if key and compact:
-            compact_to_keys[compact].add(key)
+        name = row.get("name", "").strip()
+        compact = normalize_author_identity(name)
+        explicit = row.get("author_key", "").strip()
+        if not compact:
+            continue
+        if explicit:
+            explicit_by_name[compact].add(explicit)
+        elif name:
+            fallback_by_name[compact].add(name)
+
     aliases: dict[str, str] = {}
-    for keys in compact_to_keys.values():
-        preferred = sorted(keys)[0]
-        aliases.update({key: preferred for key in keys})
+    for compact, names in fallback_by_name.items():
+        if explicit_by_name.get(compact):
+            continue
+        preferred = sorted(names)[0]
+        aliases.update({name: preferred for name in names})
     return aliases
+
+
+def resolve_author_keys_by_row(rows: list[dict[str, str]]) -> list[str]:
+    aliases = build_author_key_aliases(rows)
+    indices_by_paper: dict[str, list[int]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        paper_key = row.get("paper_key", "").strip()
+        if paper_key:
+            indices_by_paper[paper_key].append(index)
+
+    resolved = [""] * len(rows)
+    for indices in indices_by_paper.values():
+        explicit_by_name: dict[str, set[str]] = defaultdict(set)
+        for index in indices:
+            row = rows[index]
+            explicit = row.get("author_key", "").strip()
+            compact = normalize_author_identity(row.get("name", ""))
+            if explicit and compact:
+                explicit_by_name[compact].add(aliases.get(explicit, explicit))
+        for index in indices:
+            row = rows[index]
+            explicit = row.get("author_key", "").strip()
+            name = row.get("name", "").strip()
+            if explicit:
+                resolved[index] = aliases.get(explicit, explicit)
+                continue
+            candidates = explicit_by_name.get(normalize_author_identity(name), set())
+            if len(candidates) == 1:
+                resolved[index] = next(iter(candidates))
+            elif name:
+                resolved[index] = aliases.get(name, name)
+    return resolved
 
 
 MODE_CHOICES = ("author", "country", "institution")
@@ -267,10 +326,11 @@ def filter_rows(
     return filtered
 
 
-def node_for_mode(row: dict[str, str], mode: str, author_key_aliases: dict[str, str] | None = None) -> tuple[str, str]:
+def node_for_mode(
+    row: dict[str, str], mode: str, resolved_author_key: str | None = None
+) -> tuple[str, str]:
     if mode == "author":
-        raw_key = row.get("author_key") or row.get("name") or "Unknown"
-        key = (author_key_aliases or {}).get(raw_key, raw_key)
+        key = resolved_author_key or "Unknown"
         return key, normalize_author_display_name(row.get("name") or key)
     if mode == "country":
         key = row.get("country") or "Unknown"
@@ -280,35 +340,58 @@ def node_for_mode(row: dict[str, str], mode: str, author_key_aliases: dict[str, 
 
 
 def normalize_title_key(title: str) -> str:
-    text = re.sub(r"\s+", " ", (title or "").strip().casefold()).rstrip(".")
-    return re.sub(r"[^a-z0-9]", "", text)
+    text = unicodedata.normalize("NFKC", (title or "").strip()).casefold().rstrip(".")
+    return "".join(char for char in text if char.isalnum())
 
 
-def build_canonical_paper_keys(rows: list[dict[str, str]]) -> dict[str, str]:
-    papers_to_rows: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for row in rows:
-        paper_key = row.get("paper_key", "")
+def build_canonical_paper_keys(
+    rows: list[dict[str, str]], resolved_author_keys: list[str] | None = None
+) -> dict[str, str]:
+    papers_to_rows: dict[str, list[tuple[int, dict[str, str]]]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        paper_key = row.get("paper_key", "").strip()
         if paper_key:
-            papers_to_rows[paper_key].append(row)
+            papers_to_rows[paper_key].append((index, row))
 
+    if resolved_author_keys is None:
+        resolved_author_keys = resolve_author_keys_by_row(rows)
+    explicit_keys = {
+        row.get("author_key", "").strip()
+        for row in rows
+        if row.get("author_key", "").strip()
+    }
     canonical: dict[str, str] = {}
     signature_groups: dict[tuple[object, ...], list[str]] = defaultdict(list)
-    for paper_key, paper_rows in papers_to_rows.items():
-        def order_value(item: dict[str, str]) -> int:
+    for paper_key, indexed_rows in papers_to_rows.items():
+        author_members = set()
+        for index, item in indexed_rows:
+            author_key = resolved_author_keys[index]
+            if not author_key:
+                continue
+            identity = (
+                f"key:{author_key}"
+                if author_key in explicit_keys
+                else f"name:{normalize_author_identity(author_key)}"
+            )
+            raw_order = item.get("author_order", "").strip()
             try:
-                return int(item.get("author_order", ""))
+                order = (int(raw_order), "")
             except (TypeError, ValueError):
-                return 10**9
-
-        author_signature = tuple(
-            (str(item.get("author_order", "")), normalize_author_identity(item.get("name", "")))
-            for item in sorted(paper_rows, key=order_value)
-        )
-        sample = paper_rows[0]
+                order = (10**9, raw_order)
+            author_members.add((*order, identity))
+        author_signature = tuple(sorted(author_members))
+        if not author_signature:
+            canonical[paper_key] = paper_key
+            continue
+        sample = indexed_rows[0][1]
+        title_key = normalize_title_key(sample.get("title", ""))
+        if not title_key:
+            canonical[paper_key] = paper_key
+            continue
         signature = (
             sample.get("conference", ""),
             sample.get("year", ""),
-            normalize_title_key(sample.get("title", "")),
+            title_key,
             author_signature,
         )
         signature_groups[signature].append(paper_key)
@@ -325,14 +408,14 @@ def aggregate_edges(rows: list[dict[str, str]], mode: str) -> tuple[list[dict[st
     paper_nodes: dict[str, dict[str, tuple[str, str]]] = defaultdict(dict)
     paper_meta: dict[str, dict[str, set[str]]] = defaultdict(lambda: {"conferences": set(), "years": set()})
     edge_stats: dict[tuple[str, str], dict[str, object]] = {}
-    canonical_paper_keys = build_canonical_paper_keys(rows)
+    resolved_author_keys = resolve_author_keys_by_row(rows) if mode == "author" else None
+    canonical_paper_keys = build_canonical_paper_keys(rows, resolved_author_keys)
     if mode == "institution":
         rows = expand_resolved_composite_rows(rows)
     elif mode == "country":
         rows = expand_resolved_country_rows(rows)
-    author_key_aliases = build_author_key_aliases(rows)
 
-    for row in rows:
+    for index, row in enumerate(rows):
         if mode == "institution":
             if row.get("institution_source") in NON_COUNTING_INSTITUTION_SOURCES:
                 continue
@@ -343,7 +426,13 @@ def aggregate_edges(rows: list[dict[str, str]], mode: str) -> tuple[list[dict[st
         paper_key = canonical_paper_keys.get(row.get("paper_key", ""), row.get("paper_key", ""))
         if not paper_key:
             continue
-        node_key, node_name = node_for_mode(row, mode, author_key_aliases)
+        if mode == "author":
+            author_key = resolved_author_keys[index] if resolved_author_keys is not None else ""
+            if not author_key:
+                continue
+            node_key, node_name = node_for_mode(row, mode, author_key)
+        else:
+            node_key, node_name = node_for_mode(row, mode)
         paper_nodes[paper_key][node_key] = (node_key, node_name)
         conference = row.get("conference", "")
         year = row.get("year", "")

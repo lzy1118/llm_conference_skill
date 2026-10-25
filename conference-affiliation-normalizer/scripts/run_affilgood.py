@@ -330,6 +330,11 @@ def process_file(ag: Any, args: argparse.Namespace, input_path: Path, output_pat
     input_format = detect_format(input_path, args.input_format)
     if not input_path.exists():
         raise FileNotFoundError(f"Input file does not exist: {input_path}")
+    same_path = input_path.resolve() == output_path.resolve()
+    if not same_path and output_path.exists():
+        same_path = os.path.samefile(input_path, output_path)
+    if same_path:
+        raise ValueError("Input and output must refer to different files")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     total = 0

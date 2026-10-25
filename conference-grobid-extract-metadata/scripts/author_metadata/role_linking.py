@@ -219,28 +219,25 @@ def _extract_author_marker_map(lines, author_names):
 
 
 def _find_author_occurrence(line, author_name):
-    line_key = _role_compact(line)
-    author_key = compact_alpha(author_name)
-    if author_key:
-        start = line_key.find(author_key)
-        if start >= 0:
-            return start, start + len(author_key)
-
+    folded_line = "".join(
+        char if char in ROLE_MARKERS else (ascii_fold(char) or " ")
+        for char in str(line or "")
+    )
     tokens = re.findall(r"[A-Za-z]+", ascii_fold(author_name))
-    if len(tokens) < 2:
+    if not tokens:
         return None
     token_patterns = [
         rf"{re.escape(token)}[A-Za-z]*" if len(token) == 1 else re.escape(token)
         for token in tokens
     ]
     match = re.search(
-        r"\b" + r"[^A-Za-z]+".join(token_patterns) + r"\b",
-        ascii_fold(line),
+        r"(?<![A-Za-z])" + r"[^A-Za-z]+".join(token_patterns) + r"(?![A-Za-z])",
+        folded_line,
         flags=re.IGNORECASE,
     )
     if not match:
         return None
-    start = len(_role_compact(ascii_fold(line)[:match.start()]))
+    start = len(_role_compact(folded_line[:match.start()]))
     end = start + len(_role_compact(match.group(0)))
     return start, end
 
@@ -324,6 +321,11 @@ def match_author_reference(ref_text, author_name):
     return True
 
 
+def _unique_author_reference(ref_text, author_names):
+    matches = [name for name in author_names if match_author_reference(ref_text, name)]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _collect_equal_contribution_hints(line, author_names, hints):
     if not ROLE_TEXT_RE.search(line):
         return
@@ -362,28 +364,25 @@ def _collect_equal_contribution_hints(line, author_names, hints):
         if part.strip(" -,:;()")
     ]
     for reference in references:
-        for author_name in author_names:
-            if match_author_reference(reference, author_name):
-                hints["equal_contribution_names"].add(normalize_name(author_name))
+        author_name = _unique_author_reference(reference, author_names)
+        if author_name:
+            hints["equal_contribution_names"].add(normalize_name(author_name))
 
 
 def _collect_corresponding_hints(line, author_names, author_emails, hints):
     if not CORRESPONDING_TEXT_RE.search(line):
         return
-    line_key = compact_alpha(line)
     line_emails = {email.casefold() for email in EMAIL_RE.findall(line)}
     for author_name in author_names:
-        author_key = compact_alpha(author_name)
-        if (
-            (author_key and author_key in line_key)
-            or _find_author_occurrence(line, author_name) is not None
-        ):
+        if _find_author_occurrence(line, author_name) is not None:
             hints["corresponding_names"].add(normalize_name(author_name))
             continue
         normalized_name = normalize_name(author_name)
         if line_emails & author_emails.get(normalized_name, set()):
             hints["corresponding_names"].add(normalized_name)
-            continue
-        for reference in re.split(r"\band\b|,|:|;", line, flags=re.IGNORECASE):
-            if match_author_reference(reference.strip(), author_name):
-                hints["corresponding_names"].add(normalize_name(author_name))
+
+    references = re.split(r"\band\b|,|:|;", line, flags=re.IGNORECASE)
+    for reference in references:
+        matched_author = _unique_author_reference(reference.strip(), author_names)
+        if matched_author:
+            hints["corresponding_names"].add(normalize_name(matched_author))

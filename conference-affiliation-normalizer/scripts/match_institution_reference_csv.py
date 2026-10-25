@@ -130,6 +130,27 @@ def phrase_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.casefold()).strip()
 
 
+def _phrase_key_with_offsets(value: str) -> tuple[str, list[int]]:
+    chars: list[str] = []
+    offsets: list[int] = []
+    for source_index, source_char in enumerate(value or ""):
+        decomposed = unicodedata.normalize("NFKD", source_char)
+        for character in decomposed:
+            if unicodedata.combining(character):
+                continue
+            for folded in character.casefold():
+                if "a" <= folded <= "z" or "0" <= folded <= "9":
+                    chars.append(folded)
+                    offsets.append(source_index)
+                elif chars and chars[-1] != " ":
+                    chars.append(" ")
+                    offsets.append(source_index)
+    while chars and chars[-1] == " ":
+        chars.pop()
+        offsets.pop()
+    return "".join(chars), offsets
+
+
 def canonical_country(value: str) -> str:
     compact = phrase_key(value)
     return COUNTRY_CANONICAL_ALIASES.get(compact, " ".join((value or "").strip().split()))
@@ -174,17 +195,20 @@ def extract_terminal_country(
 ) -> tuple[list[str], str, str]:
     if not components:
         return [], "", ""
-    last = phrase_key(components[-1])
+    last, offsets = _phrase_key_with_offsets(components[-1])
     for alias in sorted(aliases, key=lambda value: (-len(value.split()), -len(value))):
         if last == alias:
             return components[:-1], components[-1], aliases[alias]
         suffix = f" {alias}"
         if last.endswith(suffix):
-            prefix_words = last[: -len(suffix)].strip()
+            suffix_start = len(last) - len(alias)
+            raw_start = offsets[suffix_start]
+            raw_component = components[-1]
+            raw_prefix = raw_component[:raw_start].strip()
             remaining = list(components[:-1])
-            if prefix_words:
-                remaining.append(prefix_words)
-            return remaining, alias, aliases[alias]
+            if raw_prefix:
+                remaining.append(raw_prefix)
+            return remaining, raw_component[raw_start:].strip(), aliases[alias]
     return list(components), "", ""
 
 

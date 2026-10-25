@@ -4,9 +4,9 @@ import argparse
 import csv
 import json
 import re
-import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -18,9 +18,38 @@ DEFAULT_CFP_DIR = ROOT / "generated-data" / "cfp" / "output"
 DEFAULT_AUTHOR_ROLES_DIR = ROOT / "generated-data" / "author-roles"
 SEARCH_ROOTS = (ROOT / "generated-data" / "extraction", ROOT / "data")
 
-sys.path.insert(0, str(ROOT / "conference-paper-extraction" / "scripts"))
-from conference_registry import CONFERENCES  # noqa: E402
-from iacr_top3_backend import extract_iacr_paper_id  # noqa: E402
+
+@dataclass(frozen=True)
+class RegisteredConference:
+    key: str
+    conference: str
+    year: int
+    family: str
+    backend: str
+
+
+# The crawler registry is discovery-level and has no per-edition coverage records.
+# Keep the ledger's historical edition domain and backend labels explicit here.
+_CONFERENCE_SERIES = (
+    ("asiacrypt", "ASIACRYPT", "crypto", "iacr_top3", 2020, 2025),
+    ("crypto", "CRYPTO", "crypto", "iacr_top3", 2020, 2025),
+    ("eurocrypt", "EUROCRYPT", "crypto", "iacr_top3", 2020, 2025),
+    ("usenix_security", "USENIX_SECURITY", "security", "security_real", 2020, 2026),
+    ("ndss", "NDSS", "security", "security_real", 2020, 2026),
+    ("ieee_sp", "IEEE_S&P", "security", "security_real", 2020, 2026),
+    ("ccs", "CCS", "security", "security_real", 2020, 2026),
+)
+CONFERENCES = {
+    f"{key_prefix}_{year}": RegisteredConference(
+        key=f"{key_prefix}_{year}",
+        conference=conference,
+        year=year,
+        family=family,
+        backend=backend,
+    )
+    for key_prefix, conference, family, backend, first_year, last_year in _CONFERENCE_SERIES
+    for year in range(first_year, last_year + 1)
+}
 
 
 @dataclass(frozen=True)
@@ -113,9 +142,12 @@ def load_author_role_status(author_roles_dir: Path | None) -> dict[tuple[str, in
         if not conference or not year_text:
             continue
         try:
-            year = int(float(year_text))
-        except ValueError:
+            parsed_year = Decimal(year_text)
+        except InvalidOperation:
             continue
+        if not parsed_year.is_finite() or parsed_year < 0 or parsed_year != parsed_year.to_integral_value():
+            continue
+        year = int(parsed_year)
         by_conference_year.setdefault((conference, year), []).append(row)
 
     statuses: dict[tuple[str, int], str] = {}
@@ -199,9 +231,17 @@ def coerce_papers(raw_payload: Any) -> list[dict[str, Any]]:
     return [paper for paper in papers if isinstance(paper, dict)]
 
 
+def iacr_paper_id(paper: dict[str, Any], fallback_index: int) -> str:
+    for field in ("paperId", "id"):
+        value = re.sub(r"\s+", " ", str(paper.get(field, ""))).strip()
+        if value:
+            return value
+    return f"legacy_{fallback_index}"
+
+
 def paper_id_for(index: int, paper: dict[str, Any], conference: str = "") -> str:
     if conference in {"ASIACRYPT", "CRYPTO", "EUROCRYPT"}:
-        return extract_iacr_paper_id(paper, index - 1)
+        return iacr_paper_id(paper, index - 1)
     for field in ("paperId", "paper_id", "key", "id"):
         value = str(paper.get(field, "")).strip()
         if value:

@@ -54,7 +54,9 @@ SECONDARY_NAMED_PATTERN = re.compile(
 def normalized_text(value: str) -> str:
     text = unicodedata.normalize("NFKD", value or "")
     text = "".join(char for char in text if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", text.casefold()).strip()
+    return " ".join(
+        "".join(char if char.isalnum() else " " for char in text.casefold()).split()
+    )
 
 
 def normalize_author_display_name(value: str) -> str:
@@ -66,7 +68,8 @@ def normalize_author_display_name(value: str) -> str:
 
 def compact_author_name(value: str) -> str:
     """Return a conservative comparison key for whitespace-inserted name variants."""
-    return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", value or "").casefold())
+    text = unicodedata.normalize("NFKD", value or "").casefold()
+    return "".join(char for char in text if char.isalnum())
 
 
 def build_author_aliases(source_rows: list[dict[str, str]]) -> tuple[dict[int, str], dict[str, str]]:
@@ -305,6 +308,7 @@ def convert_rows(source_rows: list[dict[str, str]]) -> tuple[list[dict[str, str]
         explicit_countries = bool(countries)
         countries = list(dict.fromkeys(countries or ["None"]))
         author_name = canonical_authors.get(source_index, normalize_author_display_name(source.get("author", "")))
+        author_key = source.get("author_key", "").strip() or stable_key("author", author_name)
         reference_status = source.get("institution_reference_status", "").strip()
         match_confidence = source.get("institution_reference_confidence", "").strip()
         secondary_placeholder = bool(
@@ -425,7 +429,7 @@ def convert_rows(source_rows: list[dict[str, str]]) -> tuple[list[dict[str, str]
                 "conference": source.get("conference", "").strip(),
                 "year": source.get("year", "").strip(),
                 "title": source.get("title", "").strip(),
-                "author_key": stable_key("author", author_name),
+                "author_key": author_key,
                 "name": author_name,
                 "author_order": source.get("author_rank", "").strip(),
                 "institution_key": institution_key,

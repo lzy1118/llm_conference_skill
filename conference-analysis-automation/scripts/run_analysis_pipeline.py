@@ -260,8 +260,8 @@ def visualization_commands(output_dir: Path, requested_runs: list[str]) -> list[
     ]
 
 
-def execute_steps(step_commands: list[tuple[str, list[str]]], args: argparse.Namespace, manifest: dict[str, object]) -> None:
-    """按顺序执行各步骤，并将执行记录写入清单。"""
+def execute_steps(step_commands: list[tuple[str, list[str]]], args: argparse.Namespace, manifest: dict[str, object]) -> bool:
+    """Run commands in order, returning false when fail-fast should stop."""
     for step_name, command in step_commands:
         returncode, stdout, stderr = run_command(command, cwd=repo_root())
         step_record = {
@@ -273,7 +273,8 @@ def execute_steps(step_commands: list[tuple[str, list[str]]], args: argparse.Nam
         }
         manifest["steps"].append(step_record)
         if returncode != 0 and args.fail_fast:
-            raise RuntimeError(f"{step_name} analytics failed")
+            return False
+    return True
 
 
 def run_analytics(normalized_input: Path, output_dir: Path, args: argparse.Namespace, manifest: dict[str, object]) -> None:
@@ -282,11 +283,16 @@ def run_analytics(normalized_input: Path, output_dir: Path, args: argparse.Names
     manifest["requested_runs"] = requested_runs
     manifest["steps"] = []
 
-    execute_steps(audit_commands(normalized_input, output_dir, requested_runs)[:1], args, manifest)
-    execute_steps(analytics_commands(normalized_input, output_dir, args, requested_runs), args, manifest)
-    execute_steps(audit_commands(normalized_input, output_dir, requested_runs)[1:], args, manifest)
-    execute_steps(report_commands(output_dir, requested_runs), args, manifest)
-    execute_steps(visualization_commands(output_dir, requested_runs), args, manifest)
+    phases = (
+        audit_commands(normalized_input, output_dir, requested_runs)[:1],
+        analytics_commands(normalized_input, output_dir, args, requested_runs),
+        audit_commands(normalized_input, output_dir, requested_runs)[1:],
+        report_commands(output_dir, requested_runs),
+        visualization_commands(output_dir, requested_runs),
+    )
+    for phase_commands in phases:
+        if not execute_steps(phase_commands, args, manifest):
+            return
 
 
 def write_manifest(output_dir: Path, manifest: dict[str, object]) -> Path:
@@ -334,7 +340,7 @@ def write_report(output_dir: Path, manifest: dict[str, object]) -> Path:
     return report_path
 
 
-def main() -> None:
+def main() -> int:
     """统筹可选的抽取、归一化、分析与摘要输出流程。"""
     args = parse_args()
     output_dir = Path(args.output_dir).resolve()
@@ -351,7 +357,8 @@ def main() -> None:
     run_analytics(normalized_input, output_dir, args, manifest)
     write_manifest(output_dir, manifest)
     write_report(output_dir, manifest)
+    return int(any(step["returncode"] != 0 for step in manifest["steps"]))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

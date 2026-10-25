@@ -360,3 +360,53 @@ def test_defaults_unresolved_composite_to_independent_researcher():
     assert all(row["canonical_institution_name"] == "Independent Researcher" for row in facts)
     assert all(row["institution_id"] == "NONINSTITUTIONAL" for row in facts)
     assert dimensions == []
+
+
+def test_unicode_names_titles_and_institutions_get_distinct_keys():
+    rows = [
+        {
+            "paper_id": "p1",
+            "title": "密码学的新进展",
+            "author": "张伟",
+            "author_rank": "0",
+            "affiliation_rank": "0",
+            "affiliations": "清华大学",
+            "affilgood_institutions": "清华大学",
+            "affilgood_standard_institutions": "清华大学",
+            "affilgood_location_country": "China",
+        },
+        {
+            "paper_id": "p2",
+            "title": "计算机安全的新进展",
+            "author": "李伟",
+            "author_rank": "0",
+            "affiliation_rank": "0",
+            "affiliations": "北京大学",
+            "affilgood_institutions": "北京大学",
+            "affilgood_standard_institutions": "北京大学",
+            "affilgood_location_country": "China",
+        },
+    ]
+
+    facts, _ = MODULE.convert_rows(rows)
+
+    assert len({row["author_key"] for row in facts}) == 2
+    assert len({row["institution_key"] for row in facts}) == 2
+    assert MODULE.stable_key("title", rows[0]["title"]) != MODULE.stable_key("title", rows[1]["title"])
+
+
+def test_preserves_explicit_author_key():
+    facts, _ = MODULE.convert_rows([{
+        "paper_id": "p1",
+        "title": "Explicit key",
+        "author": "Alice Smith",
+        "author_key": "person:verified-42",
+        "author_rank": "0",
+        "affiliation_rank": "0",
+        "affiliations": "Example University",
+        "affilgood_institutions": "Example University",
+        "affilgood_standard_institutions": "Example University",
+        "affilgood_location_country": "United States",
+    }])
+
+    assert facts[0]["author_key"] == "person:verified-42"
