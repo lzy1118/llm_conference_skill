@@ -1,0 +1,274 @@
+{
+  "paper_id": "001_pyfet_forensically_equivalent_transformation_for_python_binary_decompilation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "PYFET: Forensically Equivalent Transformation for Python Binary Decompilation"
+      },
+      {
+        "source": "selected",
+        "value": "PYFET: Forensically Equivalent Transformation for Python Binary Decompilation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Decompilation is a crucial capability in forensic analysis, facilitating analysis of unknown binaries. The recent rise of Python malware has brought attention to Python decompilers that aim to obtain source code representation from a Python binary. However, Python decompilers fail to handle various binaries, limiting their capabilities in forensic analysis. This paper proposes a novel solution that transforms a decompilation error-inducing Python binary into a decompilable binary. Our key intuition is that we can resolve the decompilation errors by transforming error-inducing code blocks in the input binary into another form. The core of our approach is the concept of Forensically Equivalent Transformation (FET) which allows non-semantic preserving transformation in the context of forensic analysis. We carefully define the FETs to minimize their undesirable consequences while fixing various error-inducing instructions that are difficult to solve when preserving the exact semantics. We evaluate the prototype of our approach with 17,117 real-world Python malware samples causing decompilation errors in five popular decompilers. It successfully identifies and fixes 77,022 errors. Our approach also handles anti-analysis techniques, including opcode remapping, and helps migrate Python 3.9 binaries to 3.8 binaries. 3296 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Decompilation is a crucial capability in forensic analysis, facilitating analysis of unknown binaries. The recent rise of Python malware has brought attention to Python decompilers that aim to obtain source code representation from a Python binary. However, Python decompilers fail to handle various binaries, limiting their capabilities in forensic analysis. This paper proposes a novel solution that transforms a de- compilation error-inducing Python binary into a decompilable binary. Our key intuition is that we can resolve the decompila- tion errors by transforming error-inducing code blocks in the input binary into another form. The core of our approach is the concept of Forensically Equivalent Transformation (FET) which allows non-semantic preserving transformation in the context of forensic analysis. We carefully define the FETs to minimize their undesirable consequences while fixing various error-inducing instructions that are difficult to solve when preserving the exact semantics. We evaluate the prototype of our approach with 17,117 real-world Python malware samples causing decompilation errors in five popular decompilers. It successfully identifies and fixes 77,022 errors. Our approach also handles anti-analysis techniques, including opcode remap- ping, and helps migrate Python 3.9 binaries to 3.8 binaries. 1. Introduction Malware such as viruses and ransomware is a key weapon leveraged by cyber attackers. Reverse-engineering malware is a crucial capability for investigating the details of cyberattacks. In particular, a decompiler is a highly desirable reverse-engineering tool that can translate a malware binary into human-readable source code representation. For many years, various reverse-engineering tools such as decompilers have been proposed and advanced [ 8-10, 21, 24, 25, 40, 42] to target C/C++ binary programs as these languages have been traditionally used to write the majority of malware. We have recently seen that a large amount of malware has been written in emerging languages [ 29], particularly in Python [ 7]. Python is easy to learn and has significant community support, making it an attractive language for malware authors. Python malware is typically distributed as a compiled binary containing Python bytecode instructions that are challenging to analyze. The community has responded to this problem with Python decompilers [ 16, 47]. Given a Python binary, de- compilers translate bytecode instructions to the high-level representation (i.e., source code). Unfortunately, they have limitations and have difficulty handling various Python bina- ries. Specifically, when a decompiler encounters particular sequences of instructions, it fails the decompilation process. It either stops the decompilation process or generates incor- rect outputs (i.e., incorrectly-decompiled code), thwarting and misleading consequent analyses. We have also seen Python binaries with customized opcode definitions that are incompatible with the standard Python environment and decompilers [ 5, 26], thwarting the decompilation process. To overcome these challenges, a straightforward method is to fix the Python decompilers. However, multiple Python decompilers used in the wild are designed, implemented, and maintained by different groups. They are also written in different programming languages: Python [ 16, 46-48] and C++ [ 17]. Each decompiler has its own strengths (e.g., Decompyle3 outperforms Uncompyle6 in 3.7-8 Python bi- naries while Decompyle3 does not support other Python versions), making it difficult to choose a decompiler to fix as there is no clear winner amongst them. Moreover, fixing a decompiler is time-consuming and error-prone. Based on our experiments on fixing three decompilers ( Appendix 5.1), on average, it took an author two days to fix a single bug in a decompiler, while 2 of 3 fixes introduced new bugs . This paper proposes a program transformation-based solution to the decompilation failure problem. Our approach is based on the observation that failure-inducing instruc- tions/structures in Python binaries can be transformed into other forms that decompilers can successfully handle. A challenge in such transformation is that we may not find solutions for various decompilation errors if we only allow semantically equivalent transformations. To this end, we define a concept of F orensically Equivalent Transformation (FET), which relaxes the semantic preserving restriction as long as the transformation preserves sufficient semantics for forensic analysis (Details can be found in Section 3 ). We evaluate our approach on 17,117 Python malware binaries (that cannot be decompiled by five decompilers [ 16, 17, 46- 48]) in the wild, showing that our technique resolves all the decompilation failures. Our contributions are as follows: • We develop a system, P YFET , that helps Python de- compilers by transforming Python bytecode binaries with decompilation failures to decompilable binaries. 3296 DOI 10.1109/SP46215.2023.00046 • We propose the concept of Forensically Equivalent Trans- formation (FET) that relaxes the semantic preserving con- straints from semantically equivalent transformation to resolve challenging decompilation errors. • To the best of our knowledge, we are the first to system- atically handle Python decompilers generating logically incorrect code, which we call Implicit Errors. • We evaluate PYFET on 17,117 real-world Python malware samples with decompilation errors obtained by Revers- ingLabs [ 39]. P YFET identifies 77,022 decompilation er- rors across five decompilers and fixes all of them. • We present two case studies to show that P YFET can (1) handle opcode remapping, a recent anti-analysis technique that is used by DropBox and druva binaries and (2) migrate Python 3.9 binaries to 3.8 so that they can be decompiled by Uncompyle6 and Decompyle3. • We publicly release all the code and data [ 37]. Scope and Limitations. This paper focuses on fixing errors in decompilers that happen during the process of recon- structing high-level semantics from low-level representa- tions (e.g., instructions). Decompilation errors from before the semantic recovery process, such as errors due to incor- rect file headers or formats, are not our focus. P YFET mod- ifies the target binaries, meaning that decompiled program can be different from the original binary program. While we carefully design the transformation rules to minimize the side effects, this may affect the forensic analysis of the target binary. Source-level obfuscation is out of our scope. If a binary is created from obfuscated source code, we aim to help decompilers obtain the obfuscated source code. 2. Background and Preliminary Study 2.1. Bytecode, Disassemblers, and Decompilers A Python program can be executed from either source code or binary. Besides running a Python source code program (i.e., .py file), one can also run a .pyc binary file containing Python bytecode (a set of instructions for Python's virtual machine). The binaries can be generated by the ‘ -m compileall ' command. The binary format is preferred by cyber attackers as it is challenging to analyze. Challenges in Decompilation. At a high-level, decompila- tion is a process of inferring a mapping between the original source code representations from the low-level bytecode instructions. Unfortunately, during the compilation process, a high-level language construct can be transformed into mul- tiple forms of low-level bytecode instructions. For example, there can be multiple ways to implement a for loop, and the compiler may choose one of the ways to generate a binary program. In addition, the compiler can further optimize the generated bytecode (e.g., reducing multiple instructions into a simpler instruction), making it hard to infer the original statements from the instructions. Since there can be multiple possible mappings, decompilation is often considered an un- decidable problem. In practice, decompilers often leverage heuristics to choose one of the mappings based on typical code generation patterns' of the compilers. 30.3% 20.0% 16.9% 53.4% 33.1% 8.2% 43.8% 33.8% 12.5% 34.6% 26.9% 23.1% 36.6% 26.8% 0.0% 20.0% 40.0% 60.0% Try/except block Loop block Conditional blockTry/except block Loop block Conditional block Loop block Conditional block Other Boolean expressionTry/except block Other Conditional block Loop blockWith block 250 500 750 1,000 M1M2 Unsupported Instructions 240 (11.9%) Implementation Bugs 25 (1.2%) M1: Conditional Block M2: Loop Block M3: Block M4: Boolean Expression M5: Block M6: Other Decompyle++Unpyc37Uncompyle2Decompyle3Uncompyle6 15.1% 67.2% 94.7% 90.1% 84.6% 78.5% (a) Errors Breakdown by Root Causes Conflicting Parsing Rules 853 (42.4%) Missing Parsing Rules 896 (44.5%) M3M2M1M6M5M4M6M1M2M5M1M2M5 (b) Top 3 Erroneous Module/Rule per Decompiler Figure 1. Causes of Decompilation Errors. Python Binary File Structure. The .pyc file starts with a header containing the magic number representing the version of the Python compiler that generated the binary file. Then, it has a serialized code object containing the Python bytecode including instructions and data. The file and bytecode specifications vary between Python versions (e.g., instructions can be newly introduced or obsoleted). Python Bytecode Disassemblers. Python disassemblers parse and extract the bytecode instructions while not aiming to recover the source code representation. Their key chal- lenge is to handle the different instruction specifications. Python Decompilers. Uncompyle6 [47], Decompyle3 [16], Uncompyle2 [46], Unpyc37 [48], and Decompyle++ [17] are five popular Python decompilers. They take a Python binary program as input and aim to generate the input program's source code. They first disassemble the binary program to obtain bytecode instructions and then identify high-level language constructs from the instructions. For each high-level construct (e.g., a loop), they define decom- pilation rules that map patterns of instructions to high-level language constructs/structures. The decompilers repeat the process of applying decompilation rules on the input binary, until it recovers the entire source code of the target program. 2.2. Preliminary Study on Decompilation Failures We conduct two preliminary studies. First, we analyze the causes of decompilation errors from real-world Python malware. Second, we study the correctness of decompilers' results (i.e., decompiled source code). 2.2.1. Causes of Decompilation Failures. We randomly select 150 samples from the real-world malware dataset for our evaluation in Section 5 , obtaining 2,014 decompilation errors from the samples. We then investigate the causes of the decompilation errors in five decompilers: Uncompyle6, Decompyle3, Uncompyle2, Unpyc37, and Decompyle++. As a result, we identify that most decompilation failures stem from the following high-level causes: 2 3297"
+      },
+      {
+        "source": "selected",
+        "value": "Decompilation is a crucial capability in forensic analysis, facilitating analysis of unknown binaries. The recent rise of Python malware has brought attention to Python decompilers that aim to obtain source code representation from a Python binary. However, Python decompilers fail to handle various binaries, limiting their capabilities in forensic analysis. This paper proposes a novel solution that transforms a decompilation error-inducing Python binary into a decompilable binary. Our key intuition is that we can resolve the decompilation errors by transforming error-inducing code blocks in the input binary into another form. The core of our approach is the concept of Forensically Equivalent Transformation (FET) which allows non-semantic preserving transformation in the context of forensic analysis. We carefully define the FETs to minimize their undesirable consequences while fixing various error-inducing instructions that are difficult to solve when preserving the exact semantics. We evaluate the prototype of our approach with 17,117 real-world Python malware samples causing decompilation errors in five popular decompilers. It successfully identifies and fixes 77,022 errors. Our approach also handles anti-analysis techniques, including opcode remapping, and helps migrate Python 3.9 binaries to 3.8 binaries. 3296 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ali Ahad",
+          "email": "aliahad@virginia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Chijung Jung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Ammar Askar",
+          "email": "aaskar@gatech.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Doowon Kim",
+          "email": "doowon@utk.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical Engineering and Computer Science, University of Tennessee, Knoxville, TN, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yonghwi Kwon",
+          "email": "yongkwon@virginia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ali Ahad",
+          "email": "aliahad@virginia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA †School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA ‡Department of Electrical Engineering and Computer Science, University of Tennessee, Knoxville, TN, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Chijung Jung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA †School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA ‡Department of Electrical Engineering and Computer Science, University of Tennessee, Knoxville, TN, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Ammar Askar",
+          "email": "aaskar@gatech.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA †School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA ‡Department of Electrical Engineering and Computer Science, University of Tennessee, Knoxville, TN, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Doowon Kim",
+          "email": "doowon@utk.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA †School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA ‡Department of Electrical Engineering and Computer Science, University of Tennessee, Knoxville, TN, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Taesoo Kim",
+          "email": "taesoo@gatech.ac.kr",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA †School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA ‡Department of Electrical Engineering and Computer Science, University of Tennessee, Knoxville, TN, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yonghwi Kwon",
+          "email": "yongkwon@virginia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, University of Virginia, Charlottesville, VA, USA †School of Computer Science, Georgia Institute of Technology, Atlanta, GA, USA ‡Department of Electrical Engineering and Computer Science, University of Tennessee, Knoxville, TN, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 22,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "PyFET: Forensically Equivalent Transformation for Python Binary Decompilation",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ali Ahad",
+          "affiliations": [
+            "University of Virginia, USA"
+          ]
+        },
+        {
+          "name": "Chijung Jung",
+          "affiliations": [
+            "University of Virginia, USA"
+          ]
+        },
+        {
+          "name": "Ammar Askar",
+          "affiliations": [
+            "Georgia Institute of Technology, USA"
+          ]
+        },
+        {
+          "name": "Doowon Kim",
+          "affiliations": [
+            "University of Tennessee, USA"
+          ]
+        },
+        {
+          "name": "Taesoo Kim",
+          "affiliations": [
+            "Georgia Institute of Technology, USA"
+          ]
+        },
+        {
+          "name": "Yonghwi Kwon",
+          "affiliations": [
+            "University of Virginia, USA"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

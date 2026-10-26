@@ -1,0 +1,450 @@
+{
+  "paper_id": "066_post_gdpr_threat_hunting_on_android_phones_dissecting_os_level_safeguards_of_user_unresettable_identifiers",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Post-GDPR Threat Hunting on Android Phones: Dissecting OS-level Safeguards of User-unresettable Identifiers"
+      },
+      {
+        "source": "selected",
+        "value": "Post-GDPR Threat Hunting on Android Phones: Dissecting OS-level Safeguards of User-unresettable Identifiers"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Ever since its genesis, Android has enabled apps to access data and services on mobile devices. This however involves a wide variety of user-unresettable identifiers (UUIs), e.g., the MAC address, which are associated with a device permanently. Given their privacy sensitivity, Android has tightened its UUI access policy since its version 10, in response to the increasingly strict privacy protection regulations around the world. Nonsystem apps are restricted from accessing them and are required to use user-resettable alternatives such as advertising IDs. In this work, we conduct a systematic study on the effectiveness of the UUI safeguards on Android phones including both Android Open Source Project (AOSP) and Original Equipment Manufacturer (OEM) phones. To facilitate our large-scale study, we propose a set of analysis techniques that discover and assess UUI access channels. Our approach features a hybrid analysis that consists of static program analysis of Android Framework and forensic analysis of OS images to uncover access channels. These channels are then tested with differential analysis to identify weaknesses that open any attacking opportunity. We have conducted a vulnerability assessment on 13 popular phones of 9 major manufacturers, most of which are top-selling and installed with the recent Android versions. Our study reveals that UUI mishandling pervasively exists, evidenced by 51 unique vulnerabilities found (8 listed by CVE). Our work unveils the status quo of the UUI protection in Android phones, complementing the existing studies that mainly focus on apps' UUI harvesting behaviors. Our findings should raise an alert to phone manufacturers and would encourage policymakers to further extend the scope of regulations with device-level data protection."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Ever since its genesis, Android has enabled apps to access data and services on mobile devices. This however involves a wide variety of user-unresettable identifiers (UUIs), e.g., the MAC address, which are associated with a device permanently. Given their privacy sensitivity, Android has tightened its UUI access policy since its version 10, in response to the increasingly strict privacy protection regulations around the world. Non- system apps are restricted from accessing them and are required to use user-resettable alternatives such as advertising IDs. In this work, we conduct a systematic study on the effective- ness of the UUI safeguards on Android phones including both Android Open Source Project (AOSP) and Original Equipment Manufacturer (OEM) phones. To facilitate our large-scale study, we propose a set of analysis techniques that discover and assess UUI access channels. Our approach features a hybrid analysis that consists of static program analysis of Android Framework and forensic analysis of OS images to uncover access channels. These channels are then tested with differential analysis to identify weaknesses that open any attacking opportunity. We have conducted a vulnerability assessment on 13 popular phones of 9 major manufacturers, most of which are top-selling and installed with the recent Android versions. Our study reveals that UUI mis- handling pervasively exists, evidenced by 51 unique vulnerabilities found (8 listed by CVE). Our work unveils the status quo of the UUI protection in Android phones, complementing the existing studies that mainly focus on apps' UUI harvesting behaviors. Our findings should raise an alert to phone manufacturers and would encourage policymakers to further extend the scope of regulations with device-level data protection. I. I NTRODUCTION It is well known that many Android apps collect personally identifiable information (PII) from mobile devices to track users for the claimed purpose of enhancing user experience and personalization [45], [51], [57], [84]. Many types of PII are user-unresettable, such as the device ID and SIM card information, and thus we refer to them as user-unresettable identifiers (UUIs). They are not as easily replaceable as This work is partly done when Mark Huasong Meng is with the TrustLab of the University of Queensland. Guangdong Bai is the corresponding author. a password once leaked, so they deserve strict protection. Nevertheless, there is no way for the users to restrict how the apps use the collected UUIs. Additionally, a few popular analytics or advertisement libraries are so extensively reused among apps that cross-app behavior tracking and user profiling become viable [5], [7], [11], [55], [68], [75], [76], [87] through UUIs. The protection of personal data has gained a great deal of attention around the world. Many countries have put in place legislation to regulate the collection and use of personal data [15], [16], [17], [72], such as the well-known European Union (EU) General Data Protection Regulation (GDPR) [70]. They impose strict obligations on data controllers. Infringe- ments of user privacy could result in large penalties, e.g., “ a fine of up to C20 million, or 4% of the firm's worldwide annual revenue” set by GDPR [78]. Google recently also has taken steps to enforce new privacy features to restrict apps' use of user data, especially on the UUIs [27], [28], [29]. Since Android 10, most UUIs are regulated with a new privileged permission of READ_PRIVILEGED_PHONE_STATE, which is only granted to privileged system apps [26] and the apps signed with the platform key 1. Desensitized, app-unique and user- resettable identifiers (e.g., Android advertising IDs [25]) are introduced, and apps are required to use them whenever an identifier is in need. App developers are also required to release a privacy policy to disclose their apps' access, collection, use, and sharing of user data. They are obligated to engage proper mechanisms for securely handling data within the disclosed purposes [21]. The data exfiltration in Android has been extensively studied by the research community. Many efforts have been made to analyze data harvesting behaviors of third-party apps and their consequences through a variety of techniques such as program analysis [3], [14], [56], [83] and traffic analysis [2], [9], [77]. However, these offer only a partial view of the UUI exfiltration in the entire Android ecosystem. The complemen- tary question of whether the operating systems (OSes) them- selves comprehensively safeguard UUIs still remains open. Existing related research mainly focuses on identifying side 1Both are referred to as system apps hereafter. In contrast, we use non- system apps to denote the apps whose protectionLevel is normal or danger- ous. In the remaining of this paper, apps indicate only non-system apps unless stated otherwise. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.23176 www.ndss-symposium.org channels and covert channels [50], [58], [66], but there is still a lack of systematic and rigorous assessment of OS- level protection. Researchers may have simply assumed the OSes are able to securely manage the UUIs as they claim, particularly after a decade's advancement of Android. Indeed, some Android phones even have been certified with reputable standards before they are put on the market [8], [43], [61], [62]. In this work, we bridge this gap by conducting a compre- hensive analysis of Android's OS-level enforcement of UUI protection. We first review Android's updates on its privacy policy in its two most up-to-date versions (10 and 11) as of December 2021, and we have identified six types of UUIs that have been stipulated by Google as restricted or inaccessible by non-system apps. We assess the documented interfaces that Android exposes for apps to access them, using a “regression testing” paradigm that invokes the APIs following the manners documented in the versions prior to Android 10 (i.e., API level 29). A non-regression, which occurs if a UUI is still accessible through any API, is reported as a failure. Our approach also considers undocumented interfaces . It takes the six UUIs as seeds to discover software components and files (referred to as access channels) that UUIs may flow through, guided by the intuition that these channels are likely to engage other unknown UUI types and OEM-customized UUIs as well. In particular, it takes the APIs used to access the six UUIs as entry points and traces the call chain within the Android Framework using static analysis. The publicly acces- sible functions in the call stack are grouped for identifying the components they belong to. It also searches the dumped device images for the files hosting any of the six UUIs, and links them to software modules that manage them. Our approach manages to identify three categories of undocumented access channels, including system services , system properties , and system settings . The former represents various modules that serve APIs such as the TelephonyManager, while the latter two cover the main mechanisms that Android uses to share runtime and non-dynamic global device information. The identified access channels are then assessed for weak- nesses. The first challenge we overcome is to discover all app-accessible interfaces exposed by them. For the system services, we employ a hacking way to enumerate all methods in the service under testing. We use Java reflection to get the binder stub object and send it transactions containing method code, which is a short integer (so it is enumerable), via Android's binder interprocess communication (IPC). For the system settings and system properties, we obtain all keys via the Android Debug Bridge (ADB) debugger and enumerate them during our testing. The second challenge is to recognize UUIs from the obtained values, mainly unknown and OEM- defined UUIs. We use differential analysis to address this. Intuitively, our testing is repeated after rebooting and factory resetting the phone, and across phones of the same model. Only those device-unique values that have a non-short size and remain stable after rebooting and factory resetting are reported. We apply our approach to assess phones of 13 models from 9 manufacturers. They are installed with the official AOSP or an OEM Android that is supposed to inherit the strict privacy policies and restrictions of AOSP. They all are the latest models of their manufacturers and represent over 87% of the global market share of Android devices [67] as of April 2022. Key findings . Our study is the first to rigorously investigate the OS-level UUI protection in Android. We unveil the status quo of this critical safeguard. Our key findings are summarized below. • Landscape of OS-level UUI safeguards. The UUI mis- handling issues are pervasive in the latest Android phones. Our study finds a total of 51 unique vulnerabilities, leading to 65 occurrences of UUI leakages. Almost every phone except AOSP 11 contains at least one UUI leakage, with the highest 10, mean 6, and median 5. AOSP is less sus- ceptible to this issue than OEM OSes. Nonetheless, even though Google has proclaimed that the access to UUIs is tightened, we have found one non-trivial vulnerability from AOSP, which fails to be fixed due to incompatibility issue after Google has acknowledged it. • Exfiltration points. The undocumented access channels are the major exfiltration points (45 out of all 51 vul- nerabilities). Among them, 5 are caught from the system services, 10 in system settings, and the remaining 30 from system properties. • Whitelisting issues. We find an issue in the phones of three manufacturers who excessively use the whitelisting mechanism in regulating the invocations of sensitive APIs. Due to flawed identity validation, a malicious app can trick the whitelisting mechanism and circumvent permission control to collect UUIs. It is the first time that such issues have been revealed to the public. • Exploits in the wild. The broad UUI collection by apps in the wild is not observed in our study, but the identified channels have been (ab)used by a few popular apps from major app stores. We find that 12 out of analyzed 300 apps have relevant behaviors. All their accesses to UUIs are through undocumented access channels. Contributions. The main contributions of this work are sum- marized as follows: • Understanding OS-level UUI protection. We conduct the first comprehensive study on the Android OS-level UUI protection. Our work complements existing studies on app-level data harvesting behaviors, completing the PII protection research in the entire Android ecosystem. • A systematic assessment approach. We propose a set of analysis techniques to automatically discover and assess UUI access channels on Android phones. Our approach features a hybrid analysis and applies to a broader range of Android devices and future versions of Android. • Revealing the status quo of UUI protection. We present the landscape of UUI safeguards in the latest popular Android phones from major manufacturers. Our work should raise an alert to the manufacturers and encourage policymakers to further extend the scope of regulations with device-level data protection. II. B ACKGROUND This section introduces relevant background of Android's permission control, and the implication of the emerging per- sonal data protection legislation to the Android ecosystem. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Ever since its genesis, Android has enabled apps to access data and services on mobile devices. This however involves a wide variety of user-unresettable identifiers (UUIs), e.g., the MAC address, which are associated with a device permanently. Given their privacy sensitivity, Android has tightened its UUI access policy since its version 10, in response to the increasingly strict privacy protection regulations around the world. Nonsystem apps are restricted from accessing them and are required to use user-resettable alternatives such as advertising IDs. In this work, we conduct a systematic study on the effectiveness of the UUI safeguards on Android phones including both Android Open Source Project (AOSP) and Original Equipment Manufacturer (OEM) phones. To facilitate our large-scale study, we propose a set of analysis techniques that discover and assess UUI access channels. Our approach features a hybrid analysis that consists of static program analysis of Android Framework and forensic analysis of OS images to uncover access channels. These channels are then tested with differential analysis to identify weaknesses that open any attacking opportunity. We have conducted a vulnerability assessment on 13 popular phones of 9 major manufacturers, most of which are top-selling and installed with the recent Android versions. Our study reveals that UUI mishandling pervasively exists, evidenced by 51 unique vulnerabilities found (8 listed by CVE). Our work unveils the status quo of the UUI protection in Android phones, complementing the existing studies that mainly focus on apps' UUI harvesting behaviors. Our findings should raise an alert to phone manufacturers and would encourage policymakers to further extend the scope of regulations with device-level data protection."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Mark Huasong Meng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore",
+            "Deakin University, Australia",
+            "Institute for Infocomm Research, The University of Queensland, ASTAR, Australia Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Qing Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Guangshuai Xia",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yuwei Zheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yanjun Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Deakin University, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Guangdong Bai",
+          "email": "g.bai@uq.edu.au",
+          "orcid": "",
+          "affiliations": [
+            "Deakin University, Australia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Zhi Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Sin GTeo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore",
+            "Institute for Infocomm Research, The University of Queensland, ASTAR, Australia Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Jin Song Dong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Mark Huasong Meng",
+          "email": "",
+          "affiliations": [
+            "National University of Singapore",
+            "The University of Queensland, Australia",
+            "Institute for Infocomm Research, A"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 1,
+          "name": "Qing Zhang",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Guangshuai Xia",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yuwei Zheng",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yanjun Zhang",
+          "email": "",
+          "affiliations": [
+            "Deakin University, Australia",
+            "The University of Queensland, Australia"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Guangdong Bai",
+          "email": "g.bai@uq.edu.au",
+          "affiliations": [
+            "The University of Queensland, Australia"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 6,
+          "name": "Zhi Liu",
+          "email": "",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Sin G. Teo",
+          "email": "",
+          "affiliations": [
+            "Institute for Infocomm Research, A"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Jin Song Dong",
+          "email": "",
+          "affiliations": [
+            "National University of Singapore"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 128,
+      "author_count": 9,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Mark Huasong Meng",
+          "block_id": "pdf:p1:b9",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Qing Zhang",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Guangdong Bai",
+          "block_id": "pdf:p1:b16",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Zhi Liu",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Mark Huasong Meng",
+          "affiliation_raw": "National University of Singapore, Byte Dance, The University of Queensland, Australia,",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b9",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b20",
+            "pdf:p1:b24"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 9.216,
+          "center_distance": 103.813,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Qing Zhang",
+          "affiliation_raw": "National University of Singapore, Byte Dance, The University of Queensland, Australia,",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b20",
+            "pdf:p1:b24"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.175,
+          "center_distance": 20.209,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Guangdong Bai",
+          "affiliation_raw": "The University of Queensland, Australia,",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b16",
+          "affiliation_block_ids": [
+            "pdf:p1:b18",
+            "pdf:p1:b24"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 8.862,
+          "center_distance": 56.966,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 6,
+          "author": "Zhi Liu",
+          "affiliation_raw": "Institute for Infocomm Research, A*STAR, Singapore",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b12",
+          "affiliation_block_ids": [
+            "pdf:p1:b19",
+            "pdf:p1:b26"
+          ],
+          "email_raw": "g.bai@uq.edu.au",
+          "email_block_ids": [
+            "pdf:p1:b27"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.821,
+          "center_distance": 78.74,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Post-GDPR Threat Hunting on Android Phones: Dissecting OS-level Safeguards of User-unresettable Identifiers",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/post-gdpr-threat-hunting-on-android-phones-dissecting-os-level-safeguards-of-user-unresettable-identifiers/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Mark Huasong Meng",
+          "affiliations": [
+            "National University of Singapore"
+          ]
+        },
+        {
+          "name": "Qing Zhang",
+          "affiliations": [
+            "ByteDance"
+          ]
+        },
+        {
+          "name": "Guangshuai Xia",
+          "affiliations": [
+            "ByteDance"
+          ]
+        },
+        {
+          "name": "Yuwei Zheng",
+          "affiliations": [
+            "ByteDance"
+          ]
+        },
+        {
+          "name": "Yanjun Zhang",
+          "affiliations": [
+            "The University of Queensland"
+          ]
+        },
+        {
+          "name": "Guangdong Bai",
+          "affiliations": [
+            "The University of Queensland"
+          ]
+        },
+        {
+          "name": "Zhi Liu",
+          "affiliations": [
+            "ByteDance"
+          ]
+        },
+        {
+          "name": "Sin G. Teo",
+          "affiliations": [
+            "Agency for Science, Technology and Research"
+          ]
+        },
+        {
+          "name": "Jin Song Dong",
+          "affiliations": [
+            "National University of Singapore"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 4,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

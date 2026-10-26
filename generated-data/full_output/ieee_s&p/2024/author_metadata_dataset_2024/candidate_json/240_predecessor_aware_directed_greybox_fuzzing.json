@@ -1,0 +1,212 @@
+{
+  "paper_id": "240_predecessor_aware_directed_greybox_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Predecessor-aware Directed Greybox Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "Predecessor-aware Directed Greybox Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Directed Greybox Fuzzing (DGF) is a target-oriented fuzzing technique that can reproduce or discover software vulnerabilities. The goal is commonly achieved through two phases: static analysis which obtains program structural information beforehand, and dynamic execution that guides fuzzing towards target sites. However, existing DGF methods still incur heavyweight and incomplete issues. The former comes from extra efforts on identifying and approaching the target sites, while the latter refers to the incompleteness of testing on the target sites due to indirect calls or insufficient paths that recent DGF can cover. In this paper, we propose a Predecessor-aware Directed Greybox Fuzzing (PDGF) method and regard DGF as a path-searching problem. PDGF divides a given program into predecessor and non-predecessor areas, and maintains a set of predecessors by lightweight program analysis initially and augmented during the dynamic execution thereafter. Meanwhile, PDGF introduces a novel fitness metric called regional maturity to indicate the coverage rate of predecessors, and contains a simulated annealing-based power scheduling technique together with seed selection and mutation, to cover the predecessor area efficiently and extensively. We evaluate the proposed PDGF on a benchmark that contains 30 real-world program target sites, and conduct extensive comparisons with state-of-the-art DGF tools. Experimental results reveal that PDGF outperforms competitors in terms of Time-To-Exposure, path diversity, and bug finding. Besides, PDGF discovered nine new vulnerabilities, six of which have been assigned CVEs. 1884 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Directed Greybox Fuzzing (DGF) is a target-oriented fuzzing technique that can reproduce or discover software vulnerabilities. The goal is commonly achieved through two phases: static analysis which obtains program structural infor- mation beforehand, and dynamic execution that guides fuzzing towards target sites. However, existing DGF methods still incur heavyweight and incomplete issues. The former comes from extra efforts on identifying and approaching the target sites, while the latter refers to the incompleteness of testing on the target sites due to indirect calls or insufficient paths that recent DGF can cover . In this paper, we propose a Predecessor-aware Directed Greybox Fuzzing (PDGF) method and regard DGF as a path-searching problem. PDGF divides a given program into predecessor and non-predecessor areas, and maintains a set of predecessors by lightweight program analysis initially and augmented during the dynamic execution thereafter . Mean- while, PDGF introduces a novel fitness metric called regional maturity to indicate the coverage rate of predecessors, and contains a simulated annealing-based power scheduling tech- nique together with seed selection and mutation, to cover the predecessor area efficiently and extensively. We evaluate the proposed PDGF on a benchmark that contains 30 real-world program target sites, and conduct extensive comparisons with state-of-the-art DGF tools. Experimental results reveal that PDGF outperforms competitors in terms of Time-To-Exposure, path diversity, and bug finding. Besides, PDGF discovered nine new vulnerabilities, six of which have been assigned CVEs. 1. Introduction Fuzzing is an automated software testing method to find security vulnerabilities in a program or system [ 1], [ 2]. The underlying idea of fuzzing is to feed in the Program Under Test (PUT) with a large volume of random inputs (i.e., seeds) and monitor for abnormal program behaviors (e.g., crashes). According to their awareness of program internal information, fuzzers can be categorized as blackbox, grey- box, and whitebox [ 3], [ 4]. Unlike blackbox methods that lack knowledge about program internals, or whitebox meth- ods that suffer from high overheads for program analysis and symbolic execution, greybox methods use lightweight code instrumentation to collect runtime feedback for guiding the fuzzing process. To discover potential bugs that may be dispersed throughout the codebase, greybox fuzzing is normally guided towards maximizing code coverage. Many popular Coverage-based Greybox Fuzzing (CGF) tools, such as American Fuzzy Lop (AFL) [ 5], libFuzzer [ 6], and HonggFuzz [ 7], are dedicated to automatically discovering interesting seeds that can trigger unexplored execution paths. Recently, CGF has achieved phenomenal success in finding real-world vulnerabilities [ 6]-[9]. Another application of greybox fuzzing is to guide the fuzzing process towards target sites, which is recognized as Directed Greybox Fuzzing (DGF) [ 10]. Given a pre-labeled set of target locations in the PUT, DGF is more adept than CGF at reaching and testing the target sites with less or ideally no waste of resources to stress unconcerned parts. This is extremely useful in scenarios like crash reproduction [11], [ 12], patch testing [ 13], [ 14], static analysis report verification [ 15], [16], etc. To possess directness, DGF urges more structural information about the PUT, thus normally requiring sufficient static analysis at compile-time. Then, it casts reachability as an optimization problem and employs meta-heuristics to maximize the similarity between gener- ated seeds and the targets during dynamic execution. By giving more selection and mutation chances to seeds that are “closer” to the targets, DGF can steer the greybox fuzzing to reach the target sites gradually. According to the fitness metric used in DGF, existing methods can be classified into two categories: distance- based [ 17]-[23] and non-distance-based [ 24]-[30]. Many studies followed AFLGo [ 10] by using the distance between the input and the target as the fitness metric, which is initialized by static analysis and updated during dynamic execution. Other fitness metrics, such as sequence similarity [24]-[26] and irrelevance pruning [ 23], [27]-[29], have also been effective for DGF. However, existing methods still suffer from heavyweight and incomplete problems. Firstly, calibrating target sites costs lots of static and dynamic efforts. To initialize the fitness metric, the distance of each basic block to the target has to be computed and instrumented. Besides, fuzzers still need to re-compute and aggregate this value at runtime [ 10], [ 17]-[23]. Moreover, many DGF tools employ an “exploration-exploitation” mode and allocate more time budgets to the exploration split for potential seeds, which does not directly serve for exposing target-reachable paths. Secondly, static analysis cannot re- veal full program information about the targets, especially when indirect calls exist [ 10], [ 19], [ 29]. Should such a lack of knowledge happens on critical paths (e.g., target- reachable), the effectiveness and efficiency of DGF can be largely influenced [ 10], [ 21]. Furthermore, most existing 1884 DOI 10.1109/SP54263.2024.00040 methods are more concerned about if and how fast the target sites are reached, with little or no consideration of how they are reached (i.e., path diversity), which is meaningful for the completeness of software testing. Instead of concentrating on the target site, feasible paths to the site comprise a subgraph of the inter-procedural Con- trol Flow Graph (iCFG) of the PUT. Thus, all basic blocks and edges on these paths can be viewed as predecessors of the target site. For DGF, it is equivalent to identifying these predecessors and exploring execution paths within this area. In contrast to existing pruning techniques that aim to exclude irrelevant code branches [ 23], [ 27]-[29], which occupy the majority, we essentially only need to include a minority part of the PUT (i.e., predecessors). In fact, due to the transitive property of reachability [ 31], predecessors can be easily propagated once a new relevant edge is discovered. Moreover, given a predecessor area, we can transform the DGF problem to a regional CGF issue, and allocate resources more intentionally and effectively. Inspired by the above investigations, we present a Predecessor-aware Directed Greybox Fuzzing (PDGF) scheme consisting of three main steps. First, PDGF conducts lightweight static analysis to identify initial predecessor basic blocks, and label them in their identifiers (IDs) dur- ing instrumentation (§ 3.2). Second, PDGF employs two binaries for the target program, i.e., executor and navigator, for normal fuzzing and locating new coverage, respectively. Specifically, when executor covers new edges, including those from non-predecessor to predecessor basic blocks due to reasons like indirect calls, these interesting seeds will be delivered to navigator so as to locate these new basic blocks and re-label them as predecessor ones (§ 3.3). In other words, the set of predecessors in PDGF is accomplished by both static and dynamic efforts. Last but not least, in order to guide the fuzzing process efficiently and extensively, PDGF introduces the concept of regional maturity, which indicates the coverage rate of predecessors (§ 3.4). Taking it as the fitness metric, we promote the fuzzing pipeline, including seed selection, power scheduling, and seed mutation with adaptive strategies. Particularly, we develop an annealing- based power scheduling for allocating more energy to po- tential seeds. The above techniques are combined to improve the efficiency and path diversity of DGF. To evaluate the effectiveness of our approach, we com- pared PDGF with the classic AFL [ 5] and four state-of-the- art DGF tools (i.e., AFLGo [ 10], WindRanger [ 21], Beacon [28], and SieveFuzz [ 29]) on a benchmark that contains 16 real-world programs from UniBench [ 32] and uses 30 target sites. Experimental results reveal that PDGF can accelerate the five competitors in terms of Time-To-Exposure (TTE) by 37%, 34%, 48%, 41% and 24% speedup, respectively, while providing averagely 1.38x, 1.31x, 1.25x, 1.57x and 1.11x more benign paths and 3.39x, 2.39x, 6.39x, 8x and 8x more crash paths to the same target sites. Moreover, PDGF uncovered nine new vulnerabilities, and six of them have been assigned with CVE IDs. The main contributions of this paper can be summarized as follows: Source Code & Targets Program Analysis Program Information Instrumentation Binary Execution Seed Queue Interest Testcase Seed Selection Power Scheduling Seed Mutation crash Static Analysis Dynamic Execution Figure 1. The general workflow of directed greybox fuzzing. • We divide a PUT into predecessor and non- predecessor areas according to reachability and for- mulate DGF as a path-searching problem. • We develop a static-dynamic co-design technique to maintain the predecessor area, including labeling initial predecessors at compile-time and predecessor- driven coverage tracing at runtime. • We introduce the concept of regional maturity, thus promoting the fuzzing pipeline for exposing feasible paths efficiently and extensively. • We open-source PDGF and provide empirical evi- dence of its superiority to competitors in terms of efficiency, path diversity and bug discovery. 2. Background 2.1. Directed greybox fuzzing Directed greybox fuzzing is currently one of the most effective and efficient solutions to test specific target code. As shown in Figure 1, recent DGF tools commonly consist of two major phases: (1) static analysis is responsible for extracting program structural information (e.g., distances be- tween ordinary sites to target sites, and target relevance) so that DGF is able to sense the directedness, and (2) dynamic execution normally employs CGF's facilities (e.g., AFL) and utilizes the program information and fitness metric(s) to guide fuzzing through seed selection, power scheduling, and seed mutation to calibrate the directedness. Rather than the code-coverage rate and the bug-finding ability in CGF, DGF is more concerned with its effectiveness (e.g., bug reproducibility) and efficiency (e.g., Time-To-Exposure) in reaching the target sites. 2.2. Problem and challenges Although existing methods have provided promising so- lutions, there still remain limitations that can be summarized below. Heavyweight. In order to drive fuzzing with directness, most DGF tools take extra efforts to calibrate target sites. On one hand, additional static analysis is required to extract 1885"
+      },
+      {
+        "source": "selected",
+        "value": "Directed Greybox Fuzzing (DGF) is a target-oriented fuzzing technique that can reproduce or discover software vulnerabilities. The goal is commonly achieved through two phases: static analysis which obtains program structural information beforehand, and dynamic execution that guides fuzzing towards target sites. However, existing DGF methods still incur heavyweight and incomplete issues. The former comes from extra efforts on identifying and approaching the target sites, while the latter refers to the incompleteness of testing on the target sites due to indirect calls or insufficient paths that recent DGF can cover. In this paper, we propose a Predecessor-aware Directed Greybox Fuzzing (PDGF) method and regard DGF as a path-searching problem. PDGF divides a given program into predecessor and non-predecessor areas, and maintains a set of predecessors by lightweight program analysis initially and augmented during the dynamic execution thereafter. Meanwhile, PDGF introduces a novel fitness metric called regional maturity to indicate the coverage rate of predecessors, and contains a simulated annealing-based power scheduling technique together with seed selection and mutation, to cover the predecessor area efficiently and extensively. We evaluate the proposed PDGF on a benchmark that contains 30 real-world program target sites, and conduct extensive comparisons with state-of-the-art DGF tools. Experimental results reveal that PDGF outperforms competitors in terms of Time-To-Exposure, path diversity, and bug finding. Besides, PDGF discovered nine new vulnerabilities, six of which have been assigned CVEs. 1884 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yujian Zhang",
+          "email": "yjzhang@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yaokun Liu",
+          "email": "liuyaokun@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jinyu Xu",
+          "email": "jyxu@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yanhao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yujian Zhang",
+          "email": "yjzhang@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yaokun Liu",
+          "email": "liuyaokun@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jinyu Xu",
+          "email": "jyxu@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yanhao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 15,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Predecessor-aware Directed Greybox Fuzzing",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yujian Zhang",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Yaokun Liu",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Jinyu Xu",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Yanhao Wang",
+          "affiliations": [
+            "NIO"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 4,
+      "country_values_restored": 4,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

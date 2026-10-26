@@ -1,0 +1,242 @@
+{
+  "paper_id": "041_from_library_portability_to_para_rehosting_natively_executing_microcontroller_software_on_commodity_hardware",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "From Library Portability to Para-rehosting: Natively Executing Microcontroller Software on Commodity Hardware"
+      },
+      {
+        "source": "selected",
+        "value": "From Library Portability to Para-rehosting: Natively Executing Microcontroller Software on Commodity Hardware"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Finding bugs in microcontroller (MCU) firmware is challenging, even for device manufacturers who own the source code. The MCU runs different instruction sets than x86 and exposes a very different development environment. This invalidates many existing sophisticated software testing tools on x86. To maintain a unified developing and testing environment, a straightforward way is to re-compile the source code into the native executable for a commodity machine (called rehosting). However, ad-hoc re-hosting is a daunting and tedious task and subject to many issues (library-dependence, kernel-dependence and hardware-dependence). In this work, we systematically explore the portability problem of MCU software and propose pararehosting to ease the porting process. Specifically, we abstract and implement a portable MCU (PMCU) using the POSIX interface. It models common functions of the MCU cores. For peripheral specific logic, we propose HAL-based peripheral function replacement, in which high-level hardware functions are replaced with an equivalent backend driver on the host. These backend drivers are invoked by well-designed para-APIs and can be reused across many MCU OSs. We categorize common HAL functions into four types and implement templates for quick backend development. Using the proposed approach, we have successfully rehosted nine MCU OSs including the widely deployed Amazon FreeRTOS, ARM Mbed OS, Zephyr and LiteOS. To demonstrate the superiority of our approach in terms of security testing, we used off-the-shelf dynamic analysis tools (AFL and ASAN) against the rehosted programs and discovered 28 previously-unknown bugs, among which 5 were confirmed by CVE and the other 19 were confirmed by vendors at the time of writing."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Finding bugs in microcontroller (MCU) firmware is challenging, even for device manufacturers who own the source code. The MCU runs different instruction sets than x86 and exposes a very different development environment. This invalidates many existing sophisticated software testing tools on x86. To maintain a unified developing and testing environment, a straightforward way is to re-compile the source code into the native executable for a commodity machine (called rehosting). However, ad-hoc re-hosting is a daunting and tedious task and subject to many issues (library-dependence, kernel-dependence and hardware-dependence). In this work, we systematically ex- plore the portability problem of MCU software and propose para- rehosting to ease the porting process. Specifically, we abstract and implement a portable MCU (PMCU ) using the POSIX interface. It models common functions of the MCU cores. For peripheral specific logic, we propose HAL-based peripheral function re- placement, in which high-level hardware functions are replaced with an equivalent backend driver on the host. These backend drivers are invoked by well-designed para-APIs and can be reused across many MCU OSs. We categorize common HAL functions into four types and implement templates for quick backend development. Using the proposed approach, we have successfully rehosted nine MCU OSs including the widely deployed Amazon FreeRTOS, ARM Mbed OS, Zephyr and LiteOS. To demonstrate the superiority of our approach in terms of security testing, we used off-the-shelf dynamic analysis tools (AFL and ASAN) against the rehosted programs and discovered 28 previously-unknown bugs, among which 5 were confirmed by CVE and the other 19 were confirmed by vendors at the time of writing. I. I NTRODUCTION It is commonly believed that the Internet of Things (IoT) is emerging as the third wave in the development of the Internet. By the year 2020, the world will have 50 billion connected devices [23]. Among them, microcontroller units (MCUs) make up the majority. It is projected that by 2020, ∗Work was primarily done while visiting the University of Georgia. there will be more than 35 billion MCU shipments [6]. These small, resource-constraint devices are enabling ubiquitous con- nections and have changed virtually every aspect of our lives. However, all of these benefits and conveniences come with broader and acute security concerns. IoT devices are connected into the Internet, which directly exposes them to attackers. Since these devices process and contain confidential data such as people's health data, home surveillance video, company secrets, etc., once compromised, devastating consequences can happen. For example, FreeRTOS [5], the leading operating system (OS) for MCUs, was reported that its 13 critical vulnerabilities put a wide range of devices at risk of comprom- ise [33]. In July 2019, urgent11, a set of 11 vulnerabilities hit VxWorks, another popular MCU OS. Once exploited, these bugs allow for remote code execution [51]. In-house software testing is crucial for the security of the MCU software ecosystem. However, the development and test environment for MCU devices is very different from that for commodity hardware. Notably, the programs are cross- compiled and downloaded to the target device by flashing the on-chip ROM. To debug a program, a hardware dongle called in-circuit emulator (ICE) is used to bridge the target device with the host via the JTAG interface. The host machine then starts a GDBServer daemon that interprets the ICE- specific control commands to the commands understandable by GDB. Software testing of MCU software highly depends on the debugging features integrated in the chip. For example, in ARM Cortex-M based MCUs, the Data Watch and Trace (DWT) unit [ 7] can be used to profile the firmware execution, and the Embedded Trace Macrocell (ETM) unit [9] can be used to collect the execution trace. However, it is clear that standard software testing tools such as Valgrind [44], AddressSanitizer (ASAN) [50] cannot be supported due to the very different run-time environment. We argue that the tools designed for x86 programs are more sophisticated and superior to those designed for MCU firmware; indeed, binary rewriting and instrumentation provide us with unprecedented insights to the program execution, which enables us to find software problems more efficiently. Based on this observation, this work explores the idea of re- hosting MCU software and running them natively on commod- Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.24308 www.ndss-symposium.org ity hardware. There are at least three benefits of this approach. First, off-the-shelf dynamic analysis tools for x86 can be readily used out-of-the-box. Second, compared with running on real MCU devices, multiple instances can be launched simultaneously, allowing for a scalable and paralleled analysis. Third, the commodity hardware is much more powerful than MCU devices. We can execute more testcases within a time period. Intuitively, with some manual efforts, we could possibly port a particular library for MCU to the host machine and efficiently analyze its security. However, this is ad-hoc, in- accurate, and sometimes extremely difficult. In particular, 1) the libc used in MCU toolchains (such as newlib and redlib) has different designs compared with a full fledged libc imple- mentation such as the GNU libc. For example, the ARM Mbed OS makes use of the function software_init_hook() to perform some target-specific early initialization, which is not defined in the GNU libc; 2) More importantly, a single library is sometimes mingled with a set of supporting OS routines, which must also be ported; 3) To make things worse, these routines are subject to scheduling. Without considering the invocation sequence, the intended logic can be easily violated; 4) If the rehosted code needs to access real hardware on MCU, the behavior on the host becomes unpredictable. All of these make ad-hoc porting a daunting task. We propose para-rehosting, a new technique aiming at making re-hosting of MCU software to commodity hardware smoother. Different from ad-hoc library porting, we support porting the MCU OS core entirely and allow for incremental plug-and-play library porting. Specifically, we abstract the whole machine model that most MCU OSs follow and imple- ment it (named PMCU) with the Portable Operating System Interface (POSIX). Through a thin OS-specific glue layer, PMCU can be compiled with upper-layer source code (includ- ing libraries and tasks) into a normal user-space program on the host. PMCU accurately models the common behaviors of real MCUs. As such, basic OS primitives including scheduling, preemption, atomicity, etc. can be supported automatically. PMCU also models the memory layout of a real firmware image. An MCU often has a fixed memory map. MCU OSs correspondingly provide a linker script to control how a memory region should be mapped into the physical address space. To model the memory layout, we developed a template linker script based on a popular MCU. It essentially squeezes the whole run-time memory into a continuous memory region in the address space of a host process. To support hardware-specific peripherals, such as UART, Ethernet, SD card and CRC, we propose HAL-based peripheral function replacement. An HAL layer allows upper-layer OS libraries to interact with the hardware device at an abstract level rather than at the hardware level. We identify high-level HAL functions and replace them with equivalent handlers on the host. This simplifies the porting effort as well as improves I/O performance. Per HAL function, a set of para- APIs are defined for the HAL library to invoke. Correspond- ingly, backend drivers are implemented on the host. It can be shared among multiple HALs from different vendors. In this sense, our design follows the spirit of para-virtualization in which the guest OS has to be explicitly modified to benefit from optimized I/O implementation in the backend (thus the name para-rehosting). To speedup backend development for new peripherals, we categorize common HAL functions into four types (IO, storage, computing accelerator, and dummy) and implement the corresponding templates. Developers only need to figure out the appropriate peripheral categorization and quickly customize the implementation. We have evaluated our approach against nine MCU OSs including the widely deployed Amazon FreeRTOS, ARM Mbed OS, Zephyr, LiteOS, etc. We successfully compiled and executed 84.21%, 76.47%, 89.47% and 63.64% of all the libraries shipped with FreeRTOS, ARM Mbed OS, Zephyr and LiteOS respectively. Moreover, our HAL backends support most peripherals in the SDKs of the NXP and STMicroelec- tronics devices. To demonstrate the superiority of our approach in terms of security testing, we further leveraged AFL [61] and ASAN [50] to test several popular libraries in the ecosystems of Amazon FreeRTOS, ARM Mbed OS, Zephyr and LiteOS. Our tool has helped us find 28 previously-unknown bugs. We have responsibly reported all of them to the influenced vendors. At the time of writing, 5 were confirmed by CVE and the other 19 were confirmed by vendors. In summary, we made the following contributions. • We proposed para-rehosting to natively port MCU software on commodity hardware. It accurately mod- els common MCU behaviors and depends on para- APIs to support HAL-enabled hardware logic. • We implemented the idea of para-rehosting by proto- typing a portable MCU based on POSIX and a set of para-APIs (and the backends). Our prototype supports nine MCU OSs, including FreeRTOS, ARM Mbed OS, Zephyr, and LiteOS currently. • We used fuzz testing to analyze several popular lib- raries used in MCU and identified 28 previously- unknown bugs. Our tool is open source available at https://github.com/MCUSec/para-rehosting. II. B ACKGROUND A. Microcontroller Units Until recent years, MCUs were considered as specialized computer systems that are embedded into some other devices, as contrary to general-purpose commodity computing systems such as personal computers (PCs) or mobile devices. With the emergence of IoT, now MCUs have been tasked with more diverse missions and are at the center of many of the innovations in the cost- and power-efficient IoT space. Examples include home automation, wearable devices, smart city, smart manufacturing, etc. [11]. MCUs have evolved from 8-bit design to 16-bit design. Now, 32-bit MCUs have dominated the market, accounting for 55% of the total MCU sales [38]. In the MCU segment, the major players include the ARM Cortex-M family MCUs, MIPS MCUs, and Atmel A VR, etc. To keep energy-efficient, MCUs are equipped with limited computing and memory resources. For example, the state-of-the-art ARM Cortex-M4 processor often runs at a frequency of around 100 MHz and the size of SRAM is about 200 KB. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Finding bugs in microcontroller (MCU) firmware is challenging, even for device manufacturers who own the source code. The MCU runs different instruction sets than x86 and exposes a very different development environment. This invalidates many existing sophisticated software testing tools on x86. To maintain a unified developing and testing environment, a straightforward way is to re-compile the source code into the native executable for a commodity machine (called rehosting). However, ad-hoc re-hosting is a daunting and tedious task and subject to many issues (library-dependence, kernel-dependence and hardware-dependence). In this work, we systematically explore the portability problem of MCU software and propose pararehosting to ease the porting process. Specifically, we abstract and implement a portable MCU (PMCU) using the POSIX interface. It models common functions of the MCU cores. For peripheral specific logic, we propose HAL-based peripheral function replacement, in which high-level hardware functions are replaced with an equivalent backend driver on the host. These backend drivers are invoked by well-designed para-APIs and can be reused across many MCU OSs. We categorize common HAL functions into four types and implement templates for quick backend development. Using the proposed approach, we have successfully rehosted nine MCU OSs including the widely deployed Amazon FreeRTOS, ARM Mbed OS, Zephyr and LiteOS. To demonstrate the superiority of our approach in terms of security testing, we used off-the-shelf dynamic analysis tools (AFL and ASAN) against the rehosted programs and discovered 28 previously-unknown bugs, among which 5 were confirmed by CVE and the other 19 were confirmed by vendors at the time of writing."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Wenqiang Li",
+          "email": "liwenqiang@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, Department of Computer Science, State Key Laboratory of Information Security, Chinese Academy of Sciences , the University of Georgia, USA",
+            "School of Cyber Security, Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Le Guan",
+          "email": "leguan@uga.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jingqiang Lin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jiameng Shi",
+          "email": "jiameng@uga.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Fengjun Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Wenqiang Li",
+          "email": "liwenqiang@iie.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, Department of Computer Science, State Key Laboratory of Information Security, Chinese Academy of Sciences , the University of Georgia, USA",
+            "School of Cyber Security, Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Le Guan",
+          "email": "leguan@uga.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jingqiang Lin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jiameng Shi",
+          "email": "jiameng@uga.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Fengjun Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 110,
+      "author_count": 5,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Wenqiang Li",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Fengjun Li",
+          "block_id": "pdf:p1:b10",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "From Library Portability to Para-rehosting: Natively Executing Microcontroller Software on Commodity Hardware",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/from-library-portability-to-para-rehosting-natively-executing-microcontroller-software-on-commodity-hardware/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Wenqiang Li",
+          "affiliations": [
+            "State Key Laboratory of Information Security, Institute of Information Engineering, Chinese Academy of Sciences; Department of Computer Science, the University of Georgia, USA; School of Cyber Security, University of Chinese Academy of Sciences; Department of Electrical Engineering and Computer Science, the University of Kansas, USA"
+          ]
+        },
+        {
+          "name": "Le Guan",
+          "affiliations": [
+            "Department of Computer Science, the University of Georgia, USA"
+          ]
+        },
+        {
+          "name": "Jingqiang Lin",
+          "affiliations": [
+            "School of Cyber Security, University of Science and Technology of China"
+          ]
+        },
+        {
+          "name": "Jiameng Shi",
+          "affiliations": [
+            "Department of Computer Science, the University of Georgia, USA"
+          ]
+        },
+        {
+          "name": "Fengjun Li",
+          "affiliations": [
+            "Department of Electrical Engineering and Computer Science, the University of Kansas, USA"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 1,
+      "country_values_restored": 1,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

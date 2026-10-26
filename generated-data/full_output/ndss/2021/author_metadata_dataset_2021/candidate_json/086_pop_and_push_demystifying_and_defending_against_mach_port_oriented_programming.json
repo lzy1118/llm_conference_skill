@@ -1,0 +1,230 @@
+{
+  "paper_id": "086_pop_and_push_demystifying_and_defending_against_mach_port_oriented_programming",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "POP and PUSH: Demystifying and Defending against (Mach) Port-Oriented Programming"
+      },
+      {
+        "source": "selected",
+        "value": "POP and PUSH: Demystifying and Defending against (Mach) Port-Oriented Programming"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Apple devices (e.g., iPhone, MacBook, iPad, and Apple Watch) are high value targets for attackers. Although these devices use different operating systems (e.g., iOS, macOS, iPadOS, watchOS, and tvOS), they are all based on a hybrid kernel called XNU. Existing attacks demonstrated that vulnerabilities in XNU could be exploited to escalate privileges and jailbreak devices. To mitigate these threats, multiple security mechanisms have been deployed in latest systems. In this paper, we first perform a systematic assessment of deployed mitigations by Apple, and demonstrate that most of them can be bypassed through corrupting a special type of kernel objects, i.e., Mach port objects. We summarize this type of attack as (Mach) Port Object-Oriented Programming (POP). Accordingly, we define multiple attack primitives to launch the attack and demonstrate realistic scenarios to achieve full memory manipulation on recently released systems (i.e., iOS 13 and macOS 10.15). To defend against POP, we propose the Port Ultra-SHield (PUSH) system to reduce the number of unprotected Mach port objects. Specifically, PUSH automatically locates potential POP primitives and instruments related system calls to enforce the integrity of Mach port kernel objects. It does not require system modifications and only introduces 2% runtime overhead. The PUSH framework has been deployed on more than 40,000 macOS devices in a leading company. The evaluation of 18 public exploits and one zero-day exploit detected by our system demonstrated the effectiveness of PUSH. We believe that the proposed framework will facilitate the design and implementation of a more secure XNU kernel."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Apple devices (e.g., iPhone, MacBook, iPad, and Apple Watch) are high value targets for attackers. Although these devices use different operating systems (e.g., iOS, macOS, iPadOS, watchOS, and tvOS), they are all based on a hybrid kernel called XNU. Existing attacks demonstrated that vulnerabilities in XNU could be exploited to escalate privileges and jailbreak devices. To mitigate these threats, multiple security mechanisms have been deployed in latest systems. In this paper, we first perform a systematic assessment of deployed mitigations by Apple, and demonstrate that most of them can be bypassed through corrupting a special type of kernel objects, i.e., Mach port objects. We summarize this type of attack as (Mach) Port Object-Oriented Programming (POP). Accordingly, we define multiple attack primitives to launch the attack and demonstrate realistic scenarios to achieve full memory manipulation on recently released systems (i.e., iOS 13 and macOS 10.15). To defend against POP, we propose the Port Ultra- SHield (PUSH) system to reduce the number of unprotected Mach port objects. Specifically, PUSH automatically locates potential POP primitives and instruments related system calls to enforce the integrity of Mach port kernel objects. It does not require system modifications and only introduces 2% runtime overhead. The PUSH framework has been deployed on more than 40,000 macOS devices in a leading company. The evaluation of 18 public exploits and one zero-day exploit detected by our system demonstrated the effectiveness of PUSH. We believe that the proposed framework will facilitate the design and implementation of a more secure XNU kernel. I. I NTRODUCTION XNU-based operating systems, e.g., iOS and macOS, are popular targets for attackers, possibly due to potential financial gains [52]. Attackers could exploit vulnerabilities to escalate the privilege to a higher one, i.e., the root privilege. However, the root user of iOS and macOS cannot access or modify important system files. Thus, in order to get full control of the system (e.g., jailbreaking the system), attackers have to find a way to bypass this limitation. Memory corruption in the operating system kernel is a common way to achieve this goal. For instance, buffer over- flow and use-after-free (UAF) are two types of vulnerabilities that could cause memory corruption. With a buffer overflow vulnerability, return addresses on the stack or kernel objects in the heap can be corrupted. In the case of a UAF vulnerability, a previously freed object with a function pointer could be abused by attackers to hijack the control flow. Furthermore, if attackers know addresses of some useful code gadgets, e.g., via arbitrary kernel read/write primitives, they can leverage code-reuse attacks, including return-oriented programming (ROP) [64] or return-to-libc [3], to redirect the control flow to these gadgets and gain the capability of kernel code execution. With the development of vulnerability detection technique, e.g., the fuzz testing [5, 54, 66], the number of memory corrup- tion vulnerabilities discovered in XNU has increased rapidly in recent years [8]. Accordingly, to raise the bar for attackers and prevent the vulnerabilities from being exploited, several mitigations [20], e.g., DEP [12], ASLR [2] and CFI [53], have been adopted by the latest iOS and macOS systems. However, attackers have abused a special type of kernel object, i.e., Mach port, to bypass these mitigations [33, 36, 51]. In XNU, a Mach port is represented by a pointer to an ipc_port object, which is used to represent abstractions (e.g., task and thread) in the kernel. User space applications could interact with Mach port objects to access the underlying abstractions by sending Mach messages to ports. In order to invoke a system functionality that is represented by a Mach Port, an application first asks the kernel for accessing a port. Then it leverages the IPC (Inter Process Communication) mechanism to send Mach messages to that port. By corrupting this kernel object, all existing defense mechanisms adopted in the recently released XNU systems (i.e., iOS 13 and macOS 10.15) can be bypassed. By doing so, an attacker can achieve multiple primitives (e.g., kernel memory read/write) by simply issuing system calls in user space. The root cause is that Mach port objects are unconditionally trusted by the kernel. Indeed, the Mach port object has been exploited in several known attacks. However, how tosystematically leverage the Mach port objects to gain steady kernel memory read, write and execution capabilities is still unknown by the community. In this paper, we first review the mitigation techniques in recent released XNU systems (i.e., iOS 13 and macOS 10.15) and illustrate how they make the traditional exploitation techniques ineffective. Based on public exploits, we then systematically summarize (Mach) Port-Oriented Programming (POP), an attack technique that leverages Mach port kernel objects to bypass these mitigations. Specifically, because the kernel unconditionally trusts Mach port objects without effec- ⋆Corresponding author. Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23126 www.ndss-symposium.org tive verification, if the attacker has the capability to corrupt kernel port objects, he or she could achieve multiple primitives through user space system calls. We then propose the Port Ultra-SHield (PUSH) to defend against this attack. PUSH automatically locates unsafe Mach port objects based on the primitive models and instruments related system calls to deploy security policies. Specifically, it constructs Mach port-oriented control flow (POC) graphs and locates Mach port objects that could potentially be corrupted and abused to launch the POP attack. Then, PUSH uses examiners to check the integrity of these kernel objects (i.e., objects that can potentially be corrupted by attackers) before or after specified system calls. To make our solution practical, PUSH is deployed through kernel extensions with negligible overheads, without requiring any modification to the XNU kernel. We evaluated PUSH with 18 public exploits. All of them could be detected and blocked by our system. This demon- strated the effectiveness of our system with small perfor- mance overhead ( 2%). In addition, the PUSH framework has been deployed on more than 40, 000 MacBooks in Alibaba Group [4]. It successfully detected mutated public exploits and a previously unknown exploit. We have discussed POP and PUSH system with Apple's security team (follow-up id: 707542859). They appreciate our efforts to improve the security of their products. Accordingly, security enhancements like object address verification (e.g.,zone_require() [50]) and object data verification (e.g., data-PAC [9]) for Mach port objects have been deployed on later released XNU systems (e.g., iOS 14 beta). In summary, this paper makes the following main contri- butions: • We summarize POP, a (Mach) port-oriented attack technique that can bypass most of XNU kernel miti- gations, and demonstrate the way to achieve multiple attack primitives (Section III). • We present POP primitive searcher, a static detection tool to locate exploitable Mach port related objects and system calls (Section IV). • We propose PUSH, a generic kernel object protection framework for XNU. It enforces kernel object integrity to prevent the corruption of Mach port objects and defend against the (Mach) port-oriented programming attack (Section V). • We show the effectiveness of PUSH through the de- tection and blocking of 18 public exploits. PUSH does not require system modifications and only introduces 2% runtime overhead (Section VI). Moreover, the PUSH framework has been deployed in a leading company with more than 40,000 macOS devices and successfully detected new exploits (Section VII). II. B ACKGROUND In this section, we will briefly present the necessary back- ground knowledge to understand our proposed system. VWUXFWLSFBSRUW LRBELWV LRBORFNBGDWD LRBUHIHUHQFHV VWUXFWLSFBVSDFH UHFHLYHU LSFBNREMHFWBWLSBNREMHFW PDFKBYPBDGGUHVVBWLSBFRQWH[W 0DFKSRUWQDPH 8VHUVSDFH .HUQHOVSDFH Fig. 1: Mach port name and the ipc_port structure [13]. A. Mach port A Mach port in XNU is a kernel controlled communica- tion channel between user-space processes and the kernel. A process with appropriate privilege is able to send messages to a port. Ports are used to represent resources, services, and facilities (e.g., hosts, tasks, threads, memory objects, and clocks). It provides object-style access to these abstractions. To access resources in the kernel, a process could send Mach messages to a specific type of the Mach port. In user space, a Mach port name is an integer number representing a handler for a Mach port in the kernel space. In kernel, a Mach port is represented by a pointer to an ipc_port object. Figure 1 shows the structure of ipc_port. There are 40 types of ipc_port objects in XNU-6153.11.26 (the kernel of iOS 13 and macOS 10.15). The io_bits field defines the type of the object. For instance, an ipc_port object with the IKOT_TASK type represents a Mach task, which is a machine-independent abstraction of the execution environment of threads. The io_references field counts the reference number of the object. If the number decreases to zero, the kernel object will be freed. Locking related data is stored in the io_lock_data field. The receiver field is a pointer that points to the receiver's IPC space (e.g. ipc_space_kernel). The ip_kobject field points to a kernel data structure according to the kernel object type. Note that there is no type integrity check for ipc_port objects. Hence, the attacker can change the type ( io_bits field) of the object through a memory corruption vulnerability, leading to a type-confusion attack. B. Kernel zone & heap feng shui In order to manage the heap memory available in the kernel space, the XNU kernel uses the zone allocator. It is similar to the slab in Linux and the pool in Windows. In particular, a zone is a collection of fixed-size memory blocks (a.k.a, elements). They are accessible from efficient interfaces for memory allocation and deallocation. Specifically, the kalloc() function family contains the most frequently used memory allocation functions. They provide the access to a fast general-purpose memory allocator built on top of the zone allocator. The kalloc() function supports a set of allocation sizes, ranging from 16 bytes to several kilobytes (each size is a power of 2). When the allocator is initialized, it creates a zone for each allocation size and the name of the zone reflects its size. For instance, the zone name kalloc.32 means that the zone's size is 32 bytes. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Apple devices (e.g., iPhone, MacBook, iPad, and Apple Watch) are high value targets for attackers. Although these devices use different operating systems (e.g., iOS, macOS, iPadOS, watchOS, and tvOS), they are all based on a hybrid kernel called XNU. Existing attacks demonstrated that vulnerabilities in XNU could be exploited to escalate privileges and jailbreak devices. To mitigate these threats, multiple security mechanisms have been deployed in latest systems. In this paper, we first perform a systematic assessment of deployed mitigations by Apple, and demonstrate that most of them can be bypassed through corrupting a special type of kernel objects, i.e., Mach port objects. We summarize this type of attack as (Mach) Port Object-Oriented Programming (POP). Accordingly, we define multiple attack primitives to launch the attack and demonstrate realistic scenarios to achieve full memory manipulation on recently released systems (i.e., iOS 13 and macOS 10.15). To defend against POP, we propose the Port Ultra-SHield (PUSH) system to reduce the number of unprotected Mach port objects. Specifically, PUSH automatically locates potential POP primitives and instruments related system calls to enforce the integrity of Mach port kernel objects. It does not require system modifications and only introduces 2% runtime overhead. The PUSH framework has been deployed on more than 40,000 macOS devices in a leading company. The evaluation of 18 public exploits and one zero-day exploit detected by our system demonstrated the effectiveness of PUSH. We believe that the proposed framework will facilitate the design and implementation of a more secure XNU kernel."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Min Zheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Orion Security Lab, Center for Information Science and Technology, Alibaba Group Zhejiang University Institute for Network Science and Cyberspace, Tsinghua University Beijing National Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Xiaolong Bai",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Orion Security Lab, Center for Information Science and Technology, Alibaba Group Zhejiang University Institute for Network Science and Cyberspace, Tsinghua University Beijing National Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yajin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Orion Security Lab, Center for Information Science and Technology, Alibaba Group Zhejiang University Institute for Network Science and Cyberspace, Tsinghua University Beijing National Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Orion Security Lab, Center for Information Science and Technology, Alibaba Group Zhejiang University Institute for Network Science and Cyberspace, Tsinghua University Beijing National Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Fuping Qu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Orion Security Lab, Center for Information Science and Technology, Alibaba Group Zhejiang University Institute for Network Science and Cyberspace, Tsinghua University Beijing National Research"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Min Zheng",
+          "email": "",
+          "affiliations": [
+            "Orion Security Lab, Alibaba Group"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Xiaolong Bai",
+          "email": "",
+          "affiliations": [
+            "Orion Security Lab, Alibaba Group"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yajin Zhou",
+          "email": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Chao Zhang",
+          "email": "",
+          "affiliations": [
+            "Institute for Network Science and Cyberspace, Tsinghua University",
+            "Beijing National Research Center for Information Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Fuping Qu",
+          "email": "",
+          "affiliations": [
+            "Orion Security Lab, Alibaba Group"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 115,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "POP and PUSH: Demystifying and Defending against (Mach) Port-oriented Programming",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/pop-and-push-demystifying-and-defending-against-mach-port-oriented-programming/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Min Zheng",
+          "affiliations": [
+            "Orion Security Lab, Alibaba Group"
+          ]
+        },
+        {
+          "name": "Xiaolong Bai",
+          "affiliations": [
+            "Orion Security Lab, Alibaba Group"
+          ]
+        },
+        {
+          "name": "Yajin Zhou",
+          "affiliations": [
+            "Zhejiang University"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Institute for Network Science and Cyberspace, Tsinghua University"
+          ]
+        },
+        {
+          "name": "Fuping Qu",
+          "affiliations": [
+            "Orion Security Lab, Alibaba Group"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

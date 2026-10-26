@@ -1,0 +1,360 @@
+{
+  "paper_id": "136_sense_enhancing_microarchitectural_awareness_for_tees_via_subscription_based_notification",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SENSE: Enhancing Microarchitectural Awareness for TEEs via Subscription-Based Notification"
+      },
+      {
+        "source": "selected",
+        "value": "SENSE: Enhancing Microarchitectural Awareness for TEEs via Subscription-Based Notification"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Effectively mitigating side-channel attacks (SCAs) in Trusted Execution Environments (TEEs) remains challenging despite advances in existing defenses. Current detection-based defenses hinge on observing abnormal victim performance characteristics but struggle to detect attacks leaking smaller portions of the secret across multiple executions. Limitations of existing detectionbased defenses stem from various factors, including the absence of a trusted microarchitectural data source in TEEs, low-quality available data, inflexibility of victim responses, and platformspecific constraints. We contend that the primary obstacles to effective detection techniques can be attributed to the lack of direct access to precise microarchitectural information within TEEs. We propose SENSE, a solution that actively exposes underlying microarchitectural information to userspace TEEs. SENSE enables userspace software in TEEs to subscribe to fine-grained microarchitectural events and utilize the events as a means to contextualize the ongoing microarchitectural states. We initially demonstrate SENSE's capability by applying it to defeat the state-of-the-art cache-based side-channel attacks. We conduct a comprehensive security analysis to ensure that SENSE does not leak more information than a system without it does. We prototype SENSE on a gem5-based emulator, and our evaluation shows that SENSE is secure, can effectively defeats cache SCAs, and incurs negligible performance overhead (1.2%) under benign situations."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Effectively mitigating side-channel attacks (SCAs) in Trusted Execution Environments (TEEs) remains challenging despite advances in existing defenses. Current detection-based de- fenses hinge on observing abnormal victim performance character- istics but struggle to detect attacks leaking smaller portions of the secret across multiple executions. Limitations of existing detection- based defenses stem from various factors, including the absence of a trusted microarchitectural data source in TEEs, low-quality available data, inflexibility of victim responses, and platform- specific constraints. We contend that the primary obstacles to effective detection techniques can be attributed to the lack of direct access to precise microarchitectural information within TEEs. We propose SENSE , a solution that actively exposes under- lying microarchitectural information to userspace TEEs. SENSE enables userspace software in TEEs to subscribe to fine-grained microarchitectural events and utilize the events as a means to contextualize the ongoing microarchitectural states. We initially demonstrate SENSE 's capability by applying it to defeat the state-of-the-art cache-based side-channel attacks. We conduct a comprehensive security analysis to ensure that SENSE does not leak more information than a system without it does. We prototype SENSE on a gem5-based emulator, and our evaluation shows that SENSE is secure, can effectively defeats cache SCAs, and incurs negligible performance overhead (1.2%) under benign situations. I. I NTRODUCTION The ever-growing complexity and ubiquity of modern computing systems [1] have opened a Pandora's box of security challenges. One such challenge, microarchitectural side-channel attacks (SCAs) [2]-[12], has emerged as a threat to the confi- dentiality and integrity of sensitive information. These attacks exploit shared resources, such as cache memory, to covertly extract secret data from seemingly secure systems. Modern Trusted Execution Environments (TEEs) (e.g., Intel Software Guard Extensions (SGX) [13] and Trust Domain Extensions (TDX) [14], AMD Secure Encrypted Virtualization (SEV) [15], and ARM TrustZone [16]) aim to provide architectural protec- tion against privileged attackers (e.g., OS and hypervisor) and consider some SCAs to be addressable by software, e.g., using constant-time programming techniques [6], [8], [17]-[26]. Although disabling resource sharing entirely at the hardware level (e.g., strict cache partitioning) mitigates many SCAs in TEEs, it is not practical and detriments utility. Constant-time programming is also challenging to deploy at scale. Sub-optimal hardware resource isolation techniques [27]- [31] try to find a balance between performance and security by allowing restricted resource sharing and dynamically partitioning a hardware structure (e.g., cache) among multiple security domains. However, hardware-based mitigations, designed with existing knowledge and fixed at hardware level once deployed, cannot be easily upgraded and adapted to defend future SCA strategies. Recent studies [32] even show that dynamic hardware resource partitioning still leaks information and accurately quantifying the leakage is hard. To be more flexible as well as potentially catch the missed leakage, various detection mechanisms [33]-[41] for TEEs have been proposed. Detection-based mitigations rely on observing the impact of SCAs on the victim's performance (e.g., excessive cache misses) and detect ongoing attacks when anomalous performance characteristics are identified. Unfortunately, recent studies demonstrate that attackers can effectively bypass detection by leaking smaller portions of secrets (e.g., 1 bit) across multiple victim executions instead of inferring most secrets within a single execution [42]. Consequently, abnormal performance behaviors are amortized across multiple executions, preventing detection tools from differentiating between benign and potentially malicious executions. In fact, any detection tool relying on the victim's performance characteristics is likely to fail [42]. As long as information leakage persists, adversaries can compensate for the scarcity of information by adopting more computationally intensive strategies, as demonstrated by formal SCA models [43]. It is indeed an irony that in microarchitectural SCAs against TEEs, attackers have the freedom to collect various microarchitectural signals, including those from the kernel space, while victim programs running in TEEs are constrained in their ability to reliably gather SCA signals and lack runtime awareness of the microarchitectural context, since the OS cannot be trusted. More specifically, detection-based techniques under TEEs encounter a number of limitations: 1) missing trusted data sources , exacerbated in TEEs due to untrusted OS mediation [34]-[38]; 2) low-quality data, leading to imprecise attack detection and allowing stealthy attacks [34]-[40]; 3) inflexibility, as victims have limited contextual awareness and can only make coarse-grained decisions [34]-[41]; and 4) platform constraints , where techniques rely on platform- specific features, limiting extensibility and applicability to other architectures or future generations [33], [39]-[41]. Inspired by the practice of security through transparency (in contrast with security through obscurity), we believe that open- ing direct access to microarchitectural events with caution for TEEs can help to enable more complete forms of SCA defense Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.24176 www.ndss-symposium.org strategies as well as facilitate use cases beyond just preventing SCAs. As history has proven, providing more transparency to the public with careful mediation (e.g., open-source projects such as the Linux kernel and Kerckhoff's principle in crypto- graphic systems [44]) can contribute to the overall robustness of the system. To build a timely, accurate, flexible, and trustworthy technique that may fundamentally thwart microarchitectural SCAs, we argue that it is necessary to turn a side channel that can only be crafted by skilled attackers into a high-fidelity direct channel only accessible to victims in TEEs at runtime. This approach not only provides an immediate, effective, and future-proof response to potential attacks but also challenges the very foundation of existing SCA strategies, which relies on the information gap between the attacker and the victim. SENSE . In this paper, we present SENSE , a paradigm-shifting hardware-software co-design solution that directly exposes events at microarchitectural level to userspace TEEs. SENSE is a general architectural extension that provides a reliable source of precise microarchitectural information and a flexible method for feeding microarchitectural events directly to TEEs. It achieves this by directly notifying userspace software in TEEs about microarchitectural events, allowing users to proactively defend themselves against SCAs using actions specified in the event handler, such as enforcing security invariants (e.g., pinning secret-dependent cache entries). As SENSE inevitably becomes part of the attacker's arsenal, we also conduct an in-depth security analysis of the SENSE architecture, SENSE handlers, and potential attack surfaces, and demonstrate that SENSE does not leak more information than a system without SENSE does. While SENSE is designed to be a generic framework, in this paper, we enable SENSE specifically for thwarting cache-based SCAs for TEEs, as they are the most widely researched SCAs against TEEs. We prototype SENSE on a cycle-accurate gem5-based [45] emulator (§VI). Evaluation results show that SENSE can successfully defeat cache SCAs and incurs negligible overhead (1.2%) on reasonable TEE workloads under benign situations. SENSE has more use cases than detecting SCAs. For example, secure software that typically incur high performance overhead (e.g., constant-time cryptographic algorithms) can be dynamically loaded (i.e., dynamic switching) in TEEs by SENSE handlers upon sensitive events, ensuring the performance penalty is only paid when necessary. SENSE can also be utilized to audit the faithfulness of an untrusted OS by verifying whether the contracts between the OS and userspace (e.g., cache coloring) are honored, owing to the rich microarchitectural information provided by S ENSE . SENSE serves as the first advocate for a transparent and trust- worthy source of high-fidelity microarchitectural information dedicated to TEEs. SENSE is publicly available as an open- source project1, allowing communities to test and contribute to- wards a more transparent microarchitectural paradigm for TEEs. Contributions. This paper makes following contributions: • New approach. We propose a novel approach to counteract microarchitectural SCAs in TEEs by actively exposing mi- croarchitectural states to TEEs through notifications, turning a side channel that can only be crafted by skilled attackers 1https://github.com/sslab-gatech/Sense into a high-fidelity and trustworthy direct channel accessible to victims within TEEs at runtime. We present our solution SENSE , an architectural extension that provides prompt, ac- curate, and trustworthy microarchitectural event notifications to userspace TEEs for flexible handling of potential SCAs. • SENSE for cache-based SCAs. We provide a comprehensive, platform-agnostic description of SENSE architecture for addressing cache SCAs in TEEs, detailing the necessary processor architecture extensions and additional cache components to facilitate S ENSE . • Security analysis of SENSE . As SENSE inevitably falls into the attacker's arsenal as well, we conduct a comprehensive security analysis of the SENSE interface and possible attack scenarios to demonstrate its security. II. B ACKGROUND A. Microarchitectural Events Microarchitecture comprises hardware components that are not directly accessible to software, as they are typically abstracted by the Instruction Set Architecture (ISA) and function (e.g., accelerate certain operations) transparently from the software layer. Microarchitectural events are generally related to instruction executions and memory operations. Instruction-related microarchitectural events include overall instruction fetch, issue, dispatch (execution) and retirement. Memory-related microarchitectural events include load and store operations on various memory components, such as CPU cache hit and miss, Translation Lookaside Buffer (TLB) hit and miss, and Page Table Walks. However, while not directly accessible to the software layer, microarchitectural events can be inferred indirectly by carefully controlled software execution, hence, leaking information about software activities in unexpected ways. Furthermore, as all programs running on a machine share the same set of hardware components (i.e., microarchitectural states), attackers who can perform controlled execution of one program can leverage the observed microarchitectural events to infer the behavior of other programs. This forms the theoretical basis of side-channel attacks (SCAs). B. Cache-based Side-Channel Attacks (SCAs) Among a diverse set of SCAs, cache-based SCAs [2]-[5], [46]-[53] present a risk to secure computing across a variety of platforms and architectures, including TEEs such as Intel SGX [17], [24], [25], [54] and ARM TrustZone [52], [55]. These attacks can disclose both fine-grained and coarse-grained private data and operations, including bypassing address space layout randomization (ASLR) [48], [51], deducing keystroke patterns [49], [50], leaking sensitive information from human genome indexing computations [17], and exposing RSA [3], [53] and AES decryption keys [4], [56]. Cache-based SCAs exploit the time difference between cache hits and misses to infer secrets by learning whether specific cachelines have been accessed by the victim program. Commonly used techniques include Prime+Probe [2]-[4],"
+      },
+      {
+        "source": "selected",
+        "value": "Effectively mitigating side-channel attacks (SCAs) in Trusted Execution Environments (TEEs) remains challenging despite advances in existing defenses. Current detection-based defenses hinge on observing abnormal victim performance characteristics but struggle to detect attacks leaking smaller portions of the secret across multiple executions. Limitations of existing detectionbased defenses stem from various factors, including the absence of a trusted microarchitectural data source in TEEs, low-quality available data, inflexibility of victim responses, and platformspecific constraints. We contend that the primary obstacles to effective detection techniques can be attributed to the lack of direct access to precise microarchitectural information within TEEs. We propose SENSE, a solution that actively exposes underlying microarchitectural information to userspace TEEs. SENSE enables userspace software in TEEs to subscribe to fine-grained microarchitectural events and utilize the events as a means to contextualize the ongoing microarchitectural states. We initially demonstrate SENSE's capability by applying it to defeat the state-of-the-art cache-based side-channel attacks. We conduct a comprehensive security analysis to ensure that SENSE does not leak more information than a system without it does. We prototype SENSE on a gem5-based emulator, and our evaluation shows that SENSE is secure, can effectively defeats cache SCAs, and incurs negligible performance overhead (1.2%) under benign situations."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Fan Sang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jaehyuk Lee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xiaokuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "George Mason University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Meng Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Scott Constable",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yuan Xiao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Michael Steiner",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Mona Vij",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Taesoo Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Fan Sang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jaehyuk Lee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Xiaokuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "George Mason University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Meng Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Scott Constable",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yuan Xiao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Michael Steiner",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Mona Vij",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Taesoo Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 116,
+      "author_count": 9,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SENSE: Enhancing Microarchitectural Awareness for TEEs via Subscription-Based Notification",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/sense-enhancing-microarchitectural-awareness-for-tees-via-subscription-based-notification/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Fan Sang",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Jaehyuk Lee",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        },
+        {
+          "name": "Xiaokuan Zhang",
+          "affiliations": [
+            "George Mason University"
+          ]
+        },
+        {
+          "name": "Meng Xu",
+          "affiliations": [
+            "University of Waterloo"
+          ]
+        },
+        {
+          "name": "Scott Constable",
+          "affiliations": [
+            "Intel"
+          ]
+        },
+        {
+          "name": "Yuan Xiao",
+          "affiliations": [
+            "Intel"
+          ]
+        },
+        {
+          "name": "Michael Steiner",
+          "affiliations": [
+            "Intel"
+          ]
+        },
+        {
+          "name": "Mona Vij",
+          "affiliations": [
+            "Intel"
+          ]
+        },
+        {
+          "name": "Taesoo Kim",
+          "affiliations": [
+            "Georgia Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

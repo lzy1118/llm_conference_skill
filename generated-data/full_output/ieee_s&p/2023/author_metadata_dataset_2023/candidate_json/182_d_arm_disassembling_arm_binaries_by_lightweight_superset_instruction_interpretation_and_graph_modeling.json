@@ -1,0 +1,305 @@
+{
+  "paper_id": "182_d_arm_disassembling_arm_binaries_by_lightweight_superset_instruction_interpretation_and_graph_modeling",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "D-ARM: Disassembling ARM Binaries by Lightweight Superset Instruction Interpretation and Graph Modeling"
+      },
+      {
+        "source": "selected",
+        "value": "D-ARM: Disassembling ARM Binaries by Lightweight Superset Instruction Interpretation and Graph Modeling"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "ARM binary analysis has a wide range of applications in ARM system security. A fundamental challenge is ARM disassembly. ARM, particularly AArch32, has a number of unique features making disassembly distinct from x86 disassembly, such as the mixing of ARM and Thumb instruction modes, implicit mode switching within an application, and more prevalent use of inlined data. Existing techniques cannot achieve high accuracy when binaries become complex and have undergone obfuscation. We propose a novel ARM binary disassembly technique that is particularly designed to address challenges in legacy code for 32-bit ARM binaries. It features a lightweight superset instruction interpretation method to derive rich semantic information and a graph-theory based method that aggregates such information to produce final results. Our comparative evaluation with a number of state-of-theart disassemblers, including Ghidra, IDA, P-Disasm, XDA, D-Disasm, and Spedi, on thousands of binaries generated from SPEC2000 and SPEC2006 with various settings, and real-world applications collected online show that our technique D-ARM substantially outperforms the baselines."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "ARM binary analysis has a wide range of appli- cations in ARM system security. A fundamental challenge is ARM disassembly. ARM, particularly AArch32, has a num- ber of unique features making disassembly distinct from x86 disassembly, such as the mixing of ARM and Thumb instruc- tion modes, implicit mode switching within an application, and more prevalent use of inlined data. Existing techniques cannot achieve high accuracy when binaries become complex and have undergone obfuscation. We propose a novel ARM binary disassembly technique that is particularly designed to address challenges in legacy code for 32-bit ARM binaries. It features a lightweight superset instruction interpretation method to derive rich semantic information and a graph-theory based method that aggregates such information to produce final results. Our comparative evaluation with a number of state-of-the- art disassemblers, including Ghidra, IDA, P-Disasm, XDA, D- Disasm, and Spedi, on thousands of binaries generated from SPEC2000 and SPEC2006 with various settings, and real-world applications collected online show that our technique D-ARM substantially outperforms the baselines. I. I NTRODUCTION ARM is one of the two most popular architecture families (the other is x86). Since it was introduced in the 1980s, it grad- ually prevails due to its excellent balance between performance and resource consumption. It dominates in mobile computing as 95% of high-end smartphones are based on ARM [1] and is also widely used in high performance computing [2]. With the extreme popularity of ARM devices, securing ARM applications on such devices is hence critical. Just like x86 binary analysis is a key enabling technique for x86 software security, ARM binary analysis is critical for ARM application security. It serves a large number of downstream applications such as ARM malware analysis [3], [4], ARM application fuzzing [5], [6], ARM rewriting for application hardening [7], [8], and ARM code debloating that reduces the footprint of an application to achieve a smaller attack surface [9], [10]. A fundamental challenge in ARM binary analysis is ARM disassembly, which is the critical first step of any binary analysis. Compared to x86, ARM, particularly AArch32, poses a number of unique challenges. For example, it supports two instruction modes in the same 32-bit application, ARM and Thumb, with the former high performance and the latter compact. In other words, some instructions in a binary are in ARM and the others are in Thumb. The mode switching may be implicit, depending on values computed in registers at runtime. It can occur anywhere and any time. The byte sequence starting at an address can be decoded to different instructions depending on the mode. In addition, inlined data are more prevalent in both 32-bit and 64-bit ARM binaries. ARM/Thumb instructions have fixed lengths that are much smaller than x86 instructions. They hence have limited room to encode immediate values (i.e., constants). As a result, such val- ues are often present in memory as inlined data. Disassemblers may have difficulty recognizing them and falsely disassemble them to instructions. There is a body of mature and effective works for x86 disassembly [11], [12], [13], [14], [15], [16]. However, they have limited effectiveness when applied to ARM binaries. The traditional linear sweeping disassemblers such as objdump [16] and recursive control flow traversal based disassemblers, such as IDA [11] and Ghidra [12], have difficulties handling inlined data, implicit mode switching, and indirect control flow transfer. P-Disasm [14] considers that each address may potentially start an instruction and uses a probabilistic method to compute posterior probabilities of addresses denoting true instructions. The probabilities are computed based on a num- ber of hints such as the number of definition-use relations encountered. However, as shown by our results (Section VI), the probabilities can hardly be used to correctly decide if an instruction should be ARM or Thumb. Machine learning based disassemblers such as XDA [13] learn how to disassemble a binary by training on a huge set of samples. However, they largely depend on the syntactic patterns in these samples whereas implicit instruction mode switching is a complex semantic property. As such, they may not work well when binaries become complex (e.g., with obfuscation). Its F1 score on obfuscated binaries can be as low as 2.83% (Section VI). In this paper, we propose a novel technique for ARM binary disassembly. We observe that a key challenge of recognizing instruction mode switching can hardly be handled by syntax based analysis. In addition, ARM code heavily uses load and store instructions, causing substantial memory aliasing and rendering simple local program analysis ineffective. We hence propose a lightweight static analysis to collect rich semantic information. The static analysis works on a superset of instructions , meaning that it disregards the true mode for a code address, which is unknown, and decodes the address to instructions in both modes and interprets them accordingly 2391 DOI 10.1109/SP46215.2023.00042 in an abstract domain. Here, we call the multiple instructions (in different modes) that can be legally decoded at an address the superset instructions for the address. The semantic infor- mation derived by the static analysis (e.g., register, memory dependencies, and indirect control flow) is further leveraged by a phase of graph analysis to produce the final results. We model the program as a graph, with multiple nodes created for each address, denoting that the address shall be considered as an ARM instruction, a Thumb instruction, and data bytes, respectively. Edges are introduced between these nodes to denote their inter-constraints based on the analysis results, such as an address cannot be an ARM instruction and a Thumb instruction at the same time and an ARM instruction must be followed by another ARM instruction if there is no mode switching. Then the disassembly problem is reduced to a maximum weight independent set (MWIS) problem [17] that maximizes the total weight while respecting the constraints. Our contributions are summarized as follows. • We develop a disassembly technique for ARM binaries. It features a novel lightweight static analysis technique that can interpret a binary without even knowing how to correctly disassemble the binary. • We also propose a novel graph modeling method for ARM binaries. We formally prove that with the graph model, we can reduce the ARM disassembly problem to an MWIS problem, which is NP-hard. An existing approximate solution then can be leveraged to derive the final results. • We implement a prototype D-ARM. We evaluate it on more than 5000 binaries, including those compiled from SPEC2000 and SPEC2006 with different compilation options, architecture and instruction set configurations, those collected online, and those undergone obfusca- tion. We compare it with six baselines: Ghidra [12], IDA [11], P-Disasm [14], XDA [13], D-Disasm [15], and Spedi [18]. Our results show that D-ARM is almost always the best performing tool, with an F1 score higher than 95% in most cases. In the presence of substantial obfuscation, the other tools have only 2.83-56.45% F1 scores whereas D-ARM still has 78.16-88.72%. Our case study also shows that D-ARM can benefit downstream binary rewriting with fewer execution failures and incor- rect coverage reports. D-ARM is publicly available [19]. II. B ACKGROUND ARM is a family of Reduced Instruction Set Computing (RISC) architectures, which are quite different from the Com- plex Instruction Set Computing (CISC) architectures such as the Intel x86 families. In this section, we introduce the main features of ARM that may affect its disassembly. A. Multiple Instruction Sets There have been several generations of ARM architectures in the past decades. Different architectures have different features and support mixed instruction sets. The early ARM versions are of 32-bit architecture (AArch32) and only use the 32-bit ARM instruction set (A32). Since ARMv4T, the Thumb instruction set is supported. It is 16-bit and aims to improve compiled code density [20]. Since ARMv6T2, additional 32-bit instructions are also introduced to extend the Thumb instruction set (T32). ARMv8a provides an optional 64-bit architecture named “AArch64”, and also an associated new ARM instruction set (A64) to provide the access to 64-bit general-purpose registers. At the same time, it still maintains compatibility with 32-bit architectures and inherits A32 and T32. When an application is executed on an ARMv8 processor, it could be in either the AArch32 state (using A32 or T32 instructions) or the AArch64 state (using A64 instructions). In total, there are three instruction sets used by ARM binaries, i.e., A32, T32, and A64. For discussion simplicity, we will focus on the 32-bit ARM architecture, which uses A32 and T32 instruction sets, while our system also supports A64. Unlike x86/x64 that uses a single instruction set, a 32-bit ARM binary usually contains both A32 and T32 instructions. Note that T32 contains both 16-bit and 32-bit instructions. As the A32 and T32 instructions share the same encoding space, a sequence of four bytes could be decoded as either an A32 instruction or as one or two T32 instructions. This makes ARM disassembly challenging. B. ARM/Thumb Interworking The A32 and T32 instructions provide almost the same functionality. An ARM binary usually uses both instruction sets together to achieve both high performance and better code density. Although the A32 and T32 instructions do not overlap, they may interleave. An ARM processor in operation can be in the ARM mode, executing the A32 instructions, or in the Thumb mode, executing the T32 instructions. The mode is determined by the T bit in the Current Program State Register (CPSR). When T is 0, the processor gets into the ARM mode, 1 the Thumb mode. The T bit can be set by the least significant bit of a branch target in a branch instruction, e.g., by the branch with link and exchange instruction ( blx) and the branch and exchange instruction ( bx). Switching between the two modes can be achieved explicitly or implicitly. For example, the instruction blx label always changes the current mode, while blx rm and bx rm set the T bit as the least significant bit of the branch target in the register rm and may or may not trigger the mode change. Some other instructions such as pop, ldr/ldm and some arithmetic instructions may also change the instruction mode implicitly, when writing into the program counter register pc and causing a control transfer. With these implicit mode switches, the instruction mode could only be determined at runtime, which makes static disassembly very challenging. C. Inlined Data Inlined data may cause a lot of false positives and false negatives for disassembly. In x86/x64, it is believed that inlined data is not prevalent [21] and, hence, may not be that problematic in practice. However, this is not true in ARM. As described above, the instructions in ARM binaries 2392"
+      },
+      {
+        "source": "selected",
+        "value": "ARM binary analysis has a wide range of applications in ARM system security. A fundamental challenge is ARM disassembly. ARM, particularly AArch32, has a number of unique features making disassembly distinct from x86 disassembly, such as the mixing of ARM and Thumb instruction modes, implicit mode switching within an application, and more prevalent use of inlined data. Existing techniques cannot achieve high accuracy when binaries become complex and have undergone obfuscation. We propose a novel ARM binary disassembly technique that is particularly designed to address challenges in legacy code for 32-bit ARM binaries. It features a lightweight superset instruction interpretation method to derive rich semantic information and a graph-theory based method that aggregates such information to produce final results. Our comparative evaluation with a number of state-of-theart disassemblers, including Ghidra, IDA, P-Disasm, XDA, D-Disasm, and Spedi, on thousands of binaries generated from SPEC2000 and SPEC2006 with various settings, and real-world applications collected online show that our technique D-ARM substantially outperforms the baselines."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yapeng Ye",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Qingkai Shi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yousra Aafer",
+          "email": "yousra.aafer@uwaterloo.ca",
+          "orcid": "",
+          "affiliations": [
+            "University of Waterloo"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Graph Modeling",
+          "email": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Waterloo"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yapeng Ye",
+          "email": "ye203@purdue.edu",
+          "affiliations": [
+            "Purdue University",
+            "University of Waterloo"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zhuo Zhang",
+          "email": "",
+          "affiliations": [
+            "Purdue University",
+            "University of Waterloo"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Qingkai Shi",
+          "email": "shi553@purdue.edu",
+          "affiliations": [
+            "Purdue University",
+            "University of Waterloo"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yousra Aafer",
+          "email": "yousra.aafer@uwaterloo.ca",
+          "affiliations": [
+            "Purdue University",
+            "University of Waterloo"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "affiliations": [
+            "Purdue University",
+            "University of Waterloo"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 107,
+      "author_count": 6,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Graph Modeling",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Graph Modeling",
+          "affiliation_raw": "Yapeng Ye , Zhuo Zhang , Qingkai Shi; Purdue University, University of Waterloo",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b5",
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 31.382,
+          "center_distance": 70.247,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "D-ARM: Disassembling ARM Binaries by Lightweight Superset Instruction Interpretation and Graph Modeling",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yapeng Ye",
+          "affiliations": [
+            "Purdue University, USA"
+          ]
+        },
+        {
+          "name": "Zhuo Zhang",
+          "affiliations": [
+            "Purdue University, USA"
+          ]
+        },
+        {
+          "name": "Qingkai Shi",
+          "affiliations": [
+            "Purdue University, USA"
+          ]
+        },
+        {
+          "name": "Yousra Aafer",
+          "affiliations": [
+            "University of Waterloo, Canada"
+          ]
+        },
+        {
+          "name": "Xiangyu Zhang",
+          "affiliations": [
+            "Purdue University, USA"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yapeng Ye",
+      "field": "email",
+      "restored_value": "ye203@purdue.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Qingkai Shi",
+      "field": "email",
+      "restored_value": "shi553@purdue.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yousra Aafer",
+      "field": "email",
+      "restored_value": "yousra.aafer@uwaterloo.ca",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xiangyu Zhang",
+      "field": "email",
+      "restored_value": "xyzhang@cs.purdue.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

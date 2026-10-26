@@ -1,0 +1,216 @@
+{
+  "paper_id": "164_on_the_lack_of_code_confidentiality_in_trusted_execution_environments",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "On (the Lack of) Code Confidentiality in Trusted Execution Environments"
+      },
+      {
+        "source": "selected",
+        "value": "On (the Lack of) Code Confidentiality in Trusted Execution Environments"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Trusted Execution Environments (TEEs) have been proposed as a solution to protect code confidentiality in scenarios where computation is outsourced to an untrusted operator. We study the resilience of such solutions to side-channel attacks in two commonly deployed scenarios: when the confidential code is a native binary that is shipped and executed within a TEE and when the confidential code is an intermediate representation (IR) executed on top of a runtime within a TEE. We show that executing IR code such as WASM bytecode on a runtime executing in a TEE leaks most IR instructions with high accuracy and therefore reveals the confidential code. Contrary to IR execution, native execution is much less susceptible to leakage and largely resists even the most powerful sidechannel attacks. We evaluate native execution leakage in Intel SGX and AMD SEV and experimentally demonstrate end-toend instruction extraction on Intel SGX, with WASM bytecode as IR executed within two popular WASM runtimes: WAMR and wasmi. Our experiments show that IR code leakage from such systems is practical and therefore question the security claims of several commercial solutions which rely on TEEs+WASM for code confidentiality. 4125 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Trusted Execution Environments (TEEs) have been proposed as a solution to protect code confidentiality in scenar- ios where computation is outsourced to an untrusted operator. We study the resilience of such solutions to side-channel attacks in two commonly deployed scenarios: when the confidential code is a native binary that is shipped and executed within a TEE and when the confidential code is an intermediate representation (IR) executed on top of a runtime within a TEE. We show that executing IR code such as W ASM bytecode on a runtime executing in a TEE leaks most IR instructions with high accuracy and therefore reveals the confidential code. Con- trary to IR execution, native execution is much less susceptible to leakage and largely resists even the most powerful side- channel attacks. We evaluate native execution leakage in Intel SGX and AMD SEV and experimentally demonstrate end-to- end instruction extraction on Intel SGX, with W ASM bytecode as IR executed within two popular W ASM runtimes:WAMR and wasmi. Our experiments show that IR code leakage from such systems is practical and therefore question the security claims of several commercial solutions which rely on TEEs+W ASM for code confidentiality. 1. Introduction The trend of outsourcing data storage and computation has given rise to concerns about the confidentiality of not only data but also of code executing on remote (typically cloud) services. To address these broad concerns, confiden- tial computing, based on Trusted Execution Environments (TEEs) such as Intel SGX [1] and AMD SEV [2], has been deployed in today's commercial cloud [3, 4, 5]. TEEs allow the client to deliver their confidential code and data into a protected CPU enclave, which then isolates it from the OS and hypervisor that are running on the same machine and, more generally, from the untrusted Service Provider (SP). This is typically achieved via attestation - the client first sends the public part of its code to the SP (e.g., a VM), attests that this code is running within an enclave, establishes a secure channel (typically TLS) to the enclave, and then uses the secure channel to deliver confidential code and data to the enclave. Once the confidential code is delivered to the enclave, it can be executed in isolation. Recent years have seen an emergence of several designs that generally follow this approach, use different TEEs, and offer Figure 1. The two main approaches providing code confidentiality with TEEs: native execution (above the dashed line) and IR execution (below the dashed line). various trade-offs, both as academic proposals [6, 7, 8, 9, 10, 11, 12, 13] and commercial solutions [14, 15, 16, 17]. One of the core ways in which these solutions diverge is the format in which the confidential code is delivered to the enclave. They typically follow one of two approaches: native execution and IR execution , where IR stands for Intermediate Representation. We illustrate these approaches in Fig. 1. In native execution, the developer compiles the confidential code to a native binary (i.e., x86) and then, after initializing a remote enclave, sends the binary to it. In IR execution, the developer compiles the confidential code to bytecode (e.g., WebAssembly or Java) or directly sends the source code to the enclave. Whereas in the case of native execution, the enclave can simply copy the instructions from the received binary to memory and execute them, in the case of IR execution, it needs first to convert the received IR into native code. This is done by a Virtual Machine (VM)-like environment in which either a just-in-time (JIT) compiler first converts the IR code to native or an interpreter directly executes it. A number of academic and commercial systems now support either native or IR execution within TEEs. WebAssembly (W ASM) runtimes are particularly well supported [14, 15, 16, 10, 12] because W ASM requires a small runtime resulting in a small TCB. Moreover, more than 40 programming languages can currently be compiled to W ASM, with support for more underway [18]. However, although several [6, 7, 8, 9, 11, 13, 14, 15, 17] of these systems claim to support code confidentiality for native or IR execution, so far, these claims have not been evaluated in the open literature. 4125 DOI 10.1109/SP54263.2024.00182 Our Paper. We perform the first analysis of confidential code leakage in native and IR execution of modern TEEs. We quantify the inherent leakage between these two execu- tion modes, to evaluate whether the choice of the format in which code is supplied to the enclave is a factor that system designers of confidential code solutions should consider. As this problem has not been previously investigated in the literature, an essential step of this analysis is to define how to measure (partial) code leakage. This aspect is not trivial and plays a crucial role in interpreting our results and the conclusions that can be drawn from them. To reason about a deployment mode such as native execution and IR execution irrespective of the deployed binary, we investigate single instruction leakage: we estimate how much the attacker can learn about the distribution of each (IR or native) instruction, and then we compose this across the whole instruction set. Intuitively, if for every possible binary the attacker is able to recover more instructions from IR execution than from native execution then the former is more leaky than the latter. However, this analysis can be influenced by prior infor- mation about the confidential binary, e.g., by knowing which compiler was used, the attacker might be able to exclude certain combinations of instructions. Since prior information needs to be gathered from the developer infrastructure (left side of the vertical orange line in Fig. 1), it is outside of the control and visibility of the adversary, and depends on specific attack scenarios. We decouple the effect of such prior information by fixing it to zero: we assume that the attacker does not know how the confidential binary was created, and only utilizes the public information supplied to the enclave - i.e., the public code that is loaded and attested to before the enclave receives the confidential code. This type of analysis is referred throughout the paper as “open world” analysis where no prior information about the target binary is known. In contrast, in a more powerful “closed world” analysis the attacker has a higher degree of prior information, e.g., tries to fingerprint specific versions of libraries that they know were included in the target software. We perform an open-world code leakage evaluation on native execution from Intel SGX and AMD SEV TEEs (x86 ISA) and IR execution with W ASM runtimes. In our evalu- ation, we single-step the enclaves by controlling interrupts and recording various side-channel measurements for each instruction. This allows building a trace of the execution of the victim enclave at the instruction granularity in an attempt to identify individual IR instructions or instruction sequences. Findings. Our results show that native execution is largely robust to even the most sophisticated side-channel attacks and leaks limited information about individual instructions. This result is based on the fact that in code leakage attacks the attacker can differentiate and classify two instructions only if they differ in their metadata. However, by computing the metadata of x86 instructions across several microar- chitectures, we find the information present insufficient to perform any meaningful instruction recovery. Thus, even an ideal attacker able to accurately observe the microar- chitectural state would have a high uncertainty about which instruction was executed. As we discuss in the paper, this does not mean that a native execution system cannot be attacked, it only means that if the attacker has no prior information about the instruction distribution a code leakage attack is not feasible. IR execution, however, has shown to be highly vulnera- ble to our side-channel analysis on two tested W ASM run- times: WAMR [19], an interpreter developed by a consortium of companies under the Bytecode Alliance, and wasmi [20], an independently developed lightweight interpreter. We suc- cessfully leaked more than 45% of the secret instructions with 100% confidence from a synthetic C program running various math and cryptographic functions and from a chess engine written in Rust [21]. Collectively, we successfully extracted over 1 billion W ASM instructions from both code bases, albeit not all with 100% confidence. This is possible because we are able to leak around 80% of the instructions in the W ASM instruction set architecture (ISA) with 100% confidence. This level of confidence is obtained from just observing one run of the victim enclave. These results are consistent with the expected side- channel leakage. Each IR instruction is represented by sev- eral native instructions. To identify an IR instruction, the attacker can therefore rely on a much longer side channel trace than when it tries to identify an individual native in- struction. Therefore, it is clear that IR execution is generally more vulnerable to code leakage than native execution. Our results show that in the case of IR execution, such leakage is also practical, which raises questions about the security guarantees of any IR execution in TEEs. Contributions. We summarize our contributions as follows: • To our knowledge, this is the first study to investigate and bring forth the challenges in providing code con- fidentiality in TEEs. • We generalize system designs aiming to provide code confidentiality in TEEs into two - native execution and IR execution- and develop a methodology to quantify and compare their code leakage. • We analyze instruction leakage in both systems on various microarchitectures supporting TEEs from Intel and AMD. Our evaluation reveals that native execution leaks significantly less than IR execution. We also show that IR execution greatly amplifies any leakage from native execution and allows us to extract most of the confidential instructions from a single execution . • To demonstrate the practicality of these findings in IR execution, we develop an end-to-end instruction ex- traction attack against WAMR and wasmi, two W ASM runtime running on Intel SGX. We responsibly dis- closed our findings to the affected vendors (cf. Ap- pendix A). 2. System and Attacker Model We consider a setting in which computation is out- sourced while needing to safeguard the confidentiality of 4126"
+      },
+      {
+        "source": "selected",
+        "value": "Trusted Execution Environments (TEEs) have been proposed as a solution to protect code confidentiality in scenarios where computation is outsourced to an untrusted operator. We study the resilience of such solutions to side-channel attacks in two commonly deployed scenarios: when the confidential code is a native binary that is shipped and executed within a TEE and when the confidential code is an intermediate representation (IR) executed on top of a runtime within a TEE. We show that executing IR code such as WASM bytecode on a runtime executing in a TEE leaks most IR instructions with high accuracy and therefore reveals the confidential code. Contrary to IR execution, native execution is much less susceptible to leakage and largely resists even the most powerful sidechannel attacks. We evaluate native execution leakage in Intel SGX and AMD SEV and experimentally demonstrate end-toend instruction extraction on Intel SGX, with WASM bytecode as IR executed within two popular WASM runtimes: WAMR and wasmi. Our experiments show that IR code leakage from such systems is practical and therefore question the security claims of several commercial solutions which rely on TEEs+WASM for code confidentiality. 4125 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ivan Puddu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, ETH Zurich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Moritz Schneider",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, ETH Zurich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Daniele Lain",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, ETH Zurich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Stefano Boschetto",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, ETH Zurich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Srdjan Čapkun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science, ETH Zurich"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ivan Puddu",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science ETH Zurich"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Moritz Schneider",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science ETH Zurich"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Daniele Lain",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science ETH Zurich"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Stefano Boschetto",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science ETH Zurich"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 90,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "On (the Lack of) Code Confidentiality in Trusted Execution Environments",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ivan Puddu",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Moritz Schneider",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Daniele Lain",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Stefano Boschetto",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Srdjan Capkun",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

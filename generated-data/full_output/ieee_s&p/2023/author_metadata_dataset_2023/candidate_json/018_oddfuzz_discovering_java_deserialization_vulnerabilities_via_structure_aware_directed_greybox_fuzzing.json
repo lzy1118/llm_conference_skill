@@ -1,0 +1,440 @@
+{
+  "paper_id": "018_oddfuzz_discovering_java_deserialization_vulnerabilities_via_structure_aware_directed_greybox_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "ODDFUZZ: Discovering Java Deserialization Vulnerabilities via Structure-Aware Directed Greybox Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "ODDFUZZ: Discovering Java Deserialization Vulnerabilities via Structure-Aware Directed Greybox Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Java deserialization vulnerability is a severe threat in practice. Researchers have proposed static analysis solutions to locate candidate vulnerabilities and fuzzing solutions to generate proof-of-concept (PoC) serialized objects to trigger them. However, existing solutions have limited effectiveness and efficiency. In this paper, we propose a novel hybrid solution ODDFUZZ to efficiently discover Java deserialization vulnerabilities. First, ODDFUZZ performs lightweight static taint analysis to identify candidate gadget chains that may cause deserialization vulnerabilities. In this step, ODDFUZZ tries to locate all candidates and avoid false negatives. Then, ODDFUZZ performs directed greybox fuzzing (DGF) to explore those candidates and generate PoC testcases to mitigate false positives. Specifically, ODDFUZZ applies a structure-aware seed generation method to guarantee the validity of the testcases, and adopts a novel hybrid feedback and a step-forward strategy to guide the directed fuzzing. We implemented a prototype of ODDFUZZ and evaluated it on the popular Java deserialization repository ysoserial. Results show that, ODDFUZZ could discover 16 out of 34 known gadget chains, while two state-of-the-art baselines only identify three of them. In addition, we evaluated ODDFUZZ on real-world applications including Oracle WebLogic Server, Apache Dubbo, Sonatype Nexus, and protostuff, and found six previously unreported exploitable gadget chains with five CVEs assigned. 2726 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Java deserialization vulnerability is a severe threat in practice. Researchers have proposed static analysis solutions to locate candidate vulnerabilities and fuzzing solutions to generate proof-of-concept (PoC) serialized objects to trigger them. How- ever, existing solutions have limited effectiveness and efficiency. In this paper, we propose a novel hybrid solution ODDF UZZ to efficiently discover Java deserialization vulnerabilities. First, ODDF UZZ performs lightweight static taint analysis to identify candidate gadget chains that may cause deserialization vulner- abilities. In this step, ODDF UZZ tries to locate all candidates and avoid false negatives. Then, ODDF UZZ performs directed greybox fuzzing (DGF) to explore those candidates and generate PoC testcases to mitigate false positives. Specifically, ODDF UZZ applies a structure-aware seed generation method to guarantee the validity of the testcases, and adopts a novel hybrid feedback and a step-forward strategy to guide the directed fuzzing. We implemented a prototype of ODDF UZZ and evaluated it on the popular Java deserialization repository ysoserial. Results show that, ODDF UZZ could discover 16 out of 34 known gadget chains, while two state-of-the-art baselines only identify three of them. In addition, we evaluated ODDF UZZ on real-world ap- plications including Oracle WebLogic Server , Apache Dubbo , Sonatype Nexus , and protostuff, and found six previously unreported exploitable gadget chains with five CVEs assigned. I. I NTRODUCTION The serialization mechanism [ 1], which is supported by mainstream programming languages like Java, JavaScript, PHP, and .NET, enables an application to convert an object to a stream of bytes for cross-process or cross-platform data transmission and persistence storage [ 2]. The counterpart of serialization is deserialization, which reconstructs an object from a serialized byte stream. This deserialization process is dynamic, as different objects lead to polymorphic runtime behaviors. Advanced language features (e.g., Java reflection [3]) make the process even more dynamic. This process is also open, i.e., crafted serialized objects may be injected by adversaries, which breaks the traditional trust boundary of inter-process data transmission and introduces attack surfaces. Applications that unsafely deserialize incoming serialized objects would be abused to invoke a series of methods on the classpath, named gadget chains , and eventually hijack security-sensitive code (e.g., Method.invoke()) or cause other consequences (e.g., access control bypass) [ 4], [5]. Such open dynamic deserialization (ODD) vulnerabilities are prevalent and devastating. The past few years have seen a proliferation of deserialization attacks in famous Java applications. For example, a recent zero-day vulnerability (named Spring4Shell [6]) discovered in the Spring Framework [7] allows an attacker to send a specially crafted HTTP request to bypass protections in the library's HTTP request parser, leading to remote code execution (RCE). Due to the dominance of Spring framework in the Java ecosystem, a large number of applications could potentially be impacted. A limited number of tools [ 8]-[13] have been proposed to discover ODD vulnerabilities in Java applications. The root cause of ODD vulnerabilities is that, the deserialized objects can reach (in terms of control flow) and affect (in terms of data flow) the sensitive code (sinks) of target applications. Therefore, a straightforward way to discover ODD vulnera- bilities is static taint analysis, as GadgetInspector [ 12] does. However, such a purely static solution may suffer precision issues due to the limited support for Java deserialization- related features [ 2], [14], resulting in both high false-negative and high false-positive rates. Furthermore, it requires manual inspection of the reports, which is time-consuming and error- prone. To alleviate this problem, SerHybrid [ 13] adopts a hybrid analysis solution, which analyzes the heap access paths to find source objects that affect security-sensitive call sites, and utilizes fuzzing [ 15], [ 16] to generate source injection objects to verify whether the sinks are reachable. However, these solutions in general have limited effective- ness and efficiency due to three challenges. First, existing static analysis solutions struggle to make trade-offs between precision and recall. Due to the runtime polymorphism of Java language, any available overridden method (gadget) on the application's classpath may be exploited to construct gadget chains. Given that blindly enumerating all possible gadget chains will inevitably suffer from the path explosion problem, existing solutions often employ taint analysis [ 17] to prune infeasible gadget chains. However, they either are prone to precision issues [ 12], or may not work due to the huge computation space caused by the prohibitive number of can- didate gadget chains [ 18]. Second, existing fuzzing solutions are ineffective at generating testcases (i.e., injection objects) to reach sinks. Note that, the injection objects may have a multilevel class hierarchy and their properties should satisfy certain control-flow or data-flow constraints. Fuzzing solutions 2726 DOI 10.1109/SP46215.2023.00177 without prior knowledge about such a complex nested form of structures are ineffective at generating qualified objects. Third, existing fuzzing solutions are inefficient at generating testcases to reach sinks. They are coverage-guided (i.e., trying to cover more code) rather than target-directed (i.e., trying to reach specific code sooner), thus wasting too much energy on program paths that will not reach sinks. In summary, Java is one of the most popular language suffering devastating ODD vulnerabilities [19], but there are few solutions to discover Java ODD vulnerabilities while existing solutions have limited efficiency and effectiveness. To address these challenges, we propose a novel hybrid solution ODDF UZZ to discover ODD vulnerabilities for Java applications. In particular, ODDF UZZ performs a lightweight taint analysis, which makes a trade-off between precision and recall when handling Java runtime polymorphism, to identify possible candidate gadgets chains. Then, ODDF UZZ models the data constraints of such gadget chains as a tree and utilizes it to perform structure-aware fuzzing. Finally, ODDF UZZ adopts a novel directed fuzzing solution driven by a step- forward mutation strategy and a hybrid feedback, to reach candidate vulnerabilities rapidly. We implemented ODDF UZZ based on a popular Java fuzzing framework JQF [20] and evaluated it on ysoserial [8] which is a famous Java deserialization repository with 34 known gadget chains. As the evaluation results show, ODD- FUZZ can identify 16 exploitable gadget chains without false positives, while two state-of-the-art solutions GadgetInspector and SerHybrid only respectively found three and two of them. ODDF UZZ also identifies six previously unknown exploitable gadget chains in four popular Java applications. We have reported these vulnerabilities to the vendors and are working with them on fixing these vulnerabilities. In total, five of these six vulnerabilities have been assigned with new CVEs. In summary, this paper makes the following contributions: • We propose a novel solution to Java ODD vulnerability discovery, i.e., ODDF UZZ, which adopts a lightweight taint analysis to identify as many gadget chains as possible and a directed fuzzing solution to validate true positive chains. • We propose a step-forward and a structure-aware scheme to efficiently guide directed fuzzing towards sensitive sinks. • We discovered and responsibly report six previously un- known exploitable gadget chains (i.e., ODD vulnerabilities). • We will open source our tool ODDF UZZ 1 to facilitate further research. II. B ACKGROUND A. Open Dynamic Deserialization Open Dynamic Deserialization (ODD), also known as Ob- ject Injection Vulnerabilities (OIVs) or insecure deserializa- tion [21], refers to a security-critical bug that allows an attacker to manipulate serialized objects to inject harmful data into the application code. This insecure deserialization behavior enables diverse attacks, including denial of service 1https://github.com/ODDFuzz/ODDFuzz 漏 洞 数 据 采 集 潜 在 调 用 链 挖 掘 模 糊 策 略 学 习 漏 洞 调 用 链 自 动 挖 掘 与 验 证 JAVA基准漏洞库 开源漏洞库 漏洞利用POC 漏洞项目代码 漏洞调用链 静态分析 构建序列化感 知的代码属性 图SCPG 危险调用库 参数是否可控 危险调用检查 否 调用链构建 是 种子池 程序执行 入口点选择与 种子初始化 种子质量评 估与选择 种子变异 是否触发 已知利用否 是 模糊测试终止 构建序列化感 知的代码属性 图SCPG 危险调用检查 调用链挖掘 模糊决策模型 漏洞调用链 静态分析 图搜索图搜索 目标程序 目标程序 静态分析静态分析 图搜索 目标程序 静态分析 策 略 学 习 模 糊 测 试 模糊测试模糊测试 测试用例序列测试用例序列 模糊策略模糊策略 目标程序 漏洞程序 漏洞程序 反序列化调用链验证 入口点/魔术方法 终点/危险方法 参数依赖 别名依赖 方法调用正常方法 入口点/魔术方法 终点/危险方法 参数依赖 别名依赖 方法调用正常方法 入口点/魔术方法 终点/危险方法 参数依赖 别名依赖 方法调用正常方法 序列化感知的代码属性图SCPG序列化感知的代码属性图SCPG 类关系图 方法别名图 方法调用图 类关系图 方法别名图 方法调用图 类关系图 方法别名图 方法调用图 种子调度 强化学习引导的模糊测试 决策模型构建 模糊奖励计算 种子簇 覆盖率高的种子 Object Generation Dynamic Execution 调 用 链 验 证 调 用 链 挖 掘 属 性 图 构 建 待测项目 反序列化感知 的方法属性图 配置文件 静态分析 图数据库 方法别名图 方法调用图 定制查询脚本 可疑调用链 利用对象生成漏洞调用链 动态执行属性验证 调 用 链 验 证 调 用 链 挖 掘 属 性 图 构 建 待测项目 反序列化感知 的方法属性图 配置文件 静态分析 图数据库 方法别名图 方法调用图 定制查询脚本 可疑调用链 利用对象生成漏洞调用链 动态执行属性验证 I1 : InvokerTransformer iMethodName = \"MethodName\" iParamTypes = null iArgs = null I1 : InvokerTransformer iMethodName = \"MethodName\" iParamTypes = null iArgs = null P1: PriorityQueue queue = [obj1, obj2] comparator = T1 P1: PriorityQueue queue = [obj1, obj2] comparator = T1 T1 : TransformingComparator transformer = I1 T1 : TransformingComparator transformer = I1 I1 : InvokerTransformer iMethodName = \"MethodName\" iParamTypes = null iArgs = null P1: PriorityQueue queue = [obj1, obj2] comparator = T1 T1 : TransformingComparator transformer = I1 Exploitable Gadget Chains Taint Analysis Input Generator Fuzzer Gadget Chains Structure Hybrid Feedback Step-forward Mutation Object Invoker Transformer PriorityQueue Transforming Comparator Extractor Comparator Instantiate Transformer <input> <comparator> <queue> <transformer> <comparator> Object Invoker Transformer PriorityQueue Transforming Comparator Extractor Comparator Instantiate Transformer <input> <comparator> <queue> <transformer> <comparator> Object Invoker Transformer PriorityQueue Transforming Comparator Extractor Comparator Instantiate Transformer <input> <comparator> <queue> <transformer> <comparator> method a method b ...method a method b ... 1 match (source: Method {NAME:\"readObject\"}) 2 match (sink: Method {NAME:\"invoke\"}) 3 call apoc.algo.allSimplePaths(sink, source, \"<Call|Overriding>\") yield path 4 return path 1 /*com.sun.rowset.JdbcRowSetImpl.class*/ 2 public DatabaseMetaData getDatabaseMetaData() throws SQLException { 3 Connection var1 = this.connect(); 4 return var1.getgetMetaData();} 5 private Connection connect() throws SQLException { // ... 6 try { 7 InitialContext var1 = new InitialContext(); 8 DataSource var2 = (DataSource)var1.lookup(this.getDataSourceName()); 9 // ... 10 } 11 /*javax.naming.InitialContext.class*/ 12 public Object lookup(String name) throws NamingException { 13 return getURLOrDefaultInitCtx(name).lookup(name);} collections4.functors. InvokerTransformerjava.util.PriorityQueuejava.util.PriorityQueue collections4.comparators. TransformingComparator heapify() siftDownUsing Comparator() readObject() Source Method.invoke() Sink siftdown() compare() transform()collections4.functors. InvokerTransformerjava.util.PriorityQueue collections4.comparators. TransformingComparator heapify() siftDownUsing Comparator() readObject() Source Method.invoke() Sink siftdown() compare() transform() Object[] queue Comparator comparator ··· Field Object[] queue Comparator comparator ··· Field util.comparator. ExtractorComparator util.extractor. ChainedExtractor internal.querying. FilterExtractor heapify() siftDownUsing Comparator() readObject() Source siftdown() compare() extract() extract() java.util.PriorityQueue descriptors.Method AttributeAccessor getAttributeValu eFromObject() getAttributeValu"
+      },
+      {
+        "source": "selected",
+        "value": "Java deserialization vulnerability is a severe threat in practice. Researchers have proposed static analysis solutions to locate candidate vulnerabilities and fuzzing solutions to generate proof-of-concept (PoC) serialized objects to trigger them. However, existing solutions have limited effectiveness and efficiency. In this paper, we propose a novel hybrid solution ODDFUZZ to efficiently discover Java deserialization vulnerabilities. First, ODDFUZZ performs lightweight static taint analysis to identify candidate gadget chains that may cause deserialization vulnerabilities. In this step, ODDFUZZ tries to locate all candidates and avoid false negatives. Then, ODDFUZZ performs directed greybox fuzzing (DGF) to explore those candidates and generate PoC testcases to mitigate false positives. Specifically, ODDFUZZ applies a structure-aware seed generation method to guarantee the validity of the testcases, and adopts a novel hybrid feedback and a step-forward strategy to guide the directed fuzzing. We implemented a prototype of ODDFUZZ and evaluated it on the popular Java deserialization repository ysoserial. Results show that, ODDFUZZ could discover 16 out of 34 known gadget chains, while two state-of-the-art baselines only identify three of them. In addition, we evaluated ODDFUZZ on real-world applications including Oracle WebLogic Server, Apache Dubbo, Sonatype Nexus, and protostuff, and found six previously unreported exploitable gadget chains with five CVEs assigned. 2726 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sicong Cao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Biao He",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ant Group, Tsinghua University East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xiaobing Sun",
+          "email": "xbsun@yzu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yu Ouyang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ant Group, Tsinghua University East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Chao Zhang",
+          "email": "chaoz@tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Xiaoxue Wu",
+          "email": "xiaoxuewu@yzu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Ting Su",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Lili Bo",
+          "email": "lilibo@yzu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Bin Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Chuanlei Ma",
+          "email": "chuanlei.mchl@antgroup.com",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University",
+            "Ant Group, Tsinghua University East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Jiajia Li",
+          "email": "jiajia.lijj@antgroup.com",
+          "orcid": "",
+          "affiliations": [
+            "Ant Group, Tsinghua University East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "Tao Wei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ant Group, Tsinghua University East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sicong Cao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Biao He",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Xiaobing Sun",
+          "email": "xbsun@yzu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yu Ouyang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Chao Zhang",
+          "email": "chaoz@tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Xiaoxue Wu",
+          "email": "xiaoxuewu@yzu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Ting Su",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Lili Bo",
+          "email": "lilibo@yzu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Bin Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Chuanlei Ma",
+          "email": "chuanlei.mchl@antgroup.com",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Jiajia Li",
+          "email": "jiajia.lijj@antgroup.com",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 11,
+          "name": "Tao Wei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Yangzhou University ‡Ant Group §Tsinghua University ¶East China Normal University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 128,
+      "author_count": 12,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 11,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "ODDFUZZ: Discovering Java Deserialization Vulnerabilities via Structure-Aware Directed Greybox Fuzzing",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sicong Cao",
+          "affiliations": [
+            "Yangzhou University, China"
+          ]
+        },
+        {
+          "name": "Biao He",
+          "affiliations": [
+            "Ant Group, China"
+          ]
+        },
+        {
+          "name": "Xiaobing Sun",
+          "affiliations": [
+            "Yangzhou University, China"
+          ]
+        },
+        {
+          "name": "Yu Ouyang",
+          "affiliations": [
+            "Ant Group, China"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "Xiaoxue Wu",
+          "affiliations": [
+            "Yangzhou University, China"
+          ]
+        },
+        {
+          "name": "Ting Su",
+          "affiliations": [
+            "East China Normal University"
+          ]
+        },
+        {
+          "name": "Lili Bo",
+          "affiliations": [
+            "Yangzhou University, China"
+          ]
+        },
+        {
+          "name": "Bin Li",
+          "affiliations": [
+            "Yangzhou University, China"
+          ]
+        },
+        {
+          "name": "Chuanlei Ma",
+          "affiliations": [
+            "Ant Group, China"
+          ]
+        },
+        {
+          "name": "Jiajia Li",
+          "affiliations": [
+            "Ant Group, China"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

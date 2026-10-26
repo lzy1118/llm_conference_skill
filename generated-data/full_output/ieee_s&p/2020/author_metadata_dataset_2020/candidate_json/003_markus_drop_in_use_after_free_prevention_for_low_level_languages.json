@@ -1,0 +1,164 @@
+{
+  "paper_id": "003_markus_drop_in_use_after_free_prevention_for_low_level_languages",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "MarkUs: Drop-in use-after-free prevention for low-level languages"
+      },
+      {
+        "source": "selected",
+        "value": "MarkUs: Drop-in use-after-free prevention for low-level languages"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Use-after-free vulnerabilities have plagued software written in low-level languages, such as C and C++, becoming one of the most frequent classes of exploited software bugs. Attackers identify code paths where data is manually freed by the programmer, but later incorrectly reused, and take advantage by reallocating the data to themselves. They then alter the data behind the program's back, using the erroneous reuse to gain control of the application and, potentially, the system. While a variety of techniques have been developed to deal with these vulnerabilities, they often have unacceptably high performance or memory overheads, especially in the worst case. We have designed MarkUs, a memory allocator that prevents this form of attack at low overhead, sufficient for deployment in real software, even under allocation-and memory-intensive scenarios. We prevent use-after-free attacks by quarantining data freed by the programmer and forbidding its reallocation until we are sure that there are no dangling pointers targeting it. To identify these we traverse live-objects accessible from registers and memory, marking those we encounter, to check whether quarantined data is accessible from any currently allocated location. Unlike garbage collection, which is unsafe in C and C++, MarkUs ensures safety by only freeing data that is both quarantined by the programmer and has no identifiable dangling pointers. The information provided by the programmer's allocations and frees further allows us to optimise the process by freeing physical addresses early for large objects, specialising analysis for small objects, and only performing marking when sufficient data is in quarantine. Using MarkUs, we reduce the overheads of temporal safety in low-level languages to 1.1× on average for SPEC CPU2006, with a maximum slowdown of only 2×, vastly improving upon the state-of-the-art."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Use-after-free vulnerabilities have plagued software written in low-level languages, such as C and C++, becoming one of the most frequent classes of exploited software bugs. Attackers identify code paths where data is manually freed by the programmer, but later incorrectly reused, and take advantage by reallocating the data to themselves. They then alter the data behind the program's back, using the erroneous reuse to gain control of the application and, potentially, the system. While a variety of techniques have been developed to deal with these vulnerabilities, they often have unacceptably high performance or memory overheads, especially in the worst case. We have designed MarkUs, a memory allocator that prevents this form of attack at low overhead, sufficient for deployment in real software, even under allocation- and memory-intensive scenarios. We prevent use-after-free attacks by quarantining data freed by the programmer and forbidding its reallocation until we are sure that there are no dangling pointers targeting it. To identify these we traverse live-objects accessible from registers and memory, marking those we encounter, to check whether quarantined data is accessible from any currently allocated location. Unlike garbage collection, which is unsafe in C and C++, MarkUs ensures safety by only freeing data that is both quarantined by the programmer and has no identifiable dan- gling pointers. The information provided by the programmer's allocations and frees further allows us to optimise the process by freeing physical addresses early for large objects, specialising analysis for small objects, and only performing marking when sufficient data is in quarantine. Using MarkUs, we reduce the overheads of temporal safety in low-level languages to 1.1× on average for SPEC CPU2006, with a maximum slowdown of only 2×, vastly improving upon the state-of-the-art. I. I NTRODUCTION The lack of temporal safety in low-level languages, such as C and C++, has become a critical cause of insecurity in modern systems. Large, security-critical applications, such as web browsers [1], [2] and operating system kernels [3], are increasingly plagued with use-after-free vulnerabilities. Here, data is mistakenly freed by a process, reallocated, and altered by an attacker with control of data input, then incorrectly reused by the process. These allow the attacker to alter control flow, and potentially gain kernel-level access. A variety of techniques have been proposed to mitigate use-after-free vulnerabilities in C and C++. For example, all pointer locations can be logged and then nullified when their data is freed [1], [4], [5], objects allocated with their own page-table entries [6], [7], or probabilistic reuse delays employed [8]-[10]. However, these tend to exhibit both high average- and worst-case overheads in terms of performance and memory utilisation, or have limited coverage. We take a different approach with MarkUs, by storing programmer-freed object locations in quarantine until we can demonstrate that no dangling pointers exist to them. We do this by performing a live-object traversal of accessible memory regions, similar to but much more efficient than the behaviour of a garbage collector [11], to mark accessible heap objects. Since only objects freed by the programmer can be reallocated, language safety is maintained, and since objects with dangling pointers cannot be reallocated, programmer frees do not need to be relied on for security. This allows use-after-free attack prevention at low overhead even in complex cases, while maintaining compatibility with real-world applications. We can use the information provided by the programmer's untrusted manual frees to reduce the cost of the live-object traversal. We can reallocate the physical pages used by large objects as soon as they are freed, using the unmapped virtual addresses as protection, to reduce the frequency of marking procedures without increasing memory utilisation. In addition, because we know the amount of memory we can potentially reclaim from a marking process, we can eliminate needless memory traversals, reduce marking frequency by only attempt- ing to reclaim objects when enough can be freed, and, further, trade off memory usage for performance. MarkUs gives performance overhead and memory usage that is low enough for real-world use, for all applications written in low-level languages. For example, for SPEC CPU2006, we achieve an average slowdown of just 1.1× (2× worst case), with average memory overhead of 1.15× (2× worse case), both of which are lower than any other competing technique. Our main contributions are as follows: • The realisation that free() can be treated as a hint for reallocating memory but the actual reallocation can be decoupled for security. • Use of a marking procedure to verify programmer deal- locations and permit reallocation. • Use of a quarantine list to store programmer-freed data until it has been verified as safe to reallocate. • Page-table optimisations to immediately free physical address space for large deallocations, while still ensuring high performance for small deallocations. • Optimisations using knowledge of the volume of data freed, to vastly reduce marking-procedure overheads, and trade off memory and performance overhead. • Evaluation on a variety of real-world and allocation- intensive workloads, including multithreaded setups and comparison against state-of-the-art techniques. 578 DOI 10.1109/SP40000.2020.00058 1 Object x = new Object(); 2 delete(x); 3 ... 4 // x's vtable replaced by the attacker, who is 5 // reallocated x's address space with y. 6 Object y = new Object(user_input); 7 ... 8 // Control diverted to attacker's pointer, in 9 // the place of the original delete function. 10 delete(x); Fig. 1: An example use-after-free attack, in C++. The attacker is allocated data that is still pointed to by x, and can manipulate the data to redirect the old pointer to a chosen function rather than the original object's delete call. (a) In an object's first deletion, the call to delete is correctly looked up in the vtable of the object. (b) Once the programmer has deleted the object, the space it contains is free to be reallocated. However, in this case the pointer still points to the deleted object, and so can still be derefenced and used. (c) As the memory object has been freed, this allows the attacker to reallocate it and store their own data in the same location, overwriting the vtable with their own data. A subsequent, incorrect, call to delete, which often exists due to programmer bugs, via the now-dangling pointer will then be redirected to the attacker's choice of code, allowing them to hijack the application. Fig. 2: The example use-after-free attack shown in figure 1, in terms of allocated data. II. B ACKGROUND Here we describe use-after-free attacks, and solutions in higher-level languages, before presenting our threat model. A. Use-After-Free Attacks In a use-after-free attack [12], an object is freed prematurely before being incorrectly reused via a dangling pointer. By this point an attacker may have changed its contents to point to their own data, by forcing the allocator to reallocate to the attacker the region targeted by the dangling pointer. Example code is given in figure 1, and the associated memory behavior is shown in figure 2. This is a particularly damaging vulnerability due to its common occurrence in large codebases, and high level of exploitability. For example, as of 2013 it was the most widespread memory vulnerability in Chromium [1]. Operating-system kernels and browsers are particularly af- fected by use-after-free attacks [2], [3], as high-value targets written in manually memory-managed languages. This is a memory-safety violation: in C/C++, the use of freed memory, or memory accessed outside the bounds of data structures, is considered undefined behavior. Specifically, use- after-free attacks come under the category of temporal-safety violations, where something is accessed after a point where it is no longer allowed. This contrasts with spatial violations, such as buffer overflows [13]. An attacker can utilise control over the data stored in a still-accessible object in various ways. Particularly useful methods include double-delete attacks, where a C++-style delete virtual function pointer is overwritten by an attacker before an incorrect second free, or, more generally, a function pointer is overwritten in an object before it is incorrectly called after a free. This allows attackers to divert the program to their own choice of code within a process's address space. B. Garbage Collection Garbage collection [14] solves the problem for high-level languages (at least excluding their own runtimes, typically written in lower-level languages), in that data is only freed when no pointers to it are available. This means dangling pointers do not exist, and so use-after-free attacks cannot occur. Still, often a performance hit is observed, and as such safe techniques for manual deallocation have been added even in languages where garbage collection is safe [15]. In C and C++ the picture is somewhat more complex. In most runtimes on most architectures we cannot distinguish pointers from other data, and indeed the two can be converted between each other. This means we are limited to conservative garbage collection [11], where we must assume all data may be a pointer, creating the chance of accidental references. This is reasonable for small objects, as the chance of a given object being coincidentally pointed to is vanishingly small, and the cost of each failed free is very low. However, larger objects cause issues, as the probability of a false mark and the memory-usage cost of this both increase. Some conservative garbage collectors [16] offer the ability to manually free objects to prevent such leaks, in addition to automatically attempting to clear objects by garbage collection, but this opens up the potential for use-after-free attacks. Another problem for garbage collection in C and C++ is that it is not typically safe. Pointers can be hidden with arbitrary arithmetic, such as in XOR lists, meaning that data that should be live is incorrectly deleted [17]. Compiler optimisations can also hide pointers [18], which means that many high- performance applications do not run correctly in the presence of a garbage collector. MarkUs is not a garbage collector, and does not use garbage collection. Still, the marking procedure of a typical garbage collector performs the same live-object traversal necessary to detect dangling pointers to quarantined objects, allowing us to implement similar code to verify whether the manual frees 579"
+      },
+      {
+        "source": "selected",
+        "value": "Use-after-free vulnerabilities have plagued software written in low-level languages, such as C and C++, becoming one of the most frequent classes of exploited software bugs. Attackers identify code paths where data is manually freed by the programmer, but later incorrectly reused, and take advantage by reallocating the data to themselves. They then alter the data behind the program's back, using the erroneous reuse to gain control of the application and, potentially, the system. While a variety of techniques have been developed to deal with these vulnerabilities, they often have unacceptably high performance or memory overheads, especially in the worst case. We have designed MarkUs, a memory allocator that prevents this form of attack at low overhead, sufficient for deployment in real software, even under allocation-and memory-intensive scenarios. We prevent use-after-free attacks by quarantining data freed by the programmer and forbidding its reallocation until we are sure that there are no dangling pointers targeting it. To identify these we traverse live-objects accessible from registers and memory, marking those we encounter, to check whether quarantined data is accessible from any currently allocated location. Unlike garbage collection, which is unsafe in C and C++, MarkUs ensures safety by only freeing data that is both quarantined by the programmer and has no identifiable dangling pointers. The information provided by the programmer's allocations and frees further allows us to optimise the process by freeing physical addresses early for large objects, specialising analysis for small objects, and only performing marking when sufficient data is in quarantine. Using MarkUs, we reduce the overheads of temporal safety in low-level languages to 1.1× on average for SPEC CPU2006, with a maximum slowdown of only 2×, vastly improving upon the state-of-the-art."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sam Ainsworth",
+          "email": "sam.ainsworth@cl.cam.ac.uk",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge, UK"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Timothy MJones",
+          "email": "timothy.jones@cl.cam.ac.uk",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge, UK"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sam Ainsworth",
+          "email": "sam.ainsworth@cl.cam.ac.uk",
+          "affiliations": [
+            "University of Cambridge, UK"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Timothy M. Jones",
+          "email": "timothy.jones@cl.cam.ac.uk",
+          "affiliations": [
+            "University of Cambridge, UK"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 7,
+      "author_count": 2,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "MarkUs: Drop-in use-after-free prevention for low-level languages",
+      "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sam Ainsworth",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Timothy Jones",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sam Ainsworth",
+      "field": "email",
+      "restored_value": "sam.ainsworth@cl.cam.ac.uk",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Timothy M. Jones",
+      "field": "email",
+      "restored_value": "timothy.jones@cl.cam.ac.uk",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 2,
+      "country_values_restored": 2,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

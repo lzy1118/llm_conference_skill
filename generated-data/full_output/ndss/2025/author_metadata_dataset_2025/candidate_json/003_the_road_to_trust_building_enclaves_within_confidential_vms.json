@@ -1,0 +1,376 @@
+{
+  "paper_id": "003_the_road_to_trust_building_enclaves_within_confidential_vms",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "The Road to Trust: Building Enclaves within Confidential VMs"
+      },
+      {
+        "source": "selected",
+        "value": "The Road to Trust: Building Enclaves within Confidential VMs"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Integrity is critical for maintaining system security, as it ensures that only genuine software is loaded onto a machine. Although confidential virtual machines (CVMs) function within isolated environments separate from the host, it is important to recognize that users still encounter challenges in maintaining control over the integrity of the code running within the trusted execution environments (TEEs). The presence of a sophisticated operating system (OS) raises the possibility of dynamically creating and executing any code, making user applications within TEEs vulnerable to interference or tampering if the guest OS is compromised. To address this issue, this paper introduces Nest-edSGX, a framework which leverages virtual machine privilege level (VMPL), a recent hardware feature available on AMD SEV-SNP to enable the creation of hardware enclaves within the guest VM. Similar to Intel SGX, NestedSGX considers the guest OS untrusted for loading potentially malicious code. It ensures that only trusted and measured code executed within the enclave can be remotely attested. To seamlessly protect existing applications, NestedSGX aims for compatibility with Intel SGX by simulating SGX leaf functions. We have also ported the SGX SDK and the Occlum library OS to NestedSGX, enabling the use of existing SGX toolchains and applications in the system. Performance evaluations show that context switches in NestedSGX take about 32,000-34,000 cycles, approximately 1.9×-2.1× higher than that of Intel SGX. NestedSGX incurs minimal overhead in most real-world applications, with an average overhead below 2% for computation and memory intensive workloads and below 15.68% for I/O intensive workloads."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Integrity is critical for maintaining system security, as it ensures that only genuine software is loaded onto a machine. Although confidential virtual machines (CVMs) function within isolated environments separate from the host, it is important to recognize that users still encounter challenges in maintaining control over the integrity of the code running within the trusted execution environments (TEEs). The presence of a sophisticated operating system (OS) raises the possibility of dynamically creating and executing any code, making user applications within TEEs vulnerable to interference or tampering if the guest OS is compromised. To address this issue, this paper introduces Nest- edSGX, a framework which leverages virtual machine privilege level (VMPL), a recent hardware feature available on AMD SEV- SNP to enable the creation of hardware enclaves within the guest VM. Similar to Intel SGX, NestedSGX considers the guest OS untrusted for loading potentially malicious code. It ensures that only trusted and measured code executed within the enclave can be remotely attested. To seamlessly protect existing applications, NestedSGX aims for compatibility with Intel SGX by simulating SGX leaf functions. We have also ported the SGX SDK and the Occlum library OS to NestedSGX, enabling the use of existing SGX toolchains and applications in the system. Performance evaluations show that context switches in NestedSGX take about 32,000 - 34,000 cycles, approximately 1.9× - 2.1× higher than that of Intel SGX. NestedSGX incurs minimal overhead in most real-world applications, with an average overhead below 2% for computation and memory intensive workloads and below 15.68% for I/O intensive workloads. I. I NTRODUCTION Confidential computing enhances cloud security by allowing tenants to control the trusted components of their workloads. It minimizes the need for trust in hardware, software, and services, while providing strong protection against attacks from other tenants and the cloud provider. This empowers tenants to develop and deploy confidential applications for their most sensitive data. At the core of the confidential computing stack is the trusted execution environment (TEE), which isolates the code and data of a confidential workload from other code running on the system, even at the highest privilege levels. In particular, Intel SGX [5] provides protection for the trusted components of an application, known as enclaves, allowing only measured code to run within the TEEs 1. On the other hand, VM- based TEEs, such as AMD SEV [47], Intel TDX [30], and ARM CCA [4] offer a fully backward-compatible confidential virtual machine (CVM), enabling the execution of existing applications without modifications. However, placing entire VMs within TEEs is generally considered less desirable: a VM image is far more than just a kernel and an application - it includes a large number of system services. It remains uncertain whether it is more secure than running the software on premises or on existing cloud infrastructure. Therefore, an interesting question still remains open for VM-based TEEs: How can users attest and establish trust in applications running within a CVM, given the dynamic nature of building, loading, modification, and execution of arbitrary code within the CVM, if the guest OS might be compromised? A seminal work called vSGX [62] was developed to virtual- ize Intel SGX on AMD SEV , ensuring full binary compatibility and enabling the execution of unmodified SGX programs in CVMs. vSGX adopts a two-VM approach where one VM handles the untrusted application while the other hosts the enclave. However, this emulation of SGX leaf instructions incurs significant overhead, particularly for control flow trans- fers across the boundary of the two VMs (e.g., EENTER and EEXIT). For instance, an empty ECall operation on vSGX takes approximately 1.5ms, which is around 160× slower than on native Intel SGX. This slow context switch severely limits the service throughput achievable within the enclave. In prac- tical scenarios, this limitation becomes a critical performance bottleneck. To illustrate, vSGX is 6× slower than the baseline on the cURL benchmark, and launching a 256 MB size vSGX 1Intel SGXv2 [39] enables dynamic changes to the page attribute and dynamic loading of code, but with strict controls in place. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240385 www.ndss-symposium.org Guest OS VMM NestedSGX App Guest OS VMM AMD SEV/Intel TDX/ARM CCA App Enclave Guest OS VMM Intel SGX App Enclave TrustedTrusted UntrustedUntrustedDisallowedDisallowedAllowedAllowed Fig. 1: Comparison between NestedSGX and other TEEs. NestedSGX offers a layered protection mechanism against both the host VMM and the guest OS within the CVM. enclave takes about 5 minutes. Design. We take a further step in this direction by introducing our system, called NestedSGX. NestedSGX follows a defense- in-depth approach to attesting applications (as depicted in Fig. 1), where both the enclaves and the guest OS run within the same CVM . Specifically, the trusted portion of an applica- tion (i.e., the enclave) is loaded and executed within an isolated environment, separated from the feature-rich OS, similar to the enclave abstraction of Intel SGX. During the loading process, the trusted portion is measured and can be attested to a remote user. The core root of trust for measurement (CRTM) and root of trust for reporting (RTR) rely on a small segment of trusted code, known as the security monitor. This security monitor enforces memory isolation within the CVM, and its integrity is also measured and attested with the assistance of hardware- based TEE. This approach empowers us to dynamically mea- sure and attest the application code, enabling us to bypass the complexities associated with the guest OS. To facilitate the protection of existing applications, NestedSGX prioritizes compatibility with Intel SGX. This involves simulating SGX leaf functions with a trusted SGX emulation layer to manage the entire life cycle of enclaves, including creation, memory management, teardown, and context switches. In more details, our approach leverages the privilege sep- aration offered by AMD SEV-SNP, particularly the virtual machine privilege level (VMPL), to establish isolated guest physical space exclusively occupied by the security monitor and the enclaves. With VMPL, the vCPUs within the CVM are configured to operate at different privilege levels. Each privilege level is associated with specific access permissions to the guest physical memory pages. This capability enables us to assign distinct privilege levels to different software components running within the CVM. Particularly, the security monitor, the SGX emulation layer and the enclave operate at the higher VMPL (e.g., VMPL0), in the kernel mode and user mode respectively. On the other hand, the guest OS and the untrusted part of the application (App) are required to run in the kernel mode and user mode at a lower VMPL (e.g., VMPL1). This design ensures that the guest OS does not have access to the memory allocated for VMPL0. We implemented NestedSGX on top of AMD's Linux Secure VM Service Module (SVSM) framework [16], without necessitating any modifications of the host software, such as KVM. Furthermore, we have successfully ported the Intel SGX SDK [29], the Rust SGX SDK [56] as well as the Occlum library OS [48] to the NestedSGX framework, allowing for smooth integration of existing SGX toolchains and applica- tions. In addition, we have implemented the HotCalls [58] optimization in Occlum, which allows specific OCALLs to be handled asynchronously within the enclave without exiting it. This optimization has led to improved performance for applications running on Occlum without requiring any modifi- cations to their source code. Unlike vSGX, we stress that full binary compatibility with SGX is a non-goal of our paper . We conducted a series of benchmarking tests on commercial AMD SEV-SNP hardware and observed that the cost of world switches is about 1.9× - 2.1× higher than Intel SGX, which is nearly two orders of magnitude faster than vSGX. Moreover, NestedSGX introduces negligible overhead in most real-world applications, with less than 2% overhead for memory and computation-intensive tasks and less than 15.68% overhead for I/O-intensive tasks. Generally, NestedSGX exhibits moderate costs that are comparable to other enclave systems, such as Intel SGX. Consequently, we view it as a promising solution for addressing the critical challenge of performing secure computations within CVMs. Contributions. The contributions are summarized as follows. • Design. We present the design of NestedSGX, incorporat- ing the VMPL feature within AMD SEV-SNP. NestedSGX addresses the challenge of establishing trust for applications while minimizing reliance on the potentially compromised guest OS. • Compatibility with Intel SGX . NestedSGX offers compati- bility with Intel SGX, allowing for similar management of enclaves. It significantly reduces the effort required to port existing applications onto the NestedSGX framework. • Implementations and evaluations . We implemented Nest- edSGX on commercial hardware. The evaluation demon- strates the overhead incurred by NestedSGX is comparable to that of Intel SGX, affirming its efficiency and viability. Roadmap. The rest of the paper is organized as follows. We provide necessary background information about Intel SGX and SEV-SNP, along with the threat model in Sec. II. We present the detailed design of NestedSGX in Sec. III, followed by implementation details in Sec. IV. The security analysis and performance evaluation of NestedSGX are provided in Sec. V and Sec. VI, respectively. We discuss possible extensions and related works of NestedSGX in Sec. VII and Sec. VIII. Sec. IX concludes the paper. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Integrity is critical for maintaining system security, as it ensures that only genuine software is loaded onto a machine. Although confidential virtual machines (CVMs) function within isolated environments separate from the host, it is important to recognize that users still encounter challenges in maintaining control over the integrity of the code running within the trusted execution environments (TEEs). The presence of a sophisticated operating system (OS) raises the possibility of dynamically creating and executing any code, making user applications within TEEs vulnerable to interference or tampering if the guest OS is compromised. To address this issue, this paper introduces Nest-edSGX, a framework which leverages virtual machine privilege level (VMPL), a recent hardware feature available on AMD SEV-SNP to enable the creation of hardware enclaves within the guest VM. Similar to Intel SGX, NestedSGX considers the guest OS untrusted for loading potentially malicious code. It ensures that only trusted and measured code executed within the enclave can be remotely attested. To seamlessly protect existing applications, NestedSGX aims for compatibility with Intel SGX by simulating SGX leaf functions. We have also ported the SGX SDK and the Occlum library OS to NestedSGX, enabling the use of existing SGX toolchains and applications in the system. Performance evaluations show that context switches in NestedSGX take about 32,000-34,000 cycles, approximately 1.9×-2.1× higher than that of Intel SGX. NestedSGX incurs minimal overhead in most real-world applications, with an average overhead below 2% for computation and memory intensive workloads and below 15.68% for I/O intensive workloads."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Wenhao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Linke Song",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Benshan Mei",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Shuang Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Shijun Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Shoumeng Yan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Xiaofeng Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Dan Meng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Rui Hou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Wenhao Wang",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS",
+            "School of Cyber Security, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Linke Song",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS",
+            "School of Cyber Security, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Benshan Mei",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS",
+            "School of Cyber Security, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Shuang Liu",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Shijun Zhao",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Shoumeng Yan",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 6,
+          "name": "XiaoFeng Wang",
+          "email": "",
+          "affiliations": [
+            "Indiana University Bloomington"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Dan Meng",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Rui Hou",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS",
+            "School of Cyber Security, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 90,
+      "author_count": 9,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "The Road to Trust: Building Enclaves within Confidential VMs",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/the-road-to-trust-building-enclaves-within-confidential-vms/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Wenhao Wang",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS"
+          ]
+        },
+        {
+          "name": "Linke Song",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS"
+          ]
+        },
+        {
+          "name": "Benshan Mei",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS"
+          ]
+        },
+        {
+          "name": "Shuang Liu",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "Shijun Zhao",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS"
+          ]
+        },
+        {
+          "name": "Shoumeng Yan",
+          "affiliations": [
+            "Ant Group"
+          ]
+        },
+        {
+          "name": "XiaoFeng Wang",
+          "affiliations": [
+            "Indiana University Bloomington"
+          ]
+        },
+        {
+          "name": "Dan Meng",
+          "affiliations": [
+            "Institute of Information Engineering, CAS"
+          ]
+        },
+        {
+          "name": "Rui Hou",
+          "affiliations": [
+            "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, CAS"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Shuang Liu",
+      "field": "affiliations",
+      "restored_value": [
+        "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Shoumeng Yan",
+      "field": "affiliations",
+      "restored_value": [
+        "Key Laboratory of Cyberspace Security Defense, Institute of Information Engineering, School of Cyber Security, CAS Ant Group Indiana University Bloomington, University of Chinese Academy of Sciences"
+      ],
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

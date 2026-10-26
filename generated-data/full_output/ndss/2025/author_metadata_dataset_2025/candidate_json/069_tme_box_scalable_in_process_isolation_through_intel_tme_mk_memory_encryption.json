@@ -1,0 +1,231 @@
+{
+  "paper_id": "069_tme_box_scalable_in_process_isolation_through_intel_tme_mk_memory_encryption",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "TME-Box: Scalable In-Process Isolation through Intel TME-MK Memory Encryption"
+      },
+      {
+        "source": "selected",
+        "value": "TME-Box: Scalable In-Process Isolation through Intel TME-MK Memory Encryption"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Efficient cloud computing relies on in-process isolation to optimize performance by running workloads within a single process. Without heavyweight process isolation, memory safety errors pose a significant security threat by allowing an adversary to extract or corrupt the private data of other colocated tenants. Existing in-process isolation mechanisms are not suitable for modern cloud requirements, e.g., MPK's 16 protection domains are insufficient to isolate thousands of cloud workers per process. Consequently, cloud service providers have a strong need for lightweight in-process isolation on commodity x86 machines. This paper presents TME-Box, a novel isolation technique that enables fine-grained and scalable sandboxing on commodity x86 CPUs. By repurposing Intel TME-MK, which is intended for the encryption of virtual machines, TME-Box offers lightweight and efficient in-process isolation. TME-Box enforces that sandboxes use their designated encryption keys for memory interactions through compiler instrumentation. This cryptographic isolation enables fine-grained access control, from single cache lines to full pages, and supports flexible data relocation. In addition, the design of TME-Box allows the efficient isolation of up to 32K concurrent sandboxes. We present a performance-optimized TME-Box prototype, utilizing x86 segment-based addressing, that showcases geomean performance overheads of 5.2 % for data isolation and 9.7 % for code and data isolation, evaluated with the SPEC CPU2017 benchmark suite."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Efficient cloud computing relies on in-process iso- lation to optimize performance by running workloads within a single process. Without heavy-weight process isolation, memory safety errors pose a significant security threat by allowing an adversary to extract or corrupt the private data of other co- located tenants. Existing in-process isolation mechanisms are not suitable for modern cloud requirements, e.g., MPK's 16 protection domains are insufficient to isolate thousands of cloud workers per process. Consequently, cloud service providers have a strong need for lightweight in-process isolation on commodity x86 machines. This paper presents TME-Box, a novel isolation technique that enables fine-grained and scalable sandboxing on commodity x86 CPUs. By repurposing Intel TME-MK, which is intended for the encryption of virtual machines, TME-Box offers lightweight and efficient in-process isolation. TME-Box enforces that sandboxes use their designated encryption keys for memory interactions through compiler instrumentation. This cryptographic isolation enables fine-grained access control, from single cache lines to full pages, and supports flexible data relocation. In addition, the design of TME-Box allows the efficient isolation of up to 32K concurrent sandboxes. We present a performance-optimized TME-Box prototype, utilizing x86 segment-based addressing, that showcases geomean performance overheads of 5.2 % for data isolation and 9.7 % for code and data isolation, evaluated with the SPEC CPU2017 benchmark suite. I. I NTRODUCTION Cloud computing must be highly optimized for perfor- mance and efficiency, processing requests with the lowest possible latencies. Various techniques and optimizations are implemented at the software and infrastructural level of the cloud architecture. Common optimizations are the exclusion of protection mechanisms, like process isolation, in favor of low start-up times and fast execution for serverless applications in a multi-tenant environment, e.g., function-as-a-service (FaaS) applications [16], [20], [22]. However, omitting heavy-weight protection mechanisms such as process isolation introduces substantial security risks. A single memory safety vulnerabil- ity [54], [82] can result in a full compromise of the entire cloud computing system. Consequently, attackers can compromise other tenant's highly sensitive data. Security vulnerabilities, such as Heartbleed [21] and Cloud- bleed [28], [63], exemplify the severity of this attack surface. In particular, Heartbleed allowed a remote adversary to leak private data (e.g., confidential key material) by exploiting a buffer-overread error due to improper input sanitization triggered via maliciously crafted network packets. Without the strong isolation of memory resources, exploitable memory safety errors enable the leakage or corruption of sensitive process memory, such as private keys or authentication tokens. To address this security threat while preserving the level of optimization, cloud service providers are replacing process iso- lation with in-process sandboxes [17], e.g., by using sandboxed languages like JavaScript [29], to efficiently support a high number of tenants per machine. It is evident that cloud service providers have a strong need for scalable and efficient in- process isolation mechanisms that segregate memory resources of cloud-co-located tenants. Common isolation techniques harden software systems by applying code instrumentation for logical protection with dynamic runtime checks. Software-based fault isola- tion (SFI) [81], [85] is an effective technique that instruments memory and control-flow operations to keep them within pre- defined regions. Language-level isolation relies on partitioning the virtual address space to separate process memory [27], [29]. This procedure enables software sandboxing, effectively restricting access for the sandbox to its assigned memory region. Due to its efficiency, SFI has also been used in practice, as seen in the Google Native Client (NaCl) [73], [89] sandbox. However, SFI can only offer coarse-grained sandboxing by iso- lating predetermined and contiguous memory regions without interleaving. This means that SFI lacks fine-grained, object- level access control and the ability to dynamically manage resources in memory. The efficiency of isolation can be significantly enhanced with hardware support. Hardware-based isolation mechanisms, such as protection keys for user space (PKU) [61], enable the restriction of access to memory at a page granularity. Specifically, memory protection keys (MPK) use a 4-bit protection key located in the page table entries (PTE) to assign and enforce access policies for the respective page. These policies are software-controlled via a processor register, associating two bits for every protection key to dynamically control read and write permissions. Thereby, MPK allows the partitioning of the process memory into 16 distinct regions, often called domains, and selectively controls their access. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240277 www.ndss-symposium.org Various PKU-based protection schemes [8], [31], [71], [72], [84] are proposed to establish lightweight and transparent in-process isolation that is efficiently enforced in hardware. However, MPK is limited by its 4-bit key size, only offering 16 distinct protection domains. This is restrictive for software systems that may require thousands of concurrent domains, e.g., Cloudflare Workers [16], [17], within a single process. Also, MPK is bound to the page granularity and cannot provide sub-page granular isolation. In-process isolation is a highly demanded security feature for modern computing systems, such as cloud computing, imposing hard requirements on sandboxing techniques. The sandbox must provide scalable isolation with fine-grained access control applicable to individual objects and memory pages. Additionally, the technique must support thousands of concurrent sandboxes, e.g., to isolate cloud workers, and must be available on commodity x86 server-class processors. Contributions. In this paper, we present TME-Box, a novel sandboxing technique for scalable in-process isolation that repurposes Intel's newly introduced total memory encryption multi-key (TME-MK) [32] technology. TME-MK's runtime memory encryption is essentially used by the Intel trusted domain extensions (TDX) [15], [33], their confidential com- puting architecture, to ensure the confidentiality and integrity of memory resources. This encryption and other architectural elements (e.g., secure extended page tables (EPT) [36]) allow TDX to provide strong isolation of virtual machines (VMs), which run isolated workloads on the same physical machine. Intel TME-MK provides page-granular encryption of the computer's physical memory, which is primarily designed for the cryptographic isolation of VMs. This enables hypervisors to encrypt VMs and containers [34], as well as to protect against physical attacks on the memory subsystem [30], [33]. However, the heavy-weight VM isolation of TDX incurs significant performance overhead, and TME-MK's encryption has not yet been applied for generic and efficient in-process memory isolation comparable to MPK. TME-Box extends the application of the TME-MK mem- ory encryption beyond hardware-isolated VMs by providing fine-grained and scalable in-process isolation on commodity x86 CPUs. TME-Box deploys compiler instrumentation to isolate the code and data of mutually untrusted sandboxes. Specifically, we enforce the usage of sandbox-specific TME- MK encryption keys by controlling the base address and index of memory operations. Thereby, memory resources of the in-process sandbox are cryptographically isolated, leading to the detection of unauthorized memory access through hardware-backed integrity protection. Repurposing the TME- MK memory encryption for software sandboxing offers several advantages over established in-process isolation mechanisms and addresses the hard requirements of modern computing systems, such as cloud computing. First, TME-Box enforces fine-grained access control of memory resources. Through the use of page aliasing, TME- Box achieves sub-page granular encryption and, thus, fine- grained memory isolation. Particularly, our design allows for scalable isolation granularities ranging from single cache lines to full pages, especially relevant in modern cloud settings. In contrast, SFI-based mechanisms can only isolate coarse- grained, predetermined, and contiguous memory regions, re- stricting access by partitioning the virtual address space. Second, TME-Box supports the flexible relocation of data in memory, which is particularly important for data-centric computation. Data relocation is essential in the cloud, e.g., when allocator caches with smaller heap slots are used. This enables flexible memory management for the allocator, provid- ing continuous memory utilization across different sandboxes and efficient memory migration. Third, our TME-Box design leverages a larger amount of key identifiers (keyIDs), enabling the support of thousands of concurrent sandboxes. Compared to MPK's 4-bit protection keys (enabling 16 distinct isolation domains), our design leverages TME-MK that supports up to 15-bit keyIDs, ad- dressing up to 32K encryption keys [32] that we repurpose to cryptographically isolate sandboxes. This is particularly relevant for software systems that require a large number of sandboxes, e.g., cloud workers [16], [17], within a single process. Additionally, our design supports frequent policy changes from user space without kernel interaction. Complementary to our design, we detail our prototype implementation of the TME-Box framework, consisting of an LLVM compiler toolchain and a security-hardened allocator. Furthermore, we outline architecture-specific optimizations, such as x86 segment-based addressing [39], to achieve practi- cal performance results for SPEC CPU2017 [10] and NGINX. We showcase a geomean overhead of 5.2 % for data isolation and 9.7 % for code and data isolation using SPEC CPU2017. In summary, the main contributions of this work are: • TME-Box. We are the first to present a novel in-process isolation technique by repurposing the Intel TME-MK memory encryption on commodity x86 CPUs. • New Insights on Sandboxing. We provide new insights on hardware-assisted sandboxing through memory en- cryption for modern cloud settings, enabling fine-grained and scalable isolation from single cache lines to full pages while supporting up to 32K sandboxes. • Prototype and Evaluation. We implement an optimized prototype of TME-Box, utilizing x86 segment-based ad- dressing, that showcases competitive performance results for SPEC CPU2017 and NGINX. • Security Analysis. We systematically analyze the secu- rity threats and outline the derived security properties of our sandbox design. Outline. The paper is structured as follows. Section II provides the background of this work. Section III defines our threat model. Section IV and Section V describe TME- Box's design and implementation. Section VI and Section VII provide the security analysis and evaluation. Section VIII discusses related work, and Section IX concludes this paper. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Efficient cloud computing relies on in-process isolation to optimize performance by running workloads within a single process. Without heavyweight process isolation, memory safety errors pose a significant security threat by allowing an adversary to extract or corrupt the private data of other colocated tenants. Existing in-process isolation mechanisms are not suitable for modern cloud requirements, e.g., MPK's 16 protection domains are insufficient to isolate thousands of cloud workers per process. Consequently, cloud service providers have a strong need for lightweight in-process isolation on commodity x86 machines. This paper presents TME-Box, a novel isolation technique that enables fine-grained and scalable sandboxing on commodity x86 CPUs. By repurposing Intel TME-MK, which is intended for the encryption of virtual machines, TME-Box offers lightweight and efficient in-process isolation. TME-Box enforces that sandboxes use their designated encryption keys for memory interactions through compiler instrumentation. This cryptographic isolation enables fine-grained access control, from single cache lines to full pages, and supports flexible data relocation. In addition, the design of TME-Box allows the efficient isolation of up to 32K concurrent sandboxes. We present a performance-optimized TME-Box prototype, utilizing x86 segment-based addressing, that showcases geomean performance overheads of 5.2 % for data isolation and 9.7 % for code and data isolation, evaluated with the SPEC CPU2017 benchmark suite."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Martin Unterguggenberger",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Lukas Lamster",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "David Schrammel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Martin Schwarzl",
+          "email": "mschwarzl@cloudflare.com",
+          "orcid": "",
+          "affiliations": [
+            "Cloudflare, Inc"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Stefan Mangard",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Martin Unterguggenberger",
+          "email": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Lukas Lamster",
+          "email": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "David Schrammel",
+          "email": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Martin Schwarzl",
+          "email": "mschwarzl@cloudflare.com",
+          "affiliations": [
+            "Cloudflare, Inc."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Stefan Mangard",
+          "email": "",
+          "affiliations": [
+            "Graz University of Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 96,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "TME-Box: Scalable In-Process Isolation through Intel TME-MK Memory Encryption",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/tme-box-scalable-in-process-isolation-through-intel-tme-mk-memory-encryption/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Martin Unterguggenberger",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        },
+        {
+          "name": "Lukas Lamster",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        },
+        {
+          "name": "David Schrammel",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        },
+        {
+          "name": "Martin Schwarzl",
+          "affiliations": [
+            "Cloudflare, Inc."
+          ]
+        },
+        {
+          "name": "Stefan Mangard",
+          "affiliations": [
+            "Graz University of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

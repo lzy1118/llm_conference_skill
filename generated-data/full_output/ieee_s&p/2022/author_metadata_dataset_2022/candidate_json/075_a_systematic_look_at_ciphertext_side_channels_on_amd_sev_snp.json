@@ -1,0 +1,394 @@
+{
+  "paper_id": "075_a_systematic_look_at_ciphertext_side_channels_on_amd_sev_snp",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "A Systematic Look at Ciphertext Side Channels on AMD SEV-SNP"
+      },
+      {
+        "source": "selected",
+        "value": "A Systematic Look at Ciphertext Side Channels on AMD SEV-SNP"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Hardware-assisted memory encryption offers strong confidentiality guarantees for trusted execution environments like Intel SGX and AMD SEV. However, a recent study by Li et al. presented at USENIX Security 2021 has demonstrated the CipherLeaks attack, which monitors ciphertext changes in the special VMSA page. By leaking register values saved by the VM during context switches, they broke state-of-the-art constanttime cryptographic implementations, including RSA and ECDSA in the OpenSSL. In this paper, we perform a comprehensive study on the ciphertext side channels. Our work suggests that while the CipherLeaks attack targets only the VMSA page, a generic ciphertext sidechannel attack may exploit the ciphertext leakage from any memory pages, including those for kernel data structures, stacks and heaps. As such, AMD's existing countermeasures to the Ci-pherLeaks attack, a firmware patch that introduces randomness into the ciphertext of the VMSA page, is clearly insufficient. The root cause of the leakage in AMD SEV's memory encryptionthe use of a stateless yet unauthenticated encryption mode and the unrestricted read accesses to the ciphertext of the encrypted memory-remains unfixed. Given the challenges faced by AMD to eradicate the vulnerability from the hardware design, we propose a set of software countermeasures to the ciphertext side channels, including patches to the OS kernel and cryptographic libraries. We are working closely with AMD to merge these changes into affected open-source projects. 337 2022 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Hardware-assisted memory encryption offers strong confidentiality guarantees for trusted execution environ- ments like Intel SGX and AMD SEV . However, a recent study by the CipherLeaks attack, which monitors ciphertext changes in the special VMSA page. By leaking register values saved by the VM during context switches, they broke state-of-the-art constant- time cryptographic implementations, including RSA and ECDSA in the OpenSSL. In this paper, we perform a comprehensive study on the cipher- text side channels. Our work suggests that while the CipherLeaks attack targets only the VMSA page, a generic ciphertext side- channel attack may exploit the ciphertext leakage from any memory pages, including those for kernel data structures, stacks and heaps. As such, AMD's existing countermeasures to the Ci- pherLeaks attack, a firmware patch that introduces randomness into the ciphertext of the VMSA page, is clearly insufficient. The root cause of the leakage in AMD SEV's memory encryption- the use of a stateless yet unauthenticated encryption mode and the unrestricted read accesses to the ciphertext of the encrypted memory-remains unfixed. Given the challenges faced by AMD to eradicate the vulnerability from the hardware design, we propose a set of software countermeasures to the ciphertext side channels, including patches to the OS kernel and cryptographic libraries. We are working closely with AMD to merge these changes into affected open-source projects. I. I NTRODUCTION For years, the main obstacle to cloud adoption has been a lack of trust in Cloud Service Providers (CSP). The concept of confidential Virtual Machine (VM) has been enabled by an emerging security feature in modern CPUs, dubbed Trusted Execution Environment (TEE), which removes the need to trust the CSP [15]. Aiming at providing data-in-use protection, confidential VM uses hardware-based memory encryption to protect the integrity and the confidentiality of VMs against both physical access attacks and privileged software-level attacks. Another key benefit of confidential VM is that any VM can be deployed as confidential VM on systems that support them, without costly adaption and rewriting that is necessary to turn applications into secure enclaves [12]. Due to the enormous market potential, all main processor vendors ∗The two authors contributed equally to this paper. have released or are working on releasing confidential VM features in their server CPU lines, including AMD Secure Encrypted Virtualization (SEV) [22], Intel Trust Domain Ex- tension (TDX) [19], and ARM Confidential Compute Archi- tecture (CCA) [8]. Currently, only AMD's confidential VM solution-AMD SEV-is available and has been deployed in public clouds [15], [28]. Since its first deployment, SEV has been exhaustively analyzed by the security community. Due to the powerful adversarial scenario of a malicious hypervisor, sev- eral weaknesses have been found, including unauthenticated encryption [10], [14], [35], Nested Page Table (NPT) remap- ping [17], [29], [30], unprotected I/O [25], and unauthorized Address Space Identifiers (ASID) [24]. With the newest ver- sion of SEV-the recently released SEV-SNP (Secure Nested Paging [4])-most of the attacks are now mitigated. The only software-based attack that still applied to SEV- SNP is CIPHER LEAKS [26], a novel side-channel attack where a malicious hypervisor can steal the secret keys of RSA and ECDSA algorithms in the OpenSSL implementation by monitoring the guest VM Save Area (VMSA). Specifically, SEV's memory encryption engine adopts a deterministic XOR- Encrypt-XOR (XEX) mode of operation. For each physical address, the same 128-bit plaintext block is always encrypted to the same ciphertext block during the life cycle of the VM. Meanwhile, whenever there is a guest-host world switch, register values are encrypted and then stored in the VMSA. With the power of read access to the guest VM's VMSA area, the malicious hypervisor can continuously monitor and record the ciphertext of encrypted registers. The authors show that the ciphertext of certain registers ( e.g., RAX) can be used to inspect inner execution states of cryptographic algorithms and eventually reveal the private key or secrets. Due to its severity, AMD recently released a microcode patch (MilanPI-SP3 1.0.0.5) [6] to mitigate the C IPHER - LEAKS attacks. The microcode patch enables the 3rd gen- eration AMD EPYC processors (Milan series) to include a nonce into the encryption of the VMSA area, such that the link between the plaintext and the ciphertext is broken. As such, CIPHER LEAKS attacks against register values in the VMSA 337 DOI 10.1109/SP46214.2022.00112 are no longer feasible. Note that the patch only changes the encryption of the VMSA, while the remaining memory space of the VM is still protected with the same deterministic XEX encryption as before. In this paper, we perform a comprehensive study on the exploitability of leakage caused by ciphertext in encrypted VM memory and try to answer the question: Are current cryptography implementations still safe when an attacker has access to the ciphertext of the encrypted memory? We broadly group ciphertext side channel attacks into two categories: the dictionary attack and the collision attack . We show that these two classes of attacks can be applied to general memory regions during cryptographic activities, in- cluding kernel data structures, stacks, and heaps, which all lead to key leakage. Most main cryptography libraries (including OpenSSL, WolfSSL, GnuTLS, OpenSSH, and libgcrypt) are shown to be vulnerable against the ciphertext side channel. Contribution. The contributions of this paper can be summa- rized as follows: • Systematically studies the ciphertext side channel in the entire memory of SEV-protected VMs. It shows that the ciphertext side channel can be exploited in all memory regions, including kernel structures, stacks, and heaps. • Presents end-to-end ciphertext side-channel attacks against the ECDSA implementation of the OpenSSL library. Other main cryptography libraries (including OpenSSL, WolfSSL, GnuTLS, OpenSSH, and libgcrypt) are also shown to be vulnerable to the ciphertext side channel. • Discusses both hardware and software countermeasures. Presents a kernel patch to mitigate ciphertext side channels caused by kernel structures. The ciphertext side channel can be mitigated when adopting the kernel patch together with software fixes for cryptographic libraries. Responsible disclosure. We disclosed the generic ciphertext side-channel attacks on kernel data structures, heaps, and stacks to the AMD SEV team in August 2021. Henceforth, we provided more supplementary materials via email commu- nications. AMD has acknowledged the vulnerability and had several discussions with us about potential countermeasures and stated interest in a kernel level fix. While hardware countermeasures might not be feasible in the near future for both performance and design concerns, AMD assisted us with the development of the software countermeasures, including both kernel patches (Section VI) and helping us get connected to other projects like OpenSSL. We also disclosed the vulnerability on the code level to the communities of cryptography libraries (including OpenSSL, WolfSSl, GnuTLS, OpenSSH and libgcrypt). At the time of writing, we had received feedback from both OpenSSL and WolfSSL. They both acknowledged the concerns and recognized the necessity of addressing this vulnerability from software. WolfSSL has already provided a draft version of software fixes. Paper outline. The rest of the paper is organized as fol- lows: Section II introduces necessary background of this pa- per; Section III illustrates the root causes of ciphertext side channels in general; Section IV shows how an attacker can break current cryptography implementations by monitoring ciphertext changes in the operating system's process control block; Section V shows that the secret leakage can also be caused by stack variables and heap buffers in user space; Section VI discusses the potential countermeasures, including a kernel patch and application fixes; Section VII discusses the threat of ciphertext side channels to other confidential VM implementations; Section VIII presents state-of-the-art related work and Section IX concludes the paper. II. B ACKGROUND A. Secure Encrypted Virtualization AMD Secure Encrypted Virtualization (SEV) is a trusted execution environment (TEE) supported by AMD server- level EPYC processors with “Zen” Architecture. SEV aims at providing confidential virtual machines for cloud customers. In SEV's threat model, other virtual machines, as well as the cloud host itself, are considered untrusted. The attacker may execute arbitrary code at the privileged hypervisor level and may also have physical access to the machine ( e.g., DRAM chips) [22]. To achieve this ambitious goal, a dedicated security subsystem consisting of the AMD Secure Processor (AMD-SP) and an AES memory encryption engine is intro- duced by SEV to protect data in use. Hardware Memory Encryption. When SEV is enabled, the cryptographic isolation provided by Hardware Memory Encryption protects the confidentiality of the VM. Specifically, the VM's memory pages are always stored in encrypted form, and the VM encryption keys are guarded by the AMD-SP. SEV adopts a 128-bit AES encryption with the XOR-Encrypt- XOR (XEX) encryption mode, which incorporates a physical address-specific tweak such that the same plaintext yields different ciphertexts for each memory location. However, for a fixed address, an identical plaintext always yields the same ciphertext. Nested Page Tables (NPT) and the page fault controlled channel. When SEV is enabled, the address translation be- tween the VM's guest physical addresses and the host physical addresses is managed by the hypervisor with the help of a NPT, which is a two-layer page table consisting of a Guest Page Table (GPT) and a Nested Page Table (NPT). The GPT is managed inside the guest VM and thus protected by the VM encryption key. The NPT is solely managed by the hypervisor. As shown in prior work [24], [30], [35], the hypervisor can leverage the control over the NPT to intercept the execution of the guest with page granularity. To achieve this, the hypervisor can unset the Present bit (P bit) in the NPT. The next time the VM tries to access the corresponding guest physical page, a nested page fault (NPF) will be generated, revealing the addresses of the access and the causes. 2338"
+      },
+      {
+        "source": "selected",
+        "value": "Hardware-assisted memory encryption offers strong confidentiality guarantees for trusted execution environments like Intel SGX and AMD SEV. However, a recent study by Li et al. presented at USENIX Security 2021 has demonstrated the CipherLeaks attack, which monitors ciphertext changes in the special VMSA page. By leaking register values saved by the VM during context switches, they broke state-of-the-art constanttime cryptographic implementations, including RSA and ECDSA in the OpenSSL. In this paper, we perform a comprehensive study on the ciphertext side channels. Our work suggests that while the CipherLeaks attack targets only the VMSA page, a generic ciphertext sidechannel attack may exploit the ciphertext leakage from any memory pages, including those for kernel data structures, stacks and heaps. As such, AMD's existing countermeasures to the Ci-pherLeaks attack, a firmware patch that introduces randomness into the ciphertext of the VMSA page, is clearly insufficient. The root cause of the leakage in AMD SEV's memory encryptionthe use of a stateless yet unauthenticated encryption mode and the unrestricted read accesses to the ciphertext of the encrypted memory-remains unfixed. Given the challenges faced by AMD to eradicate the vulnerability from the hardware design, we propose a set of software countermeasures to the ciphertext side channels, including patches to the OS kernel and cryptographic libraries. We are working closely with AMD to merge these changes into affected open-source projects. 337 2022 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Mengyuan Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University, University of Lübeck, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Luca Wilke",
+          "email": "l.wilke@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University, University of Lübeck, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jan Wichelmann",
+          "email": "j.wichelmann@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University, University of Lübeck, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Thomas Eisenbarth",
+          "email": "thomas.eisenbarth@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University, University of Lübeck, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Radu Teodorescu",
+          "email": "teodores@cse.ohio-state.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University, University of Lübeck, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yinqian Zhang",
+          "email": "yinqianz@acm.org",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University, University of Lübeck, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Mengyuan Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Luca Wilke",
+          "email": "l.wilke@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "University of L ¨ubeck"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jan Wichelmann",
+          "email": "j.wichelmann@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "University of L ¨ubeck"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Thomas Eisenbarth",
+          "email": "thomas.eisenbarth@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [
+            "University of L ¨ubeck"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Radu Teodorescu",
+          "email": "teodores@cse.ohio-state.edu",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yinqian Zhang",
+          "email": "yinqianz@acm.org",
+          "orcid": "",
+          "affiliations": [
+            "Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 122,
+      "author_count": 6,
+      "matched_author_count": 6,
+      "exact_author_match_count": 6,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Mengyuan Li",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Luca Wilke",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Jan Wichelmann",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Thomas Eisenbarth",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Radu Teodorescu",
+          "block_id": "pdf:p1:b15",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Yinqian Zhang",
+          "block_id": "pdf:p1:b16",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Mengyuan Li",
+          "affiliation_raw": "The Ohio State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 7.774,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Luca Wilke",
+          "affiliation_raw": "University of L ¨ubeck",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 7.863,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Jan Wichelmann",
+          "affiliation_raw": "University of L ¨ubeck",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 6.647,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Thomas Eisenbarth",
+          "affiliation_raw": "University of L ¨ubeck",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b18"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 5.254,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Radu Teodorescu",
+          "affiliation_raw": "The Ohio State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b15",
+          "affiliation_block_ids": [
+            "pdf:p1:b19"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 2.239,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Yinqian Zhang",
+          "affiliation_raw": "Southern University of Science and Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b16",
+          "affiliation_block_ids": [
+            "pdf:p1:b17",
+            "pdf:p1:b20"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.215,
+          "center_distance": 3.059,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "A Systematic Look at Ciphertext Side Channels on AMD SEV-SNP",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Mengyuan Li",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        },
+        {
+          "name": "Luca Wilke",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "Jan Wichelmann",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "Thomas Eisenbarth",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "Radu Teodorescu",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        },
+        {
+          "name": "Yinqian Zhang",
+          "affiliations": [
+            "Southern University of Science and Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

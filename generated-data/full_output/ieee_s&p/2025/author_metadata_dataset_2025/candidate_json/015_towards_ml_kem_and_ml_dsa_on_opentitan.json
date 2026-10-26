@@ -1,0 +1,395 @@
+{
+  "paper_id": "015_towards_ml_kem_and_ml_dsa_on_opentitan",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Towards ML-KEM & ML-DSA on OpenTitan"
+      },
+      {
+        "source": "selected",
+        "value": "Towards ML-KEM & ML-DSA on OpenTitan"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "This paper presents extensions to the OpenTitan hardware root of trust that aim at enabling high-performance lattice-based cryptography. We start by carefully optimizing ML-KEM and ML-DSA-the two algorithms primarily recommended and standardized by NIST-in software targeting the OpenTitan Big Number (OTBN) accelerator. Based on profiling results of these implementations, we propose tightly integrated extensions to OTBN, specifically an interface from OTBN to OpenTitan's Keccak accelerator (KMAC core) and extensions to the OTBN ISA to support operations on 256-bit vectors. We implement these extensions in hardware and show that we achieve a speedup by a factor between 6 and 9 for different operations and parameter sets of ML-KEM and ML-DSA compared to our baseline implementation on unmodified OTBN. This speedup is achieved with an increase in cell count of less than 17% in OTBN, which corresponds to an increase of less than 3% for the full Earl Grey OpenTitan core. 4044 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "This paper presents extensions to the OpenTitan hardware root of trust that aim at enabling high-performance lattice-based cryptography. We start by carefully optimizing ML-KEM and ML-DSA-the two algorithms primarily rec- ommended and standardized by NIST-in software targeting the OpenTitan Big Number (OTBN) accelerator. Based on profiling results of these implementations, we propose tightly integrated extensions to OTBN, specifically an interface from OTBN to OpenTitan's Keccak accelerator (KMAC core) and extensions to the OTBN ISA to support operations on 256-bit vectors. We implement these extensions in hardware and show that we achieve a speedup by a factor between 6 and 9 for different operations and parameter sets of ML-KEM and ML- DSA compared to our baseline implementation on unmodified OTBN. This speedup is achieved with an increase in cell count of less than 17% in OTBN, which corresponds to an increase of less than 3% for the full Earl Grey OpenTitan core. 1. Introduction post-quantum cryptography (PQC) schemes: the signature schemes ML-DSA and SLH-DSA, and the key encapsula- tion mechanism ML-KEM. The publication of these stan- dards marks an inflection point: large production systems are now beginning to migrate so that they can support PQC. As with classical cryptography, hardware specialization is a vital tool for increasing performance, and will have a large impact on the timeline and success rate of PQC migrations. The questions of how to optimize PQC on general purpose hardware and how to design PQC-specific accelerators are already very active research topics (e.g., [1], [2], [3]), so we choose to focus on a slightly different question: how efficient can we make PQC on an existing pre-quantum platform with minor hardware changes? This question targets hardware/software co-designs for a secure microcontroller which cares about efficiently ex- ecuting PQC. We focus on adding multipurpose processor instructions to accelerate small, generalizable mathematical operations that are useful across PQC schemes - even beyond the standardized ones - and also for pre-quantum cryptography. This preserves much more flexibility than a dedicated hardware accelerator because software using these instructions is updatable. If a scheme changes slightly or a new scheme is standardized, it will be possible to roll out those changes in software to run on the same hardware, whereas a pure-hardware solution would require a new silicon manufacturing run. Migration efforts that value support for hybrid cryptographic schemes or the possibility of adopting future changes of the PQC landscape will benefit from this flexibility in particular. Further, we expect that any hardware deployed in the next decade will still require support for pre-quantum asym- metric cryptography, i.e., ECC and RSA. One reason is to support legacy applications, but a much more impor- tant reason is that sensible deployment of post-quantum cryptography today uses hybrid schemes that combine the novel algorithms with established pre-quantum algorithms. Applications that have already started integrating PQC, such as K YBER -enabled TLS by Google [4], Cloudflare [5], and Mozilla [6], the Signal secure messenger [7], and Apple's iMessage protocol [8], all use (pure-software) hybrid solu- tions. This is because PQC schemes are still relatively young and not recommended as a replacement for established classical schemes, by, e.g., ANSSI [9] and BSI [10]. This motivates us to implement NIST PQC standards on a target that also accelerates ECC and RSA. We chose OpenTitan [11] as the target platform because of its accessibility and relevance. OpenTitan is a fully open-source silicon root of trust (RoT) that comprises a main 32-bit Ibex RISC-V core and a coprocessor called 4044 DOI 10.1109/SP61157.2025.00220 OpenTitan Big Number (OTBN) with its own RISC-V-based instructions. It is set to soon replace the security chip of Chromebooks1, highlighting the growing trend of deploy- ing open-source security chips in real-world commercial products. OpenTitan today computes classical cryptography on the OTBN coprocessor, which is equipped with wide registers and various countermeasures against side-channel attacks. Therefore, we chose to explore the design space of modifying OTBN to efficiently support a wider range of cryptographic schemes, with the lattice-based ML-DSA and ML-KEM as a case-study. Contribution. We ready the OpenTitan hardware RoT for ML-DSA and ML-KEM, and show that small modifica- tions and extensions to the hardware design and instruction set architecture (ISA) of existing cryptographic hardware, designed to accelerate ECC and RSA, yields highly efficient accelerators for both traditional asymmetric and novel post- quantum cryptography. While ensuring this, we consider the generality of the proposed extensions as an additional goal to provide a flexible solution for cryptographic schemes beyond the two studied in this work. Our approach lever- ages multiple features of the OpenTitan platform in general and the OTBN unit in particular: First and foremost our research is made possible by the fact that OpenTitan is an open platform with the hardware implementation, software, and build system being publicly available under permissive licenses. Furthermore, OpenTitan already features a high- performance hardware implementation of Keccak, a central building block of both ML-DSA and ML-KEM. Also, the hardware/software co-design for ECC and RSA on OpenTi- tan uses a rather low-level ISA accelerating only (modular) big-integer arithmetic in hardware; higher-level routines like ECC point operations or exponentiation are implemented in software. Outline. Section 2 recalls the necessary background on ML-DSA and ML-KEM, as well as the OpenTitan platform and its OTBN coprocessor. Section 3 presents software-only implementations of ML-DSA and ML-KEM on OTBN with only an increase in OTBN's data memory (DMEM) and instruction memory (IMEM). It serves as a baseline for our performance evalu- ation and a starting point for profiling. Section 4 tackles Keccak as it is the major bottleneck identified in our baseline. We resolve this by adding an interface from OTBN to the Keccak accelerator. Section 5 addresses polynomial arithmetic as the remain- ing bottleneck, which we take on by proposing extensions to the OTBN ISA, allowing to operate on the 256-bit-wide registers as vectors of small integers. The extensions are designed as a generic vector instruction set rather than being specific to only ML- {KEM,DSA }, aiming to benefit other cryptographic schemes as well. This approach follows the design philosophy of the big-integer arithmetic instructions. Section 6 presents the actual hardware implementation of our proposals introduced in the previous sections. For 1. https://www.design-reuse.com/news/56335/nuvoton-lowrisc-opentitan -security-chip-chromebooks.html accelerating the polynomial arithmetic, we take two different approaches: one that maximizes resource sharing between big-number and vector arithmetic and one that investigates possible gains in performance of ML- {KEM,DSA } at the expense of larger investment in circuitry. Our final evaluation shows that with an increase of OTBN's circuit area of 15.22%, we achieve a speedup of up to a factor of 9.14 in ML-DSA and 8.82 in ML-KEM. This increase corresponds to an increase of only 2.25% of the full OpenTitan Earl Grey top-level design. Details of these results and comparisons with related work is shown in Section 7 followed by a discussion in Section 8. Artifact. All software and hardware described in this paper are publicly available under permissive licenses com- patible to the OpenTitan license at https://github.com/PQC -OpenTitan/towards-ml-kem-and-ml-dsa-on-opentitan. Related Work. Research in PQC implementations spans from pure software to pure hardware designs, across multiple platforms. Extensive studies have focused on software implementations of K YBER and D ILITHIUM on Arm Cortex-M4 [12], [13], [14], [15], [16], [17], [18]. Highly optimized single-instruction-multiple-data (SIMD) implementations have been presented for, e.g., the In- tel A VX2 [19], [20], Arm Neon [21], and RISC-V [22] platforms. Hardware/software co-design approaches offload compute-intensive operations to hardware, balancing be- tween high performance and flexibility. An approach some- what similar to ours on OTBN was explored in independent concurrent work [23]. The authors focus on accelerating the number-theoretic transform (NTT) of K YBER only and present results that are about 4× slower while likely slightly better in terms of hardware cost when compared to ours. We provide a more detailed analysis in Section 7. Another notable work is a configurable post-quantum arithmetic logic unit (ALU) for OTBN [24], accelerating polynomial arithmetic of D ILITHIUM , K YBER , and FALCON . An imple- mentation of D ILITHIUM 's polynomial arithmetic on OTBN using the Kronecker+ method [25] is provided in [26]. Further tightly coupled accelerators for PQC, targeting different performance/resource trade-offs, have been pre- sented in [27], [28], [29], [30], [31]. Among which, [27], [29], [30] provide hardware acceleration for polynomial generation using Keccak, while the others solely focus on speeding up the NTT-based polynomial multiplication and modular arithmetic. A less lightweight work [32] proposes a domain-specific processor optimized for module lattices. All of these designs extend the RISC-V ISA with scheme- specific instructions. A more generic approach involving masked accelerators is introduced in [33]. We will provide a detailed comparison to the most relevant literature, high- lighting the differences to our work in Section 7. 2. Preliminaries For notation, we mainly follow the conventions of NIST FIPS 203 [34] and 204 [35]. In addition, we define [r]d to be the unique element r′ in the range [0, 2d) such that r′ ≡ r mod 2 d and denote ⌊ r d ⌋ as [r]d, with d ∈ N. 4045"
+      },
+      {
+        "source": "selected",
+        "value": "This paper presents extensions to the OpenTitan hardware root of trust that aim at enabling high-performance lattice-based cryptography. We start by carefully optimizing ML-KEM and ML-DSA-the two algorithms primarily recommended and standardized by NIST-in software targeting the OpenTitan Big Number (OTBN) accelerator. Based on profiling results of these implementations, we propose tightly integrated extensions to OTBN, specifically an interface from OTBN to OpenTitan's Keccak accelerator (KMAC core) and extensions to the OTBN ISA to support operations on 256-bit vectors. We implement these extensions in hardware and show that we achieve a speedup by a factor between 6 and 9 for different operations and parameter sets of ML-KEM and ML-DSA compared to our baseline implementation on unmodified OTBN. This speedup is achieved with an increase in cell count of less than 17% in OTBN, which corresponds to an increase of less than 3% for the full Earl Grey OpenTitan core. 4044 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Amin Abdulrahman",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Felix Oberhansl",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Hoang Nguyen",
+          "email": "nguyenhien.phamhoang@gmail.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Hien Pham",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BULL SAS, Les Clayes-sous-Bois, France",
+            "Université Grenoble Alpes, CNRS, Grenoble Boston, IF, France USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Jade Philipoom",
+          "email": "jadep@zerorisc.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Peter Schwabe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany",
+            "Radboud University, Nijmegen, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Tobias Stelzer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany",
+            "Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Andreas Zankl",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany",
+            "Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich (TUM), Munich, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Amin Abdulrahman",
+          "email": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany †Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Felix Oberhansl",
+          "email": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany †Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Hoang Nguyen Hien Pham",
+          "email": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany †Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jade Philipoom",
+          "email": "jadep@zerorisc.com",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany †Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Peter Schwabe",
+          "email": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany †Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Tobias Stelzer",
+          "email": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany †Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Andreas Zankl",
+          "email": "",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP), Bochum, Germany †Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "BULL SAS",
+          "email": "",
+          "affiliations": [
+            "Universit´e Grenoble Alpes, CNRS, IF , Grenoble, France ¶zeroRISC, Boston, USA ∥Radboud University, Nijmegen, The Netherlands ∗∗Technical University of Munich (TUM), Munich, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Les Clayes-sous-Bois",
+          "email": "",
+          "affiliations": [
+            "Universit´e Grenoble Alpes, CNRS, IF , Grenoble, France ¶zeroRISC, Boston, USA ∥Radboud University, Nijmegen, The Netherlands ∗∗Technical University of Munich (TUM), Munich, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 108,
+      "author_count": 9,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 10.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 2,
+          "author": "Hoang Nguyen Hien Pham",
+          "block_id": "pdf:p1:b23",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 2,
+          "author": "Hoang Nguyen Hien Pham",
+          "affiliation_raw": "∥ Technical University of Munich (TUM), Munich, Germany",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b23",
+          "affiliation_block_ids": [
+            "pdf:p1:b29",
+            "pdf:p1:b32"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 32.766,
+          "center_distance": 49.404,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": true,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": true,
+      "author_count_delta": 0,
+      "official_title": "Towards ML-KEM & ML-DSA on OpenTitan",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Amin Abdulrahman",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP)"
+          ]
+        },
+        {
+          "name": "Hoang Nguyen Hien Pham",
+          "affiliations": [
+            "BULL SAS, Université Grenoble Alpes"
+          ]
+        },
+        {
+          "name": "Tobias Stelzer",
+          "affiliations": [
+            "Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ]
+        },
+        {
+          "name": "Felix Oberhansl",
+          "affiliations": [
+            "Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany"
+          ]
+        },
+        {
+          "name": "Andreas Zankl",
+          "affiliations": [
+            "Fraunhofer Institute for Applied and Integrated Security (AISEC), Garching, Germany",
+            "Technical University of Munich (TUM), Munich, Germany"
+          ]
+        },
+        {
+          "name": "Jade Philipoom",
+          "affiliations": [
+            "zeroRISC, Boston, USA"
+          ]
+        },
+        {
+          "name": "Peter Schwabe",
+          "affiliations": [
+            "Max Planck Institute for Security and Privacy (MPI-SP)",
+            "Radboud University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jade Philipoom",
+      "field": "email",
+      "restored_value": "jadep@zerorisc.com",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 7,
+      "country_values_restored": 7,
+      "source": "pdf_extraction_csv"
+    },
+    {
+      "action": "rebuild_author_list_from_official_web_exact_title",
+      "stage": "official_web_reconciliation",
+      "field": "authors",
+      "selected": [
+        "Amin Abdulrahman",
+        "Hoang Nguyen Hien Pham",
+        "Tobias Stelzer",
+        "Felix Oberhansl",
+        "Andreas Zankl",
+        "Jade Philipoom",
+        "Peter Schwabe"
+      ],
+      "source": "conference_official_web"
+    }
+  ]
+}

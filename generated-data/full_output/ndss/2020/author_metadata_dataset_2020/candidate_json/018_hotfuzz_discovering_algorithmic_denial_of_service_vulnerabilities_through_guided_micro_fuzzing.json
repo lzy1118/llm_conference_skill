@@ -1,0 +1,329 @@
+{
+  "paper_id": "018_hotfuzz_discovering_algorithmic_denial_of_service_vulnerabilities_through_guided_micro_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "HotFuzz: Discovering Algorithmic Denial-of-Service Vulnerabilities Through Guided Micro-Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "HotFuzz: Discovering Algorithmic Denial-of-Service Vulnerabilities Through Guided Micro-Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fifteen billion devices run Java and many of them are connected to the Internet. As this ecosystem continues to grow, it remains an important task to discover any unknown security threats these devices face. Fuzz testing repeatedly runs software on random inputs in order to trigger unexpected program behaviors, such as crashes or timeouts, and has historically revealed serious security vulnerabilities. Contemporary fuzz testing techniques focus on identifying memory corruption vulnerabilities that allow adversaries to achieve either remote code execution or information disclosure. Meanwhile, Algorithmic Complexity (AC) vulnerabilities, which are a common attack vector for denial-ofservice attacks, remain an understudied threat. In this paper, we present HotFuzz, a framework for automatically discovering AC vulnerabilities in Java libraries. HotFuzz uses micro-fuzzing, a genetic algorithm that evolves arbitrary Java objects in order to trigger the worst-case performance for a method under test. We define Small Recursive Instantiation (SRI) as a technique to derive seed inputs represented as Java objects to micro-fuzzing. After micro-fuzzing, HotFuzz synthesizes test cases that triggered AC vulnerabilities into Java programs and monitors their execution in order to reproduce vulnerabilities outside the fuzzing framework. HotFuzz outputs those programs that exhibit high CPU utilization as witnesses for AC vulnerabilities in a Java library. We evaluate HotFuzz over the Java Runtime Environment (JRE), the 100 most popular Java libraries on Maven, and challenges contained in the DARPA Space and Time Analysis for Cybersecurity (STAC) program. We evaluate SRI's effectiveness by comparing the performance of micro-fuzzing with SRI, measured by the number of AC vulnerabilities detected, to simply using empty values as seed inputs. In this evaluation, we verified known AC vulnerabilities, discovered previously unknown AC vulnerabilities that we responsibly reported to vendors, and received confirmation from both IBM and Oracle. Our results demonstrate that micro-fuzzing finds AC vulnerabilities in realworld software, and that micro-fuzzing with SRI-derived seed inputs outperforms using empty values."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fifteen billion devices run Java and many of them are connected to the Internet. As this ecosystem continues to grow, it remains an important task to discover any unknown security threats these devices face. Fuzz testing repeatedly runs software on random inputs in order to trigger unexpected program behaviors, such as crashes or timeouts, and has historically re- vealed serious security vulnerabilities. Contemporary fuzz testing techniques focus on identifying memory corruption vulnerabilities that allow adversaries to achieve either remote code execution or information disclosure. Meanwhile, Algorithmic Complexity (AC) vulnerabilities, which are a common attack vector for denial-of- service attacks, remain an understudied threat. In this paper, we present HotFuzz, a framework for automatically discovering AC vulnerabilities in Java libraries. HotFuzz uses micro-fuzzing, a genetic algorithm that evolves arbitrary Java objects in order to trigger the worst-case performance for a method under test. We define Small Recursive Instantiation (SRI) as a technique to derive seed inputs represented as Java objects to micro-fuzzing. After micro-fuzzing, HotFuzz synthesizes test cases that triggered AC vulnerabilities into Java programs and monitors their execution in order to reproduce vulnerabilities outside the fuzzing framework. HotFuzz outputs those programs that exhibit high CPU utilization as witnesses for AC vulnerabil- ities in a Java library. We evaluate HotFuzz over the Java Runtime Environment (JRE), the 100 most popular Java libraries on Maven, and challenges contained in the DARPA Space and Time Analysis for Cyber- security (STAC) program. We evaluate SRI's effectiveness by comparing the performance of micro-fuzzing with SRI, measured by the number of AC vulnerabilities detected, to simply using empty values as seed inputs. In this evaluation, we verified known AC vulnerabilities, discovered previously unknown AC vulnerabilities that we responsibly reported to vendors, and received confirmation from both IBM and Oracle. Our results demonstrate that micro-fuzzing finds AC vulnerabilities in real- world software, and that micro-fuzzing with SRI-derived seed inputs outperforms using empty values. I. I NTRODUCTION Software continues to be plagued by vulnerabilities that allow attackers to violate basic software security properties. These vulnerabilities take myriad forms, for instance failures to en- force memory safety that can lead to arbitrary code execution (integrity violations) or failures to prevent sensitive data from being released to unauthorized principals (confidentiality vio- lations). The third traditional security property, availability, is not exempt from this issue. However, denial-of-service (DoS) as a vulnerability class tends to be viewed as simplistic, noisy, and easy (in principle) to defend against. This view, however, is simplistic, as availability vulnerabilities and exploits against them can take sophisticated forms. Algo- rithmic Complexity (AC) vulnerabilities are one such form, where a small adversarial input induces worst-case 1 behavior in the processing of that input, resulting in a denial of service. While in the textbook example against a hash table an adver- sary inserts values with colliding keys to degrade the complex- ity of lookup operations from an expected O(1) to O(n), the category of AC vulnerabilities is by no means hypothetical. Recent examples of algorithmic complexity vulnerabilities include denial of service issues in Go's elliptic curve cryptog- raphy implementation [4], an AC vulnerability that manifests through amplification of API requests against Netflix' internal infrastructure triggered by external requests [14], and a denial of service vulnerability in the Linux kernel's handling of TCP packets [3]. The vulnerability in the Linux kernel was considered serious enough that it was embargoed until OS vendors and large Linux users such as cloud providers and content delivery networks could develop and deploy patches. While these particular vulnerabilities involved unintended CPU time complexity, AC vulnerabilities can also manifest in the spatial domain for resources such as memory, storage, or network bandwidth. While discovering AC vulnerabilities is notoriously challeng- ing, program analysis seems like a natural basis for developing solutions to tackle such issues. In fact, prior research has started to explore program analysis techniques for finding AC vulnerabilities in software. Most of this work is based on manual or static analysis that scales to real world code bases, but focuses on detecting known sources of AC vulnerabilities, such as triggering worst case performance of commonly used data structures [19], regular expression engines [32], [57], [62], or serialization APIs [21]. Fuzz testing, where a fuzzer feeds random input to a program under test until the program either crashes or times out, has historically revealed serious bugs that permit Remote Code- Execution (RCE) exploits in widely used software such as operating system kernels, mobile devices, and web browsers. 1Strictly speaking, it is sufficient for attacks to cause bad behavior, it need not be “worst-case”. Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24415 www.ndss-symposium.org Recent work has adapted existing state-of-the-art fuzz testers such as AFL [64] and libFuzzer [7] to automatically slow down programs with known performance problems. These approaches include favoring inputs that maximize the length of an input's execution in a program's Control Flow Graph (CFG) [47], incorporating multi-dimensional feedback that provides AFL with more visibility into the portions of the CFG each test case executes the most [37], and augmenting AFL with symbolic execution to maximize a Java program's resource consumption [43]. These recent advances demonstrate that modern fuzzers can automatically slow down programs such as sorting routines, hash table operations, and common Unix utilities. These recent developments present exciting new directions for fuzz testing beyond detecting memory corruption bugs. How- ever, these approaches do not reconcile the traditional fuzzing objective function of maximizing code coverage (breadth) with the opposing goal of maximizing a given program or individual method's runtime (depth). Indeed, these tools are evaluated by the slowdown they can achieve for a given program, as opposed to the amount of code they successfully cover. Achieving high code coverage on any program under test is a notoriously difficult task because common program patterns like comparing input to magic values or checksum tests are difficult to bypass using fuzzing alone, although program trans- formation tricks like splitting each comparison into a series of one byte comparisons [36] or simply removing them from the program [46] can improve coverage. Augmenting fuzzing with advanced techniques like taint analysis [50] or symbolic execution [44], [58] helps overcome these fuzzing roadblocks, and RedQueen [12] showed how advanced tracing hardware can emulate these more heavyweight techniques by providing a fuzzer with enough information to establish correspondence between program inputs and internal program state. Prior work has successfully shown fuzz testing can reproduce known AC vulnerabilities in software, and research continues to produce innovative ways to maximize code coverage. What is missing in fuzzing for AC vulnerabilities are techniques to automat- ically sanitize a program's execution for AC vulnerabilities, analogous to how modern fuzzers rely on sanitizers to detect memory corruption bugs [54]. Current fuzzing approaches in general lack the ability to automatically fuzz programs at the method level without the need for manually defined test harnesses. This paper proposes micro-fuzzing (a concept analogous to micro-execution [24]) as a novel technique to automatically construct test harnesses that allow a fuzzer to invoke methods and sanitize their execution for AC vulnerabilities. Both AFL and libFuzzer can fuzz individual methods, but only after an analyst manually defines a test harness that transforms a flat bitmap into the types required to call a method. For AFL this involves defining a C program that reads the bitmap from standard input, whereas libFuzzer passes the bitmap to a specific function that it expects will call the method under test with the appropriate types derived from the bitmap. In contrast, micro-fuzzing takes whole programs or libraries as input and attempts to automatically construct a test harness for every function contained in the input. Observe that this approach is analogous to micro-execution [24], which executes arbitrary machine code by using a virtual machine as a test harness that provides state on-demand in order to run the code under test. To this end, micro-fuzzing constructs test harnesses represented as function inputs, directly invokes functions on those inputs, and measures the amount of resources each input consumes using model specific registers available on the host machine. This alleviates the need to define test harnesses manually, and supports fuzzing whole programs and libraries by considering every function within them as a possible entry- point. Furthermore, we sanitize every function's execution so that once its observed runtime crosses a configured threshold, we kill the micro-fuzzing process and highlight the function as vulnerable. This sanitization highlights functions with potential AC vulnerabilities out of all the functions micro-fuzzing auto- matically executes, as opposed to measuring a fuzzer's ability to automatically slow-down individual programs or functions. We implement micro-fuzzing for Java programs in HotFuzz, which uses a genetic algorithm to evolve method inputs with the goal to maximize method execution time. Java provides an ideal platform for evaluating micro-fuzzing because of its wide use across different domains in industry and the JVM's support for introspection allows HotFuzz to automatically generate test harnesses, represented as valid Java objects, for individual methods dynamically at runtime. To generate initial popula- tions of inputs, we devise two different strategies. The Identity Value Instantiation (IVI) strategy creates inputs by assigning each actual parameter the identity element of the parameter's domain (e.g., 0 for numeric types or “” for strings). In contrast, Small Recursive Instantiation (SRI) assigns parameters small values chosen at random from the parameter's domain. We use IVI for the sole purpose of providing a baseline for measuring the effectiveness of using SRI to generate seed inputs for micro-fuzzing, based on recent recommendations for evaluating new fuzz testing techniques [33]. Irrespective of how inputs are instantiated, HotFuzz leverages the EyeVM, an instrumented JVM that provides run-time measurements at method-level granularity. If micro-fuzzing creates an input that causes the method under test's execution time to exceed a threshold, HotFuzz marks the method as potentially vulnerable to an AC attack. To validate potential AC vulnerabilities, HotFuzz synthesizes Java programs that invoke flagged methods on the suspect inputs and monitors their end- to-end execution in an unmodified JVM that mirrors a produc- tion environment. Those programs that exceed a timeout are included in HotFuzz's output corpus. Every program contained in the output corpus represents a witness of a potential AC vulnerability in the library under test that a human operator can either confirm or reject. Sanitizing method execution for AC vulnerabilities based on a threshold mimics the sanitizers used by modern fuzzers that kill a process whenever an integrity violation occurs at runtime, but it also introduces false positives into our results given that it is difficult to configure a proper"
+      },
+      {
+        "source": "selected",
+        "value": "Fifteen billion devices run Java and many of them are connected to the Internet. As this ecosystem continues to grow, it remains an important task to discover any unknown security threats these devices face. Fuzz testing repeatedly runs software on random inputs in order to trigger unexpected program behaviors, such as crashes or timeouts, and has historically revealed serious security vulnerabilities. Contemporary fuzz testing techniques focus on identifying memory corruption vulnerabilities that allow adversaries to achieve either remote code execution or information disclosure. Meanwhile, Algorithmic Complexity (AC) vulnerabilities, which are a common attack vector for denial-ofservice attacks, remain an understudied threat. In this paper, we present HotFuzz, a framework for automatically discovering AC vulnerabilities in Java libraries. HotFuzz uses micro-fuzzing, a genetic algorithm that evolves arbitrary Java objects in order to trigger the worst-case performance for a method under test. We define Small Recursive Instantiation (SRI) as a technique to derive seed inputs represented as Java objects to micro-fuzzing. After micro-fuzzing, HotFuzz synthesizes test cases that triggered AC vulnerabilities into Java programs and monitors their execution in order to reproduce vulnerabilities outside the fuzzing framework. HotFuzz outputs those programs that exhibit high CPU utilization as witnesses for AC vulnerabilities in a Java library. We evaluate HotFuzz over the Java Runtime Environment (JRE), the 100 most popular Java libraries on Maven, and challenges contained in the DARPA Space and Time Analysis for Cybersecurity (STAC) program. We evaluate SRI's effectiveness by comparing the performance of micro-fuzzing with SRI, measured by the number of AC vulnerabilities detected, to simply using empty values as seed inputs. In this evaluation, we verified known AC vulnerabilities, discovered previously unknown AC vulnerabilities that we responsibly reported to vendors, and received confirmation from both IBM and Oracle. Our results demonstrate that micro-fuzzing finds AC vulnerabilities in realworld software, and that micro-fuzzing with SRI-derived seed inputs outperforms using empty values."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "William Blair",
+          "email": "wdblair@bu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Andrea Mambretti",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Sajjad Arshad",
+          "email": "arshad@iseclab.org",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Michael Weissbacher",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "William Robertson",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Engin Kirda",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Manuel Egele",
+          "email": "megele@bu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "William Blair",
+          "email": "wdblair@bu.edu",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Andrea Mambretti",
+          "email": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Sajjad Arshad",
+          "email": "arshad@iseclab.org",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Michael Weissbacher",
+          "email": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "William Robertson",
+          "email": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Engin Kirda",
+          "email": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Manuel Egele",
+          "email": "megele@bu.edu",
+          "affiliations": [
+            "Boston University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 119,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Michael Weissbacher",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Michael Weissbacher",
+          "affiliation_raw": "Boston University Northeastern University",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b9",
+            "pdf:p1:b13",
+            "pdf:p1:b15"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 8.863,
+          "center_distance": 91.907,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "HotFuzz: Discovering Algorithmic Denial-of-Service Vulnerabilities Through Guided Micro-Fuzzing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/hotfuzz-discovering-algorithmic-denial-of-service-vulnerabilities-through-guided-micro-fuzzing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "William Blair",
+          "affiliations": [
+            "Boston University"
+          ]
+        },
+        {
+          "name": "Andrea Mambretti",
+          "affiliations": [
+            "Northeastern University"
+          ]
+        },
+        {
+          "name": "Sajjad Arshad",
+          "affiliations": [
+            "Northeastern University"
+          ]
+        },
+        {
+          "name": "Michael Weissbacher",
+          "affiliations": [
+            "Northeastern University"
+          ]
+        },
+        {
+          "name": "William Robertson",
+          "affiliations": [
+            "Northeastern University"
+          ]
+        },
+        {
+          "name": "Engin Kirda",
+          "affiliations": [
+            "Northeastern University"
+          ]
+        },
+        {
+          "name": "Manuel Egele",
+          "affiliations": [
+            "Boston University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "William Blair",
+      "field": "email",
+      "restored_value": "wdblair@bu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sajjad Arshad",
+      "field": "email",
+      "restored_value": "arshad@iseclab.org",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

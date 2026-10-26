@@ -1,0 +1,260 @@
+{
+  "paper_id": "030_post_quantum_cryptographic_analysis_of_ssh",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Post-quantum Cryptographic Analysis of SSH"
+      },
+      {
+        "source": "selected",
+        "value": "Post-quantum Cryptographic Analysis of SSH"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The Secure Shell (SSH) protocol is one of the first security protocols on the Internet to upgrade itself to resist attacks against future quantum computers, with the default adoption of the \"quantum (otherwise, classically)\" secure hybrid key exchange in OpenSSH from April 2022. However, there is a lack of a comprehensive security analysis of this quantumresistant version of SSH in the literature: related works either focus on the hybrid key exchange in isolation and do not consider security of the overall protocol, or analyze the protocol in security models which are not appropriate for SSH, especially in the \"post-quantum\" setting. In this paper, we remedy the state of affairs by providing a thorough post-quantum cryptographic analysis of SSH. We follow a \"top-down\" approach wherein we first prove security of SSH in a more appropriate model, namely, our post-quantum extension of the so-called authenticated and confidential channel establishment (ACCE) protocol security model; our extension which captures \"harvest now, decrypt later\" attacks could be of independent interest. Then we establish the cryptographic properties of SSH's underlying primitives, as concretely instantiated in practice, based on our protocollevel ACCE security analysis: for example, we prove relevant cryptographic properties of \"Streamlined NTRU Prime\", a key encapsulation mechanism (KEM) which is used in recent versions of OpenSSH and TinySSH, in the quantum random oracle model, and address open problems related to its analysis in the literature. Notably, our ACCE security analysis of postquantum SSH relies on the weaker notion of IND-CPA security of the ephemeral KEMs used in the hybrid key exchange. This is in contrast to prior works which rely on the stronger assumption of IND-CCA secure ephemeral KEMs. Hence we conclude the paper with a discussion on potentially replacing IND-CCA secure KEMs in current post-quantum implementations of SSH with simpler and faster IND-CPA secure counterparts, and also provide the corresponding benchmarks. 595 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The Secure Shell (SSH) protocol is one of the first security protocols on the Internet to upgrade itself to resist attacks against future quantum computers, with the default adoption of the “quantum (otherwise, classically)” secure hybrid key exchange in OpenSSH from April 2022. However, there is a lack of a comprehensive security analysis of this quantum- resistant version of SSH in the literature: related works either focus on the hybrid key exchange in isolation and do not consider security of the overall protocol, or analyze the protocol in security models which are not appropriate for SSH, especially in the “post-quantum” setting. In this paper, we remedy the state of affairs by providing a thorough post-quantum cryptographic analysis of SSH. We follow a “top-down” approach wherein we first prove security of SSH in a more appropriate model, namely, our post-quantum extension of the so-called authenticated and confidential channel establishment (ACCE) protocol security model; our extension which captures “ harvest now, decrypt later” attacks could be of independent interest. Then we establish the cryptographic properties of SSH's underlying primitives, as concretely instantiated in practice, based on our protocol- level ACCE security analysis: for example, we prove relevant cryptographic properties of “ Streamlined NTRU Prime ”, a key encapsulation mechanism (KEM) which is used in recent versions of OpenSSH and TinySSH, in the quantum random oracle model, and address open problems related to its analysis in the literature. Notably, our ACCE security analysis of post- quantum SSH relies on the weaker notion of IND-CPA security of the ephemeral KEMs used in the hybrid key exchange. This is in contrast to prior works which rely on the stronger assumption of IND-CCA secure ephemeral KEMs. Hence we conclude the paper with a discussion on potentially replacing IND-CCA secure KEMs in current post-quantum implementations of SSH with simpler and faster IND-CPA secure counterparts, and also provide the corresponding benchmarks. 1. Introduction To counter the threat of quantum computers breaking most currently deployed cryptography, there is an ongoing effort to transition important communication protocols on the Internet from using quantum-vulnerable cryptographic al- gorithms to their quantum-resilient counterparts. The Secure Shell (SSH) protocol - which is widely used for remote access to servers, as well as virtual private network (VPN) access - is one such protocol. In fact, recent versions of OpenSSH [1], the most prominent SSH implementation in practice, use quantum-secure key exchange methods by default. Because of the widespread adoption of these “post- quantum” transitioned protocols, it is important to formally analyze their cryptographic properties in appropriate quantum security models. In post-quantum implementations of SSH (and other protocols such as the Transport Layer Security (TLS) protocol and Signal), the key exchange mechanism technically follows the so-called hybrid paradigm wherein the quantum-secure key exchange method (or technically, key encapsulation mechanism (KEM) ) does not replace but instead is used in combination with the quantum-vulnerable method (e.g., that based on the Diffie-Hellman (DH) setting) such that the resulting mechanism is secure as long as one of these two methods is; in a way, these methods act as “backstops” against any potential weaknesses in their counterparts. And if we look at the handful of prior works which analyze the post-quantum security of such SSH implementations, most of them (e.g., [2], [3]) only focus on this hybrid key exchange primitive in isolation , and do not extend their analysis to capture security of the entire protocol. To the best of our knowledge, the work which comes close to providing a protocol-level cryptographic analysis of post-quantum SSH is by Blanchet and Jacomme [4]. More specifically, the authors take a machine-aided approach to provide formal security guarantees for post-quantum versions of SSH (and also TLS). However in their security proofs, SSH was analyzed using close variants of the standard au- thenticated key exchange (AKE) models [5]. And as explained in [6], AKE models are not appropriate for modeling security 595 DOI 10.1109/SP61157.2025.00126 of SSH for various reasons. 1 Finally, if we go back to the hybrid key exchange used in post-quantum implementations of SSH - notably, OpenSSH and TinySSH [7] - the quantum-secure KEM is instantiated with “Streamlined NTRU Prime” [8], a scheme which was submitted to NIST's post-quantum cryptography (PQC) standardization project; in fact, Streamlined NTRU Prime was used in the default key exchange method in OpenSSH from version 9.0 (OpenSSH also uses the new NIST PQC standard “ML-KEM” [9] from version 9.9). However as pointed out in [10], Streamlined NTRU Prime evades a formal security proof in the post-quantum setting - particularly, in the so- called “Quantum Random Oracle Model (QROM) ” [11] - because of certain design choices (we will expand upon this in Subsection 4.2.1 below). This only adds to the list of issues with regards to a thorough cryptographic analysis of post-quantum SSH. 1.1. Our Contributions In this work, we provide a comprehensive post-quantum cryptographic analysis of SSH in appropriate security models, thereby addressing the above issues in the literature. We follow a “top-down” approach in our analysis wherein we first establish post-quantum security of SSH at a protocol level, while relying on certain cryptographic properties of the underlying primitives; we then prove that concrete post- quantum instantiations of these primitives in practice do satisfy the corresponding properties. Our results can be summarized as follows: Post-quantum ACCE security of SSH . As pointed above, AKE models are not suitable to model security of SSH. Instead, as explained in [6], the notion of so-called authenticated and confidential channel establishment (ACCE) security is more appropriate. The authors of [6] also establish ACCE security of SSH - albeit in the classical Diffie- Hellman setting. To analyze SSH in the post-quantum setting, we first extend the ACCE security definition to capture the highly relevant “ harvest now, decrypt later ” attacks; we believe our extension is of independent interest. Then we formally prove security of SSH in our enhanced post-quantum ACCE model. We also capture forward secrecy in our proof, unlike the prior classical analysis of SSH in [6]. Analysis of SSH's hybrid KEX, and Streamlined NTRU Prime. Our post-quantum ACCE security analysis of SSH relies on the underlying hybrid key exchange (KEX) satisfying the standard notion of IND-CPA security. We hence establish IND-CPA security of the specific hybrid KEX methods used in post-quantum SSH in the appropriate QROM setting; prior works which focus on such hybrid KEX (e.g., [3]) consider the classical ROM [12] in contrast. And as mentioned earlier, most post-quantum implementations of SSH in practice instantiate the quantum-secure component of their hybrid KEX with Streamlined NTRU Prime. In 1. One reason is that AKE security requires indistinguishability of session keys in the protocol following the initial key exchange; however in SSH, an adversary can trivially distinguish real session keys from random using so-called “key confirmation” messages sent during the handshake phase. the context of SSH, we therefore tightly prove IND-CPA security of Streamlined NTRU Prime in the QROM. At the same time, we also describe a way to establish the stronger notion of IND-CCA security for Streamlined NTRU Prime in the QROM, thereby addressing an open problem in [10]. Such an IND-CCA security proof provides assurance against attacks which may exploit ephemeral keys being reused in bad hybrid KEX implementations in SSH. QROM security of SSH PRF . Following the hybrid key exchange in the handshake phase, session keys in post- quantum SSH are derived using a specific function denoted as PRFSSH in this paper. Our ACCE security analysis of SSH in the post-quantum setting also relies on PRFSSH being a secure pseudorandom function (PRF) . Now PRFSSH is a relatively complicated construction (see Figure 5 for a detailed description) which involves nested invocations of a hash function. And as pointed out in [6], analyzing the PRF security of PRFSSH using standard assumptions on the underlying hash function (such as collision resistance) is either not possible or highly challenging. Hence in their classical ACCE security analysis of SSH, the authors of [6] make a non-standard “monolithic” assumption that PRFSSH is a secure PRF, and do not go further. At the same time, they mention that if the hash function is (heuristically) modeled as a random oracle (i.e., in the classical ROM [12] setting), then it can be proven that PRFSSH is a secure PRF. Hence to complement our post-quantum ACCE security analysis, we model the hash function appropriately as a quantum random oracle - namely, where attackers can query such functions in quantum superposition - and formally establish the security of PRFSSH in the QROM. Benchmarking IND-CPA v/s IND-CCA secure KEMs in post-quantum SSH . Going back to the protocol- level analysis of post-quantum SSH by Blanchet and Ja- comme [4], they rely on the stronger assumption of IND- CCA security of the ephemeral quantum-secure KEM in the handshake phase; the authors mention they need IND-CCA security to prove forward secrecy in their model. But as mentioned above, the AKE-like model used in [4] is not suitable to capture security of SSH, and we believe the IND- CCA security requirement is an artifact of their proofs. In contrast, our post-quantum ACCE security analysis of SSH suggests that the simpler IND-CPA secure ephemeral KEMs are sufficient - even for forward secrecy. 2 Now in post- quantum implementations of SSH, the quantum-secure KEMs (e.g., Streamlined NTRU Prime, ML-KEM) are instantiated with certain “transforms” (we describe them in more detail in Subsection 4.2.1) to achieve IND-CCA security; these transforms however result in some performance overheads - e.g., due to extra hash calls. In light of our ACCE analysis, we instantiate the above ephemeral KEMs without these IND-CCA transforms and evaluate the resulting performance in the post-quantum SSH protocol. Even though we notice a significant runtime improvement when such IND-CPA 2. Our result also follows some recent works, e.g., [13], [14], which claim that IND-CPA secure KEMs are sufficient in post-quantum TLS; however, their new security proofs for TLS incur a significant loss in tightness in contrast to our analysis of post-quantum SSH. 596"
+      },
+      {
+        "source": "selected",
+        "value": "The Secure Shell (SSH) protocol is one of the first security protocols on the Internet to upgrade itself to resist attacks against future quantum computers, with the default adoption of the \"quantum (otherwise, classically)\" secure hybrid key exchange in OpenSSH from April 2022. However, there is a lack of a comprehensive security analysis of this quantumresistant version of SSH in the literature: related works either focus on the hybrid key exchange in isolation and do not consider security of the overall protocol, or analyze the protocol in security models which are not appropriate for SSH, especially in the \"post-quantum\" setting. In this paper, we remedy the state of affairs by providing a thorough post-quantum cryptographic analysis of SSH. We follow a \"top-down\" approach wherein we first prove security of SSH in a more appropriate model, namely, our post-quantum extension of the so-called authenticated and confidential channel establishment (ACCE) protocol security model; our extension which captures \"harvest now, decrypt later\" attacks could be of independent interest. Then we establish the cryptographic properties of SSH's underlying primitives, as concretely instantiated in practice, based on our protocollevel ACCE security analysis: for example, we prove relevant cryptographic properties of \"Streamlined NTRU Prime\", a key encapsulation mechanism (KEM) which is used in recent versions of OpenSSH and TinySSH, in the quantum random oracle model, and address open problems related to its analysis in the literature. Notably, our ACCE security analysis of postquantum SSH relies on the weaker notion of IND-CPA security of the ephemeral KEMs used in the hybrid key exchange. This is in contrast to prior works which rely on the stronger assumption of IND-CCA secure ephemeral KEMs. Hence we conclude the paper with a discussion on potentially replacing IND-CCA secure KEMs in current post-quantum implementations of SSH with simpler and faster IND-CPA secure counterparts, and also provide the corresponding benchmarks. 595 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Benjamin Benčina",
+          "email": "benjamin.bencina.2022@live.rhul.ac.uk",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Benjamin Dowling",
+          "email": "benjamin.dowling@kcl.ac.uk",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Varun Maram",
+          "email": "varun.maram@sandboxaq.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Keita Xagawa",
+          "email": "keita.xagawa@tii.ae",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Royal Holloway, University of London, UK"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute, SandboxAQ, King's College London, UK UAE"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Benjamin Dowling",
+          "email": "benjamin.dowling@kcl.ac.uk",
+          "affiliations": [
+            "King's College London, UK"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Keita Xagawa",
+          "email": "keita.xagawa@tii.ae",
+          "affiliations": [
+            "Technology Innovation Institute, UAE"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 103,
+      "author_count": 2,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Benjamin Dowling",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Keita Xagawa",
+          "block_id": "pdf:p1:b9",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Benjamin Dowling",
+          "affiliation_raw": "King's College London, UK",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b7"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 1.912,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Keita Xagawa",
+          "affiliation_raw": "Technology Innovation Institute, UAE",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b9",
+          "affiliation_block_ids": [
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 6.134,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Post-quantum Cryptographic Analysis of SSH",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Benjamin Benčina",
+          "affiliations": [
+            "Royal Holloway",
+            "University of London"
+          ]
+        },
+        {
+          "name": "Benjamin Dowling",
+          "affiliations": [
+            "King's College London"
+          ]
+        },
+        {
+          "name": "Varun Maram",
+          "affiliations": [
+            "SandboxAQ"
+          ]
+        },
+        {
+          "name": "Keita Xagawa",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Benjamin Dowling",
+      "field": "email",
+      "restored_value": "benjamin.dowling@kcl.ac.uk",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Keita Xagawa",
+      "field": "email",
+      "restored_value": "keita.xagawa@tii.ae",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 2,
+      "country_values_restored": 2,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

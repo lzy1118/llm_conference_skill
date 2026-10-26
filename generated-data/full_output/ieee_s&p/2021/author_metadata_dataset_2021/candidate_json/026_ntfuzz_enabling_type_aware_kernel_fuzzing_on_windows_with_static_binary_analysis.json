@@ -1,0 +1,187 @@
+{
+  "paper_id": "026_ntfuzz_enabling_type_aware_kernel_fuzzing_on_windows_with_static_binary_analysis",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "NTFUZZ: Enabling Type-Aware Kernel Fuzzing on Windows with Static Binary Analysis"
+      },
+      {
+        "source": "selected",
+        "value": "NTFUZZ: Enabling Type-Aware Kernel Fuzzing on Windows with Static Binary Analysis"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Although it is common practice for kernel fuzzers to leverage type information of system calls, current Windows kernel fuzzers do not follow the practice as most system calls are private and largely undocumented. In this paper, we present a practical static binary analyzer that automatically infers system call types on Windows at scale. We incorporate our analyzer to NTFUZZ, a type-aware Windows kernel fuzzing framework. To our knowledge, this is the first practical fuzzing system that utilizes scalable binary analysis on a COTS OS. With NTFUZZ, we found 11 previously unknown kernel bugs, and earned $25,000 through the bug bounty program offered by Microsoft. All these results confirm the practicality of our system as a kernel fuzzer. 677 2021 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Although it is common practice for kernel fuzzers to leverage type information of system calls, current Windows kernel fuzzers do not follow the practice as most system calls are private and largely undocumented. In this paper, we present a practical static binary analyzer that automatically infers system call types on Windows at scale. We incorporate our analyzer to N TFUZZ, a type-aware Windows kernel fuzzing framework. To our knowledge, this is the first practical fuzzing system that utilizes scalable binary analysis on a COTS OS. With N TFUZZ, we found 11 previously unknown kernel bugs, and earned $25,000 through the bug bounty program offered by Microsoft. All these results confirm the practicality of our system as a kernel fuzzer. I. I NTRODUCTION Software vulnerabilities in kernel code cause serious se- curity breaches. At the very least, malicious attackers can produce a Blue Screen of Death (BSoD) on a victim machine. At worst, attackers can gain unprivileged access to the ker- nel space, which entails information disclosure or privilege escalation. For these reasons, the two biggest OS makers, i.e., Apple and Microsoft, are offering rewards up to $15,000 and $30,000, respectively, for reporting a critical vulnerability in their kernels [3], [57]. Therefore, there has been growing research interest on kernel fuzzing in both industry and academia [18], [30], [34], [40], [41], [48], [76]-[78], [84], [91]. One of the key strategies in kernel fuzzing research is to utilize types and dependencies of system calls (syscalls). Since syscall arguments are typically nested and dependent on each other, fuzzers often fail to generate meaningful test cases without recognizing types of syscalls. Such an approach is easily achieved by Linux kernel fuzzers [18], [34], [76], [91] due to its open nature. How- ever, Windows syscalls are widely unknown and undocu- mented. Furthermore, their convention frequently changes over time [38]. Although ReactOS [79] partially provides such information, it does not account for the latest syscalls. To our knowledge, there is no existing Windows ker- nel fuzzer that generally infers type information from ever- changing syscalls of Windows. Instead, current fuzzers miti- gate the challenge by (1) focusing on a small subset of the attack surface, such as font-related APIs [37] and the IOCTL interface [41], [74], or (2) relying on user-provided knowledge or harness code [25], [47], [84]. Therefore, we present N TFUZZ, a Windows kernel fuzzer that leverages static binary analysis to automatically infer syscall types. At a high level, it runs in two steps. First, it stat- ically analyzes Windows system binaries- kernel32.dll, ntdll.dll, and etc.-that invoke syscalls, and infers their argument types. Then, it uses the inferred types to fuzz the ker- nel by performing type-aware mutation on syscall arguments. The key intuition behind our approach is that even though syscalls are largely undocumented on Windows, known (doc- umented) API functions often call those syscalls through a chain of internal function calls. This means, we can bridge the information gap between documented and undocumented interfaces with static analysis by propagating the knowledge from documented functions to undocumented syscalls. Unfortunately, designing a scalable static analyzer for Win- dows system binaries is challenging due to their huge size and interdependency. To statically infer syscall types by analyzing them, one needs to track both register and memory states while considering data flows between functions that are located in multiple different binaries. While there are a number of public tools focusing on CFG recovery [28], [32], [69] and single- binary analyses [13], [23], [42], [86], [92], we are not aware of any practical binary analysis solution that performs an inter- binary and inter-procedural analysis, in a scalable manner. We overcome this challenge with a modular analysis, a.k.a. compositional analysis [2], [15], by designing a novel abstract domain. At a high level, our analyzer constructs a parameter- ized summary of each function, which describes the semantics of a function. When an analyzed function is later invoked from another function, we instantiate the parameterized summary to figure out the behavior of the function call. This way, we can efficiently analyze data flows and syscall types in an inter- procedural fashion, while avoiding redundant computations. With the inferred syscall type information, N TFUZZ then runs a type-aware fuzzing that launches a user application and intercepts syscalls to perform mutation on their argument values. This way, N TFUZZ can automatically fuzz a Windows kernel with minimal manual effort from the user; N TFUZZ does not require a user to write a harness code for the syscalls to test, as in kAFL [84] or pe-afl [47]. We evaluate our system on Windows 10, and show that type information obtained from our static analysis indeed helps find more kernel crashes. Moreover, NTFUZZ found 11 unique bugs from the latest version of Windows 10, and four CVEs were assigned at the time of writing. A total of $25,000 bounty from Microsoft was awarded to the bugs we reported, which highlights the practical impact of our work. 677 DOI 10.1109/SP40001.2021.00114 System Binaries(ntdll.dll,kernel32.dll, ...) Known API functions(CreateFile, ...) Unknown (Undocu-mented) functions User ApplicationSystem Process Service ... System Calls (NtCreateFile, ...) System CallHandlerDevice Driver Graphics Driver... User mode Kernel mode Fig. 1. Simplified architecture of Windows OS. The contribution of this paper is as follows. 1) We integrate a static binary analysis technique with Windows kernel fuzzing for the first time. 2) We present a scalable static analyzer on Windows system binaries to infer the types of Windows syscalls. 3) We present N TFUZZ, a type-aware fuzzing framework to test Windows kernel with minimal manual effort. 4) We evaluate N TFUZZ on the latest Windows 10, and discuss 11 unique kernel bugs and four CVEs found. II. B ACKGROUND In this section, we provide backgrounds required to under- stand our methodology for Windows kernel fuzzing. A. Windows Architecture Figure 1 illustrates a simplified architecture of Windows OS. User applications access system resources, such as I/O devices, through a system call (syscall). Typically, those applications do not directly invoke syscalls by themselves. Instead, they call a high-level API function, which will internally request a syscall. For example, to invoke the NtCreateFile syscall, a user would normally call the CreateFile function located at kernel32.dll, instead of directly invoking the syscall. Therefore, N TFUZZ aims at automatically figuring out syscall types by analyzing call chains from known API functions to undocumented functions, and to syscalls. There are more than 1,600 syscalls in Windows 10, and the majority of them are not documented. Windows API functions are documented [62], [65], and their actual implementation is present in built-in system DLL files [55] that we refer to as system binaries in this paper. Our technique statically analyzes these system binaries in order to infer the types of arguments passed to syscalls. Since there are numerous API functions and DLL files on Windows, we focus only on the core system libraries that we manually identified (see Table I). In Windows 10 17134.1, which was used for our evaluation (§VII-B), 80.4% of the existing syscalls TABLE I LIST OF SYSTEM BINARIES THAT OUR STATIC ANALYSIS TARGETS . Binary Description ntdll.dll Syscalls and APIs for native applications [56] kernel32.dll Management of core system resources (e.g. file) kernelbase.dll ---------- \"---------- win32u.dll Syscalls for graphic user interface (GUI) gdi32.dll Graphic device interface to control video displays gdi32full.dll ---------- \"---------- user32.dll Management of UI components (e.g. window) dxcore.dll* Interface for DirectX functionalities * This file presents on Windows 10 starting from the build 18362. were invoked at least once from these binaries. Note, we can extend the list if needed, although it was enough for our purposes (see§VIII). B. Static Program Analysis Static program analysis (static analysis in short) refers to a methodology for automatically predicting the behavior of programs without running them [82]. While there is a wide spectrum of techniques, static analyses can be described using a general theoretical framework named abstract interpreta- tion [20], [21]. In abstract interpretation, a concrete program state is approximated with an abstract domain, and a program is analyzed with abstract semantics , which subsumes the concrete semantics of the program. In the field of static analysis, we say an analyzer is sound, if the analyzer has no false negative; if a sound analyzer reports a program as bug-free, then the safety of the program should be guaranteed. Similarly, we say an analyzer is precise (or complete), if the analyzer is free from false positives [67]. We note that both the terms are used for different meanings in other fields [86]. In this paper, however, we will follow the traditional convention in static analysis. If the analysis result happens to be both sound and precise, we will describe the analysis to be accurate, or correct. III. M OTIVATION In this section, we motivate our research by showing a code snippet taken from one of the CVEs we found (see §VII-E). Figure 2 presents a simplified version of CVE-2020-0792. The bug exists in the NtUserRegisterWindowMessage syscall, which takes in a UNICODE_STRING pointer as input. The function validates the input fields in Line 11 in order to make sure that the user-provided pointer ( buf) accesses the right memory region. However, the function skips the entire check when the length of the buffer ( len) has an odd value in Line 6. The problem is that the LogError function in Line 7 does not abort the syscall upon execution. Therefore, one can effectively circumvent the safety check in Line 11 by specifying an odd length ( Length), and an invalid memory pointer ( Buffer). This vulnerability allows an attacker to access the kernel memory and gain escalated privilege by carefully crafting the input fields. From this example, we can make the following important observations. 678"
+      },
+      {
+        "source": "selected",
+        "value": "Although it is common practice for kernel fuzzers to leverage type information of system calls, current Windows kernel fuzzers do not follow the practice as most system calls are private and largely undocumented. In this paper, we present a practical static binary analyzer that automatically infers system call types on Windows at scale. We incorporate our analyzer to NTFUZZ, a type-aware Windows kernel fuzzing framework. To our knowledge, this is the first practical fuzzing system that utilizes scalable binary analysis on a COTS OS. With NTFUZZ, we found 11 previously unknown kernel bugs, and earned $25,000 through the bug bounty program offered by Microsoft. All these results confirm the practicality of our system as a kernel fuzzer. 677 2021 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jaeseung Choi",
+          "email": "jschoi17@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Kangsu Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Daejin Lee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Sang Kil Cha",
+          "email": "sangkilc@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jaeseung Choi",
+          "email": "jschoi17@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Kangsu Kim",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Daejin Lee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Sang Kil Cha",
+          "email": "sangkilc@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 115,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "NTFUZZ: Enabling Type-Aware Kernel Fuzzing on Windows with Static Binary Analysis",
+      "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jaeseung Choi",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Kangsu Kim",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Daejin Lee",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Sang Kil Cha",
+          "affiliations": [
+            "KAIST"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

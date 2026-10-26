@@ -1,0 +1,172 @@
+{
+  "paper_id": "031_you_can_apos_t_judge_a_binary_by_its_header_data_code_separation_for_non_standard_arm_binaries_using_pseudo_labels",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "You Can't Judge a Binary by Its Header: Data-Code Separation for Non-Standard ARM Binaries using Pseudo Labels"
+      },
+      {
+        "source": "selected",
+        "value": "You Can't Judge a Binary by Its Header: Data-Code Separation for Non-Standard ARM Binaries using Pseudo Labels"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Static binary analysis is critical to various security tasks such as vulnerability discovery and malware detection. In recent years, binary analysis has faced new challenges as vendors of the Internet of Things (IoT) and Industrial Control Systems (ICS) continue to introduce customized or non-standard binary formats that existing tools cannot readily process. Reverse-engineering each of the new formats is costly as it requires extensive expertise and analysts' time. In this paper, we investigate the first step to automate the analysis of non-standard binaries, which is to recognize the bytes representing \"code\" from \"data\" (i.e., data-code separation). We propose Loadstar, and its key idea is to use the abundant labeled data from standard binaries to train a classifier and adapt it for processing unlabeled non-standard binaries. We use a pseudo-label-based method for domain adaption and leverage knowledge-inspired rules for pseudo-label correction, which serves as the guardrail for the adaption process. A key advantage of the system is that it does not require labeling any non-standard binaries. Using three datasets of non-standard PLC binaries, we evaluate Loadstar and show it outperforms existing tools in terms of both accuracy and processing speed. We will share the tool (open source) with the community. 3727 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Static binary analysis is critical to various security tasks such as vulnerability discovery and malware detection. In recent years, binary analysis has faced new challenges as vendors of the Internet of Things (IoT) and Industrial Control Systems (ICS) continue to introduce customized or non-standard binary formats that existing tools cannot readily process. Reverse-engineering each of the new formats is costly as it requires extensive expertise and analysts' time. In this paper, we investigate the first step to automate the analysis of non-standard binaries, which is to recognize the bytes representing “code” from “data” (i.e., data-code separation). We propose Loadstar, and its key idea is to use the abundant labeled data from standard binaries to train a classifier and adapt it for processing unlabeled non-standard binaries. We use a pseudo-label-based method for domain adaption and leverage knowledge-inspired rules for pseudo-label correction, which serves as the guardrail for the adaption process. A key advantage of the system is that it does not require labeling any non-standard binaries. Using three datasets of non-standard PLC binaries, we evaluate Loadstar and show it outperforms existing tools in terms of both accuracy and processing speed. We will share the tool (open source) with the community. 1. Introduction Static binary analysis is critical to a range of security tasks such as vulnerability discovery, malware detection, and control flow integrity protection [1]-[4]. In practice, software (including malware) of real-world systems is commonly pre- sented in the form of binary executables without source code. The ability to parse and analyze binaries (e.g., disassembling a binary and reconstructing its control flow graph) is the precondition for the aforementioned security analytics tasks. However, binary analysis has faced new challenges as the Internet of Things (IoT) and Industrial Control Systems (ICS) continue to introduce non-standard binaries to the ecosystem. These non-standard binaries do not follow well-documented formats and cannot be readily parsed by existing tools such as Ghidra [5], IDA Pro [6], and Radare2 [7]. Unlike standard binaries such as ELF, PE, and Mach-O that are organized into sections (e.g., .text, .data) with headers that list the section addresses, non-standard binaries can have different file formats for different devices and vary from one vendor to another. This happens for many reasons. First, IoT and ICS binaries are often compiled for atypical, specialized, or legacy operating systems (e.g., Nucleus or embedded Linux with a real-time patch) that do not conform to standard file formats. Second, due to the lack of standardization and the need to keep their software proprietary, IoT vendors often create customized file formats without public documentation. This results in unknown (non-standard) binary file formats that do not have a recognizable layout/configuration [8], [9]. Manually reverse engineering the format of each of these devices can have significant time costs. Despite the extensive efforts to develop binary analysis tools [10]-[16], most of them cannot handle non-standard binaries. This is because existing tools commonly require parsing and preprocessing the input binaries to extract the code sections (e.g., based on known formats, using tools such as Ghidra [5] and IDA Pro [6]). In addition, some of them may even rely on information that is not easily extracted from non-standard binaries (e.g., headers, symbol tables, debug information). In our preliminary tests (Section 2.3), we attempted to use both commercial tools [5]-[7] and research-based tools [10]-[12] to load and analyze non- standard binaries. Most of the tools cannot proceed due to unrecognizable binary formats. Goal and Method. In this paper, we investigate the very first step to analyze non-standard binaries, which is to parse the binaries to recognize bytes that represent “code” and “data” (i.e., data-code separation). This step is important for a range of downstream analyses (e.g., accurate disassembly, code similarity analysis, and function/signature detection) because most of these analyses need to take the code sections as inputs to perform further analysis. We propose to address the problem by training a machine learning classifier based on standard binaries, and then adapting the classifier to the target non-standard binary formats. To ensure practicality, the system has two main assumptions. First, the system does not require any labeled non-standard binary files (considering the high costs of manually reverse engineering non-standard binaries). Second, the system assumes the availability of labeled standard binaries, which can be easily achieved by 3727 DOI 10.1109/SP61157.2025.00036 parsing standard binaries with existing tools (e.g., Ghidra) based on their known formats. We design a system called Loadstar, based on two high- level intuitions. First, the code sections in binary executables follow language-specific patterns and semantics, but the data sections do not. Such differences can be reflected in the characteristics of the forcefully disassembled/decoded bytes. Second, the difference between code and data may not be the same between standard and non-standard formats; however, a set of rules inspired by domain knowledge can serve as the invariant to help the model adapt. Based on these intuitions, Loadstar is designed with two modules. The first module trains an initial classifier using labeled standard binaries. To do so, Loadstar takes raw binaries as inputs and forcefully decodes them into instruction sequences (via linear sweep). It trains a language model to embed these instructions and uses the labeled standard binaries to train the initial classifier ( C0). The second module performs domain adaptation using unlabeled non-standard binaries. The key idea is to use the initial classifier C0 to produce pseudo labels on the non-standard binaries and then construct a set of domain-knowledge rules (e.g., define-use chain , jump/branch destination ) to curate the pseudo labels. By iteratively training a new classifier (e.g., Cn) and performing pseudo-label correction, we gradually improve the classifier's performance on non-standard binaries. Evaluation. Our evaluation is focused on non-standard Programmable Logic Controller (PLC) binaries under the ARM instruction set architecture. The rationale is that we need ground-truth labels for our evaluation (not training), and PLC binaries can be labeled with reasonable efforts, thanks to existing research (and reverse-engineering efforts) [17], [18]. In addition, PLC devices are widely used in industrial control environments [2], [19] and ARM is the most utilized ISA in the IoT/ICS space [8], [20]. Using three different datasets of non-standard binaries (two real-world datasets, and one syn- thetic dataset), we show that Loadstar outperforms existing methods in terms of both detection accuracy and inference speed. Our result confirms the effectiveness of pseudo-label correction while highlighting that not all domain-knowledge rules (especially statistical-based rules) are equally useful. The results show Loadstar is not only capable of accurately identifying data/code sections but can also capture inline data within code sections. Loadstar can process non-standard binaries with a throughput of 55KB/s on a CPU, which is orders of magnitude faster than XDA [12] and a BERT-based baseline. In addition, our transferability experiment shows the possibility of training a “global model” of Loadstar to handle diverse types of non-standard binaries. Countributions. We have three key contributions. • We propose Loadstar, a pseudo-label-based learning model to perform data-code separation for non-standard binaries. A key advantage is that its training does not require labeling any non-standard binaries. • We evaluate Loadstar using three different datasets of non-standard PLC binaries, which shows the system's excellent accuracy and efficiency. • Throughout our study, we labeled extensive ground-truth datasets of both standard and non-standard binaries. The ground-truth datasets and code will be made available for sharing with the community. 2. Background and Motivation In this section, we describe the background for the data- code separation problem for non-standard binaries, followed by the motivation and the scope of this paper. 2.1. Standard vs. Non-standard Binaries Standard Binaries. This type of binaries is compiled for typical operating systems such as Linux, Windows, and macOS, and follows known (standard) file formats such as ELF, PE, and Mach-O. Under each of these file formats, there is a clear description of sections, their functionality, and the type of data they store. Additionally, these files are usually equipped with headers that describe the exact locations of each of these sections. These files can be easily parsed by commercial binary analysis tools such as Ghidra [5], IDA Pro [6], and Radare2 [7]. Each of these commercial tools has a limited number of natively supported/recognized file formats (see the full list in Table 11 in Appendix A). Non-Standard Binaries. These binaries (or binary blobs) usually do not have descriptive headers and cannot be parsed by existing binary analysis tools. Non-standard binaries are commonly seen in real-world IoT devices and industrial control systems. V arious vendors create their own customized file formats in order to keep their software proprietary [8], [9]. Without considerable reverse-engineering efforts, commercial tools cannot parse/support these binaries. 2.2. Data-Code Separation Problem When loading a binary file of a non-standard format, existing tools often fail to recognize or parse the file correctly. Figure 1 shows how Ghidra [5] and Radare2 [7] load a non- standard binary file, which represents two common ways in which existing tools handle such binaries. Ghidra loads it as a raw binary, which means that metadata such as sections (e.g. .text, .data) are not demarcated, and accurate disassembly is not feasible due to the lack of differentiation between code and data sections. Radare2 performs a linear sweep disassembly where it assumes all bytes are code. In both scenarios, the outputs do not separate data from code to support downstream analysis. To address this problem, prior works have performed reverse engineering on certain customized/non-standard bi- nary formats and then either built new tools [18] or modified existing tools [20], [21] to parse related files. Key challenges to the scalability of these approaches are due to (1) the extensive manual efforts and expertise required for reverse engineering, (2) the diversity/heterogeneity of IoT vendors (and their customized formats) existing on the market [8], 3728"
+      },
+      {
+        "source": "selected",
+        "value": "Static binary analysis is critical to various security tasks such as vulnerability discovery and malware detection. In recent years, binary analysis has faced new challenges as vendors of the Internet of Things (IoT) and Industrial Control Systems (ICS) continue to introduce customized or non-standard binary formats that existing tools cannot readily process. Reverse-engineering each of the new formats is costly as it requires extensive expertise and analysts' time. In this paper, we investigate the first step to automate the analysis of non-standard binaries, which is to recognize the bytes representing \"code\" from \"data\" (i.e., data-code separation). We propose Loadstar, and its key idea is to use the abundant labeled data from standard binaries to train a classifier and adapt it for processing unlabeled non-standard binaries. We use a pseudo-label-based method for domain adaption and leverage knowledge-inspired rules for pseudo-label correction, which serves as the guardrail for the adaption process. A key advantage of the system is that it does not require labeling any non-standard binaries. Using three datasets of non-standard PLC binaries, we evaluate Loadstar and show it outperforms existing tools in terms of both accuracy and processing speed. We will share the tool (open source) with the community. 3727 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hadjer Benkraouda",
+          "email": "hadjerb2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Nirav Diwan",
+          "email": "ndiwan2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Gang Wang",
+          "email": "gangw@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hadjer Benkraouda",
+          "email": "hadjerb2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Nirav Diwan",
+          "email": "ndiwan2@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Gang Wang",
+          "email": "gangw@illinois.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 15,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "You Can’t Judge a Binary by Its Header: Data-Code Separation for Non-Standard ARM Binaries using Pseudo Labels",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hadjer Benkraouda",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Nirav Diwan",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Gang Wang",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

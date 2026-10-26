@@ -1,0 +1,203 @@
+{
+  "paper_id": "073_mctiny_fast_high_confidence_post_quantum_key_erasure_for_tiny_network_servers",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "McTiny: Fast High-Confidence Post-Quantum Key Erasure for Tiny Network Servers"
+      },
+      {
+        "source": "selected",
+        "value": "system with ECC so that the security of the combined system would not be weaker than a pure ECC system. In April 2018, Google's Langley reported [21] on another experiment with post-quantum cryptography, this time test- ing no particular system but different key sizes. They tested initiation packets of sizes 400, 1100, and 10000 bytes, saying that these are meant to represent systems based on isogenies and based on different types of lattices. Langley justified their choice by writing “in some cases the public-key + cipher- text size was too large to be viable in the context of TLS”. There were too many sites that dropped the largest size so it was skipped from further experiments and replaced by 3300 bytes. For these sizes they measured the increase in latency. In a second experiment they measured round-trip times, this time even skipping the 3300-byte size. These sizes are a far cry from what is needed to transmit the 1MB keys of the McEliece cryptosystem. See also the failure reported in [12] to handle 300KB keys in OpenSSL. For the experiments it is reasonable to use new systems in combination with ECC; see [18 -20] for a new lattice-plus- ECC experiment by Google and Cloudflare. However, this does not help with post-quantum security if lattices turn out to be much weaker than currently assumed. This raises the question how network protocols could possibly use the high- confidence McEliece cryptosystem. Of course, the key could be chopped into pieces and sent in separate packets and the server could be instructed to buffer the pieces and reassemble the pieces but this allows rogue clients to flood the RAM on the server. See Section 2. This paper introduces McTiny, a new protocol that solves the problem of memory-flooding denial-of-service attacks for code-based cryptography. McTiny handles the 1MB keys of the McEliece cryptosystem, having the same basic data flow as TLS in which the client creates a fresh public key for each connection and sends it as the first step of the protocol. McTiny splits the public keys into pieces small enough to fit into network packets. On the client side the overhead is small compared to creating the key and sending 1MB. The server is not required to allocate any memory per client and only ever needs to process information that fits into one Internet packet, making McTiny suitable for tiny network servers. Sections 2 and 3 motivate tiny network servers and review existing results. Section 4 gives background in coding the- ory. Sections 5 and 6 explain our new McTiny protocol. We analyze cryptographic security in Sections 7-9 and present our software implementation and evaluation in Section 10. Finally we consider some alternative choices. 2 Server-memory Denial of Service, and the Concept of Tiny Network Servers Most-but not all!-of today's Internet protocols are vulner- able to low-cost denial-of-service attacks that make a huge number of connections to a server. These attacks fill up all of the memory available on the server for keeping track of connections. The server is forced to stop serving some con- nections, including connections from legitimate clients. These attacks are usually much less expensive than comparably ef- fective attacks that try to use all available network bandwidth or that try to consume all available CPU time. 2.1 A Classic Example: SYN Flooding The “SYN flooding” denial-of-service attack [14] rose to prominence twenty years ago when it was used to disable an ISP in New York, possibly in retaliation for anti-spam efforts; see [9]. “SYN cookies” [4] address SYN flooding, but from a broader security perspective they are highly unsatisfactory, as we now explain. Recall that in a normal TCP connection, say an HTTP connection, the client sends a TCP “SYN” packet to the server containing a random 32-bit initial sequence number (ISN); the server sends back a “SYNACK” packet acknowledging the client ISN and containing another random ISN; the client sends an “ACK” packet acknowledging the server ISN. At this point a TCP connection is established, and both sides are free to send data. The client sends an HTTP request (preferably as part of the ACK packet), and the server responds. The server allocates memory to track SYN-SYNACK pairs, including IP addresses, port numbers, and ISNs. This is ex- actly the memory targeted by SYN flooding. A SYN-flooding attacker simply sends a stream of SYNs to the server with- out responding to the resulting SYNACKs. Once the SYN- SYNACK memory fills up, the server is forced to start throw- ing away some SYN-SYNACK pairs, and is no longer able to handle the corresponding ACKs. The server can try to guess which SYN-SYNACK pairs are more likely to be from le- gitimate clients, and prioritize keeping those, but a sensible attacker will forge SYNs that look just like legitimate SYNs. If the server has enough SYN-SYNACK memory for c con- nections, but is receiving 100c indistinguishable SYNs per RTT, then a legitimate client's ACK fails with probability at least 99%. SYN cookies store SYN-SYNACK pairs in the network rather than in server memory. Specifically, the server encodes its SYN-SYNACK pair as an authenticated cookie inside the SYNACK packet back to the client, and then forgets the SYN- SYNACK pair (if it is out of memory or simply does not want to allocate memory). The client sends the cookie back in its ACK packet. The server verifies the authenticator and reconstructs the SYN-SYNACK pair.1 1For compatibility with unmodified clients, the server actually encodes a very short authenticator inside the choice of server ISN. Modifying both the client and the server would have allowed a cleaner protocol with a longer authenticator. In this paper we are prioritizing security and simplicity above compatibility, so we do not compromise on issues such as authenticator length."
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Recent results have shown that some post-quantum cryptographic systems have encryption and decryption performance comparable to fast elliptic-curve cryptography (ECC) or even better. However, this performance metric is considering only CPU time and ignoring bandwidth and storage. High-confidence post-quantum encryption systems have much larger keys than ECC. For example, the code-based cryptosystem recommended by the PQCRYPTO project uses public keys of 1MB. Fast key erasure (to provide \"forward secrecy\") requires new public keys to be constantly transmitted. Either the server needs to constantly generate, store, and transmit large keys, or it needs to receive, store, and use large keys from the clients. This is not necessarily a problem for overall bandwidth, but it is a problem for storage and computation time on tiny network servers. All straightforward approaches allow easy denial-ofservice attacks. This paper describes a protocol, suitable for today's networks and tiny servers, in which clients transmit their codebased one-time public keys to servers. Servers never store full client public keys but work on parts provided by the clients, without having to maintain any per-client state. Intermediate results are stored on the client side in the form of encrypted cookies and are eventually combined by the server to obtain the ciphertext. Requirements on the server side are very small: storage of one long-term private key, which is much smaller than a public key, and a few small symmetric cookie keys, which are updated regularly and erased after use. The protocol is highly parallel, requiring only a few round trips, and involves total bandwidth not much larger than a single public key. The total number of packets sent by each side is 971, each fitting into one IPv6 packet of less than 1280 bytes. The protocol makes use of the structure of encryption in code-based cryptography and benefits from small ciphertexts in code-based cryptography."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Recent results have shown that some post-quantum cryp- tographic systems have encryption and decryption perfor- mance comparable to fast elliptic-curve cryptography (ECC) or even better. However, this performance metric is con- sidering only CPU time and ignoring bandwidth and stor- age. High-confidence post-quantum encryption systems have much larger keys than ECC. For example, the code-based cryptosystem recommended by the PQCRYPTO project uses public keys of 1MB. Fast key erasure (to provide “forward secrecy”) requires new public keys to be constantly transmitted. Either the server needs to constantly generate, store, and transmit large keys, or it needs to receive, store, and use large keys from the clients. This is not necessarily a problem for overall bandwidth, but it is a problem for storage and computation time on tiny network servers. All straightforward approaches allow easy denial-of- service attacks. This paper describes a protocol, suitable for today's net- works and tiny servers, in which clients transmit their code- based one-time public keys to servers. Servers never store full client public keys but work on parts provided by the clients, without having to maintain any per-client state. Intermediate results are stored on the client side in the form of encrypted cookies and are eventually combined by the server to obtain the ciphertext. Requirements on the server side are very small: storage of one long-term private key, which is much smaller than a public key, and a few small symmetric cookie keys, which are updated regularly and erased after use. The proto- col is highly parallel, requiring only a few round trips, and involves total bandwidth not much larger than a single public key. The total number of packets sent by each side is 971, each fitting into one IPv6 packet of less than 1280 bytes. The protocol makes use of the structure of encryption in code-based cryptography and benefits from small ciphertexts in code-based cryptography."
+      },
+      {
+        "source": "selected",
+        "value": "Recent results have shown that some post-quantum cryptographic systems have encryption and decryption performance comparable to fast elliptic-curve cryptography (ECC) or even better. However, this performance metric is considering only CPU time and ignoring bandwidth and storage. High-confidence post-quantum encryption systems have much larger keys than ECC. For example, the code-based cryptosystem recommended by the PQCRYPTO project uses public keys of 1MB. Fast key erasure (to provide \"forward secrecy\") requires new public keys to be constantly transmitted. Either the server needs to constantly generate, store, and transmit large keys, or it needs to receive, store, and use large keys from the clients. This is not necessarily a problem for overall bandwidth, but it is a problem for storage and computation time on tiny network servers. All straightforward approaches allow easy denial-ofservice attacks. This paper describes a protocol, suitable for today's networks and tiny servers, in which clients transmit their codebased one-time public keys to servers. Servers never store full client public keys but work on parts provided by the clients, without having to maintain any per-client state. Intermediate results are stored on the client side in the form of encrypted cookies and are eventually combined by the server to obtain the ciphertext. Requirements on the server side are very small: storage of one long-term private key, which is much smaller than a public key, and a few small symmetric cookie keys, which are updated regularly and erased after use. The protocol is highly parallel, requiring only a few round trips, and involves total bandwidth not much larger than a single public key. The total number of packets sent by each side is 971, each fitting into one IPv6 packet of less than 1280 bytes. The protocol makes use of the structure of encryption in code-based cryptography and benefits from small ciphertexts in code-based cryptography."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Daniel JBernstein",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Chicago, Ruhr University Bochum, Eindhoven University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Tanja Lange",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Chicago, Ruhr University Bochum, Eindhoven University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Daniel JBernstein",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Chicago, Ruhr University Bochum, Eindhoven University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Tanja Lange",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Chicago, Ruhr University Bochum, Eindhoven University of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 7,
+      "author_count": 2,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 12.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 12.0,
+        "candidates": [
+          {
+            "name": "Daniel J. Bernstein",
+            "block_id": "pdf:p1:b3",
+            "font_size": 11.955,
+            "support_ids": [
+              "pdf:p1:b5",
+              "pdf:p1:b6"
+            ]
+          },
+          {
+            "name": "Tanja Lange",
+            "block_id": "pdf:p1:b4",
+            "font_size": 11.955,
+            "support_ids": [
+              "pdf:p1:b5"
+            ]
+          }
+        ],
+        "fully_supported": true
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Daniel JBernstein",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Tanja Lange",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Daniel JBernstein",
+          "affiliation_raw": "University of Illinois at Chicago, Eindhoven University of Technology",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.948,
+          "center_distance": 103.338,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Tanja Lange",
+          "affiliation_raw": "University of Illinois at Chicago, Eindhoven University of Technology",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.948,
+          "center_distance": 91.327,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "McTiny: Fast High-Confidence Post-Quantum Key Erasure for Tiny Network Servers",
+      "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/bernstein",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Daniel J. Bernstein",
+          "affiliations": [
+            "University of Illinois at Chicago, Ruhr University Bochum"
+          ]
+        },
+        {
+          "name": "Tanja Lange",
+          "affiliations": [
+            "Eindhoven University of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

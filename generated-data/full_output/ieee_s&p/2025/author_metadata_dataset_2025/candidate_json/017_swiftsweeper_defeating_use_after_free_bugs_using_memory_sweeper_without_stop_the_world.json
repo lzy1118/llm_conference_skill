@@ -1,0 +1,249 @@
+{
+  "paper_id": "017_swiftsweeper_defeating_use_after_free_bugs_using_memory_sweeper_without_stop_the_world",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SwiftSweeper: Defeating Use-After-Free Bugs Using Memory Sweeper Without Stop-the-World"
+      },
+      {
+        "source": "selected",
+        "value": "SwiftSweeper: Defeating Use-After-Free Bugs Using Memory Sweeper Without Stop-the-World"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Use-after-free (UAF) vulnerabilities pose severe security risks in memory-unsafe languages like C and C++. To mitigate these issues, prior work has employed memory sweeping, inspired by conservative garbage collection. However, such approaches inherit key limitations, including stop-the-world pauses, poor scalability, and high CPU usage, rendering them unsuitable for modern, latency-sensitive applications. This paper presents SwiftSweeper, a secure memory allocator designed to prevent UAF vulnerabilities in unmodified binaries. SwiftSweeper reimagines memory sweeping by eliminating stop-the-world pauses and enhancing scalability to support high-performance C and C++ workloads. It features an efficient and secure in-kernel data path, implemented using eBPF (XMP, eXpress Memory Path), and a co-designed userlevel allocator and kernel. We implement SwiftSweeper on Linux and demonstrate that it delivers state-of-the-art performance, memory efficiency, and minimal latency overhead across both single-threaded and multi-threaded applications, including SPEC CPU and WebServer benchmarks. 793 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Use-after-free (UAF) vulnerabilities pose severe se- curity risks in memory-unsafe languages like C and C++. To mitigate these issues, prior work has employed memory sweep- ing, inspired by conservative garbage collection. However, such approaches inherit key limitations, including stop-the-world pauses, poor scalability, and high CPU usage, rendering them unsuitable for modern, latency-sensitive applications. This paper presents SwiftSweeper, a secure memory al- locator designed to prevent UAF vulnerabilities in unmodi- fied binaries. SwiftSweeper reimagines memory sweeping by eliminating stop-the-world pauses and enhancing scalability to support high-performance C and C++ workloads. It features an efficient and secure in-kernel data path, implemented using eBPF (XMP, eXpress Memory Path), and a co-designed user- level allocator and kernel. We implement SwiftSweeper on Linux and demonstrate that it delivers state-of-the-art per- formance, memory efficiency, and minimal latency overhead across both single-threaded and multi-threaded applications, including SPEC CPU and WebServer benchmarks. 1. Introduction Applications written in memory-unsafe languages, such as C and C++, remain popular due to their efficient mem- ory use, low latency, and scalability-essential qualities for performance-critical applications and system software. These languages rely on manual memory management, al- lowing programmers to control when to allocate and deal- locate heap objects. While this approach generally provides flexibility and performance, it poses risks: if a program ac- cesses memory through a freed object, attackers can exploit this to trigger a Use-After-Free (UAF) vulnerability. UAF bugs are prevalent, challenging to prevent or detect, and can lead to severe consequences [1], [2]. To defeat or prevent UAF bugs, various strategies have been proposed, including tag-based approach [3], [4], [5], [6], reference counting [7], [8], pointer nullification [9], [10], [11], one-time allocators (OTA) [12], [1], [13], [2], [14], and memory sweeping [15], [16] While these approaches effectively prevent or mitigate UAF bugs, they face limitations when applied to high- performance software written in C or C++. The tag-based approach marks individual memory objects as in-use or freed, with runtime checks verifying these tags on every access; however, this method introduces significant perfor- mance overhead. Pointer nullification clears freed objects and their associated virtual addresses, but the process of tracking dangling pointers incurs high performance costs. Reference counting can be effective in certain scenarios but is not universally applicable to all C/C++ applications and also suffers from performance overhead due to runtime checks. Recently, OTAs and memory sweeping have gained at- tention due to their relatively lower performance overhead compared to other approaches. One-time allocators (OTAs) prevent virtual addresses from being reused, blocking at- tackers from exploiting dangling pointers to access or ma- nipulate freed objects. However, assigning unique virtual addresses for each object can impose heavy pressure on the TLB, and OTAs require frequent system calls for memory al- location and deallocation. Consequently, memory-intensive applications-especially those frequently allocating and free- ing small objects-can experience high overhead. Memory sweeping draws on principles from conserva- tive garbage collection [17]. Similar to GC, memory sweep- ing only frees an object when there are no references to it, thereby preventing manipulation of freed objects through dangling pointers. However, memory sweeping faces sig- nificant performance limitations inherited by its GC-like approach, which suffers from poor scalability and unpre- dictable latency. For example, MarkUs [16] requires con- current threads to scan the application's memory, resulting in stop-the-world pauses that halt all application threads. Minesweeper [16] aims to mitigate this by implementing linear memory scans, but it still encounters stop-the-world delays in multi-threaded applications. While most approaches have fundamental performance limitations hard to overcome because their performance regression comes from their essential mechanisms to prevent UAF bugs, we observe that the aforementioned limitations of memory sweeping are not fundamental, and can be ad- dressed by new design ideas and efficient mechanisms. SwiftSweeper is a memory allocator secured by memory sweeping to prevent UAF bugs. It overcomes the limita- tions of existing memory sweepers by redesigning both the sweeping mechanism and its policies. A detailed analysis of current approaches reveals three common challenges: stop- the-world delays, high CPU utilization, and poor scalability. First, SwiftSweeper completely eliminates stop-the-world 793 DOI 10.1109/SP61157.2025.00131 delays through on-demand marking. While scanning freed objects, SwiftSweeper ensures that application threads con- tinue running without interruption. To prevent races between marking threads and application threads, SwiftSweeper pro- tects writes to unmarked objects. Only when either an application thread or a marking thread modifies the same object, SwiftSweeper employs a lock to serialize accesses and performs the marking operation on demand, thus elimi- nating stop-the-world pauses entirely. Second, SwiftSweeper reduces CPU utilization with delta marking that minimizes the amount of work. Delta marking tracks modified pages that contain references to objects and restricts marking to these modified pages, skipping unnecessary marking. SwiftSweeper integrates on-demand and delta marking with an efficient co-design of user-level memory manage- ment and kernel components using eBPF. The user-level allocator acts as the control plane, defining policies for the range and timing of memory sweeping, while the ker- nel operates as the data plane, performing page-granularity marking operations. This clean separation minimizes do- main switching between user and kernel spaces, enabling run-to-completion execution of memory sweeping tasks with just a single domain switch. To enhance scalability, SwiftSweeper employs page-level fine-grained locking in- stead of coarse-grained locks (e.g., mmap_sem in Linux), allowing for high parallelism between sweeping threads and user threads. To implement a safe and efficient user-defined page fault handler, SwiftSweeper enhances Userfaultfd [18] with eBPF [19] and proposes a new eBPF program type, eXpress Memory Path (XMP). We implement SwiftSweeper and XMP on Linux 6.4.0, incorporating additional eBPF helper functions and program types, with 3,370 lines of kernel code and 3,946 lines of user-level allocator code. We evaluate the performance and memory overhead against state-of-the-art memory sweepers. performance, minimal memory overhead, and negligible CPU utilization compared to other memory sweepers, out- performing MineSweeper about 23% without compromis- ing the threat model. To assess scalability, we use mul- tithreaded PARSEC 3.0 benchmarks, where SwiftSweeper demonstrates scalable results similar to glibc, unlike other memory sweepers. In real-world benchmarks with Apache and Nginx, SwiftSweeper achieves similar performance, memory usage, and latency peaks with glibc, without the scalability limitations observed in other memory sweepers. This paper makes the following contributions. • To eliminate stop-the-world pauses, we propose on- demand and delta marking ideas practically applicable to high-performance workloads written in C and C++. • We propose new user-kernel co-design ideas to implement on-demand and delta marking, providing good perfor- mance and scalability. • We implement an efficient eBPF-based data path, XMP, to execute the co-design ideas. • We extensively evaluate SwiftSweeper in real-world work- Apache, and Ngnix webservers. 2. Use-After-Free Vulnerability Languages like C and C++, which lack built-in memory safety features, are widely used in software development, including systems like database systems, operating systems, and various web and mobile applications. However, these languages are prone to numerous memory safety vulnera- bilities, including issues like use-after-free, double-free, and invalid-free errors. The use-after-free (UAF) bug is one of the most commonly reported and exploited security flaws. UAF occurs when a program tries to access a pointer that references a previously freed memory object. In critical scenarios, attackers can exploit this by manipulating the freed object and replacing its contents with harmful data. There are various research efforts for mitigating use- after-free (UAF) vulnerabilities. Tag-based approach tags each memory block to monitor its allocation and deallo- cation in metadata and checks when pointers are deref- erenced [4], [5]. Pointer nullification actively invalidates or blocks dangling pointers upon object deallocation by dynamically tracking pointers [9], [11], [10], [20]. Despite their effectiveness, both tag-based and pointer nullification require load and store barriers, which require compiler sup- port for binary instrumentation. Additionally, these methods often result in high CPU usage and performance degrada- tion due to dynamic reference tracking. Approaches that use randomized allocation patterns [21], [22] provide only probabilistic detection. One-time-allocator (OTA) ensures that virtual addresses are never reused, thereby preventing attackers from exploiting dangling pointers to access and manipulate freed objects [13], [12], [1], [14]. However, assigning unique virtual addresses for each object can exert heavy pressure on the TLB, leading to performance losses. OTA also requires frequent system calls for memory allo- cation and deallocation to detect UAF issues. 2.1. Memory Sweeper Memory sweeper borrows the main idea from conser- vative garbage collection [17]. While garbage collection is typically used for typed, memory-safe languages like JA V A, C#, or Go, the primary target of memory sweeper is un- typed, memory-unsafe languages such as C or C++. Memory sweeper proposes several optimizations that are not feasible in traditional garbage collection, using explicit knowledge of free(). Typically, memory sweeper scans the entire heap memory to identify potential dangling pointers. Memory sweepers [16], [15], [23] delay the reuse of freed objects until all dangling pointers are eliminated, ensuring no freed object remains referenced by any allocated objects. Current memory sweepers employ a modified version of the conser- vative “mark & sweep” garbage collection algorithm [17]. Initially, they defer freeing objects by placing them in a quarantine list until the allocator determines it is safe to reuse them. At a later stage, the application is temporarily paused, and the memory sweeper scans the entire application memory to mark dangling pointers. During this marking process, the memory sweeper marks pointers that are either 794"
+      },
+      {
+        "source": "selected",
+        "value": "Use-after-free (UAF) vulnerabilities pose severe security risks in memory-unsafe languages like C and C++. To mitigate these issues, prior work has employed memory sweeping, inspired by conservative garbage collection. However, such approaches inherit key limitations, including stop-the-world pauses, poor scalability, and high CPU usage, rendering them unsuitable for modern, latency-sensitive applications. This paper presents SwiftSweeper, a secure memory allocator designed to prevent UAF vulnerabilities in unmodified binaries. SwiftSweeper reimagines memory sweeping by eliminating stop-the-world pauses and enhancing scalability to support high-performance C and C++ workloads. It features an efficient and secure in-kernel data path, implemented using eBPF (XMP, eXpress Memory Path), and a co-designed userlevel allocator and kernel. We implement SwiftSweeper on Linux and demonstrate that it delivers state-of-the-art performance, memory efficiency, and minimal latency overhead across both single-threaded and multi-threaded applications, including SPEC CPU and WebServer benchmarks. 793 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Junho Ahn",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, KAIST Computer Science and Engineering, UNIST"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Kanghyuk Lee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, KAIST Computer Science and Engineering, UNIST"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Chanyoung Park",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, KAIST Computer Science and Engineering, UNIST"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Hyungon Moon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, KAIST Computer Science and Engineering, UNIST"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Youngjin Kwon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computing, KAIST Computer Science and Engineering, UNIST"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Without Stop-the-World",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Junho Ahn",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Kanghyuk Lee",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Chanyoung Park",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Hyungon Moon",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Youngjin Kwon",
+          "email": "",
+          "affiliations": [
+            "School of Computing, KAIST"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 106,
+      "author_count": 6,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 14.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Without Stop-the-World",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SwiftSweeper: Defeating Use-After-Free Bugs Using Memory Sweeper Without Stop-the-World",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Junho Ahn",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Kanghyuk Lee",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Chanyoung Park",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Hyungon Moon",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Youngjin Kwon",
+          "affiliations": [
+            "KAIST"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

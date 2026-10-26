@@ -1,0 +1,343 @@
+{
+  "paper_id": "181_constant_latency_and_finality_for_dynamically_available_dag",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Constant latency and finality for dynamically available DAG"
+      },
+      {
+        "source": "selected",
+        "value": "Constant latency and finality for dynamically available DAG"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Directed Acyclic Graph (DAG) based protocols have shown great promise to improve the performance of blockchains. The CAP theorem shows that it is impossible to have a single system that achieves both liveness (known as dynamic availability) and safety under network partition. This paper explores two types of DAG-based protocols prioritizing liveness or safety, named structured dissemination and Graded Common Prefix (GCP), respectively. For the former, we introduce the first DAG-based protocol with constant expected latency, providing high throughput dynamic availability under the sleepy model. Its expected latency is 3∆ and its throughput linearly scales with participation. We validate these expected performance improvements over existing constant latency sleepy model BFT by running prototypes of each protocol across multiple machines. The latter, GCP, is a primitive that provides safety under network partition, while being weaker than standard consensus. As a result, we are able to obtain a construction that runs in only 2 communication steps, as opposed to the 4 steps of existing low latency partially synchronous BFT. In addition, GCP can easily avoid relying on single leaders' proposals, becoming more resilient to crashes. We also validate these theoretical benefits of GCP experimentally. We leverage our findings to extend the Ebb-and-Flow framework, where two BFT sub-protocols allow different types of clients in the same system to prioritize either liveness or safety. Our extension integrates our two types of DAG-based protocols. This provides a hybrid DAG-based protocol with high throughput, dynamical availability, and finality under network partitions, without running a standard consensus protocol twice as required in existing work. 1910"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Directed Acyclic Graph (DAG) based protocols have shown great promise to improve the performance of blockchains. The CAP theorem shows that it is impossible to have a single system that achieves both liveness (known as dynamic availability) and safety under network partition. This paper explores two types of DAG-based protocols prioritizing liveness or safety, named structured dissemination and Graded Common Prefix (GCP), respectively. For the former, we introduce the first DAG-based protocol with constant expected latency, providing high throughput dynamic availability under the sleepy model. Its expected latency is 3∆ and its throughput linearly scales with partici- pation. We validate these expected performance improvements over existing constant latency sleepy model BFT by running prototypes of each protocol across multiple machines. The latter, GCP, is a primitive that provides safety under network partition, while being weaker than standard consen- sus. As a result, we are able to obtain a construction that runs in only 2 communication steps, as opposed to the 4 steps of existing low latency partially synchronous BFT. In addition, GCP can easily avoid relying on single leaders' proposals, becoming more resilient to crashes. We also validate these theoretical benefits of GCP experimentally. We leverage our findings to extend the Ebb-and-Flow framework, where two BFT sub-protocols allow different types of clients in the same system to prioritize either liveness or safety. Our extension integrates our two types of DAG-based protocols. This provides a hybrid DAG-based protocol with high throughput, dynamical availability, and finality under network partitions, without running a standard consensus protocol twice as required in existing work. 1. Introduction Bitcoin [1] introduced the use of blockchain to enable nodes in a permissionless environment to agree on an or- dered set of transactions. In this setting, nodes are free to join or leave the network at any time. Consequently, *Corresponding author Bitcoin guarantees liveness in a permissionless environment, referred to as dynamic availability. However, to ensure secu- rity, the network must be synchronous, meaning messages must be delivered within a known time bound. It follows that Bitcoin does not provide safety in the face of network partitions, where the network becomes asynchronous and message delivery time is unknown. A further known limi- tation of Bitcoin and its derivatives is performance: latency ranges from minutes to hours, and throughput is fewer than 10 transactions per second. To remedy the limited performance of Bitcoin's blockchain consensus, traditional Byzantine Fault Toler- ant State Machine Replication (BFT-SMR) techniques have been considered for the blockchain setting. Some BFT-SMR protocols are able to remain secure even under network partitions and asynchronous communication networks [2], [3], [4], [5]. However, a trade-off with BFT-SMR is that the number of active nodes in the system must be known, limiting dynamic availability. To address this challenge, the sleepy model [6] was introduced, formalizing the concept of permissionless networks. Recent advances in BFT within the sleepy model have achieved constant expected latency [7], [8] by regularly estimating for the current participation level. While, ideally, both dynamic availability (liveness) and security during network partitions (safety) are achieved within a single protocol, the CAP theorem demonstrates this to be impossible [9]. Consequently, two distinct approaches have emerged: one prioritizes liveness with dynamic avail- ability, and the other focuses on asynchronous safety. Originally, both classes of protocols include transactions in a linear sequence of batches or blocks. However, uti- lizing a Directed Acyclic Graph (DAG) structure, blocks are processed concurrently which has significantly increased throughput for both approaches. This innovation allows throughput to scale with network capacity [10], [11], [12]. We highlight the following research gaps regarding DAG based protocols in each line of work. DAGs when prioritizing liveness. As noted earlier, pro- posals for BFT in the sleepy model have achieved constant latency. Meanwhile, recent advances in DAG-based proto- cols have primarily focused on asynchronous and partially 1910 DOI 10.1109/SP61157.2025.00246 synchronous networks [11], [12], leaving the modern use of DAGs in BFT for the sleepy model largely unexplored. Although DAG-based proposals expanding on Bitcoin's longest chain idea exist [10], [13], their latency is linear in certain security parameters. Achieving constant latency for high throughput DAG protocols within the sleepy model remains a significant open challenge. DAGs when prioritizing safety. DAG-based protocols such as Narwhal/Tusk [11] and Bullshark [12] disseminate an unconfirmed DAG of blocks as a mempool, of which a subset is finalized. However, there are multiple approaches for the finalization process, and previous work has not pro- vided a generic security analysis of finalization approaches in a given DAG protocol. For instance, one way to finalize Narwhal is by using a separate consensus primitive such as Hotstuff to agree on a block and all its ancestors, as presented by the authors. Alternatively, Tusk, which builds on top of Narwhal, selects leaders using a common coin but does not independently solve consensus. Similarly, Bull- shark employs a round-robin leader schedule to finalize a subset of the DAG, but the finalization mechanism in isolation is not a consensus protocol in itself. We observe that the common thread in the two latter protocols is a finalization mechanism that leverages the DAG structure to obtain consensus in the overall system. A key advantage of this approach is that it avoids the need to layer a full BFT protocol on top of the DAG dissemination mechanism. However, there is no composable treatment of DAG finalization in the literature beyond constructions specific to monolithic DAGs. Contributions In this work we address the research gaps previously highlighted, and leverage our findings to propose a flexible protocol simultaneously catering to clients favoring liveness and clients favoring safety. We introduce the first constant latency DAG based pro- tocol in the sleepy model. Our protocol can commit a set of DAG blocks in 3∆ latency, where ∆ represents the syn- chronous network's message delivery bound. This result not only advances upon existing constant latency sleepy model BFT, but also improves on existing DAG protocols whose latency linearly scales with ∆. We provide a summary comparison of our protocol with other dynamic availability protocols in Table 1. Additionally, we experimentally show the improved performance of our DAG protocol compared to Mahlki et al. constant latency protocol. We can observe that our DAG protocol indeed linearly scales throughput with the number of nodes, achieving drastic throughput improvements, and that it has lower expected latency. Secondly, we introduce a generic primitive for DAG finalization, named graded common prefix, and an efficient construction. Graded common prefix allows a set of nodes to quickly agree on the subset of a DAG common to all honest nodes. Crucially, our primitive is lighter than standard consensus, enabling simpler protocols. For example, our construction runs in only 2 communication steps, compared to the 4 expected steps per decision required by low latency partially synchronous BFT [2], [3], [18]. It is also resilient to crashes within the supermajority bound, unlike many existing leader-based protocols for partially synchronous networks [2], [3], [5], [18]. We experimentally observe the resulting improved latency of our construction over a leader- based BFT, Hotstuff [5], with and without crashes. Graded common prefix can also be defined generically with sets of values instead of block-DAGs, which may be of independent interest for distributed protocols. Thirdly, we propose a flexible protocol that consists of two sub-protocols running concurrently, namely a dynam- ically available sub-protocol and a partially synchronous finality sub-protocol. Clients choose which output (of the sub-protocols) they consider acceptable according to their preference (security v.s. liveness). To accomplish this, we adapt the Ebb-and-Flow framework [19], which, roughly speaking, considers the sleepy model with a Global Awake Time (GAT), the time after which all honest nodes partici- pate actively. GAT guarantees that the finality sub-protocol eventually progresses, as dynamic availability is not required after GAT. To maintain consistency, the output of the dy- namically available sub-protocol is used as input to the finality sub-protocol. We show that graded common prefix is sufficient for finality after GAT, avoiding the need to perform standard consensus twice as in existing schemes. Comple- menting our flexible protocol, we further relax the GAT assumption by introducing Quorum Awake Time (QAT). Unlike GAT, which assumes that all honest nodes are awake after this period, QAT requires only that a sufficient number of honest nodes are awake. To quantify the number of awake nodes after QAT, we leverage the recently introduced Mobile Crash Adaptive Byzantine (MCAB) model [20] that enables a fine-grained treatment of the upper bound on crashed/sleepy nodes for a protocol. The rest of this paper is organized as follows. Sec- tion 2 introduces the system model and preliminaries used in this work. Section 3 presents our dynamically available DAG protocol and the formal definitions and properties it achieves. Section 4 introduces the graded common prefix primitive and a construction for it. Section 5 synthesizes our results into the flexible protocol described previously, then presents QAT, the generalization of GAT. Section 6 contains the formal security proofs of our theorems and lemmas. Section 7 provides the experimental evaluation of our DAG protocol. Section 8 presents the literature related to this work. The conclusion summarizes our findings. In summary: • We propose a constant latency dynamically avail- able DAG BFT protocol with 3∆ latency. Its high throughput is demonstrated experimentally. • We introduce graded common prefix (GCP), a prim- itive that allows a set of nodes to agree on the subset of a DAG in common to honest nodes. Additionally, we provide a construction of GCP that runs in 2 communication steps. Its low latency and resilience to crashes is shown experimentally. 1911"
+      },
+      {
+        "source": "selected",
+        "value": "Directed Acyclic Graph (DAG) based protocols have shown great promise to improve the performance of blockchains. The CAP theorem shows that it is impossible to have a single system that achieves both liveness (known as dynamic availability) and safety under network partition. This paper explores two types of DAG-based protocols prioritizing liveness or safety, named structured dissemination and Graded Common Prefix (GCP), respectively. For the former, we introduce the first DAG-based protocol with constant expected latency, providing high throughput dynamic availability under the sleepy model. Its expected latency is 3∆ and its throughput linearly scales with participation. We validate these expected performance improvements over existing constant latency sleepy model BFT by running prototypes of each protocol across multiple machines. The latter, GCP, is a primitive that provides safety under network partition, while being weaker than standard consensus. As a result, we are able to obtain a construction that runs in only 2 communication steps, as opposed to the 4 steps of existing low latency partially synchronous BFT. In addition, GCP can easily avoid relying on single leaders' proposals, becoming more resilient to crashes. We also validate these theoretical benefits of GCP experimentally. We leverage our findings to extend the Ebb-and-Flow framework, where two BFT sub-protocols allow different types of clients in the same system to prioritize either liveness or safety. Our extension integrates our two types of DAG-based protocols. This provides a hybrid DAG-based protocol with high throughput, dynamical availability, and finality under network partitions, without running a standard consensus protocol twice as required in existing work. 1910"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hans Schmiedel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Runchao Han",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Qiang Tang",
+          "email": "qiang.tang@sydney.edu.au",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ron Steinfeld",
+          "email": "ron.steinfeld@monash.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Jiangshan Yu",
+          "email": "jiangshan.yu@sydney.edu.au",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Sydney, Babylon Labs"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Sydney, Monash University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hans Schmiedel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Runchao Han",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Qiang Tang",
+          "email": "qiang.tang@sydney.edu.au",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Ron Steinfeld",
+          "email": "ron.steinfeld@monash.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Jiangshan Yu",
+          "email": "jiangshan.yu@sydney.edu.au",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 105,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Hans Schmiedel",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Runchao Han",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Qiang Tang",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Ron Steinfeld",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Jiangshan Yu",
+          "block_id": "pdf:p1:b13",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Hans Schmiedel",
+          "affiliation_raw": "The University of Sydney",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 4.369,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Runchao Han",
+          "affiliation_raw": "Babylon Labs",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 2.276,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Qiang Tang",
+          "affiliation_raw": "The University of Sydney",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 4.05,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Ron Steinfeld",
+          "affiliation_raw": "Monash University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b12",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 1.61,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Jiangshan Yu",
+          "affiliation_raw": "The University of Sydney",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b13",
+          "affiliation_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 4.964,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Constant latency and finality for dynamically available DAG",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hans Schmiedel",
+          "affiliations": [
+            "The University of Sydney"
+          ]
+        },
+        {
+          "name": "Runchao Han",
+          "affiliations": [
+            "Babylon Labs"
+          ]
+        },
+        {
+          "name": "Qiang Tang",
+          "affiliations": [
+            "The University of Sydney"
+          ]
+        },
+        {
+          "name": "Ron Steinfeld",
+          "affiliations": [
+            "Monash University"
+          ]
+        },
+        {
+          "name": "Jiangshan Yu",
+          "affiliations": [
+            "The University of Sydney"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

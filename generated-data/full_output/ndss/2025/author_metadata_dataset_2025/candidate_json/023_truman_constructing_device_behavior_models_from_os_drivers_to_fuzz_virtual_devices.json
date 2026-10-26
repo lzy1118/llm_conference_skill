@@ -1,0 +1,405 @@
+{
+  "paper_id": "023_truman_constructing_device_behavior_models_from_os_drivers_to_fuzz_virtual_devices",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Truman: Constructing Device Behavior Models from OS Drivers to Fuzz Virtual Devices"
+      },
+      {
+        "source": "selected",
+        "value": "Truman: Constructing Device Behavior Models from OS Drivers to Fuzz Virtual Devices"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Virtual devices are a large attack surface of hypervisors. Vulnerabilities in virtual devices may enable attackers to jailbreak hypervisors or even endanger co-located virtual machines. While fuzzing has discovered vulnerabilities in virtual devices across both open-source and closed-source hypervisors, the efficiency of these virtual device fuzzers remains limited because they are unaware of the complex behaviors of virtual devices in general. We present Truman, a novel universal fuzzing engine that automatically infers dependencies from open-source OS drivers to construct device behavior models (DBMs) for virtual device fuzzing, regardless of whether target virtual devices are open-source or binaries. The DBM includes inter-and intra-message dependencies and fine-grained state dependency of virtual device messages. Based on the DBM, Truman generates and mutates quality seeds that satisfy the dependencies encoded in the DBM. We evaluate the prototype of Truman on the latest version of hypervisors. In terms of coverage, Truman outperformed start-of-the-art fuzzers for 19/29 QEMU devices and obtained a relative coverage boost of 34% compared to Morphuzz for virtio devices. Additionally, Truman discovered 54 new bugs in QEMU, VirtualBox, VMware Workstation Pro, and Parallels, with 6 CVEs assigned."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Virtual devices are a large attack surface of hyper- visors. Vulnerabilities in virtual devices may enable attackers to jailbreak hypervisors or even endanger co-located virtual machines. While fuzzing has discovered vulnerabilities in virtual devices across both open-source and closed-source hypervisors, the efficiency of these virtual device fuzzers remains limited because they are unaware of the complex behaviors of virtual devices in general. We present Truman, a novel universal fuzzing engine that automatically infers dependencies from open-source OS drivers to construct device behavior models (DBMs) for virtual device fuzzing, regardless of whether target virtual devices are open-source or binaries. The DBM includes inter- and intra-message dependencies and fine-grained state dependency of virtual device messages. Based on the DBM, Truman generates and mutates quality seeds that satisfy the dependencies encoded in the DBM. We evaluate the prototype of Truman on the latest version of hypervisors. In terms of coverage, Truman outperformed start-of-the-art fuzzers for 19/29 QEMU devices and obtained a relative coverage boost of 34% compared to Morphuzz for virtio devices. Additionally, Truman discovered 54 new bugs in QEMU, VirtualBox, VMware Workstation Pro, and Parallels, with 6 CVEs assigned. I. I NTRODUCTION Hypervisors or Virtual Machine Monitors (VMMs) are the core software abstraction layer between Virtual Ma- chines (VMs) and the underlying physical hardware. Hyper- visors are essential to prevent attacks against co-located VMs or the underlying infrastructure from denial of service (DoS), information leak, control flow hijacking, and other security threats. Unfortunately, hypervisors, as with other software, are susceptible to vulnerabilities. In 2024, several vulnerabilities inside virtual USB controllers affected VMware products, allowing information leakage or VM escapes [1]. Fuzzing is an efficient technique for discovering vulnerabil- ities. The community has proposed various fuzzers to improve hypervisor security. Compared to CPU and memory virtualiza- tion [2], [3], [4], virtual devices capture greater attention [5], BCorresponding author: chaoz@tsinghua.edu.cn [6], [7], [8], [9], [10], [11], [12], [13], since they correspond to the main attack surface to hypervisors. The input for virtual devices consists of virtual device messages [11], which are commands and data interacting with interfaces of virtual devices, such as Port IO (PIO), Memory-mapped IO (MMIO), and Direct Memory Access (DMA). For example, an MMIO virtual device message may contain a read operation with an access size and a register address. Since virtual devices operate according to the specifications of their physical counterparts, virtual device messages are ordered and structured. Specifically, virtual device messages are also subject to constraints imposed by inter- and intra-message dependen- cies [11]. Inter-message dependencies determine the order of virtual device messages, implying that one message must follow another. Intra-message dependencies encompass two constraints within a single message: constraints on a single field and relationships between fields. While existing research has explored virtual device fuzzing, several challenges remain. First, a generic and automatic method capable of extracting a broad range of inter- and intra-message dependencies is missing. Existing work [11], [9], [8] has shown that both inter- and intra-message dependencies enhance code exploration and bug discovery capabilities, whereas random fuzzing [14] leads to shallow exploration of the code space. However, these dependencies are manually transcribed from a specification (Nyx-Spec [8]), which is not scalable; semi-automatically extracted from the virtual device source code (ViDeZZo [11]), which is limited by the availability of the source code; distilled from execution traces (MundoFuzz [9]), which is incomplete; or explored simply through a combination of heuristics and randomness (Morphuzz [10] and V-Shuttle [7]), which shows limited efficiency in discovering vulnerabilities in limited time. Challenge 1: Efficient hypervisor testing requires an au- tomatic approach to extract a broad range of inter- and intra-message dependencies without manual help, source code of virtual devices, or random exploration. Second, inter- and intra-message dependencies are insuf- ficient to fuzz “bus-hidden” devices. The interfaces of bus- hidden devices are hidden by the corresponding bus, which prevents direct access to the device. Consequently, the guest must interact with the bus to access the device indirectly. These Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240301 www.ndss-symposium.org devices are commonly found in virtualized environments, such as virtio devices on the virtio bus and USB devices on the USB bus. Despite inter- and intra-message dependencies, fuzzers struggle to explore the code space of bus-hidden devices due to the lack of state dependency awareness . A virtual device operates in multiple states throughout its lifecycle, and states are often not explicitly documented in the specifications. For example, a virtio device in the setup state only accepts configuration messages while the device processes data mes- sages in the transmission state. Consequently, the device has different inter- and intra-message dependencies in different states. State dependency refers to the set of inter- and intra- message dependencies that are valid in a specific state and how the device transitions between states. Challenge 2: Exploring the code space of bus-hidden de- vices requires knowledge of the device's state dependency to guide the exploration. We have two observations to address the above challenges. First, the source code of an OS driver corresponding to a virtual device implicitly encodes inter- and intra-message dependencies. Even though virtual devices of hypervisors are closed-source, we can find open-source OS drivers for them. In practice, developers often implement a virtual device by referring to the corresponding OS driver [15]. Since the virtual device and its corresponding OS driver adhere to the same specification [16], we can infer the inter- and intra-message dependencies from the OS driver and overcome challenges such as analyzing closed-source hypervisors (e.g., VMware Workstation) or hypervisors written in diverse languages (e.g., QEMU is written in C, and VirtualBox is in C++). Second, a comprehensive device behavior model guides the fuzzer to explore the code space of bus-hidden devices. A device behavior model (DBM) not only captures a virtual device's inter- and intra-message dependencies but also the state dependency. State dependency is essential for bus-hidden devices that are not accessible directly and operate within a two-layer structure: the bus and device layers. The bus layer exposes interfaces for communication, while the device layer interacts with the bus layer for specific operations. With the domain knowledge of the Linux kernel drivers [17], state dependency can be approximated by analyzing both the bus driver and the specific device driver simultaneously. Equipped with the device behavior model, the fuzzer guides the generation and mutation of virtual device messages toward unexplored or under-explored code. We introduce Truman, named after The Truman Show , where the protagonist discovers his controlled reality in the virtual world. Truman is the first generic and automatic tool that extracts device behavior models (DBMs) from open- source OS drivers to fuzz virtual devices. First, Truman statically analyzes the OS driver to extract inter-, intra-, and state dependency graphs, forming a DBM (Section III-A). We develop a flow-, field-, and path-sensitive static analyzer lever- aging Linux driver domain knowledge. While the Linux kernel consists of 30M lines of code (LoC) [18], static analysis of individual drivers remains feasible due to their relatively small size. For example, the virtio bus driver has only around 2K LoC [19]. Second, we develop a fuzzing engine that leverages the DBM to generate and mutate virtual device messages that satisfy dependencies (Section III-B). Specifically, Truman generates messages at different granularity, ranging from a single message level to the state level, directs the dependency- aware mutation to reduce the number of faulty messages, and executes messages on different hypervisors. We have implemented a prototype of Truman, consisting of a static analyzer to generate the DBM and a fuzzing engine that parses the DBM, generates and mutates virtual device messages that satisfy dependencies. We compared Truman against two start-of-the-art (SOTA) approaches (Morphuzz and ViDeZZo) and a naive baseline (AFL++) for coverage evaluation. Truman outperforms the three fuzzers on 19/29 QEMU devices after 48-hour fuzzing. Regarding the known bug discovery capability, Truman discovered 10 bugs in the last major version of QEMU (v8.0.0) within 24 hours, outperforming Morphuzz and ViDeZZo, which found four bugs. Additionally, Truman discovered 54 new bugs across QEMU, VirtualBox, VMware Workstation Pro, and Parallels, with 31 bugs fixed and 6 CVEs assigned. In summary, we make the following contributions: • We first identify that the device's state dependency is re- quired for fuzzing bus-hidden devices lacking direct access. • We propose a generic, automatic, and novel approach to extract inter- and intra-message and state dependencies from open-source OS drivers to guide the fuzzing of vir- tual devices based on the observation that the OS driver implicitly encodes the specification of the virtual device. • We evaluated the prototype ofTruman and the results show that Truman surpasses two SOTA fuzzers in 19/29 QEMU devices and discovers 54 new bugs in recent hypervisors, with 6 CVEs assigned and 31 bugs fixed. • Truman is open-sourced at (https://github.com/vul337/ Truman). II. B ACKGROUND AND MOTIVATING EXAMPLE A. Device Specification and Bus-hidden Devices Virtual devices and the corresponding OS drivers adhere to a standard specification [16], a document that describes the pro- tocol, ensuring seamless interaction between the guest OS and virtual devices. The OS driver is the software implementation of the device specification and is responsible for translating the requests of the guest OS into virtual device messages. Conversely, the virtual device is the hardware abstraction of the device specification responsible for handling virtual device messages. Although both OS drivers and virtual devices work together to implement the same specification, OS drivers encode high-level knowledge of the usage of virtual devices. Bus-hidden devices are virtual devices that operate behind bus systems, such as the virtio bus or USB bus. Examples in- clude devices like virtio-sound and USB storage. Specifically, 2"
+      },
+      {
+        "source": "selected",
+        "value": "Virtual devices are a large attack surface of hypervisors. Vulnerabilities in virtual devices may enable attackers to jailbreak hypervisors or even endanger co-located virtual machines. While fuzzing has discovered vulnerabilities in virtual devices across both open-source and closed-source hypervisors, the efficiency of these virtual device fuzzers remains limited because they are unaware of the complex behaviors of virtual devices in general. We present Truman, a novel universal fuzzing engine that automatically infers dependencies from open-source OS drivers to construct device behavior models (DBMs) for virtual device fuzzing, regardless of whether target virtual devices are open-source or binaries. The DBM includes inter-and intra-message dependencies and fine-grained state dependency of virtual device messages. Based on the DBM, Truman generates and mutates quality seeds that satisfy the dependencies encoded in the DBM. We evaluate the prototype of Truman on the latest version of hypervisors. In terms of coverage, Truman outperformed start-of-the-art fuzzers for 19/29 QEMU devices and obtained a relative coverage boost of 34% compared to Morphuzz for virtio devices. Additionally, Truman discovered 54 new bugs in QEMU, VirtualBox, VMware Workstation Pro, and Parallels, with 6 CVEs assigned."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zheyu Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Qiang Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zheming Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Tingting Yin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Technology, Digital Technology Group Co, Zhongguancun Laboratory EPFL, Tsinghua University JCSS, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Wende Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "Department of Computer Science and Technology, Digital Technology Group Co, Zhongguancun Laboratory EPFL, Tsinghua University JCSS, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Mathias Payer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zheyu Ma",
+          "email": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "EPFL",
+            "JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+          ],
+          "affiliation_source": "pdf_complete_symbol_affiliation",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Qiang Liu",
+          "email": "",
+          "affiliations": [
+            "EPFL"
+          ],
+          "affiliation_source": "pdf_complete_symbol_affiliation",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zheming Li",
+          "email": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Tingting Yin",
+          "email": "",
+          "affiliations": [
+            "Zhongguancun Laboratory"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Wende Tan",
+          "email": "",
+          "affiliations": [
+            "Department of Computer Science and Technology, Tsinghua University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Chao Zhang",
+          "email": "chaoz@tsinghua.edu.cn",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "Zhongguancun Laboratory",
+            "JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Mathias Payer",
+          "email": "",
+          "affiliations": [
+            "EPFL"
+          ],
+          "affiliation_source": "pdf_complete_symbol_affiliation",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 99,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 6,
+          "author": "Mathias Payer",
+          "block_id": "pdfplumber:p1:b10",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": true,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": true,
+      "author_count_delta": 0,
+      "official_title": "Truman: Constructing Device Behavior Models from OS Drivers to Fuzz Virtual Devices",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/truman-constructing-device-behavior-models-from-os-drivers-to-fuzz-virtual-devices/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zheyu Ma",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University; EPFL; JCSS, Tsinghua University (INSC) – Science City (Guangzhou) Digital Technology Group Co., Ltd."
+          ]
+        },
+        {
+          "name": "Qiang Liu",
+          "affiliations": [
+            "EPFL"
+          ]
+        },
+        {
+          "name": "Zheming Li",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University; JCSS, Tsinghua University (INSC) – Science City (Guangzhou) Digital Technology Group Co., Ltd."
+          ]
+        },
+        {
+          "name": "Tingting Yin",
+          "affiliations": [
+            "Zhongguancun Laboratory"
+          ]
+        },
+        {
+          "name": "Wende Tan",
+          "affiliations": [
+            "Department of Computer Science and Technology, Tsinghua University"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University; Zhongguancun Laboratory; JCSS, Tsinghua University (INSC) – Science City (Guangzhou) Digital Technology Group Co., Ltd."
+          ]
+        },
+        {
+          "name": "Mathias Payer",
+          "affiliations": [
+            "EPFL"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Chao Zhang",
+      "field": "email",
+      "restored_value": "chaoz@tsinghua.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "replace_affiliations_from_complete_symbol_layout",
+      "stage": "field_level_pdf_merge",
+      "field": "affiliations",
+      "author": "Zheyu Ma",
+      "replaced": [
+        "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+        "JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+      ],
+      "selected": [
+        "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+        "EPFL",
+        "JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+      ],
+      "author_markers": [
+        "∗",
+        "†",
+        "¶"
+      ],
+      "evidence_lines": [
+        "Zheyu Ma∗†¶, Qiang Liu†, Zheming Li∗¶, Tingting Yin‡, Wende Tan§, Chao Zhang∗‡¶(cid:66) , Mathias Payer†",
+        "∗Institute for Network Sciences and Cyberspace (INSC), Tsinghua University ‡Zhongguancun Laboratory",
+        "†EPFL §Department of Computer Science and Technology, Tsinghua University",
+        "¶JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+      ],
+      "evidence_block_ids": [
+        "pdfplumber:p1:b9",
+        "pdfplumber:p1:b10",
+        "pdfplumber:p1:b13",
+        "pdfplumber:p1:b16",
+        "pdfplumber:p1:b18"
+      ]
+    },
+    {
+      "action": "fill_default_and_symbol_affiliations_from_pdf",
+      "stage": "field_level_pdf_merge",
+      "field": "affiliations",
+      "author": "Qiang Liu",
+      "selected": [
+        "EPFL"
+      ],
+      "author_markers": [
+        "†"
+      ],
+      "evidence_lines": [
+        "Zheyu Ma∗†¶, Qiang Liu†, Zheming Li∗¶, Tingting Yin‡, Wende Tan§, Chao Zhang∗‡¶(cid:66) , Mathias Payer†",
+        "∗Institute for Network Sciences and Cyberspace (INSC), Tsinghua University ‡Zhongguancun Laboratory",
+        "†EPFL §Department of Computer Science and Technology, Tsinghua University",
+        "¶JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+      ],
+      "evidence_block_ids": [
+        "pdfplumber:p1:b9",
+        "pdfplumber:p1:b10",
+        "pdfplumber:p1:b13",
+        "pdfplumber:p1:b16",
+        "pdfplumber:p1:b18"
+      ]
+    },
+    {
+      "action": "fill_default_and_symbol_affiliations_from_pdf",
+      "stage": "field_level_pdf_merge",
+      "field": "affiliations",
+      "author": "Mathias Payer",
+      "selected": [
+        "EPFL"
+      ],
+      "author_markers": [
+        "†"
+      ],
+      "evidence_lines": [
+        "Zheyu Ma∗†¶, Qiang Liu†, Zheming Li∗¶, Tingting Yin‡, Wende Tan§, Chao Zhang∗‡¶(cid:66) , Mathias Payer†",
+        "∗Institute for Network Sciences and Cyberspace (INSC), Tsinghua University ‡Zhongguancun Laboratory",
+        "†EPFL §Department of Computer Science and Technology, Tsinghua University",
+        "¶JCSS, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd."
+      ],
+      "evidence_block_ids": [
+        "pdfplumber:p1:b9",
+        "pdfplumber:p1:b10",
+        "pdfplumber:p1:b13",
+        "pdfplumber:p1:b16",
+        "pdfplumber:p1:b18"
+      ]
+    },
+    {
+      "action": "rebuild_author_list_from_official_web_exact_title",
+      "stage": "official_web_reconciliation",
+      "field": "authors",
+      "selected": [
+        "Zheyu Ma",
+        "Qiang Liu",
+        "Zheming Li",
+        "Tingting Yin",
+        "Wende Tan",
+        "Chao Zhang",
+        "Mathias Payer"
+      ],
+      "source": "conference_official_web"
+    }
+  ]
+}

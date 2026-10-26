@@ -1,0 +1,434 @@
+{
+  "paper_id": "041_deepcase_semi_supervised_contextual_analysis_of_security_events",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DEEPCASE: Semi-Supervised Contextual Analysis of Security Events"
+      },
+      {
+        "source": "selected",
+        "value": "DEEPCASE: Semi-Supervised Contextual Analysis of Security Events"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Security monitoring systems detect potentially malicious activities in IT infrastructures, by either looking for known signatures or for anomalous behaviors. Security operators investigate these events to determine whether they pose a threat to their organization. In many cases, a single event may be insufficient to determine whether certain activity is indeed malicious. Therefore, a security operator frequently needs to correlate multiple events to identify if they pose a real threat. Unfortunately, the vast number of events that need to be correlated often overload security operators, forcing them to ignore some events and, thereby, potentially miss attacks. This work studies how to automatically correlate security events and, thus, automate parts of the security operator workload. We design and evaluate DEEPCASE, a system that leverages the context around events to determine which events require further inspection. This approach reduces the number of events that need to be inspected. In addition, the context provides valuable insights into why certain events are classified as malicious. We show that our approach automatically filters 86.72% of the events and reduces the manual workload of security operators by 90.53%, while underestimating the risk of potential threats in less than 0.001% of cases. 522 2022 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Security monitoring systems detect potentially mali- cious activities in IT infrastructures, by either looking for known signatures or for anomalous behaviors. Security operators investi- gate these events to determine whether they pose a threat to their organization. In many cases, a single event may be insufficient to determine whether certain activity is indeed malicious. Therefore, a security operator frequently needs to correlate multiple events to identify if they pose a real threat. Unfortunately, the vast number of events that need to be correlated often overload security operators, forcing them to ignore some events and, thereby, potentially miss attacks. This work studies how to automatically correlate security events and, thus, automate parts of the security operator workload. We design and evaluate DEEP CASE, a system that leverages the context around events to determine which events require further inspection. This approach reduces the number of events that need to be inspected. In addition, the context provides valuable insights into why certain events are classified as malicious. We show that our approach automatically filters 86.72% of the events and reduces the manual workload of security operators by 90.53%, while underestimating the risk of potential threats in less than 0.001% of cases. I. I NTRODUCTION Modern IT infrastructures face constant attacks and are, therefore, continuously monitored. Activities from devices and strategic points within the network are collected and processed by various systems such as Network Security Monitors (NSM, e.g., Zeek [33]) or Intrusion Detection Systems (IDS, e.g., Suricata1 or Snort 2). These systems contain security event detectors that collect information about security events (e.g., a new contacted host, the use of self-signed certificates, or ports being scanned), which they send to a central Security Operations Center (SOC). In a SOC, events are subsequently triaged by a combination of lower tier security operators and automated rules that combine events into alerts [45]. High priority alerts are then escalated to senior security operators who investigate each alert, and, depending on the threat and impact, take necessary actions [28]. Despite these filtering steps, security operators still have to manually deal with a large number of events and alerts on a daily basis. The workload of security operators is determined by the quality of the security event detectors. These security systems are expected to flag any suspicious activity to ensure that most malicious activity is detected. However, not all suspicious events are malicious, leading to an overwhelming number of unnecessary alerts for security operators to investigate. To put this into perspective, a 2019 survey by Cisco [11] reported that 41% of 3,540 organizations examined receive over 10,000 alerts per day. Of those alerts, only 50.7% were investigated due to the limited capacity of the security operators, and only 24.1% of investigated alerts were considered an actual attack. 1https://suricata-ids.org 2https://www.snort.org A similar 2018 report by Demisto found that companies deal with an average of 174,000 alerts per week, of which only 12,000 were investigated [13]. Moreover, state-of-the-art academic work by Symantec Research Labs uses real-world datasets with an average of 170 security events per device per day [36], which shows that even for a few hundred machines, the number of security events easily becomes overwhelming. This illustrates the vast number of alerts that security operators have to deal with. This high workload leads to a condition called alert fatigue, where security operators fail to respond to alerts because of the sheer volume they receive each day [22]. In the literature, several works have been proposed to tackle alert fatigue. These works either focus on 1) reducing the number of generated security events by improving individual detectors [9], [24] or 2) prioritizing alerts, a method called alert triaging [2], [3], [22]. While reducing the number of security events per detector is useful, it might result in missing a significant portion of the alerts for malicious events. In addi- tion, such a solution needs to be optimized for each detector. As organizations typically use different detectors from various vendors, optimizing at a detector level becomes infeasible. In contrast, alert triaging shows promising results in reduc- ing the workload of security operators for a more broad range of detectors. Unfortunately, existing triaging approaches still exhibit several limitations. Some works focus on prioritizing individual alerts based on threat indicators associated with each alert [2], [3]. In this case, complex attacks containing many relatively innocent security events remain undetected, while single high impact events are emphasized, despite often being produced by benign processes. More fundamentally, these approaches fail to analyze alerts in combination with other (suspicious) activities in the infrastructure. After all, threat detectors are specialized in finding suspicious behaviors, such as large file uploads or policy violations. However, we argue that suspicious behaviors can, sometimes, be legitimate when viewed together with other activity. To illustrate, con- sider a scenario where an attacker sends a phishing email containing a link to a website that downloads an executable infecting the machine with a packed botnet malware sample. Security detectors may raise security events for 1) a link to a website with a recently registered domain [43]; 2) a data download using a self-signed certificate [41]; 3) a packed ex- ecutable [1]; and 4) beaconing activity [26]. When these events occur together, they raise suspicion; however, each individual security event could be benign. After all, these events may be caused by 1) a startup launching its new website; 2) a devel- opment webserver where the TLS certificate has not yet been properly initialized; 3) software packed for compression or to protect intellectual property [1]; 4) applications periodically checking servers for updates. It is only when we look at this 522 DOI 10.1109/SP46214.2022.00036 Fig. 1. DEEP CASE setup. 1. Agents or probes summarize activity from monitored devices and send it to a network security monitor (NSM) or intrusion detection system (IDS). 2. These NSMs or IDSs contain several detectors that identify security-relevant events (e.g., Repeated SSH login attempt or Observed signature for malware X ). Normally, a security operator would investigate and deal with these events. Our work proposes D EEP CASE as an intermediate step. Here, each event is analyzed in a context, defined by the preceding events from the same device. Together they form an event sequence. Our goal is to correlate relevant events within each sequence and present them to the security operator as one alert. sequence of events as a whole that we can be confident of an attack. Therefore, techniques prioritizing individual alerts still leave the contextual analysis of alerts up to security operators. We propose to reduce the workload of security operators by automating the process of analyzing security events from NSM and IDS systems in combination with other triggered events. Figure 1 gives an overview of this approach. The core idea is that besides examining the security event itself, we also analyze the security events preceding it. We call these preced- ing security events the context in which an event is triggered. We refer to an event in combination with its context as an event sequence. Analyzing the context helps us understand what activity triggered the events. This allows us to better distinguish between an event that is benign (e.g., a self-signed TLS certificate presented by a development server) and a very similar, yet malicious, event in the context of an attack. More- over, it allows us to present fewer and more detailed alerts to security operators, which drastically reduces their workload. Using additional information to assess security events is not entirely new. SOC teams frequently use SIEM (security information and event management) products that include hand-crafted expert rules to combine events into alerts for known attack strategies [12]. Other systems, such as Zeek [33], even offer programmable interfaces for security operators to create these rules themselves. However, these approaches require expert knowledge and cover only event sequences that have been manually defined. Academic work, such as NoDoze [22] and later works [21], [23], attempts to automate this process by leveraging process-level data to reconstruct the activity that triggered an alert. However, this approach relies on process-level information only available in host-based detection systems. In contrast, our work focuses on placing events into context by analyzing only preceding security events. This allows our approach to have wider application, as many detectors (e.g., network-level detectors) or even entire environments (e.g., bring-your-own-device settings) do not have access to process-level information. Contextual analysis of security events is practical only if it is able to handle 1) complex relations within sequences of events, triggered by 2) evolving threats, while 3) remaining explainable to security operators. Therefore, this work specifically addresses these three challenges, which make contextual analysis non-trivial. Complex relations. Malicious activity often involves several steps that can lead to a sequence of events [31]. Conversely, benign applications may accidentally trigger security event detectors leading to false alerts. Since modern devices often run multiple benign applications simultaneously, the actual malicious behavior can easily get lost within this sequence of events. Thus, contextual analysis must be able to identify relevant context events from the complex event sequences received at the SOC. Evolving. Both the attacks and benign applications that trigger security events evolve over time: benign applications get up- dated, and adversaries develop novel malware and attack tech- niques. Additionally, companies introduce new detectors or replace old ones to keep up with new threats or gain more in- sight into the suspicious activity in their IT infrastructure [15]. Ideally, a contextual analysis mechanism should be able to learn new event sequences; and adapt its detection capabilities for new attacks with minimal input from a security operator. Explainable. Finally, reducing the workload of security operators requires filtering alerts and their corresponding events. When filtered incorrectly, we may miss attacks. Therefore, contextual analysis should provide concrete information as to why certain event sequences are discarded whilst others are marked for further investigation. To reduce the workload of security operators while tackling all three challenges, we introduce D EEP CASE. Our approach leverages a deep learning model designed to expose complex relations between both new and previously observed event sequences. These sequences are subsequently grouped based on a similarity function, providing concrete information about why various event sequences are treated the same. Now, the operators need to inspect only a few security event sequences within each group to determine if action should be taken, which significantly reduces their workload. In summary, we make the following contributions: • We introduce a semi-supervised deep learning approach for explaining and classifying security events in relation to their context. • We implement this approach in a prototype called DEEP CASE, which is a deep learning system for interpreting events within their context. • We show that DEEP CASE is able to reduce the workload of security operators by 90.53% on a real-world dataset containing all security events of 20 international organizations collected over a period of 5 months."
+      },
+      {
+        "source": "selected",
+        "value": "Security monitoring systems detect potentially malicious activities in IT infrastructures, by either looking for known signatures or for anomalous behaviors. Security operators investigate these events to determine whether they pose a threat to their organization. In many cases, a single event may be insufficient to determine whether certain activity is indeed malicious. Therefore, a security operator frequently needs to correlate multiple events to identify if they pose a real threat. Unfortunately, the vast number of events that need to be correlated often overload security operators, forcing them to ignore some events and, thereby, potentially miss attacks. This work studies how to automatically correlate security events and, thus, automate parts of the security operator workload. We design and evaluate DEEPCASE, a system that leverages the context around events to determine which events require further inspection. This approach reduces the number of events that need to be inspected. In addition, the context provides valuable insights into why certain events are classified as malicious. We show that our approach automatically filters 86.72% of the events and reduces the manual workload of security operators by 90.53%, while underestimating the risk of potential threats in less than 0.001% of cases. 522 2022 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Thijs Van Ede",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Hojjat Aghakhani",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Noah Spahn",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Riccardo Bortolameotti",
+          "email": "r.bortolameotti@reaqta.com",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Marco Cova",
+          "email": "covam@vmware.com",
+          "orcid": "",
+          "affiliations": [
+            "VMware, Inc"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Andrea Continella",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Maarten Van Steen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Andreas Peter",
+          "email": "a.peter@utwente.nl",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Christopher Kruegel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hojjat Aghakhani",
+          "email": "hojjat@cs.ucsb.edu",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Noah Spahn",
+          "email": "",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Riccardo Bortolameotti",
+          "email": "r.bortolameotti@reaqta.com",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Marco Cova",
+          "email": "covam@vmware.com",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Andrea Continella",
+          "email": "",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Andreas Peter",
+          "email": "a.peter@utwente.nl",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Christopher Kruegel",
+          "email": "chris@cs.ucsb.edu",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "affiliations": [
+            "University of Twente",
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 144,
+      "author_count": 8,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 4,
+          "author": "Andrea Continella",
+          "block_id": "pdf:p1:b11",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 4,
+          "author": "Andrea Continella",
+          "affiliation_raw": "† VMware, Inc. { hojjat, ncs, chris, vigna } @cs.ucsb.edu,",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b11",
+          "affiliation_block_ids": [
+            "pdf:p1:b15",
+            "pdf:p1:b24",
+            "pdf:p1:b26"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 7.965,
+          "center_distance": 39.793,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DeepCASE: Semi-Supervised Contextual Analysis of Security Events",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Thijs van Ede",
+          "affiliations": [
+            "University of Twente"
+          ]
+        },
+        {
+          "name": "Hojjat Aghakhani",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Noah Spahn",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Riccardo Bortolameotti",
+          "affiliations": [
+            "ReaQta"
+          ]
+        },
+        {
+          "name": "Marco Cova",
+          "affiliations": [
+            "VMware, Inc."
+          ]
+        },
+        {
+          "name": "Andrea Continella",
+          "affiliations": [
+            "University of Twente"
+          ]
+        },
+        {
+          "name": "Maarten van Steen",
+          "affiliations": [
+            "University of Twente"
+          ]
+        },
+        {
+          "name": "Andreas Peter",
+          "affiliations": [
+            "University of Twente"
+          ]
+        },
+        {
+          "name": "Christopher Kruegel",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Giovanni Vigna",
+          "affiliations": [
+            "University of California"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Hojjat Aghakhani",
+      "field": "email",
+      "restored_value": "hojjat@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Riccardo Bortolameotti",
+      "field": "email",
+      "restored_value": "r.bortolameotti@reaqta.com",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Marco Cova",
+      "field": "email",
+      "restored_value": "covam@vmware.com",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Andreas Peter",
+      "field": "email",
+      "restored_value": "a.peter@utwente.nl",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Christopher Kruegel",
+      "field": "email",
+      "restored_value": "chris@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Giovanni Vigna",
+      "field": "email",
+      "restored_value": "vigna@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

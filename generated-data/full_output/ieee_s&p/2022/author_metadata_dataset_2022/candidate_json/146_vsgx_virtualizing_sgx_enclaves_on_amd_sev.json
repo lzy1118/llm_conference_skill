@@ -1,0 +1,228 @@
+{
+  "paper_id": "146_vsgx_virtualizing_sgx_enclaves_on_amd_sev",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "vSGX: Virtualizing SGX Enclaves on AMD SEV"
+      },
+      {
+        "source": "selected",
+        "value": "vSGX: Virtualizing SGX Enclaves on AMD SEV"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The growing need of trusted execution environment (TEE) has boomed the development of hardware enclaves. However, current TEEs and their applications are tightly bound to the hardware implementation, hindering their compatibility across different platforms. This paper presents vSGX, a novel system to virtualize the execution of an Intel SGX enclave atop AMD SEV. The key idea is to interpose the execution of enclave instructions transparently to support the SGX ISA extensions, consolidate encrypted virtual memory of separated SEV virtual machines to create a single virtualized SGX-like address space, and provide attestations for the authenticity of the TEE and the integrity of enclave software with a trust chain rooted in the SEV hardware. By design, vSGX achieves a comparable level of security guarantees on SEV as that on Intel SGX. We have implemented vSGX and demonstrated it imposes reasonable performance overhead for SGX enclave execution."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The growing need of trusted execution environment (TEE) has boomed the development of hardware enclaves. However, current TEEs and their applications are tightly bound to the hardware implementation, hindering their compatibility across different platforms. This paper presents vSGX, a novel system to virtualize the execution of an Intel SGX enclave atop AMD SEV . The key idea is to interpose the execution of enclave instructions transparently to support the SGX ISA extensions, consolidate encrypted virtual memory of separated SEV virtual machines to create a single virtualized SGX-like address space, and provide attestations for the authenticity of the TEE and the integrity of enclave software with a trust chain rooted in the SEV hardware. By design, vSGX achieves a comparable level of security guarantees on SEV as that on Intel SGX. We have implemented vSGX and demonstrated it imposes reasonable performance overhead for SGX enclave execution. I. I NTRODUCTION Over the past few years, we have witnessed a tremendous growth of the use of trusted execution environments (TEEs), such as Intel Software Guard Execution (SGX) and AMD Se- cure Encrypted Virtualization (SEV). TEEs have great promise in protecting both confidentiality and integrity of program code and data from malicious system software and operators, which are extremely valuable for clouds where the computing platform is not fully trusted by its customers. Existing cloud deployment of TEEs includes Alibaba Cloud's SGX VM instances [ 7], Microsoft Azure's confidential computing [ 3], Google's confidential virtual machines [ 4], and so on. As a prominent TEE platform from Intel, a dominating player in the general-purpose CPU market, SGX has once become the de facto standard for building TEE-based appli- cations. A rich ecosystem with abundant open source projects and commercial products has been built atop SGX, including SGX-based password manager [ 40], SGX-based anonymity network [ 38], privacy-preserving data analytics (e.g., [ 57], [60]) and machine learning (e.g., [41], [50]), SGX-based game protection (e.g., [16], [54]), privacy-preserving contact-tracing (e.g., SafeTrace [ 1]) and blockchains [ 19] using SGX, and SGX-based IoT network [ 48], etc. However, the ISA extension of SGX mandates a clear separation of software applications into trusted and untrusted components, such that the trusted software components are † Part of this work was done when Shixuan Zhao was visiting SUSTech. yinqianz@acm.org, zlin@cse.ohio-state.edu isolated inside the protected enclave regions that are only accessible from code executed in a new CPU mode (i.e., en- clave mode). As such, developers need to refactor an existing application or build a new one in accordance with Intel's SGX software specification, and compile it using SGX SDKs, such as Intel SGX SDK [34], and Rust SGX SDKs (e.g., [25], [69]). As a result, applications developed for SGX can only run on SGX processors, resulting in a vendor lock-in situation. Decoupling TEE software applications from the underlying TEE hardware is a strong desire of the cloud providers. For instance, Google's Asylo project [ 8] aims to provide a unified SDK interface so that the same TEE source code developed with Asylo can be compiled and run on any TEE hardware; Amazon's Nitro Enclaves [ 5] use virtualization technology to form secure enclaves, so that confidential workloads can run without SGX. However, neither of these methods can achieve binary compatibility. Ideally, the cloud providers would offer their customers an option to build their applications once, in accordance with the SGX semantics, for instance, given the large volume of existing SGX-based projects, and deploy them on a variety of cloud servers, which may or may not have the hardware capabilities of SGX. Moreover, the customers should be provided the freedom of choosing the level of trust they have on the cloud providers. For instance, for users who fully trust the cloud providers, hypervisor-based enclaves (e.g., Nitro Enclaves [ 5]) can be used. But for other users who do not, either SGX or SEV can be chosen from two different levels of trust: SGX features small user-space enclaves with all other software components exposed to the untrusted hypervisor, while SEV protects the entire VM and allows flexible deployment of existing applica- tions, at the cost of a larger attack surface. However, to the best of our knowledge, there is no technique that could combine the benefit of both SGX and SEV so that a user can enjoy SEV- protected VMs for a private computation environment while still be able to run existing SGX enclave binaries. To demonstrate such a feasibility and practicality, in this paper, we present vSGX, a system that provides binary code compatibility of partitioned SGX enclave software and enables its direct execution atop AMD SEV . Conceptually, vSGX can be considered as an SGX hardware module that is plugged into an SEV machine. The key idea behind vSGX is to leverage the VM protection provided by SEV , and execute trusted enclave of a legacy SGX application in a separated 321 DOI 10.1109/SP46214.2022.00040 VM, and we call it an enclave VM (EVM). We call the original VM that runs the untrusted part of the app as an app VM (A VM). The virtualization is achieved through the interposition of the SGX instructions (e.g., EENTER, and EEXIT) during their executions in the corresponding VMs or cross-VMs, and implementing the corresponding logic in the VM kernels to offer the transparency to both the trusted enclave code and untrusted application code. The enclave code and data secrecy are achieved by using AMD's memory encryption engine (MEE), and the integrity is achieved by building an attestation service with a trust chain rooted by AMD's SEV attestation. Therefore, we achieve a comparable level of security as SGX while preserving the SEV's security when running SGX applications atop vSGX. While the idea of virtualizing SGX enclaves using SEV might appear to be simple, it in fact faces many non-trivial challenges (§III). These challenges include how to interpose the execution of enclave instructions in AMD SEV; how to handle enclave entrance and exit since with vSGX an enclave is executed in a separate EVM; how to handle cross memory access between the EVMs and A VMs; how to deal with the untrusted code in the A VM's OS or even a malicious hypervi- sor; and how to perform SGX remote attestation on AMD machines. We have fortunately addressed these challenges when designing vSGX (§IV). We have analyzed the security of vSGX and discussed that our design has achieved a comparable level of security as with Intel SGX, through the use of the primitives provided by AMD SEV (§V). We have also evaluated its performance overhead with a set of benchmarks and real world applications (§VI). Our experimental results from the benchmarks show that while many of the enclave instruction executions (particularly EENTER and EEXIT) are indeed slower when running in SEV compared to running in Intel CPU, these overheads will only be observed by ECall or I/O intensive applications. Our evaluation with real world SGX applications shows that the overhead of vSGX is reasonable. Therefore, we believe vSGX represents a practical way of executing SGX enclaves atop AMD SEV . In short, this paper makes the following contributions: • Novel System: We present vSGX, a new system that allows the SGX execution atop AMD SEV (including SEV-ES), enhancing enclave applications' inter-TEE op- erability in a virtualized environment. • Comparable Security: Despite the fundamental design differences between SGX and SEV , vSGX achieves com- parable security guarantees to SGX to allow secure exe- cution of SGX enclaves, while preserving the benefits of being protected by SEV . • Implementation and Evaluation: We have implemented vSGX, and systematically characterized its performance overhead. Our results show that it has reasonable over- head for enclave execution when running on AMD SEV , and can be used in practice. II. B ACKGROUND A. Intel SGX Intel SGX provides a trusted execution environment (TEE) by isolating the security-critical component of an application in a hardware-protected enclave. Everything outside the en- clave including the OS is untrusted. The only trusted com- puting base (TCB) includes just the underlying hardware and the enclave itself [32]. In particular, Intel SGX provides the following promises for software running inside the enclave: • Confidentiality: The enclave has its memory encrypted, protected and physically isolated in the Processor Re- served Memory (PRM), and such memory is called Enclave Page Cache (EPC). Any software outside the enclave cannot access the code and data in EPC. In addi- tion, a hardware memory encryption engine (MEE) sits in between of the processor and the memory controller, so that all memory accesses to the PRM region are encrypted and decrypted on the fly. • Integrity: When an EPC page is swapped out from the memory, it is encrypted and authenticated with Message Authentication Code (MAC). Thus, it prevents direct tampering from the outside software. An EPC page can be swapped back once passing the decryption and integrity check. Intel also provides various platform support, including launching service and remote attestation service so that the enclave and the SGX hardware can authenticate themselves to a remote party. B. AMD SEV and Extensions AMD SEV provides a VM-based TEE by encrypting VM's memory without trusting hypervisors or hosts (we will use hypervisors and hosts interchangeably when referring to the virtual machine monitor in the rest of this paper) [37]. Particularly, an AES engine in AMD system-on-chip (SOC) is used to protect VM's data in the memory. SEV VM's data is automatically encrypted by the AES engine when it is written to the memory and is automatically decrypted when it is read from the memory. Each SEV VM has a unique 128-bit VM Encryption Key (VEK), which is stored in AMD Secure Processor (AMD-SP) and never exposed to the platform host. SEV-ES further protects the VM states by encrypting its VM control blocks (VMCB) during VMEXITs [36]. The latest SEV-SNP also includes an inverted page table, such that the integrity of the encrypted memory and the nested page tables is preserved [10]. Similar to Intel SGX, everything outside the SEV VM including co-resident VMs and the platform host is untrusted. Even though the hypervisor can access SEV VM's memory, the AES encryption protects the guest VM's confidentiality and integrity from the hypervisor. However, unlike Intel SGX where the whole enclave is encrypted, SEV supports page- level encryption and the guest VM can control which pages in the memory are encrypted. The guest VM can unset the C-bit in the guest page table entry (PTE) to change an encrypted 2322"
+      },
+      {
+        "source": "selected",
+        "value": "The growing need of trusted execution environment (TEE) has boomed the development of hardware enclaves. However, current TEEs and their applications are tightly bound to the hardware implementation, hindering their compatibility across different platforms. This paper presents vSGX, a novel system to virtualize the execution of an Intel SGX enclave atop AMD SEV. The key idea is to interpose the execution of enclave instructions transparently to support the SGX ISA extensions, consolidate encrypted virtual memory of separated SEV virtual machines to create a single virtualized SGX-like address space, and provide attestations for the authenticity of the TEE and the integrity of enclave software with a trust chain rooted in the SEV hardware. By design, vSGX achieves a comparable level of security guarantees on SEV as that on Intel SGX. We have implemented vSGX and demonstrated it imposes reasonable performance overhead for SGX enclave execution."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Shixuan Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Mengyuan Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yinqian Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Zhiqiang Lin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Shixuan Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State University †Research Institute of Trust-worthy Autonomous Systems, Southern University of Science and Technology ‡Department of Computer Science and Engineering, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Mengyuan Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State University †Research Institute of Trust-worthy Autonomous Systems, Southern University of Science and Technology ‡Department of Computer Science and Engineering, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yinqian Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State University †Research Institute of Trust-worthy Autonomous Systems, Southern University of Science and Technology ‡Department of Computer Science and Engineering, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zhiqiang Lin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science and Engineering, The Ohio State University †Research Institute of Trust-worthy Autonomous Systems, Southern University of Science and Technology ‡Department of Computer Science and Engineering, Southern University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 110,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Zhiqiang Lin",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Zhiqiang Lin",
+          "affiliation_raw": "Department of Computer Science and Engineering, The Ohio State University Research Institute of Trust-worthy Autonomous Systems, Southern University of Science and Technology Department of Computer Science and Engineering, Southern University of Science and Technology",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b9",
+            "pdf:p1:b11",
+            "pdf:p1:b13"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 25.299,
+          "center_distance": 94.603,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "vSGX: Virtualizing SGX Enclaves on AMD SEV",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Shixuan Zhao",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        },
+        {
+          "name": "Mengyuan Li",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        },
+        {
+          "name": "Yinqian Zhang",
+          "affiliations": [
+            "Southern University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Zhiqiang Lin",
+          "affiliations": [
+            "Ohio State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

@@ -1,0 +1,547 @@
+{
+  "paper_id": "145_badram_practical_memory_aliasing_attacks_on_trusted_execution_environments",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BadRAM: Practical Memory Aliasing Attacks on Trusted Execution Environments"
+      },
+      {
+        "source": "selected",
+        "value": "BadRAM: Practical Memory Aliasing Attacks on Trusted Execution Environments"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The growing adoption of cloud computing raises pressing concerns about trust and data privacy. Trusted Execution Environments (TEEs) have been proposed as promising solutions that implement strong access control and transparent memory encryption within the CPU. While initial TEEs, like Intel SGX, were constrained to small isolated memory regions, the trend is now to protect full virtual machines, e.g., with AMD SEV-SNP, Intel TDX, and Arm CCA. In this paper, we challenge the trust assumptions underlying scaled-up memory encryption and show that an attacker with brief physical access to the embedded SPD chip can cause aliasing in the physical address space, circumventing CPU access control mechanisms. We devise a practical, low-cost setup to create aliases in DDR4 and DDR5 memory modules, breaking the newly introduced integrity guarantees of AMD SEV-SNP. This includes the ability to manipulate memory mappings and corrupt or replay ciphertext, culminating in a devastating end-to-end attack that compromises SEV-SNP's attestation feature. Furthermore, we investigate the issue for other TEEs, demonstrating finegrained, noiseless write-pattern leakage for classic Intel SGX, while finding that Scalable SGX and TDX employ dedicated alias detection, preventing our attacks at present. In conclusion, our findings dismantle security guarantees in the SEV-SNP ecosystem, necessitating AMD firmware patches, and nuance DRAM trust assumptions for scalable TEE designs. 4117 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The growing adoption of cloud computing raises pressing concerns about trust and data privacy. Trusted Exe- cution Environments (TEEs) have been proposed as promising solutions that implement strong access control and transparent memory encryption within the CPU. While initial TEEs, like Intel SGX, were constrained to small isolated memory regions, the trend is now to protect full virtual machines, e.g., with AMD SEV-SNP, Intel TDX, and Arm CCA. In this paper, we challenge the trust assumptions underlying scaled-up memory encryption and show that an attacker with brief physical access to the embedded SPD chip can cause aliasing in the physical address space, circumventing CPU access control mechanisms. We devise a practical, low-cost setup to create aliases in DDR4 and DDR5 memory modules, breaking the newly intro- duced integrity guarantees of AMD SEV-SNP. This includes the ability to manipulate memory mappings and corrupt or replay ciphertext, culminating in a devastating end-to-end attack that compromises SEV-SNP's attestation feature. Furthermore, we investigate the issue for other TEEs, demonstrating fine- grained, noiseless write-pattern leakage for classic Intel SGX, while finding that Scalable SGX and TDX employ dedicated alias detection, preventing our attacks at present. In conclusion, our findings dismantle security guarantees in the SEV-SNP ecosystem, necessitating AMD firmware patches, and nuance DRAM trust assumptions for scalable TEE designs. 1. Introduction Cloud computing has become an important paradigm that takes advantage of the economy of scale by sharing platform resources among mutually distrusting tenants. Tra- ditionally, a privileged hypervisor software layer orches- trates and isolates different guest Virtual Machines (VMs). However, in this paradigm, cloud users must assume the hypervisor to be free from exploitable vulnerabilities, as well as trust the cloud service provider's administrators, staff ∗These authors contributed equally to this work. with physical access, and local law enforcement. In response to these concerns, Trusted Execution Environments (TEEs) have been developed, including AMD's Secure Encrypted Virtualization (SEV) [19], Intel's Software Guard Exten- sions (SGX) [31], [57] and Trusted Domain Extensions (TDX) [34], and Arm's Confidential Compute Architecture (CCA) [6]. TEEs aim to facilitate private computations even in the presence of an untrusted hypervisor, guarding against both privileged software-level and hardware-level attacks. To this end, TEEs implement strong, hardware-enforced access control mechanisms to protect data in use within the trusted CPU package while transparently encrypting all data before writing it to untrusted off-chip DRAM. Therefore, TEEs safeguard data confidentiality against advanced phys- ical adversaries employing cold boot attacks [84] or DRAM interposers [49]. Initial TEE designs, like Intel SGX, priori- tized additional strong cryptographic integrity and freshness protection to thwart data modification and replay attacks. However, ensuring freshness requires secure on-chip storage for the root of the integrity tree, which does not scale effectively with larger memory sizes. Consequently, these initial designs are limited to a relatively small memory region (i.e., 128 or 256 MB) [26]. A clear industry shift, ex- emplified by Scalable SGX, TDX, SEV , and CCA, has since extended protection to full VMs, thereby scaling memory encryption to encompass the entire DRAM. However, this expansion may come at the cost of theoretically reducing the strength of cryptographic integrity guarantees against physical adversaries [31]. While it has been established that data encryption cannot conceal address access patterns [18], [49], and scaling up memory encryption may introduce powerful ciphertext side channels [50], [53] in code that is otherwise constant time, no practical integrity breaches have been demonstrated to date. One reason for this is that the cost of such advanced physical attacks is considered to be exceedingly high. For instance, the sole previous hardware attack that managed to extract access patterns from SGX's memory encryption engine required a prohibitive investment of $170,000 for 4117 DOI 10.1109/SP61157.2025.00104 a DDR4 DRAM interposer [49]. It is worth noting that this interposer requires continuous physical access and may not even be fast enough to manipulate or replay data, let alone target more recent DDR5 technologies. Thus, in this paper, we analyze the remaining DRAM trust assumptions, considering the following fundamental questions: Can the memory subsystem, especially DRAM modules, be manipulated to break integrity protections in scalable, new- generation TEE designs? Are these attacks viable for low- cost adversaries with minimal or no physical access? Exploring a new research direction, we focus our at- tention on the memory subsystem's initialization process, which is conducted at boot time by BIOS system software in conjunction with DRAM module configuration data, both of which are explicitly distrusted from the perspective of CPU- based TEEs. Specifically, we introduce a novel, platform- agnostic technique to double the apparent size of DDR4 and DRR5 memory modules by unlocking and manipulating the onboard Serial Presence Detect (SPD) chip, which pro- vides a standardized method for reporting physical memory properties to the BIOS. We dub such manipulated memory modules BadRAM. Notably, our practical, low-cost SPD manipulation setup requires only brief, one-time physical access and can be built for approximately $10. Moreover, we find that certain DRAM vendors incidentally leave SPD unlocked, potentially enabling software-only attacks without any need for physical access. In our attacks, we double the apparent size of the Dual Inline Memory Module (DIMM) installed in the system to trick the CPU's memory controller into using additional “ghost” addressing bits. These addressing bits will be un- used within the virtually enlarged DIMM, creating an inter- esting aliasing effect where two different physical addresses now refer to the same DRAM location. We develop a practical reverse-engineering method to locate these aliases and show that they can be exploited to bypass access control restrictions, including those implemented by TEEs. Most impactful, in the case of AMD SEV-SNP, we show that BadRAM attackers can tamper with or replay ciphertexts and even manipulate the crucial reverse map table data structure, thereby re-introducing potent page-remapping at- tacks [60], [61], [62] that initially prompted the development of SEV-SNP. Building upon these primitives, we construct a comprehensive, end-to-end attack that allows replaying the cryptographic launch digest used in SEV-SNP's attestation process. We experimentally demonstrate that this capability permits the launching of arbitrarily modified VM images without altering their attestation report, consequently under- mining all trust in the SEV-SNP ecosystem. Next, we analyze the effect of our BadRAM aliasing primitive on the security of other popular TEEs beyond AMD SEV-SNP. We find that “classic” Intel SGX incor- porates suitable cryptographic integrity protections that ef- fectively thwart ciphertext replay or corruption attacks but still allow BadRAM adversaries to discern precise, noiseless write access patterns at a fraction of the cost of prior work [49]. Conversely, Scalable SGX and TDX include a trusted code module that explicitly checks the physical memory space for aliases during boot time, preventing our attacks at present. Following our responsible disclosure, AMD plans to introduce a similar countermeasure through a firmware update for SEV-SNP. Contributions. Our main contributions are as follows: • We present a novel physical memory aliasing primi- tive based on malicious SPD data that bypasses TEE- imposed access-control restrictions at low cost and with one-time physical access. • We show how malicious SPD configurations break AMD SEV-SNP's memory integrity feature, allow- ing to remap pages and corrupt or replay ciphertexts. • We present an end-to-end attack on SEV-SNP's at- testation, allowing arbitrary changes to the VM. • We demonstrate low-cost, fine-grained, noiseless write-pattern leakage for classic Intel SGX. • We discuss existing countermeasures as well as im- provements to harden TEEs against BadRAM. Responsible Disclosure. We disclosed the SPD alias- ing attacks with proof-of-concepts to break SEV-SNP to AMD on February 26, 2024. AMD acknowledged our findings, which they are tracking under CVE-2024-21944 and AMD-SB-7022, and requested an embargo until De- cember 10, 2024. Notably, AMD's official CVSS assess- ment ( AV:L/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:N) acknowledges that BadRAM attacks can be mounted by local, software- only attackers without physical access (e.g., via SSH). For the issue in classic Intel SGX, we did not deem disclosure necessary at this point, as the underlying problem of write- pattern leakage has been demonstrated before. To mitigate our findings, AMD will interactively check the DRAM configuration using “AMD Secure Boot loader firmware”. Appendix A contains AMD's verbatim response. Open Science. To ensure the reproducibility of our results, and to enable future science on memory-aliasing attacks and defenses, we open-source our practical SPD tools and eval- uation scenarios at https://github.com/badramattack/badram. 2. Background 2.1. AMD Secure Encrypted Virtualization AMD's Secure Encrypted Virtualization (SEV) [19] is a TEE that protects virtual machines against privileged software attackers, such as a malicious hypervisor. The intended use case is to run VMs in the cloud without needing to trust the cloud service provider. SEV uses a combination of access rights and memory encryption to protect the VM's data. Before writing data to DRAM, it is encrypted with AES XOR-Encrypt-XOR (AES-XEX) using a tweak value derived from the physical address [19], [66], [80]. The encryption keys are managed by the AMD Secure Processor (SP), which forms the hardware root of trust 4118"
+      },
+      {
+        "source": "selected",
+        "value": "The growing adoption of cloud computing raises pressing concerns about trust and data privacy. Trusted Execution Environments (TEEs) have been proposed as promising solutions that implement strong access control and transparent memory encryption within the CPU. While initial TEEs, like Intel SGX, were constrained to small isolated memory regions, the trend is now to protect full virtual machines, e.g., with AMD SEV-SNP, Intel TDX, and Arm CCA. In this paper, we challenge the trust assumptions underlying scaled-up memory encryption and show that an attacker with brief physical access to the embedded SPD chip can cause aliasing in the physical address space, circumventing CPU access control mechanisms. We devise a practical, low-cost setup to create aliases in DDR4 and DDR5 memory modules, breaking the newly introduced integrity guarantees of AMD SEV-SNP. This includes the ability to manipulate memory mappings and corrupt or replay ciphertext, culminating in a devastating end-to-end attack that compromises SEV-SNP's attestation feature. Furthermore, we investigate the issue for other TEEs, demonstrating finegrained, noiseless write-pattern leakage for classic Intel SGX, while finding that Scalable SGX and TDX employ dedicated alias detection, preventing our attacks at present. In conclusion, our findings dismantle security guarantees in the SEV-SNP ecosystem, necessitating AMD firmware patches, and nuance DRAM trust assumptions for scalable TEE designs. 4117 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jesse De Meulemeester",
+          "email": "jesse.demeulemeester@esat.kuleuven.be",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Thomas Eisenbarth",
+          "email": "thomas.eisenbarth@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Luca Wilke",
+          "email": "l.wilke@uni-luebeck.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ingrid Verbauwhede",
+          "email": "ingrid.verbauwhede@esat.kuleuven.be",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "David Oswald",
+          "email": "d.f.oswald@bham.ac.uk",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Jo Van Bulck",
+          "email": "jo.vanbulck@cs.kuleuven.be",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Distrinet",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Leuven Ku",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Leuven",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Belgium",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "COSIC, KU Leuven Leuven, Belgium"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Lübeck Lübeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Lübeck Lübeck, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 12
+        },
+        {
+          "order": 13,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "COSIC, KU Leuven Leuven, Belgium"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 13
+        },
+        {
+          "order": 14,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Birmingham Birmingham, United Kingdom"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 14
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jesse De Meulemeester",
+          "email": "jesse.demeulemeester@esat.kuleuven.be",
+          "affiliations": [
+            "COSIC, KU Leuven Leuven, Belgium"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Thomas Eisenbarth",
+          "email": "thomas.eisenbarth@uni-luebeck.de",
+          "affiliations": [
+            "University of L ¨ubeck L¨ubeck, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Luca Wilke",
+          "email": "l.wilke@uni-luebeck.de",
+          "affiliations": [
+            "University of L ¨ubeck L¨ubeck, Germany"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Ingrid Verbauwhede",
+          "email": "ingrid.verbauwhede@esat.kuleuven.be",
+          "affiliations": [
+            "COSIC, KU Leuven Leuven, Belgium"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "David Oswald",
+          "email": "d.f.oswald@bham.ac.uk",
+          "affiliations": [
+            "University of Birmingham Birmingham, United Kingdom"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Jo Van Bulck",
+          "email": "jo.vanbulck@cs.kuleuven.be",
+          "affiliations": [
+            "DistriNet, KU Leuven Leuven, Belgium"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 109,
+      "author_count": 6,
+      "matched_author_count": 6,
+      "exact_author_match_count": 6,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Jesse De Meulemeester",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Thomas Eisenbarth",
+          "block_id": "pdf:p1:b16",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Luca Wilke",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Ingrid Verbauwhede",
+          "block_id": "pdf:p1:b17",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "David Oswald",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Jo Van Bulck",
+          "block_id": "pdf:p1:b18",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Jesse De Meulemeester",
+          "affiliation_raw": "COSIC, KU Leuven Leuven, Belgium",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b10",
+            "pdf:p1:b13"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b13",
+            "pdf:p1:b7"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 1.466,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Thomas Eisenbarth",
+          "affiliation_raw": "University of L ¨ubeck L¨ubeck, Germany",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b16",
+          "affiliation_block_ids": [
+            "pdf:p1:b22",
+            "pdf:p1:b25"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b25",
+            "pdf:p1:b19"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 8.085,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Luca Wilke",
+          "affiliation_raw": "University of L ¨ubeck L¨ubeck, Germany",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b14"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b14",
+            "pdf:p1:b8"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 10.693,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Ingrid Verbauwhede",
+          "affiliation_raw": "COSIC, KU Leuven Leuven, Belgium",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b17",
+          "affiliation_block_ids": [
+            "pdf:p1:b23",
+            "pdf:p1:b26"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b26",
+            "pdf:p1:b20"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 3.832,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "David Oswald",
+          "affiliation_raw": "University of Birmingham Birmingham, United Kingdom",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b12",
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b15",
+            "pdf:p1:b9"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 3.135,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Jo Van Bulck",
+          "affiliation_raw": "DistriNet, KU Leuven Leuven, Belgium",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b18",
+          "affiliation_block_ids": [
+            "pdf:p1:b24",
+            "pdf:p1:b27"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b27",
+            "pdf:p1:b21"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 24.477,
+          "center_distance": 0.982,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BadRAM: Practical Memory Aliasing Attacks on Trusted Execution Environments",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jesse De Meulemeester",
+          "affiliations": [
+            "COSIC, KU Leuven"
+          ]
+        },
+        {
+          "name": "Luca Wilke",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "David Oswald",
+          "affiliations": [
+            "University of Birmingham"
+          ]
+        },
+        {
+          "name": "Thomas Eisenbarth",
+          "affiliations": [
+            "University of Lübeck"
+          ]
+        },
+        {
+          "name": "Ingrid Verbauwhede",
+          "affiliations": [
+            "COSIC, KU Leuven"
+          ]
+        },
+        {
+          "name": "Jo Van Bulck",
+          "affiliations": [
+            "DistriNet, KU Leuven"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jesse De Meulemeester",
+      "field": "email",
+      "restored_value": "jesse.demeulemeester@esat.kuleuven.be",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Thomas Eisenbarth",
+      "field": "email",
+      "restored_value": "thomas.eisenbarth@uni-luebeck.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Luca Wilke",
+      "field": "email",
+      "restored_value": "l.wilke@uni-luebeck.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Ingrid Verbauwhede",
+      "field": "email",
+      "restored_value": "ingrid.verbauwhede@esat.kuleuven.be",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "David Oswald",
+      "field": "email",
+      "restored_value": "d.f.oswald@bham.ac.uk",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jo Van Bulck",
+      "field": "email",
+      "restored_value": "jo.vanbulck@cs.kuleuven.be",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

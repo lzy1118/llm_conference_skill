@@ -1,0 +1,441 @@
+{
+  "paper_id": "084_diane_identifying_fuzzing_triggers_in_apps_to_generate_under_constrained_inputs_for_iot_devices",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DIANE: Identifying Fuzzing Triggers in Apps to Generate Under-constrained Inputs for IoT Devices"
+      },
+      {
+        "source": "selected",
+        "value": "DIANE: Identifying Fuzzing Triggers in Apps to Generate Under-constrained Inputs for IoT Devices"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Internet of Things (IoT) devices have rooted themselves in the everyday life of billions of people. Thus, researchers have applied automated bug finding techniques to improve their overall security. However, due to the difficulties in extracting and emulating custom firmware, black-box fuzzing is often the only viable analysis option. Unfortunately, this solution mostly produces invalid inputs, which are quickly discarded by the targeted IoT device and do not penetrate its code. Another proposed approach is to leverage the companion app (i.e., the mobile app typically used to control an IoT device) to generate well-structured fuzzing inputs. Unfortunately, the existing solutions produce fuzzing inputs that are constrained by app-side validation code, thus significantly limiting the range of discovered vulnerabilities. In this paper, we propose a novel approach that overcomes these limitations. Our key observation is that there exist functions inside the companion app that can be used to generate optimal (i.e., valid yet under-constrained) fuzzing inputs. Such functions, which we call fuzzing triggers, are executed before any data-transforming functions (e.g., network serialization), but after the input validation code. Consequently, they generate inputs that are not constrained by app-side sanitization code, and, at the same time, are not discarded by the analyzed IoT device due to their invalid format. We design and develop DIANE, a tool that combines static and dynamic analysis to find fuzzing triggers in Android companion apps, and then uses them to fuzz IoT devices automatically. We use DIANE to analyze 11 popular IoT devices, and identify 11 bugs, 9 of which are zero days. Our results also show that without using fuzzing triggers, it is not possible to generate bug-triggering inputs for many devices. 484 2021 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Internet of Things (IoT) devices have rooted themselves in the everyday life of billions of people. Thus, researchers have applied automated bug finding techniques to improve their overall security. However , due to the difficulties in extracting and emulating custom firmware, black-box fuzzing is often the only viable analysis option. Unfortunately, this solution mostly produces invalid inputs, which are quickly discarded by the targeted IoT device and do not penetrate its code. Another proposed approach is to leverage the companion app (i.e., the mobile app typically used to control an IoT device) to generate well-structured fuzzing inputs. Unfortunately, the existing solutions produce fuzzing inputs that are constrained by app-side validation code, thus significantly limiting the range of discovered vulnerabilities. In this paper , we propose a novel approach that overcomes these limitations. Our key observation is that there exist functions inside the companion app that can be used to generate optimal (i.e., valid yet under-constrained) fuzzing inputs. Such functions, which we call fuzzing triggers, are executed before any data-transforming functions (e.g., network serialization), butafter the input validation code. Consequently, they generate inputs that are not constrained by app-side sanitization code, and, at the same time, are not discarded by the analyzed IoT device due to their invalid format. We design and develop DIANE , a tool that combines static and dynamic analysis to find fuzzing triggers in Android companion apps, and then uses them to fuzz IoT devices automatically. We use DIANE to analyze 11 popular IoT devices, and identify 11 bugs, 9 of which are zero days. Our results also show that without using fuzzing triggers, it is not possible to generate bug-triggering inputs for many devices. I. I NTRODUCTION Internet of Things (IoT) devices have become part of the everyday life of billions of people [53], [64]. Unfortunately, very much like their popularity, the number of vulnerabilities found in these devices has increased as well. In both 2019 and 2018, security researchers published more than 150 vulnerabilities affecting IoT devices [5], [6], [7]. This represented an increment of 15% compared to 2017, and an increase of 115% compared to 2016. These vulnerabilities reside in the software (or firmware) running on these IoT devices. As several studies have shown, this software often contains implementation flaws, which attackers can exploit to gain control of a device, and cause significant disruption for end-users [17], [18], [27], [48], [59]. One prominent example is the Mirai botnet [51], which infected hundreds of thousands of IoT devices using a collection of vulnerabilities. In recent years, researchers have developed novel techniques to automatically find vulnerabilities in IoT devices by analyzing their firmware [24], [31], [32], [70], [71], [84]. These approaches, however, present several limitations. First, obtaining the firmware running on an IoT device is difficult: Extracting the firmware from a device typically requiresad hoc solutions, and vendors hardly make their software publicly available [70]. Second, unpacking and analyzing a firmware sample is a challenging task: Firmware samples may be available in a variety of formats, and may run on several different architectures, often undocumented. Furthermore, most IoT devices are shipped with disabled hardware debugging capabilities [25], [55], [61], ruling out analyses based on dynamic instrumentation. For these reasons, security researchers typically have to use black-box approaches when vetting the security of IoT devices. However, the existing black-box approaches [2], [12], [14] require knowledge about the data format accepted by the device under analysis. Consequently, given the heterogeneity and lack of documentation of the protocols adopted by IoT devices, these approaches are not readily applicable. However, most IoT devices have companion apps [82], [88] (i.e., mobile apps used to interact with the device), which contain the necessary mechanism to generate valid inputs for the corresponding device. Based on this observation, Chen et al. [25] proposed a tool, IoTFuzzer, which fuzzes IoT devices by leveraging their companion apps. IoTFuzzer analyzes the companion app and retrieves all the paths connecting the app's User Interface (UI) to either a network-related method or a data-encoding method. Then, IoTFuzzer fuzzes the parameters of the first function that handles user input along these paths, thus generating valid fuzzing inputs for the IoT device. While this approach yields better results than randomly fuzzing the data directly sent to the IoT device over the network, in practice, it consists in mutating variables immediately after they are fetched from the UI, before the app performs any input validation or data processing. Consequently, the effectiveness of IoTFuzzer suffers substantially when the app sanitizes the provided input-our experiments (SectionIV -E) demonstrate that 51% of IoT companion apps perform app-side input validation. Indeed, recent research showed that mobile apps often perform input validation to trigger different behaviors [ 86]. For these reasons, IoTFuzzer's approach cannot produceunder-constrained (i.e., not affected by app-side sanitization) yet well-structured (i.e., accepted by the IoT device) fuzzing inputs, which can reach deeper code locations, uncovering more vulnerabilities. 484 DOI 10.1109/SP40001.2021.00066 Our Approach. In this paper, we propose and implement an approach that leverages the companion app to generate inputs for the analyzed device. T o overcome IoTFuzzer's limitations, we precisely determine (and fuzz)optimal code locationswithin the companion app, which produce valid yet under-constrained inputs for the IoT device. Our approach considers the app's execution as a sequence of functions that transform the data introduced by the user (e.g., through the app's UI) into network data. Our intuition is that the first functions within this sequence typically convert the user inputs into internal data structures, generating data that is constrained by app-side validation. In contrast, the last functions in this sequence adequately encode the user data, serializing it on the network. The novelty of our approach is to fuzz an IoT device by invoking specific functions within its companion app.W e call these functionsfuzzing triggers. When invoked,fuzzing triggersgenerate inputs that are not constrained by app-side validation, and, at the same time, are well-structured, so that they are not immediately discarded by the fuzzed IoT device. Our approach uses a novel combination of static and dynamic analysis and performs two main steps: i)fuzzing triggersidenti- fication, and ii) fuzzing. T o do this, first, we automatically retrieve those functions within an app that send data to the IoT device. Then, for each of these functions, we build an inter-procedural backward slice, which we dynamically analyze to ultimately identifyfuzzing triggers. Finally, we use dynamic instrumentation to repeatedly invoke these fuzzing triggers using different arguments. This generates a stream of network data that fuzzes the functionality of the IoT device, to ultimately spot vulnerabilities. W e implemented our approach in a tool, calledDIANE, and ran it against a representative set of 11 popular IoT devices of different types and from different manufacturers.DIANE correctly identifiedfuzzing triggers, and successfully identified 11 bugs, 9 of which are previously unknown vulnerabilities. Additionally, we comparedDIANE with IoTFuzzer, showing that the identification of fuzzing triggers is essential to generate under-constrained, crash-inducing inputs. In summary, we make the following contributions: • W e propose an approach to identifyfuzzing triggers, which are functions that, in the app's control flow, are located between the app-side validation logic and the data-encoding functions. When executed, the identified fuzzing triggers produce valid yet under-constrained inputs, enabling effective fuzzing of IoT devices. • W e leverage our approach to implement DIANE, an automated black-box fuzzer for IoT devices. • W e evaluate our tool against 11 popular, real-world IoT devices. In our experiments, we show that by identifying fuzzing triggersand using them to generate inputs for the analyzed devices, we can effectively discover vulnerabilities. Specifically, we found 11 vulnerabilities in 5 different devices, 9 of which were previously unknown. • W e show that, for a majority of IoT devices and companion apps, identifying and leveragingfuzzing triggersis essential to generate bug-triggering inputs. 1 //Android Java Code 2 public intPTZ(String adminPwd,int x, int y, int z){ 3 //.. 4 bytedata[] = MsgPtzControlReq(x, y, z); 5 if(!adminPwd.contains(\"&\") &&// Input 6 !adminPwd.contains(\"'\")){// validation 7 SendMsg(adminPwd, camId, data); 8 } 9 } 10 11 publicstatic native int SendMsg(String adminPwd, String camId,byte [] data); 12 13 //Java Native Interface 14 int Java_SendMsg(char* pwd,char * cam_id, Msg* msg){ 15 prepare_msg(pwd, cam_id, msg); 16 notify_msg(msg); 17 } 18 //JNI - Different thread 19 voidsender() { 20 Msg* msg = get_message() 21 send_to_device(msg); 22 } Fig. 1. Snippet of code that implements a sanity check on the admin password, and uses the Java Native Interface to send messages to the device. The example is based on the W ansview app in our dataset. In the spirit of open science, we make the datasets and the code developed for this work publicly available: https://github.com/ucsb-seclab/diane. II. M OTIV ATION T o motivate our approach and exemplify the challenges that it addresses, consider the snippet of code in Figure 1. The app utilizes the methodPTZ (Line 2) to send position commands (i.e., spatial coordinates) to an IoT camera. T o do this,PTZ invokes the native functionSendMsg(Line 7), which prepares the data to be sent (Line 15), and stores it into a shared buffer (Line 16). In parallel, another thread reads the data from the same buffer (Line 20), and sends commands to the device (Line 21). Notice that the IoT camera requires a password to authenticate commands, and the app performs a sanity check on the password string (Lines 5 and 6). This example shows two crucial challenges that have to be faced when generating IoT inputs from the companion apps. First, apps communicate with IoT devices using structured data, encoded in either known protocols (e.g., HTTP), or custom protocols defined by the vendor. Messages that do not respect the expected format are immediately discarded by the device, and, consequently, cannot trigger deep bugs in its code. In the example, the app uses the functionprepare_msg(Line 15) to create a correctly structured message. Second, while it is crucial to generate correctly structured inputs, an effective approach has to avoid generating inputs that are constrained by app-side validation code. In the example, the function PTZ (Line 2) forbids the password to contain the characters& and '. However, the presence of these characters may be crucial in generating crash-triggering fuzzing inputs. The insight from the authors of IoTFuzzer is to leverage the companion app to generate fuzzing inputs in a format that the device can process. This means that the input values need to be mutated before the app “packages” and sends them to the device. While this is true, our crucial insight is that the mutation indeed 485"
+      },
+      {
+        "source": "selected",
+        "value": "Internet of Things (IoT) devices have rooted themselves in the everyday life of billions of people. Thus, researchers have applied automated bug finding techniques to improve their overall security. However, due to the difficulties in extracting and emulating custom firmware, black-box fuzzing is often the only viable analysis option. Unfortunately, this solution mostly produces invalid inputs, which are quickly discarded by the targeted IoT device and do not penetrate its code. Another proposed approach is to leverage the companion app (i.e., the mobile app typically used to control an IoT device) to generate well-structured fuzzing inputs. Unfortunately, the existing solutions produce fuzzing inputs that are constrained by app-side validation code, thus significantly limiting the range of discovered vulnerabilities. In this paper, we propose a novel approach that overcomes these limitations. Our key observation is that there exist functions inside the companion app that can be used to generate optimal (i.e., valid yet under-constrained) fuzzing inputs. Such functions, which we call fuzzing triggers, are executed before any data-transforming functions (e.g., network serialization), but after the input validation code. Consequently, they generate inputs that are not constrained by app-side sanitization code, and, at the same time, are not discarded by the analyzed IoT device due to their invalid format. We design and develop DIANE, a tool that combines static and dynamic analysis to find fuzzing triggers in Android companion apps, and then uses them to fuzz IoT devices automatically. We use DIANE to analyze 11 popular IoT devices, and identify 11 bugs, 9 of which are zero days. Our results also show that without using fuzzing triggers, it is not possible to generate bug-triggering inputs for many devices. 484 2021 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Nilo Redini",
+          "email": "nredini@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Andrea Continella",
+          "email": "a.continella@utwente.nl",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Dipanjan Das",
+          "email": "dipanjan@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Giulio De Pasquale",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Noah Spahn",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Aravind Machiry",
+          "email": "amachiry@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Antonio Bianchi",
+          "email": "antoniob@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Christopher Kruegel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Santa Barbara",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Twente, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Nilo Redini",
+          "email": "nredini@cs.ucsb.edu",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Andrea Continella",
+          "email": "a.continella@utwente.nl",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Dipanjan Das",
+          "email": "dipanjan@cs.ucsb.edu",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Giulio De Pasquale",
+          "email": "",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Noah Spahn",
+          "email": "",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Aravind Machiry",
+          "email": "amachiry@purdue.edu",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Antonio Bianchi",
+          "email": "antoniob@purdue.edu",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Christopher Kruegel",
+          "email": "chris@cs.ucsb.edu",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "affiliations": [
+            "UC Santa Barbara †University of T wente‡Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 14,
+      "author_count": 9,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 8,
+          "author": "Giovanni Vigna",
+          "block_id": "pdf:p1:b8",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 8,
+          "author": "Giovanni Vigna",
+          "affiliation_raw": "UC Santa Barbara University of T wente Purdue University {nredini, dipanjan, peperunas, ncs, chris, vigna}@cs.ucsb.edu",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b8",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b12"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.227,
+          "center_distance": 79.775,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DIANE: Identifying Fuzzing Triggers in Apps to Generate Under-constrained Inputs for IoT Devices",
+      "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Nilo Redini",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Andrea Continella",
+          "affiliations": [
+            "University of Twente"
+          ]
+        },
+        {
+          "name": "Dipanjan Das",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Giulio De Pasquale",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Noah Spahn",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Aravind Machiry",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Antonio Bianchi",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Christopher Kruegel",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        },
+        {
+          "name": "Giovanni Vigna",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Nilo Redini",
+      "field": "email",
+      "restored_value": "nredini@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Andrea Continella",
+      "field": "email",
+      "restored_value": "a.continella@utwente.nl",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Dipanjan Das",
+      "field": "email",
+      "restored_value": "dipanjan@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Aravind Machiry",
+      "field": "email",
+      "restored_value": "amachiry@purdue.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Antonio Bianchi",
+      "field": "email",
+      "restored_value": "antoniob@purdue.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Christopher Kruegel",
+      "field": "email",
+      "restored_value": "chris@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Giovanni Vigna",
+      "field": "email",
+      "restored_value": "vigna@cs.ucsb.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

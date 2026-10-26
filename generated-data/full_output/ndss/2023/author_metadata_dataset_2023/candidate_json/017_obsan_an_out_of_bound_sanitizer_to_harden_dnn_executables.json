@@ -1,0 +1,169 @@
+{
+  "paper_id": "017_obsan_an_out_of_bound_sanitizer_to_harden_dnn_executables",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "OBSAN: An Out-Of-Bound Sanitizer to Harden DNN Executables"
+      },
+      {
+        "source": "selected",
+        "value": "OBSAN: An Out-Of-Bound Sanitizer to Harden DNN Executables"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The rapid adoption of deep neural network (DNN) models on a variety of hardware platforms has boosted the development of deep learning (DL) compilers. DL compilers take as input the high-level DNN model specifications and generate optimized DNN executables for diverse hardware architectures like CPUs and GPUs. Despite the emerging adoption of DL compilers in real-world scenarios, no solutions exist to protect DNN executables. To fill this critical gap, this paper introduces OBSAN, a fast sanitizer designed to check for out-of-bound (OOB) behavior in DNN executables. Holistically, DNN incorporates bidirectional computation: forward propagation which predicts an output based on an input, and backward propagation which characterizes how the forward prediction is made. Both the neuron activations in forward propagation and gradients in backward propagation should fall within valid ranges, and deviations from these ranges would be considered as OOB. OOB is primarily related to unsafe behavior of DNNs, which root from anomalous inputs and may cause mispredictions or even exploitation via adversarial examples (AEs). We thus design OBSAN, which includes two variants, FOBSAN and BOBSAN, to detect OOB in forward and backward propagations, respectively. Each OBSAN variant is designed as extra passes of DL compilers to integrate with large-scale DNN models, and we design various optimization schemes to reduce the overhead of OBSAN. Evaluations over various anomalous inputs show that OBSAN manifests promising OOB detectability with low overhead. We further present two downstream applications to show how OBSAN prevents online AE generation and facilitates feedback-driven fuzz testing toward DNN executables."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The rapid adoption of deep neural network (DNN) models on a variety of hardware platforms has boosted the development of deep learning (DL) compilers. DL compilers take as input the high-level DNN model specifications and generate optimized DNN executables for diverse hardware architectures like CPUs and GPUs. Despite the emerging adoption of DL compilers in real-world scenarios, no solutions exist to protect DNN executables. To fill this critical gap, this paper introduces OBS AN, a fast sanitizer designed to check for out-of-bound (OOB) behavior in DNN executables. Holistically, DNN incor- porates bidirectional computation : forward propagation which predicts an output based on an input, and backward propagation which characterizes how the forward prediction is made. Both the neuron activations in forward propagation and gradients in backward propagation should fall within valid ranges, and deviations from these ranges would be considered as OOB. OOB is primarily related to unsafe behavior of DNNs, which root from anomalous inputs and may cause mispredictions or even exploitation via adversarial examples (AEs). We thus design OBS AN, which includes two variants, FOBS AN and BOBS AN, to detect OOB in forward and backward propagations, respectively. Each OBS AN variant is designed as extra passes of DL compilers to integrate with large-scale DNN models, and we design various optimization schemes to reduce the overhead of OBS AN. Evaluations over various anomalous inputs show that OBS AN manifests promising OOB detectability with low overhead. We further present two downstream applications to show how OBS AN prevents online AE generation and facilitates feedback-driven fuzz testing toward DNN executables. I. I NTRODUCTION With the emerging demand to use deep learning (DL) tech- niques in real-world scenarios, recent years have witnessed a tremendous trend in deploying DL models on a wide spectrum of computing platforms ranging from cloud servers to mobile phones and embedded devices. To handle complex deployment environments and explore the full potential of computing plat- forms for optimization, one promising opportunity is to employ DL compilers [19, 47, 68]. DL compilers take a high-level DNN model specification as input and generate corresponding low-level optimized binary code for a diverse set of hardware backends. To date, many suppliers of edge devices and low- power processors are incorporating DL compilers into their ∗Corresponding authors. design and application to reap the benefits of compiled DNN models [31, 56, 57, 65, 93]. Cloud service providers such as Amazon and Google are also including DL compilers in their DL services to boost performance [9, 90]. Despite the prosperous use of DL compilers, techniques to harden DNN executables do not exist. While recent works have proposed techniques to validate the execution legitimacy of DNN models, detect exploitations and AEs, or launch security fuzz testing [21-23, 58, 80, 86, 102, 102], those approaches are essentially for DNN models running on DL frameworks like TensorFlow and PyTorch [7, 60]. Recent works test DL frame- works or DL compilers [30, 42, 62, 63, 71, 83, 89, 91, 104]. Nevertheless, to the best of our knowledge, no analysis or security hardening techniques have been deployed to protect DNN executables compiled by DL compilers. Software sanitizers [73] are designed to harden executables and detect bugs. They instrument programs during compilation and insert checks that raise alarms when unsafe operations are performed at runtime. Various sanitizers [8, 50, 53, 70, 75] have helped uncover vulnerabilities in C/C++ software. Inspired by the success of sanitizers in securing executables compiled from C/C++ programs, this research proposes OBS AN, a sanitizer to detect DNN executable's abnormal behaviors, known as out- of-bound (OOB) behaviors, which frequently result in mis- predictions and exploitation opportunities. DNNs often process high-dimensional media data like images and make predictions. Holistically, they feature bidi- rectional computations, namely, forward and backward prop- agation. Forward propagation predicts an input using distinct neuron activations.1 Backward propagation analyzes how pre- dictions are made by propagating gradients from the output to the input through layers. Importantly, both neuron activations and gradients should fall within their normal ranges [28, 46] for inputs considered benign. Thus, OOB neuron activations or OOB gradients observed indicate DNN mis-behavior under adversarial examples (AEs) or other anomalous inputs. We design two variants of OBS AN, FOBS AN and BOB- SAN, to check for OOB forward neuron activations and back- ward gradients in DNN executables. While FOBS AN discovers abnormal inputs by comparing neuron activations with their known safe ranges, BOBS AN uses rich information encoded in gradients to achieve this goal. A common challenge for sanitizers including OBS AN, however, is the incurred high runtime overhead [73], which often inhibits their production adoption. We propose several optimization schemes to reduce 1Following the convention [61], neuron outputs are referred to as “neuron activations” in this research. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24103 www.ndss-symposium.org OBS AN overhead; in particular, quantization [20] helps replace floating point number computation with integer computation, effectively lowering computational and storage requirements while preserving inference and detection accuracy. Moreover, we extend popular DNN layer pruning techniques [25] to debloat inserted OBS AN checks. We identify “unimportant” layers in DNN, and remove their accompanied OBSAN checks. Furthermore, we explore optimizations that are specific for FOBS AN or BOBS AN. These optimizations can be combined for synergistic effects to effectively lower OBS AN overhead without undermining OOB detectability. Both of OBS AN's variants, FOBS AN and BOBS AN, are designed as an extra compilation pass at the IR level of the industry-leading DL compiler, TVM [19]; implementing OBS AN using TVM's Relay IR allows us to bypass design discrepancies between different DL frameworks. Relay IR is generally analysis friendly, offering type system, analysis, and optimization utilities for use. We evaluate three large-scale DNN models with diverse structures, high volumes of param- eters (up to 23.5 million), and large numbers of layers (over 100). We show that the vanilla FOBS AN and BOBS AN pro- vide high OOB detection capabilities of AEs (less than 0.5% false negatives) and rarely treat normal inputs as OOB inputs (less than 1.2% false positives). With quantization/debloat- ing, we successfully reduce the overhead of FOBS AN from 121.3% to 47.6% and that of BOBS AN to -34.3% (comparing with the baseline executables containing no OBS AN) while maintaining decent usability, therefore promoting the practical adoption of OBS AN in production. In terms of real-world usage, we show how FOBS AN facilitates detecting inputs of broken content given media data are presumed to semantically meaningful, and how BOBS AN enables the identification of undefined inputs under the background that DNN is trained for predicting a set of predefined labels - predictions for inputs outside its knowledge are worthless. We further present that FOBS AN and BOBS AN enable the prevention of online query-based AE generation and extend FOBS AN for feedback- driven fuzz testing of DNN executables. We also present conceptual and empirical comparison between OBS AN and existing approaches, and discuss migrating OBS AN to other DL compilers and architectures. Our main contributions are: • This paper, for the first time, advocates for hardening DNN executables, an important yet under-researched area. We design OBS AN to check OOB, a common indicator of DNN mis-behaviors that can induce mis-predictions and exploitations by AE and other anomalous inputs. • We instantiate two variants of OBS AN to capture forward- and backward-based OOB behaviors. We propose several optimization schemes to largely reduce OBS AN overhead without undermining its effectiveness. • Our evaluation on the large-scale DNN models shows that OBS AN can deliver low-cost sanitization, and it enables critical and representative downstream applications with high effectiveness. We publish the supplemental materials for this paper and source code of OBS AN at [2] to benefit future research. II. P RELIMINARY A. Deep Neural Networks From a holistic view, a DNN, dubbed as Fθ, denotes a parameterized non-linear function enabling bidirectional computations: 1) a forward propagation that produces the prediction Fθ(x) for input x, and 2) a backward propagation that analyzes how the prediction is made. We now introduce each form of computation in the following. comb beak (b)DNNbackwardpropagationaftermakingaprediction.Gradientsadjustthedecisionlogic( )tocomb rather than beak to diff hen vs. rooster. layeri+1agradientvector beak comb white red … …… …loss (a)DNNforwardpropagationwhenprocessingaroosterimage.Multipleneuronsareactivatedandtheneuronw.r.t.beakhasthehighestactivation. layerilayeri+1 hen roosterabnormal normalrange Fig. 1: Forward and backward computations of DNNs. Forward Propagation. During the forward propagation phase, an input x is fed into the DNN such that neurons in each layer accept their input data (passed from the previous layer), process it according to the activation function, and pass it to the next layer. In general, neurons comprise the minimal unit of computation in forward propagation. Existing works have empirically demonstrated that a neuron typically signifies cer- tain features in the input [14]. For instance, when processing an image for a rooster (as in Fig. 1(a)), certain neurons recognize its color, whereas some other neurons (often in deeper layers) signify its beak/comb features. When recognizing certain fea- tures in an image (e.g., the color “white” in Fig. 1(a)), the corresponding neurons would manifest a high activation level. Therefore, DNN behaviors can be characterized via neuron activations. In general, it is well acknowledged that each neuron has a normal activation range , such that unsafe DNN behaviors can be detected by observing neuron activations that fall beyond the normal range [46, 61]. Backward Propagation. Gradients characterize the decision logics of a DNN. For instance, the gradient of layer i+1 (i.e., a 2-dimensional vector) marked as the yellow dot in Fig. 1(b) indicates that the DNN primarily relies on beak to recognize a rooster. During the training stage, the DNN adjusts its decision logics according to gradients. As shown in Fig. 1(b), the DNN prediction over the input, currently “hen” (incorrect) since it relies on beak, is compared with the ground truth label. The resulting “distance” (i.e., the loss) is back propagated into the DNN through gradients. Then, DNN decision logics are gradually tuned by modifyingθ (e.g.,Fθ→Fθ′) until reaching saturation, i.e., the purple dot in Fig. 1(b) which focuses on comb, thereby correcting the prediction for “rooster.” In short, gradients provide rich information on how a DNN makes decisions, and the magnitudes of gradients are associated with their “importance” in the decision process. Similar to neuron activations, the magnitudes of gradients also have normal ranges. Unsafe DNN behaviors, such as the red dot in Fig. 1(b) whose decision logic considers neither beak nor comb, are likely caused by AE inputs and can be identified by checking for gradients falling out of their normal ranges [28]. 2"
+      },
+      {
+        "source": "selected",
+        "value": "The rapid adoption of deep neural network (DNN) models on a variety of hardware platforms has boosted the development of deep learning (DL) compilers. DL compilers take as input the high-level DNN model specifications and generate optimized DNN executables for diverse hardware architectures like CPUs and GPUs. Despite the emerging adoption of DL compilers in real-world scenarios, no solutions exist to protect DNN executables. To fill this critical gap, this paper introduces OBSAN, a fast sanitizer designed to check for out-of-bound (OOB) behavior in DNN executables. Holistically, DNN incorporates bidirectional computation: forward propagation which predicts an output based on an input, and backward propagation which characterizes how the forward prediction is made. Both the neuron activations in forward propagation and gradients in backward propagation should fall within valid ranges, and deviations from these ranges would be considered as OOB. OOB is primarily related to unsafe behavior of DNNs, which root from anomalous inputs and may cause mispredictions or even exploitation via adversarial examples (AEs). We thus design OBSAN, which includes two variants, FOBSAN and BOBSAN, to detect OOB in forward and backward propagations, respectively. Each OBSAN variant is designed as extra passes of DL compilers to integrate with large-scale DNN models, and we design various optimization schemes to reduce the overhead of OBSAN. Evaluations over various anomalous inputs show that OBSAN manifests promising OOB detectability with low overhead. We further present two downstream applications to show how OBSAN prevents online AE generation and facilitates feedback-driven fuzz testing toward DNN executables."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yanzuo Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yuanyuan Yuan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Shuai Wang",
+          "email": "shuaiw@cse.ust.hk",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yanzuo Chen",
+          "email": "ychenjo@cse.ust.hk",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yuanyuan Yuan",
+          "email": "yyuanaq@cse.ust.hk",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 2,
+          "name": "Shuai Wang",
+          "email": "shuaiw@cse.ust.hk",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 130,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "OBSan: An Out-Of-Bound Sanitizer to Harden DNN Executables",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/obsan-an-out-of-bound-sanitizer-to-harden-dnn-executables/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yanzuo Chen",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Yuanyuan Yuan",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ]
+        },
+        {
+          "name": "Shuai Wang",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

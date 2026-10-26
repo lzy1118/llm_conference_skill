@@ -1,0 +1,506 @@
+{
+  "paper_id": "095_measuring_and_mitigating_the_risk_of_ip_reuse_on_public_clouds",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Measuring and Mitigating the Risk of IP Reuse on Public Clouds"
+      },
+      {
+        "source": "selected",
+        "value": "Measuring and Mitigating the Risk of IP Reuse on Public Clouds"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Public clouds provide scalable and cost-efficient computing through resource sharing. However, moving from traditional on-premises service management to clouds introduces new challenges; failure to correctly provision, maintain, or decommission elastic services can lead to functional failure and vulnerability to attack. In this paper, we explore a broad class of attacks on clouds which we refer to as cloud squatting. In a cloud squatting attack, an adversary allocates resources in the cloud (e.g., IP addresses) and thereafter leverages latent configuration to exploit prior tenants. To measure and categorize cloud squatting we deployed a custom Internet telescope within the Amazon Web Services us-east-1 region. Using this apparatus, we deployed over 3 million servers receiving 1.5 million unique IP addresses (≈ 56% of the available pool) over 101 days beginning in March of 2021. We identified 4 classes of cloud services, 7 classes of third-party services, and DNS as sources of exploitable latent configurations. We discovered that exploitable configurations were both common and in many cases extremely dangerous; we received over 5 million cloud messages, many containing sensitive data such as financial transactions, GPS location, and PII. Within the 7 classes of third-party services, we identified dozens of exploitable software systems spanning hundreds of servers (e.g., databases, caches, mobile applications, and web services). Lastly, we identified 5446 exploitable domains spanning 231 eTLDs-including 105 in the top 10 000 and 23 in the top 1000 popular domains. Through tenant disclosures we have identified several root causes, including (a) a lack oforganizational controls, (b) poor service hygiene, and (c) failure to follow best practices. We conclude with a discussion of the space of possible mitigations and describe the mitigations to be deployed by Amazon in response to this study. 558 2022 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Public clouds provide scalable and cost-efficient computing through resource sharing. However, moving from traditional on-premises service management to clouds introduces new challenges; failure to correctly provision, maintain, or decommission elastic services can lead to functional failure and vulnerability to attack. In this paper, we explore a broad class of attacks on clouds which we refer to as cloud squatting. In a cloud squatting attack, an adversary allocates resources in the cloud (e.g., IP addresses) and thereafter leverages latent configu- ration to exploit prior tenants. To measure and categorize cloud squatting we deployed a custom Internet telescope within the Amazon Web Services us-east-1 region. Using this apparatus, we deployed over 3 million servers receiving 1.5 million unique IP addresses ( ≈ 56% of the available pool) over 101 days beginning in March of 2021. We identified 4 classes of cloud services, 7 classes of third-party services, and DNS as sources of exploitable latent configurations. We discovered that exploitable configurations were both common and in many cases extremely dangerous; we received over 5 million cloud messages, many containing sensitive data such as financial transactions, GPS location, and PII. Within the 7 classes of third-party services, we identified dozens of exploitable software systems spanning hundreds of servers (e.g., databases, caches, mobile applications, and web services). Lastly, we identified 5446 exploitable domains spanning 231 eTLDs-including 105 in the top 10 000 and 23 in the top 1000 popular domains. Through tenant disclosures we have identified several root causes, including (a) a lack oforganizational controls, (b) poor service hygiene, and (c) failure to follow best practices. We conclude with a discussion of the space of possible mitigations and describe the mitigations to be deployed by Amazon in response to this study. I. I NTRODUCTION Public clouds such as Amazon Web Services [ 1], Google Cloud [2], and Microsoft Azure [ 3] offer a myriad of benefits to tenants; by providing a virtual private data center on top of shared infrastructure, clouds allow users to scale services with changing demand, recover from faults, and fluidly and autonomously provision services. As such, public clouds are now used by almost every major computing enterprise. At the same time, the sharing of resources of clouds offers unique architectural and security challenges. A hard-learned truism is that care must be taken during provisioning, use, and decommissioning of cloud servers. Clouds providing elastic computing assign IP addresses (or IPs) from a shared pool. An IP address can be used by a deployed server instance and referenced by managed cloud services (e.g., server-to-server messaging), third-party applica- tions deployed by the tenant (e.g., using the deployed server as a database or computer resource), or directly configured in Domain Name System (DNS) records. Importantly, when the service is decommissioned, the IP is released and may be reallocated to other tenants [4]. This decommissioning process and shared IP architecture causes a vulnerability: configura- tions (e.g., dangling DNS [ 5]) that are not updated in tandem with the decommissioning process will continue to refer to the (now obsolete) IP. We refer to these configurations as latent configurations. If an adversary subsequently acquires the IP (Figure 1), they can exploit the latent configuration by receiv- ing traffic intended for the previous service or masquerading as the prior tenant. While previous studies have measured the risk of latent configuration and IP use-after-free through DNS, the community currently lacks understanding of how other types of configuration could lead to vulnerabilities. In this work, we investigate vulnerabilities caused by latent configuration broadly, namely cloud service configuration and third-party service configuration, in addition to dangling DNS. We name the resulting superset class of attacks cloud squatting. A cloud squatting attack occurs when an adversary acquires some reused cloud resource (e.g., an IP address) that is referenced by latent configuration (e.g., cloud service configuration). We hypothesize that, not only does latent configuration span beyond DNS, but that these previously unexplored vulnerabil- ities are widespread and readily discoverable. We characterize three classes of latent configuration in clouds: (1) configuration in managed cloud services, (2) configuration in software deployed by tenants, and (3) configuration through DNS. Each of these classes (shown in Table I) presents distinct challenges and opportunities for study as we evaluate legitimacy (i.e., 558 DOI 10.1109/SP46214.2022.00094 actual traffic intended for a previous tenant) and exploitability (i.e., ability of an adversary to receive sensitive data). To measure the presence of latent configuration in clouds, we developed and deployed an Internet telescope in the Ama- zon Web Services us-east-1 region1. Using this telescope, we provisioned over 3 million cloud servers with 1.5 million unique IPs ( ≈ 56% of the region IP address pool). We passively collected all inbound traffic (containing 596 M TCP sessions) over 101 days starting on March 8, 2021. The scale of this experiment and the size of the cloud studied ensure a representative view of traffic in a commercial public cloud. The experiment overwhelmingly confirmed our hypothesis and demonstrated a surprising prevalence of latent configura- tion. We received over 5 million messages directed to prior tenants on over 27 thousand IPs that we were assigned from cloud-managed services (e.g., SNS messaging). These mes- sages contained sensitive data including financial transaction metadata, customer GPS location history, and customer PII (e.g., driver's license data and personal addresses). Third- party services likewise exposed sensitive data, with hundreds of instances across 7 classes of services found vulnerable. With respect to latent DNS configurations, we identified 5446 (second level, e.g., example.com) domains spanning 231 eTLDs (e.g., .com)-including 105 in the top 10 000 and 23 in the top 1000 list of popular domains. Moreover, the results were observed across the entirety of cloud tenant populations: in government, academic, and industrial (e.g., high-tech, finan- cial, health care, and entertainment) organizations. Following our initial disclosure, Amazon performed an internal review of customer configurations which found latent configurations in similar breadth and quantity in all of their regions. Summarized in Table I , we identified traffic sourced from 4 kinds of cloud services, 7 classes of third-party services, and DNS as sources of exploitable latent configurations. Latent configurations of cloud services supporting messaging, health checks, content delivery and generalized API controls were observed. We also found that third-party services can produce latent configurations as diverse as the applications they support. Here, we found cases of latent configurations in databases, distributed caches, logging, and many others. Lastly, we found many cases of poorly managed DNS leading to exploitable organizations. We contacted Amazon AWS in June of 2021 and have since worked with them to support coordinated disclosures and develop mitigations. We are also working with US government agencies and other cloud providers to support detection and disclosure (see Appendix A ). We conducted virtual meetings with select tenants for disclosure and to discuss root causes. Broadly, the root causes identified include, (a) a lack oforganizational control over cloud accounts, (b) poor service hygiene (e.g., poor or uncontrolled management of service configurations), and (c) failure of engineers/departments to follow organizational policies and best practices, and (d) in- 1We selected the AWSus-east-1 region because of its size and diversity. We expect similar results in any public cloud, as many root causes are unrelated to AWS or its services. 203.0.113.15 Cloud Infrastructure 203.0.113.15 ? Clients End Users Cloud Services ❶ ❷ ❸ ❹ ❹ Fig. 1: Exploiting IP Reuse- A client is configured to connect to a tenant's service. After the service is retired, an adversary provisions a server and is granted an IP address previously assigned to the tenant. The client connects to the adversary-controlled server. The adversary receives traffic intended for the tenant, infers the intended service from the client traffic, and exploits it. Note that 203.0.113.15 is reserved for example usage by IANA. complete automation. Both our measurement study and tenant disclosures were covered by an IRB exemption from our host institution, and followed ethical considerations consistent with contemporary works in network measurement. Lastly, we have developed and evaluated a set of mitigations to prevent latent configuration vulnerabilities and reduce an adversary's ability to acquire IPs associated with vulnerable tenants. Existing best practices, such as cloud configuration auditing tools, reserved IP blocks, and managed configuration can prevent latent configuration when properly used by ten- ants. However, even when tenants are unable to adopt new best practices, changes to the IP allocation pool can prevent adversaries from successfully carrying out a cloud squatting attack. We introduce such a technique, which we name IP Tagging, reducing adversaries' access to tenant IPs by 99.94% over the current cloud IP pool allocation strategy. In response to our disclosures and their own internal review of customer's configurations, Amazon is updating best practices to advise customers and providing additional guidance within the user experience of certain services ( Section VII-C). II. B ACKGROUND We study the prevalence of security risks associated with cloud-application configuration. It lies at the intersection of three bodies of work: network telescopes, architecture of public clouds, and configuration management. We provide background on each, then discuss the problems surrounding IP reuse in public clouds that motivate our measurement study. A. Internet Telescopes Internet telescopes are systems designed to observe network events for large-scale analyses [ 18], [ 19], [ 20], [ 21]. Tele- 559"
+      },
+      {
+        "source": "selected",
+        "value": "Public clouds provide scalable and cost-efficient computing through resource sharing. However, moving from traditional on-premises service management to clouds introduces new challenges; failure to correctly provision, maintain, or decommission elastic services can lead to functional failure and vulnerability to attack. In this paper, we explore a broad class of attacks on clouds which we refer to as cloud squatting. In a cloud squatting attack, an adversary allocates resources in the cloud (e.g., IP addresses) and thereafter leverages latent configuration to exploit prior tenants. To measure and categorize cloud squatting we deployed a custom Internet telescope within the Amazon Web Services us-east-1 region. Using this apparatus, we deployed over 3 million servers receiving 1.5 million unique IP addresses (≈ 56% of the available pool) over 101 days beginning in March of 2021. We identified 4 classes of cloud services, 7 classes of third-party services, and DNS as sources of exploitable latent configurations. We discovered that exploitable configurations were both common and in many cases extremely dangerous; we received over 5 million cloud messages, many containing sensitive data such as financial transactions, GPS location, and PII. Within the 7 classes of third-party services, we identified dozens of exploitable software systems spanning hundreds of servers (e.g., databases, caches, mobile applications, and web services). Lastly, we identified 5446 exploitable domains spanning 231 eTLDs-including 105 in the top 10 000 and 23 in the top 1000 popular domains. Through tenant disclosures we have identified several root causes, including (a) a lack oforganizational controls, (b) poor service hygiene, and (c) failure to follow best practices. We conclude with a discussion of the space of possible mitigations and describe the mitigations to be deployed by Amazon in response to this study. 558 2022 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Eric Pauley",
+          "email": "epauley@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science & Engineering, The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Ryan Sheatsley",
+          "email": "sheatsley@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science & Engineering, The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Blaine Hoak",
+          "email": "bhoak@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science & Engineering, The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Quinn Burke",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science & Engineering, The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yohan Beugin",
+          "email": "ybeugin@psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science & Engineering, The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Patrick Mcdaniel",
+          "email": "mcdaniel@cse.psu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science & Engineering, The Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Eric Pauley",
+          "email": "epauley@psu.edu",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Computer Science Engineering",
+          "email": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Ryan Sheatsley",
+          "email": "sheatsley@psu.edu",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Computer Science Engineering",
+          "email": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Blaine Hoak",
+          "email": "bhoak@psu.edu",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Computer Science Engineering",
+          "email": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Quinn Burke",
+          "email": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Computer Science Engineering",
+          "email": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Yohan Beugin",
+          "email": "ybeugin@psu.edu",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Computer Science Engineering",
+          "email": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Patrick McDaniel",
+          "email": "mcdaniel@cse.psu.edu",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 11,
+          "name": "Computer Science Engineering",
+          "email": "",
+          "affiliations": [
+            "The Pennsylvania State University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "aligned_author_affiliation_rows",
+      "header_block_count": 127,
+      "author_count": 12,
+      "matched_author_count": 6,
+      "exact_author_match_count": 6,
+      "dominant_author_font_size": 10.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 6,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 1,
+          "author": "Computer Science Engineering",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Computer Science Engineering",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Computer Science Engineering",
+          "block_id": "pdf:p1:b8",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 7,
+          "author": "Computer Science Engineering",
+          "block_id": "pdf:p1:b18",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 9,
+          "author": "Computer Science Engineering",
+          "block_id": "pdf:p1:b19",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 11,
+          "author": "Computer Science Engineering",
+          "block_id": "pdf:p1:b20",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 1,
+          "author": "Computer Science Engineering",
+          "affiliation_raw": "The Pennsylvania State University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 12.329,
+          "center_distance": 5.789,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Computer Science Engineering",
+          "affiliation_raw": "The Pennsylvania State University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 12.329,
+          "center_distance": 5.789,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Computer Science Engineering",
+          "affiliation_raw": "The Pennsylvania State University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b8",
+          "affiliation_block_ids": [
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 12.329,
+          "center_distance": 5.789,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 7,
+          "author": "Computer Science Engineering",
+          "affiliation_raw": "The Pennsylvania State University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b18",
+          "affiliation_block_ids": [
+            "pdf:p1:b21"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 12.329,
+          "center_distance": 5.789,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 9,
+          "author": "Computer Science Engineering",
+          "affiliation_raw": "The Pennsylvania State University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b19",
+          "affiliation_block_ids": [
+            "pdf:p1:b22"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 12.329,
+          "center_distance": 5.788,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 11,
+          "author": "Computer Science Engineering",
+          "affiliation_raw": "The Pennsylvania State University",
+          "confidence": 0.99,
+          "author_block_id": "pdf:p1:b20",
+          "affiliation_block_ids": [
+            "pdf:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "aligned_author_affiliation_row",
+          "vertical_distance": 12.329,
+          "center_distance": 5.788,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Measuring and Mitigating the Risk of IP Reuse on Public Clouds",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Eric Pauley",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Ryan Sheatsley",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Blaine Hoak",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Quinn Burke",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Yohan Beugin",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Patrick McDaniel",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Eric Pauley",
+      "field": "email",
+      "restored_value": "epauley@psu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Ryan Sheatsley",
+      "field": "email",
+      "restored_value": "sheatsley@psu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Blaine Hoak",
+      "field": "email",
+      "restored_value": "bhoak@psu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yohan Beugin",
+      "field": "email",
+      "restored_value": "ybeugin@psu.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Patrick McDaniel",
+      "field": "email",
+      "restored_value": "mcdaniel@cse.psu.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

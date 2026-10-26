@@ -1,0 +1,263 @@
+{
+  "paper_id": "055_hints_threshold_signatures_with_silent_setup",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "hinTS: Threshold Signatures with Silent Setup"
+      },
+      {
+        "source": "selected",
+        "value": "hinTS: Threshold Signatures with Silent Setup"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "We propose hinTS-a new threshold signature scheme built on top of the widely used BLS signatures. Our scheme enjoys the following attractive features: • A silent setup process where the joint public key of the parties is computed as a deterministic function of their locally computed public keys. • Support for dynamic choice of thresholds and signers, after the silent setup, without further interaction. • Support for general access policies; in particular, native support for weighted thresholds with zero additional overhead over standard threshold setting. • Strong security guarantees, including proactive security and forward security. We prove the security of hinTS in the algebraic group model, and also provide an open-source implementation. Our scheme outperforms all prior proposals that avoid distributed key generation in terms of aggregation time, signature size, and verification time (as well as other qualitative measures). As an example, the aggregation time in hinTS for 1000 signers is under 0.5 seconds, while both signing and verification are constant time algorithms, taking 1 ms and 17.5 ms, respectively. The key technical contribution of our work involves the design of special-purpose succinct proofs to efficiently prove the well-formedness of aggregated public keys. Our solution uses public \"hints\" released by the signers as part of their public keys (hence the name hinTS). 3034 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "We propose hinTS - a new threshold signature scheme built on top of the widely used BLS signatures. Our scheme enjoys the following attractive features: • A silent setup process where the joint public key of the parties is computed as a deterministic function of their locally computed public keys. • Support for dynamic choice of thresholds and signers, after the silent setup, without further interaction. • Support for general access policies; in particular, native support for weighted thresholds with zero additional overhead over standard threshold setting. • Strong security guarantees, including proactive secu- rity and forward security. We prove the security of hinTS in the algebraic group model, and also provide an open-source implementation. Our scheme outperforms all prior proposals that avoid distributed key generation in terms of aggregation time, signature size, and verification time (as well as other qualitative measures). As an example, the aggregation time in hinTS for 1000 signers is under 0.5 seconds, while both signing and verification are constant time algorithms, taking 1 ms and 17.5 ms, respectively. The key technical contribution of our work involves the design of special-purpose succinct proofs to efficiently prove the well-formedness of aggregated public keys. Our solution uses public “hints” released by the signers as part of their public keys (hence the name hinTS). 1. Introduction Threshold signatures [32], [33] allow for distribut- ing the signing process among a group of (say) n parties such that any subset of parties of size greater than a threshold (say) t ⩽ n can create valid signatures on any message. Furthermore, any subset of parties of size at most t cannot forge signatures. First introduced in the 1980s, threshold signa- tures [32], [33] have found broad appeal in recent years in decentralized systems such as blockchains, where they are used in state proofs [34], [29], oracle net- works [37], crypto-wallets [9], distributed randomness services [8], cross-chain bridges [64], [62], [56], [58], and even in scaling byzantine consensus protocols [65]. This is now a mature research area, with lots of known constructions built on top of popular signature schemes such as BLS [21], Schnorr [60] (and its variant Ed- DSA [15]), and EC-DSA [28]. Moreover, attempts to standardize threshold signature have already begun [24]. By and large, all known designs of threshold signa- tures adopt the following schemata: • First, a threshold t is chosen, and the parties run a distributed key generation (DKG) protocol that gen- erates a public key pk and signing key sk and outputs a secret share ski of the signing key sk to party i. • To sign a message, the parties run an (ideally, one- round) protocol to produce partial signatures. • Finally, an aggregator “combines” the partial signa- tures into a “short” signature that can be verified with respect to pk. While this model has found success over the years, in our experience, it is not sufficiently well-equipped to handle the demands of a growing, diverse set of scenarios where threshold signatures are now being considered, such as in blockchains. In a fully decentral- ized setting, limitations arise from the need for a DKG (which involves expensive multiparty protocols), the inability to choose the signing threshold or the signers after system setup (without a fresh DKG), and the lack of efficient extensions to more expressive access structures, such as weighted structures. Our Model. In what follows, we expand upon our goals for threshold signatures. Some of these goals have recently been investigated elsewhere (see Section1.3 for a discussion); our aim, however, is to achieve all of the goals simultaneously, while building concretely efficient solutions with a low deployment barrier. I. Silent Setup. A major hurdle in deploying fully decentralized threshold signatures is the requirement of performing a DKG - a multiparty protocol that incurs high computation and communication costs and uses expensive primitives such as broadcast channels. Indeed, extensive literature is dedicated to optimizing DKG protocols along various axis (see Section 1.3). Despite many advances, DKG continues to be a major source of engineering and deployment challenges (see, e.g., [36], [30]) for threshold signatures. Though a DKG need only be performed just once and then used 3034 DOI 10.1109/SP54263.2024.00057 repeatedly for signing, executing it even once becomes extremely challenging in some settings. For instance, in Ethereum 2.0, a state-proof is threshold-signed by two-thirds fraction of a committee of 512 validators (called the sync committee); it is both expensive and complicated to run an interactive DKG protocol for a new committee that is randomly selected every (approx- imately) 27 hours. Instead, Ethereum 2.0 resorts to a multi-signature scheme, that does not need a DKG, but requires the verifier (e.g. a smart contract running on a different ledger) to learn all 512 public keys 1, as multi- signatures only support n out of n access structures. Therefore, our work starts with a natural question: Can we construct a threshold signature without DKG, or with a silent setup? In a silent setup, parties do not exchange any message with each other to generate keys. Instead, each party uses a local key-generation procedure to establish its key pair and the joint public key of a set of signers is computed as a deterministic function of their individual public keys. 2 This allows for an asynchronous setup, as parties silently join the system and publish their public keys without waiting for others. For the aforementioned Ethereum 2.0 ap- plication, it provides an attractive choice compared to the currently used multisignature, as silent threshold signatures offer the best of both worlds: like multisig- natures, it allows for dynamic access structures and no DKG, and like threshold signatures, it has compact (and efficient) verification. More use cases are discussed in Section 1.2. II. Dynamism. The setup phase (realized by a DKG protocol) in existing threshold systems fixes both the threshold and the set of signers. This rules out appli- cations that require a dynamic choice of thresholds or signers (or both) at a later point (see Section 1.2). This leads to our next question: Can we build a threshold signature scheme that supports a dynamic choice of thresholds and signers? 3 A n ¨aive solution is to simply run a fresh instance of a static threshold signature scheme for each choice. This, however, is not a scalable solution since the work and secret storage required of each signer increases with every new choice. We, instead, aim to achieve dynamism without increas- ing the work of the signers (relative to the static model). 1. The public keys of the sync committee can be derived from on- chain data, and hence, common solutions for state proofs often use SNARK-based mechanisms to prove the validity of all 512 public keys with respect to the signed headers. 2. This is conceptually similar to multisignatures [19], the n-out- of-n (i.e., full threshold) variant of threshold signatures, that do not require a DKG. However, multi-signatures do not achieve liveness, i.e., they do not support signature computation even if just one party is absent. See Section 1.3 for further discussion. 3. While DKG fixes the threshold during system setup in existing systems, getting rid of DKG does not automatically imply dynamism. It might be possible to achieve silent setup (i.e., no DKG) without dynamism. In this work, we aim to achieve both properties. III. General Policies. Prior works primarily focus on threshold access structures in that all signers are treated as equals, and their cardinality determines an authorized set of signers. However, in stake-based blockchains [51] and oracle networks [37], all signers are not equal. Instead, each signer has an associated weight, and the access structure is defined by a weighted threshold. More generally, each signer could have different “at- tributes” and a circuit computed over the attributes might define an access structure. We ask: Can we build threshold signatures that support general access structures? In principle, existing schemes that rely on linear secret-sharing [61] can be modified to support access structures for which linear secret-sharing schemes exist. This, however, does not (in general) result in efficient constructions, and limits the access structures that can be realized. We devise an alternative approach that is not limited by linear secret- sharing and incurs low performance overhead relative to the standard threshold setting. Motivated by the aforementioned applications, we put a special emphasis on native support for weighted thresholds such that our scheme suffers no performance overhead from the incorporation of high-precision (say 64-bit) weights. IV . Enhanced Security. In addition to the standard unforgeability security of threshold signatures, we aim for two important and well-studied security properties - proactive security [53] and forward security [14]. Proactive security requires a periodic key refresh to ensure that even an adversary with unlimited corruption budget cannot compromise security as long as the total number of corruptions in any period does not exceed the threshold. On the other hand, forward security requires that a key compromise does not violate past periods' security. These properties are well-studied in the liter- ature and are important for real-world deployments. V . Concrete Efficiency. We aim for a one-round signing procedure and disallow any additional pre- processing rounds of interaction. Only threshold ver- sions of the BLS scheme are known to satisfy this property. As such, we set threshold BLS with a DKG setup (such as [63]) as our baseline. We require that our signing, aggregation, and verification algorithms have comparable efficiency, concretely and asymptotically, to threshold BLS. 1.1. Our Contributions 1) Silent Threshold Signatures. We propose the no- tion of silent threshold signatures (STS) where the setup phase requires no communication between the parties. Each party runs a local key-generation and publishes its public key and the joint public key of the signers is deterministically derived from all of their public keys. STS supports a dynamic choice of thresholds. Namely, for every message m, it is possible to choose 23035"
+      },
+      {
+        "source": "selected",
+        "value": "We propose hinTS-a new threshold signature scheme built on top of the widely used BLS signatures. Our scheme enjoys the following attractive features: • A silent setup process where the joint public key of the parties is computed as a deterministic function of their locally computed public keys. • Support for dynamic choice of thresholds and signers, after the silent setup, without further interaction. • Support for general access policies; in particular, native support for weighted thresholds with zero additional overhead over standard threshold setting. • Strong security guarantees, including proactive security and forward security. We prove the security of hinTS in the algebraic group model, and also provide an open-source implementation. Our scheme outperforms all prior proposals that avoid distributed key generation in terms of aggregation time, signature size, and verification time (as well as other qualitative measures). As an example, the aggregation time in hinTS for 1000 signers is under 0.5 seconds, while both signing and verification are constant time algorithms, taking 1 ms and 17.5 ms, respectively. The key technical contribution of our work involves the design of special-purpose succinct proofs to efficiently prove the well-formedness of aggregated public keys. Our solution uses public \"hints\" released by the signers as part of their public keys (hence the name hinTS). 3034 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sanjam Garg",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley",
+            "NTT Research Supra Swirlds Labs"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Abhishek Jain",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Johns Hopkins University",
+            "NTT Research Supra Swirlds Labs"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Pratyay Mukherjee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Rohit Sinha",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Mingyuan Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yinuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sanjam Garg",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley † Johns Hopkins University ‡ NTT Research § Supra ¶ Swirlds Labs"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Abhishek Jain",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley † Johns Hopkins University ‡ NTT Research § Supra ¶ Swirlds Labs"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Pratyay Mukherjee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley † Johns Hopkins University ‡ NTT Research § Supra ¶ Swirlds Labs"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Rohit Sinha",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley † Johns Hopkins University ‡ NTT Research § Supra ¶ Swirlds Labs"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Mingyuan Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley † Johns Hopkins University ‡ NTT Research § Supra ¶ Swirlds Labs"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yinuo Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Berkeley † Johns Hopkins University ‡ NTT Research § Supra ¶ Swirlds Labs"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 130,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "hinTS: Threshold Signatures with Silent Setup",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sanjam Garg",
+          "affiliations": [
+            "UC Berkeley and NTT Research"
+          ]
+        },
+        {
+          "name": "Abhishek Jain",
+          "affiliations": [
+            "JHU and NTT Research"
+          ]
+        },
+        {
+          "name": "Pratyay Mukherjee",
+          "affiliations": [
+            "Supra Research"
+          ]
+        },
+        {
+          "name": "Rohit Sinha",
+          "affiliations": [
+            "Swirlds Labs"
+          ]
+        },
+        {
+          "name": "Mingyuan Wang",
+          "affiliations": [
+            "UC Berkeley"
+          ]
+        },
+        {
+          "name": "Yinuo Zhang",
+          "affiliations": [
+            "UC Berkeley"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

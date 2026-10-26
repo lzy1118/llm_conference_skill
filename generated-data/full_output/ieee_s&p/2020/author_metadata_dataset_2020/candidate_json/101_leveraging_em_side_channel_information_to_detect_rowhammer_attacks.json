@@ -1,0 +1,281 @@
+{
+  "paper_id": "101_leveraging_em_side_channel_information_to_detect_rowhammer_attacks",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Leveraging EM Side-Channel Information to Detect Rowhammer Attacks"
+      },
+      {
+        "source": "selected",
+        "value": "Leveraging EM Side-Channel Information to Detect Rowhammer Attacks"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": ""
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The rowhammer bug belongs to software-induced hardware faults, and has been exploited to form a wide range of powerful rowhammer attacks. Y et, how to effectively detect such attacks remains a challenging problem. In this paper, we propose a novel approach named RADAR (R owhammer Attack Detection via A Radio) that leverages certain electromagnetic (EM) signals to detect rowhammer attacks. In particular, we have found that there are recognizable hammering-correlated sideband patterns in the spectrum of the DRAM clock signal. As such patterns are inevitable physical side effects of hammering the DRAM, they can “expose” any potential rowhammer attacks including the extremely elusive ones hidden inside encrypted and isolated environments like Intel SGX enclaves. However, the patterns of interest may become unapparent due to the common use of spread-spectrum clocking (SSC) in computer systems. We propose a de-spreading method that can reassemble the hammering-correlated sideband patterns scattered by SSC. Using a common classification technique, we can achieve both effective and robust detection-based defense against rowhammer attacks, as evaluated on a RADAR prototype under various scenarios. In addition, our RADAR does not impose any performance overhead on the protected system. There has been little prior work that uses physical side-channel information to perform rowhammer defenses, and to the best of our knowledge, this is the first investigation on leveraging EM side-channel information for this purpose. I. I NTRODUCTION As a fundamental requirement for implementing security measures, memory protection prevents a process from modify- ing memory it does not own. However, this essential protection becomes at stake due to the discovery of a vulnerability, known as the rowhammer bug [34], in the underlying dynamic random-access memory (DRAM). The rowhammer bug be- longs to the class of software-induced hardware faults, which makes unauthorized data modifications possible. The existence of the rowhammer bug has been reported in numerous DRAM chips of DDR3 and DDR4 [34], [39]. Since its discovery, this hardware vulnerability has been continuously exploited to form a wide range of powerful rowhammer attacks. Examples of such attacks include sandbox escaping [26], [49], [54], privilege escalation [8], [25], [26], [54], [61], [64], cryptography subversion [7], [51], denial- of-service [33], [42], [66], and even confidentiality breach- ing [38]. Furthermore, rowhammer attacks have been effec- tively demonstrated in the presence of ECC mechanism [16] as well as in the context of only sending network packets [42], [60]. In response, many defense techniques against rowhammer attacks have been proposed in recent years, including sev- eral detection-based approaches [4], [27], [30], [32], [46]. Unfortunately, as more sophisticated rowhammer attacks are developed, the effectiveness of detection-based rowhammer defenses becomes questionable. As demonstrated in [25], all of the practical rowhammer attack detection approaches can be circumvented. In particular, by abusing the Intel SGX tech- nology and closed-page memory controller policy, rowhammer attack detection based on either static analysis [32] or dynamic monitoring [4], [27], [30], [46] will become ineffective. In this paper, we introduce a new direction to addressing the problem of rowhammer attack detection. Specifically, we propose to leverage certain electromagnetic (EM) emanations to effectively and robustly detect rowhammer attacks. EM side- channel information is capable of revealing much knowledge about the ongoing activity in a computing device, and it has been extensively exploited to breach confidentiality [2], [3], [18], [20]-[23], [31], [37], [50]. However, it has been realized that, as a double-edged sword, such side-channel information can also be used to help build security defenses [28], [45]. Following this line, for the first time, we utilize EM side- channel information to our advantage for rowhammer attack detection. Because EM emanations are inevitably issued dur- ing any computation and can be hardly suppressed by outside adversaries, our proposed approach can detect any potential rowhammer attacks including the extremely elusive ones that are hidden inside attacker-controlled SGX enclaves. Moreover, our detection approach does not degrade the performance or resource utilization of the system under protection. The main contributions of this paper are as follows: • We study the correlation between certain EM emanations and rowhammer attacks, based on which we propose a systematic rowhammer attack detection approach named RADAR (Rowhammer Attack Detection via A Radio). • We propose the first approach to reversing the scattering effect of spread-spectrum clocking on EM side-channel information issued from high-frequency clocks in a com- puting device. • We have implemented a RADAR prototype using a $299 software-defined radio device, and we evaluate the ef- fectiveness and robustness of our EM-based rowhammer attack detection under different scenarios. There has been little prior work that uses physical side-channel 729 DOI 10.1109/SP40000.2020.00060 information to perform rowhammer defenses, and to the best of our knowledge, this is the first investigation on leveraging EM side-channel information for this purpose. The rest of this paper is organized as follows: Section II briefly sets the background; Section III formulates the threat model; Section IV presents a new direction to rowhammer attack detection; Section V studies the correlation between EM side-channel information and rowhammer attacks; Section VI proposes our RADAR system, which can achieve rowhammer attack detection in a non-intrusive manner; Section VII eval- uates the proposed RADAR system; Section VIII gives the related work; and Section IX concludes this paper. II. B ACKGROUND In this section, we provide some background information on DRAM organization, the rowhammer bug, and rowhammer attacks. Moreover, we briefly present the physical side effects leveraged in this paper, namely the EM emanations. A. DRAM Organization Modern computing devices use DRAM as the main memory. For better memory bandwidth, DRAM is often partitioned into multiple channels. Each channel may be associated with multiple dual in-line memory modules (DIMMs). Each DIMM has one or more ranks (e.g., modern DIMMs can be single- /dual-/quad-/octal-rank), and each rank has multiple banks (e.g., normally there are 8 banks for DDR3 and 16 banks for DDR4). As depicted in Fig. 1, each bank can be viewed as a two-dimensional array of memory words, organized in rows and columns. The size of the memory word depends on the data bus width, and decides how many cells are needed to store its content (e.g., 64 cells are needed to store a 64-bit memory word). Each cell consists of a capacitor and a transistor, where the capacitor is either charged or uncharged to represent a binary value1, and the transistor is used to access the capacitor. In each bank, there is also a row buffer, which can hold the contents of a single row. To access a cell, the corresponding row has to be activated first to put the contents of the row into the row buffer, and then the access is served from the row buffer. An activated row remains in the row buffer until being closed by the memory controller, and before then, consecutive accesses to that row will be served directly from the row buffer. Depending on what memory controller policy is being used, an active row can be closed due to different reasons: If the memory controller uses an open-page policy, the active row will not be closed until a different row in the same bank is accessed; and such a causal event is often called a row conflict. On the other hand, if a closed-page policy is employed, the memory controller will proactively close the row [25], [42]. Note that a DRAM cell can only keep its charged state for a short period of time, as its capacitor leaks its charge over time. In order to prevent any data loss, the cells must be refreshed regularly. DDR3 and DDR4 specifications require that the 1Depending on the implementation, some cells use the charged state to represent ‘1', while other cells use the charged state to represent ‘0'. Rank 0 (front of a DIMM) Rank 1 (back of a DIMM) Memory Controller DIMMs Channel 0 Channel 1 Bank 7 ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer Bank 0 ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer A simplified view of a rank Fig. 1. A representative DRAM architecture (two channels and four dual-rank DIMMs). A rank consists of all the chips on the same side (front or back) of a DIMM. refresh interval must not be longer than 64ms. Normally, the refresh interval is between 32ms to 64ms. B. The Rowhammer Bug and Hammering As DRAM becomes denser, the capacitor in a cell becomes smaller and the voltage margin separating ‘0' and ‘1' be- comes lower, which unfortunately have reduced the overall DRAM reliability [44]. First thoroughly studied in [34], the rowhammer bug has become a well-known DRAM reliability issue: When a DRAM row is repeatedly activated and closed (namely, the row is hammered) enough times within a refresh interval, one or more bits in its physically adjacent rows can be flipped to the opposite value 2. Usually, a row that is hammered is referred to as an aggressor row, and a row that has flipped bits is called a victim row. ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer (A) ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer (B) ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer (C) Fig. 2. Three possible hammering techniques in the literature: (A) single- sided hammering [34]; (B) double-sided hammering [54]; and (C) one-location hammering [25]. Since many of the memory controllers use an open-page policy, to trigger the rowhammer bug on such systems, two aggressor rows in the same bank need to be alternately activated. Consequently, the row buffer of that bank will alternately hold the contents of these two aggressor rows. If the two aggressor rows are not intentionally chosen to “sandwich” a row, it is termed as single-sided hammering, as shown in Fig. 2 (A). On the other hand, if the two aggressor rows are selected to specifically lie on both sides of another row, it is called double-sided hammering, as shown in Fig. 2 (B). As demonstrated in practice, double-sided hammering is much more effective and efficient than single-sided hammering [54]. 2The large current coupled with toggling the activation of a row repeatedly and rapidly accelerates the discharge rate of cells in the physically adjacent rows. Before the next refresh, if too much charge in a cell has been leaked, the stored bit information will be lost, namely the bit is flipped from 1 to 0 or from 0 to 1, depending on whether 1 or 0 is represented by the charged state. 730"
+      },
+      {
+        "source": "selected",
+        "value": "The rowhammer bug belongs to software-induced hardware faults, and has been exploited to form a wide range of powerful rowhammer attacks. Y et, how to effectively detect such attacks remains a challenging problem. In this paper, we propose a novel approach named RADAR (R owhammer Attack Detection via A Radio) that leverages certain electromagnetic (EM) signals to detect rowhammer attacks. In particular, we have found that there are recognizable hammering-correlated sideband patterns in the spectrum of the DRAM clock signal. As such patterns are inevitable physical side effects of hammering the DRAM, they can “expose” any potential rowhammer attacks including the extremely elusive ones hidden inside encrypted and isolated environments like Intel SGX enclaves. However, the patterns of interest may become unapparent due to the common use of spread-spectrum clocking (SSC) in computer systems. We propose a de-spreading method that can reassemble the hammering-correlated sideband patterns scattered by SSC. Using a common classification technique, we can achieve both effective and robust detection-based defense against rowhammer attacks, as evaluated on a RADAR prototype under various scenarios. In addition, our RADAR does not impose any performance overhead on the protected system. There has been little prior work that uses physical side-channel information to perform rowhammer defenses, and to the best of our knowledge, this is the first investigation on leveraging EM side-channel information for this purpose. I. I NTRODUCTION As a fundamental requirement for implementing security measures, memory protection prevents a process from modify- ing memory it does not own. However, this essential protection becomes at stake due to the discovery of a vulnerability, known as the rowhammer bug [34], in the underlying dynamic random-access memory (DRAM). The rowhammer bug be- longs to the class of software-induced hardware faults, which makes unauthorized data modifications possible. The existence of the rowhammer bug has been reported in numerous DRAM chips of DDR3 and DDR4 [34], [39]. Since its discovery, this hardware vulnerability has been continuously exploited to form a wide range of powerful rowhammer attacks. Examples of such attacks include sandbox escaping [26], [49], [54], privilege escalation [8], [25], [26], [54], [61], [64], cryptography subversion [7], [51], denial- of-service [33], [42], [66], and even confidentiality breach- ing [38]. Furthermore, rowhammer attacks have been effec- tively demonstrated in the presence of ECC mechanism [16] as well as in the context of only sending network packets [42], [60]. In response, many defense techniques against rowhammer attacks have been proposed in recent years, including sev- eral detection-based approaches [4], [27], [30], [32], [46]. Unfortunately, as more sophisticated rowhammer attacks are developed, the effectiveness of detection-based rowhammer defenses becomes questionable. As demonstrated in [25], all of the practical rowhammer attack detection approaches can be circumvented. In particular, by abusing the Intel SGX tech- nology and closed-page memory controller policy, rowhammer attack detection based on either static analysis [32] or dynamic monitoring [4], [27], [30], [46] will become ineffective. In this paper, we introduce a new direction to addressing the problem of rowhammer attack detection. Specifically, we propose to leverage certain electromagnetic (EM) emanations to effectively and robustly detect rowhammer attacks. EM side- channel information is capable of revealing much knowledge about the ongoing activity in a computing device, and it has been extensively exploited to breach confidentiality [2], [3], [18], [20]-[23], [31], [37], [50]. However, it has been realized that, as a double-edged sword, such side-channel information can also be used to help build security defenses [28], [45]. Following this line, for the first time, we utilize EM side- channel information to our advantage for rowhammer attack detection. Because EM emanations are inevitably issued dur- ing any computation and can be hardly suppressed by outside adversaries, our proposed approach can detect any potential rowhammer attacks including the extremely elusive ones that are hidden inside attacker-controlled SGX enclaves. Moreover, our detection approach does not degrade the performance or resource utilization of the system under protection. The main contributions of this paper are as follows: • We study the correlation between certain EM emanations and rowhammer attacks, based on which we propose a systematic rowhammer attack detection approach named RADAR (Rowhammer Attack Detection via A Radio). • We propose the first approach to reversing the scattering effect of spread-spectrum clocking on EM side-channel information issued from high-frequency clocks in a com- puting device. • We have implemented a RADAR prototype using a $299 software-defined radio device, and we evaluate the ef- fectiveness and robustness of our EM-based rowhammer attack detection under different scenarios. There has been little prior work that uses physical side-channel 729 DOI 10.1109/SP40000.2020.00060 information to perform rowhammer defenses, and to the best of our knowledge, this is the first investigation on leveraging EM side-channel information for this purpose. The rest of this paper is organized as follows: Section II briefly sets the background; Section III formulates the threat model; Section IV presents a new direction to rowhammer attack detection; Section V studies the correlation between EM side-channel information and rowhammer attacks; Section VI proposes our RADAR system, which can achieve rowhammer attack detection in a non-intrusive manner; Section VII eval- uates the proposed RADAR system; Section VIII gives the related work; and Section IX concludes this paper. II. B ACKGROUND In this section, we provide some background information on DRAM organization, the rowhammer bug, and rowhammer attacks. Moreover, we briefly present the physical side effects leveraged in this paper, namely the EM emanations. A. DRAM Organization Modern computing devices use DRAM as the main memory. For better memory bandwidth, DRAM is often partitioned into multiple channels. Each channel may be associated with multiple dual in-line memory modules (DIMMs). Each DIMM has one or more ranks (e.g., modern DIMMs can be single- /dual-/quad-/octal-rank), and each rank has multiple banks (e.g., normally there are 8 banks for DDR3 and 16 banks for DDR4). As depicted in Fig. 1, each bank can be viewed as a two-dimensional array of memory words, organized in rows and columns. The size of the memory word depends on the data bus width, and decides how many cells are needed to store its content (e.g., 64 cells are needed to store a 64-bit memory word). Each cell consists of a capacitor and a transistor, where the capacitor is either charged or uncharged to represent a binary value1, and the transistor is used to access the capacitor. In each bank, there is also a row buffer, which can hold the contents of a single row. To access a cell, the corresponding row has to be activated first to put the contents of the row into the row buffer, and then the access is served from the row buffer. An activated row remains in the row buffer until being closed by the memory controller, and before then, consecutive accesses to that row will be served directly from the row buffer. Depending on what memory controller policy is being used, an active row can be closed due to different reasons: If the memory controller uses an open-page policy, the active row will not be closed until a different row in the same bank is accessed; and such a causal event is often called a row conflict. On the other hand, if a closed-page policy is employed, the memory controller will proactively close the row [25], [42]. Note that a DRAM cell can only keep its charged state for a short period of time, as its capacitor leaks its charge over time. In order to prevent any data loss, the cells must be refreshed regularly. DDR3 and DDR4 specifications require that the 1Depending on the implementation, some cells use the charged state to represent ‘1', while other cells use the charged state to represent ‘0'. Rank 0 (front of a DIMM) Rank 1 (back of a DIMM) Memory Controller DIMMs Channel 0 Channel 1 Bank 7 ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer . ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer Bank 0 ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer A simplified view of a rank Fig. 1. A representative DRAM architecture (two channels and four dual-rank DIMMs). A rank consists of all the chips on the same side (front or back) of a DIMM. refresh interval must not be longer than 64ms. Normally, the refresh interval is between 32ms to 64ms. B. The Rowhammer Bug and Hammering As DRAM becomes denser, the capacitor in a cell becomes smaller and the voltage margin separating ‘0' and ‘1' be- comes lower, which unfortunately have reduced the overall DRAM reliability [44]. First thoroughly studied in [34], the rowhammer bug has become a well-known DRAM reliability issue: When a DRAM row is repeatedly activated and closed (namely, the row is hammered) enough times within a refresh interval, one or more bits in its physically adjacent rows can be flipped to the opposite value 2. Usually, a row that is hammered is referred to as an aggressor row, and a row that has flipped bits is called a victim row. ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer (A) ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer (B) ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... Row Buffer (C) Fig. 2. Three possible hammering techniques in the literature: (A) single- sided hammering [34]; (B) double-sided hammering [54]; and (C) one-location hammering [25]. Since many of the memory controllers use an open-page policy, to trigger the rowhammer bug on such systems, two aggressor rows in the same bank need to be alternately activated. Consequently, the row buffer of that bank will alternately hold the contents of these two aggressor rows. If the two aggressor rows are not intentionally chosen to “sandwich” a row, it is termed as single-sided hammering, as shown in Fig. 2 (A). On the other hand, if the two aggressor rows are selected to specifically lie on both sides of another row, it is called double-sided hammering, as shown in Fig. 2 (B). As demonstrated in practice, double-sided hammering is much more effective and efficient than single-sided hammering [54]. 2The large current coupled with toggling the activation of a row repeatedly and rapidly accelerates the discharge rate of cells in the physically adjacent rows. Before the next refresh, if too much charge in a cell has been leaked, the stored bit information will be lost, namely the bit is flipped from 1 to 0 or from 0 to 1, depending on whether 1 or 0 is represented by the charged state. 730"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zhenkai Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Texas Tech University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zihao Zhan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Daniel Balasubramanian",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Bo Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Peter Volgyesi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Xenofon Koutsoukos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zhenkai Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Texas Tech University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zihao Zhan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Daniel Balasubramanian",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Bo Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Peter Volgyesi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Xenofon Koutsoukos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vanderbilt University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 23,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Leveraging EM Side-Channel Information to Detect Rowhammer Attacks",
+      "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zhenkai Zhang",
+          "affiliations": [
+            "Texas Tech University"
+          ]
+        },
+        {
+          "name": "Zihao Zhan",
+          "affiliations": [
+            "Vanderbilt University"
+          ]
+        },
+        {
+          "name": "Daniel Balasubramanian",
+          "affiliations": [
+            "Vanderbilt University"
+          ]
+        },
+        {
+          "name": "Bo Li",
+          "affiliations": [
+            "Univeristy of Illinios at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Peter Volgyesi",
+          "affiliations": [
+            "Vanderbilt University"
+          ]
+        },
+        {
+          "name": "Xenofon Koutsoukos",
+          "affiliations": [
+            "Vanderbilt University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_abstract_from_pdf",
+      "stage": "abstract_arbitration",
+      "field": "abstract",
+      "source": "pdfplumber_section_boundary"
+    },
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 6,
+      "proposed_count": 6,
+      "retained_count": 5,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

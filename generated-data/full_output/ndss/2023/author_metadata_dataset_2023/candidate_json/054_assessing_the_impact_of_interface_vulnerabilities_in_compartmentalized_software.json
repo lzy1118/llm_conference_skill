@@ -1,0 +1,253 @@
+{
+  "paper_id": "054_assessing_the_impact_of_interface_vulnerabilities_in_compartmentalized_software",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Assessing the Impact of Interface Vulnerabilities in Compartmentalized Software"
+      },
+      {
+        "source": "selected",
+        "value": "Assessing the Impact of Interface Vulnerabilities in Compartmentalized Software"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Least-privilege separation decomposes applications into compartments limited to accessing only what they need. When compartmentalizing existing software, many approaches neglect securing the new inter-compartment interfaces, although what used to be a function call from/to a trusted component is now potentially a targeted attack from a malicious compartment. This results in an entire class of security bugs: Compartment Interface Vulnerabilities (CIVs). This paper provides an in-depth study of CIVs. We taxonomize these issues and show that they affect all known compartmentalization approaches. We propose ConfFuzz, an inmemory fuzzer specialized to detect CIVs at possible compartment boundaries. We apply ConfFuzz to a set of 25 popular applications and 36 possible compartment APIs, to uncover a wide data-set of 629 vulnerabilities. We systematically study these issues, and extract numerous insights on the prevalence of CIVs, their causes, impact, and the complexity to address them. We stress the critical importance of CIVs in compartmentalization approaches, demonstrating an attack to extract isolated keys in OpenSSL and uncovering a decade-old vulnerability in sudo. We show, among others, that not all interfaces are affected in the same way, that API size is uncorrelated with CIV prevalence, and that addressing interface vulnerabilities goes beyond writing simple checks. We conclude the paper with guidelines for CIV-aware compartment interface design, and appeal for more research towards systematic CIV detection and mitigation."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Least-privilege separation decomposes applications into compartments limited to accessing only what they need. When compartmentalizing existing software, many approaches neglect securing the new inter-compartment interfaces, although what used to be a function call from/to a trusted component is now potentially a targeted attack from a malicious compartment. This results in an entire class of security bugs: Compartment Interface Vulnerabilities (CIVs). This paper provides an in-depth study of CIVs. We tax- onomize these issues and show that they affect all known compartmentalization approaches. We propose ConfFuzz, an in- memory fuzzer specialized to detect CIVs at possible compart- ment boundaries. We apply ConfFuzz to a set of 25 popular applications and 36 possible compartment APIs, to uncover a wide data-set of 629 vulnerabilities. We systematically study these issues, and extract numerous insights on the prevalence of CIVs, their causes, impact, and the complexity to address them. We stress the critical importance of CIVs in compartmentalization approaches, demonstrating an attack to extract isolated keys in OpenSSL and uncovering a decade-old vulnerability in sudo. We show, among others, that not all interfaces are affected in the same way, that API size is uncorrelated with CIV prevalence, and that addressing interface vulnerabilities goes beyond writing simple checks. We conclude the paper with guidelines for CIV-aware compartment interface design, and appeal for more research towards systematic CIV detection and mitigation. I. I NTRODUCTION The principle of least privilege has guided the design of safe computer systems for over half a century by ensuring that each unit of trust in a system can access only what it truly needs to fulfill its duties: in this way, system designers can proactively defend against unknown vulnerabilities [65]. Soft- ware compartmentalization is a prime example where unsafe, untrusted, or high-risk components are isolated to reduce the damage they would cause should they be compromised [50]. Recent years have seen the appearance of an increasingly large number of new isolation mechanisms [10], [4], [3], [65], [53], [45] that enable fine-grained compartmentalization. This resulted in compartmentalization works targeting finer and finer granularities, such as libraries [67], [60], [19], [42], [53], [35], [5], [51], [29], [2], modules [22], [2], [52], files [2], and even functions/blocks of code [16], [64], [57], [1]. In that context, major attention was dedicated to compartmentalizing existing code, since rewriting software from scratch to work in a compartmentalized manner is costly and complex [16]. With recent developments on compiler-based compartmentalization, frameworks offer to apply isolation at arbitrary interfaces for a low to non-existent porting cost [67], [5], [35], [1]. Unfortunately, breaking down applications into compart- ments means that control and data dependencies through shared interfaces create new classes of vulnerabilities [61]: in order to provide safe compartmentalization, it is not only necessary to ensure spatial memory isolation but also to design interfaces with distrust in mind. For example, objects passed through APIs can be corrupted to launch confused deputy attacks [39], [21], data structures can be manipulated to control execution or leak data through Iago attacks [8], [11], called components can modify return values or indirectly access shared data structures to launch new forms of exploit, etc. Even though interface-related vulnerabilities (denoted Compartment-Interface Vulnerabilities / CIVs in this paper) were previously identified to various extents in the litera- ture [39], [8], [21], [61], almost all modern compartmental- ization frameworks [67], [60], [19], [53], [35], [25], [45], [5], [51], [57], [30], [29], [1] neglect the problem of securing interfaces, and rather focus on transparent and lightweight spatial separation. Since CIVs are already problematic for interfaces hardened from the ground up (e.g., the system call API [28], [8]) with well-defined trust-models (kernel/user), their impact on safety is likely to be even greater when considering arbitrary interfaces and trust models that materi- alize when compartmentalizing existing software that was not designed with the assumption of hostile internal threats. Worse still, the complexity of safeguarding interfaces increases as more fine-grain components are targeted. Beyond this lack of consideration, CIVs remain mis- understood; we ask the following research questions: how widespread are CIVs when compartmentalizing unmodified applications? What are the API design patterns leading to them? What is the concrete impact of CIVs on the safety guarantees brought by compartmentalization, and what is the complexity of addressing them? In order to achieve CIV mitigations that are generic and principled, we stress the need to formalize and quantify the problem. This paper provides an in-depth study of CIVs. We taxono- mize CIVs into a coherent framework, and systematize existing efforts to address them, highlighting categories that need attention in future research. In order to study existing CIVs in real-world scenarios, we propose ConfFuzz, an in-memory fuzzer specialized to detect CIVs at possible compartment boundaries. ConfFuzz automatically explores the complexity of compartment interfaces by exposing data dependencies leading to vulnerabilities. Contrary to existing fuzzers, that inject malformed data in a single direction (e.g., a library), Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24117 www.ndss-symposium.org ConfFuzz can show the degree to which data flowing through an interface can be manipulated to harm either direction of a cross-compartment call. We apply ConfFuzz to a corpus of 39 compartmentalization scenarios, many of which previously proposed as use-cases of 12 existing research and industry frameworks. We uncover a wide data-set of 629 potential vul- nerabilities1. We systematically study these issues, extracting numerous insights on the prevalence of CIVs, their causes, impact, and the complexity to address them. At the highest level, our results confirm how important the problem of CIVs should be to compartmentalization research: in many cases, CIVs seriously reduce or even fully negate all benefits of compartmentalization, and that even when the interface is extremely simple: we demonstrate an attack to extract isolated keys in OpenSSL, a common application of compartmentalization, and a decade-old vulnerability in sudo's authentication API. Beyond this, we note the following high- level insights: 1) CIVs are present in almost all existing interfaces, but at significantly varying degrees: for instance module APIs are much more vulnerable than library interfaces, and some interfaces are entirely CIV-free; 2) the complexity of objects crossing the interfaces imports more than the size of the API itself, and most of an API's CIVs can often be tracked down to a handful of objects; 3) fixing CIVs goes further than writing a few checks, and often requires reworking interfaces and partially redesigning existing software. We conclude with an appeal for more research towards systematic CIV detection and mitigation, hoping that this study can encourage future works to consider the issue of interfaces. To sum up, this paper makes the following contributions: • A systematization and taxonomy of CIVs and existing efforts to address them (§III). • ConfFuzz, an in-memory fuzzer that automatically detects CIVs in existing software at arbitrary interfaces (§IV). • A systematic study of the CIVs found by ConfFuzz applied to 39 real-world application compartmentalization scenarios, backing insights with concrete data (§V). • A series of interface design guidelines intended to ease the development/adaptation of new/existing interfaces with compartmentalization in mind (§VI). II. M OTIVATION The problem of secure interface design is not new [18]. The Linux system call interface, for example, is the result of years oforganic evolution towards a strong boundary that preserves the integrity of the kernel in the presence of untrusted applications. Alas, designing strong interfaces in an adversarial context is notably hard: interface-related vulnerabilities are still regularly reported against the system call interface [28], [26], [23], even after decades of hardening. The task is even harder when assuming mutual distrust; the system call API, to take the same example, is notably weak at protecting the application from the kernel [8], [11], and requires extensive shim interfaces [43], [7], [46], [14], [13] to sanitize untrusted inputs and outputs. Modern compartmentalization frameworks enable users to easily enforce spatial and temporal separation between compo- nents of existing software. Typically, code is either sandboxed, 1We open-sourced code and data-set: https://conffuzz.github.io // ImageMagick callback exposed to libghostscript static int MagickDLLCall GhostscriptDelegateMessage( void *handle, const char *message, int length) { /* CIV: unchecked dereference/usage of * sandbox-provided pointer/bounds information */ (void) memcpy(*handle, message, ( size_t) length); (*handle)[length] = '\\0'; } /* ... abbreviated / simplified ... */ Listing 1: ImageMagick callback lets libghostscript perform arbitrary writes outside the sandbox. where a software component prone to subversion is restricted from accessing the rest of the system (e.g., image processing libraries), safeboxed, where sensitive data is only accessible to a component while maintaining high privilege (e.g., libssl), or separated into mutually distrusting subsystems [27]. De- pending on domain crossing frequencies, compartmentalization promises good vulnerability containment at a modest cost [65]. Unfortunately, as shown by previous works [21], [61], [42] and highlighted in this paper, simply isolating software compo- nents is not enough: if cross-compartment interfaces have not been designed as trust boundaries (e.g., when compartmentaliz- ing existing software), a wide range of Compartment-Interface Vulnerabilities (CIVs) arise. Reasoning about the safety of an interface is complex due to data dependencies exposed through the use of that interface by actors that previously belonged to a single trust domain, but under compartmentalization distrust each other. That complexity increases with that of interface- crossing data flows. CIVs arise when developers would like to avoid trust in a component, and encompass traditional confused deputies [18], Iago vulnerabilities [8], or Dereferences Under Influence (DUIs) [21]. We define CIVs more formally in §III. Take the example of library sandboxing in ImageMagick as done by the Compiler-Assisted Library Isolation (Cali) [5] framework. Here, libghostscript is sandboxed because it is notoriously prone to high-impact vulnerabilities. Cali auto- matically sandboxes the library by applying compiler-based techniques to detect data shared between the application and the library, and place them in a shared memory region, before running application and library in separate processes. When the application needs to execute a function of the library, Cali performs the function call in the library compartment. Whenever the library needs to execute an application callback, Cali executes the callback in the application compartment. This approach might seem sufficient: it makes it harder for attackers to escape the sandboxing of libghostscript. In prac- tice, however, as shown in Listing 1, ImageMagick exposes a callback to libghostscript that allows the untrusted library to perform arbitrary writes in the application's compartment as often as it wants and at any time, negating spatial isolation entirely. This vulnerability, identified by our tool ConfFuzz, is caused by ImageMagick (victim compartment) dereferencing"
+      },
+      {
+        "source": "selected",
+        "value": "Least-privilege separation decomposes applications into compartments limited to accessing only what they need. When compartmentalizing existing software, many approaches neglect securing the new inter-compartment interfaces, although what used to be a function call from/to a trusted component is now potentially a targeted attack from a malicious compartment. This results in an entire class of security bugs: Compartment Interface Vulnerabilities (CIVs). This paper provides an in-depth study of CIVs. We taxonomize these issues and show that they affect all known compartmentalization approaches. We propose ConfFuzz, an inmemory fuzzer specialized to detect CIVs at possible compartment boundaries. We apply ConfFuzz to a set of 25 popular applications and 36 possible compartment APIs, to uncover a wide data-set of 629 vulnerabilities. We systematically study these issues, and extract numerous insights on the prevalence of CIVs, their causes, impact, and the complexity to address them. We stress the critical importance of CIVs in compartmentalization approaches, demonstrating an attack to extract isolated keys in OpenSSL and uncovering a decade-old vulnerability in sudo. We show, among others, that not all interfaces are affected in the same way, that API size is uncorrelated with CIV prevalence, and that addressing interface vulnerabilities goes beyond writing simple checks. We conclude the paper with guidelines for CIV-aware compartment interface design, and appeal for more research towards systematic CIV detection and mitigation."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hugo Lefeuvre",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Manchester, ∇ University Politehnica of Bucharest, Rice University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Vlad-Andrei Bȃdoiu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yi Chien",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Felipe Huici",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Unikraft.io"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Nathan Dautenhahn",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Pierre Olivier",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Manchester, ∇ University Politehnica of Bucharest, Rice University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hugo Lefeuvre",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Manchester, ∇ University Politehnica of Bucharest, Rice University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Vlad-Andrei Bȃdoiu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yi Chien",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Felipe Huici",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Unikraft.io"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Nathan Dautenhahn",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Pierre Olivier",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Manchester, ∇ University Politehnica of Bucharest, Rice University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 117,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Assessing the Impact of Interface Vulnerabilities in Compartmentalized Software",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/assessing-the-impact-of-interface-vulnerabilities-in-compartmentalized-software/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hugo Lefeuvre",
+          "affiliations": [
+            "The University of Manchester"
+          ]
+        },
+        {
+          "name": "Vlad-Andrei Bădoiu",
+          "affiliations": [
+            "University Politehnica of Bucharest"
+          ]
+        },
+        {
+          "name": "Yi Chen",
+          "affiliations": [
+            "Rice University"
+          ]
+        },
+        {
+          "name": "Felipe Huici",
+          "affiliations": [
+            "Unikraft.io"
+          ]
+        },
+        {
+          "name": "Nathan Dautenhahn",
+          "affiliations": [
+            "Rice University"
+          ]
+        },
+        {
+          "name": "Pierre Olivier",
+          "affiliations": [
+            "The University of Manchester"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

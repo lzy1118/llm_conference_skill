@@ -1,0 +1,260 @@
+{
+  "paper_id": "057_queryx_symbolic_query_on_decompiled_code_for_finding_bugs_in_cots_binaries",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "QUERYX: Symbolic Query on Decompiled Code for Finding Bugs in COTS Binaries"
+      },
+      {
+        "source": "selected",
+        "value": "QUERYX: Symbolic Query on Decompiled Code for Finding Bugs in COTS Binaries"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Extensible static checking tools, such as Sys and Cod-eQL, have successfully discovered bugs in source code. These tools allow analysts to write application-specific rules, referred to as queries. These queries can leverage the domain knowledge of analysts, thereby making the analysis more accurate and scalable. However, the majority of these tools are inapplicable to binary-only analysis. One exception, joern, translates a binary code into decompiled code and feeds the decompiled code into an ordinary C code analyzer. However, this approach is not sufficiently precise for symbolic analysis, as it overlooks the unique characteristics of decompiled code. While binary analysis platforms, such as angr, support symbolic analysis, analysts must understand their intermediate representations (IRs) although they are mostly working with decompiled code. In this paper, we propose a precise and scalable symbolic analysis called fearless symbolic analysis that uses intuitive queries for binary code and implement this in QUERYX. To make the query intuitive, QUERYX enables analysts to write queries on top of decompiled code instead of IRs. In particular, QUERYX supports callbacks on decompiled code, using which analysts can control symbolic analysis to discover bugs in the code. For precise analysis, we lift decompiled code into our IR named DNR and perform symbolic analysis on DNR while considering the characteristics of the decompiled code. Notably, DNR is only used internally such that it allows analysts to write queries regardless of using DNR. For scalability, QUERYX automatically reduces control-flow graphs using callbacks and ordering dependencies between callbacks that are specified in the queries. We applied QUERYX to the Windows kernel, the Windows system service, and an automotive binary. As a result, we found 15 unique bugs including 10 CVEs and earned $180,000 from the Microsoft bug bounty program. 3279 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Extensible static checking tools, such as Sys and Cod- eQL, have successfully discovered bugs in source code. These tools allow analysts to write application-specific rules, referred to as queries. These queries can leverage the domain knowledge of analysts, thereby making the analysis more accurate and scalable. However, the majority of these tools are inapplicable to binary-only analysis. One exception, joern, translates a binary code into decompiled code and feeds the decompiled code into an ordinary C code analyzer. However, this approach is not sufficiently precise for symbolic analysis, as it overlooks the unique characteristics of decompiled code. While binary analysis platforms, such as angr, support symbolic analysis, analysts must understand their intermediate representations (IRs) although they are mostly working with decompiled code. In this paper, we propose a precise and scalable symbolic analysis called fearless symbolic analysis that uses intuitive queries for binary code and implement this in Q UERY X. To make the query intuitive, Q UERY X enables analysts to write queries on top of decompiled code instead of IRs. In particular, QUERY X supports callbacks on decompiled code, using which analysts can control symbolic analysis to discover bugs in the code. For precise analysis, we lift decompiled code into our IR named DNR and perform symbolic analysis on DNR while considering the characteristics of the decompiled code. Notably, DNR is only used internally such that it allows analysts to write queries regardless of using DNR. For scalability, Q UERY X automatically reduces control-flow graphs using callbacks and ordering dependencies between callbacks that are specified in the queries. We applied Q UERY X to the Windows kernel, the Windows system service, and an automotive binary. As a result, we found 15 unique bugs including 10 CVEs and earned $180,000 from the Microsoft bug bounty program. 1. Introduction Static analysis is one of the most widely used techniques for finding bugs in code [ 2, 5, 6, 16, 21, 38-40, 51, 59, 60, 66-69, 72, 77-81]. Unlike dynamic analysis (e.g., fuzzing), static analysis can achieve high code coverage without the difficulty of obtaining inputs for high code coverage. Despite its advantages, static analysis fundamentally suffers from the trade-off between scalability and accuracy. More specifically, static analysis requires to be path- and context-sensitive to be accurate; however, this introduces serious scalability issues, including path explosion. If we employ approximations to address these issues, static analysis generates many false alarms due to over- or under-approximations. Input Analysis objects Syntactic Data-flow Symbolic CodeQL [22] Source Source ✓ ✓ × Sys [7] Source LLVM IR ✓ ✓ ✓ joern [76] Source Binary Source Decompiled code ✓ ✓ × angr [56] Binary VEX IR ✓ ✓ ✓ BAP [9] Binary BIL ✓ ✓ ✓ QUERY X Binary Decompiled code ✓ ✓ ✓ TABLE 1: Comparison between extensible static checking tools. Notably, QUERY X is the first tool that supports symbolic analysis on binary code using decompiled code. To address this trade-off, many extensible static checking tools (e.g., CodeQL [ 22], Sys [ 7], and joern [ 76]) have been proposed. The key idea of these approaches is to utilize the domain knowledge of analysts about the target application. In particular, analysts can conduct static analysis with precise and application-specific rules on top of these tools, rather than relying on generic approximations alone. Furthermore, these tools often provide a convenient method of writing application-specific rules, which are called queries. They also enable application-aware static analysis, such as syntactic matching, data-flow analysis, and symbolic analysis based on a given query, as shown in Table 1. While these tools have achieved considerable success in source code analysis, they are inefficient in analyzing binaries. Except for joern, most extensible static checking tools, such as Sys and CodeQL, can only be successfully applied to source code. In contrast, joern supports binary analysis on decompiled code using a fuzzy C parser; however, this tool lacks support for symbolic analysis, which is required for complex analyses. Moreover, these tools often require complicated rules to be scalable analysis. For instance, Sys requires more than 300 lines of Haskell code for heap out- of-bound analysis. In addition to these source code analysis tools, there exist binary symbolic analysis tools such as angr [55] and BAP [ 9]. However, they have different design philosophies that aim at supporting low-level features and extensibility for developing other tools. They rely on an intermediate representation (IR) to manage complexity and support multiple architectures. Unfortunately, this requires analysts to understand the IR generated from binary code, even if analysts are mostly working with decompiled code. In this paper, we propose a precise and scalable symbolic analysis with intuitive queries for binaries, which is called fearless symbolic analysis . We implement this in QUERY X, which allows analysts to write queries on decompiled code. This is motivated by that decompiled code is friendlier to binary analysts than IR. And QUERY X supports callbacks 3279 DOI 10.1109/SP46215.2023.00064 More analyst-friendly More analyzer-friendly __int64 __fastcall isPalindrome(const char *a1) { int i; // [rsp+18h] [rbp-8h] int v3; // [rsp+1Ch] [rbp-4h] v3 = strlen(a1); for ( i = 0; i < v3 / 2; ++i ) { if ( a1[i] != a1[v3 - i - 1] ) return 0LL; } return 1LL; } (a) Decompiled code. isPalindrome: push rbp mov rbp, rsp sub rsp, 0x20 mov qword ptr [rbp-0x18], rdi mov rax, qword ptr [rbp-0x18] mov rdi, rax call strlen mov dword ptr [rbp-0x4], eax mov dword ptr [rbp-0x8], 0x0 ; + 37 more instructions (b) Assembly code. 00 | ------ IMark(0x40069a, 1, 0) ------ 01 | t0 = GET:I64(rbp) 02 | t10 = GET:I64(rsp) 03 | t9 = Sub64(t10,0x0000000000000008) 04 | PUT(rsp) = t9 05 | STle(t9) = t0 06 | ------ IMark(0x40069b, 3, 0) ------ 07 | PUT(rbp) = t9 08 | ------ IMark(0x40069e, 4, 0) ------ 09 | t2 = Sub64(t9,0x0000000000000020) ; + 285 more instructions (c) Intermediate representation. Figure 1: Different representations of a binary code that checks palindrome: decompiled code, assembly code, and intermediate representation (IR) from angr [56]. Decompiled code is more analyst-friendly than the others whereas IR is the most analyzer-friendly. on abstract syntax tree (AST) nodes of the decompiled code. These callbacks will be invoked after the corresponding AST nodes are evaluated during symbolic execution. Using these callbacks, analysts can capture or validate the desired prop- erties. Notably, QUERY X supports JavaScript-like queries, which are expected to reduce the learning curve of QUERY X. Although the high-level idea is intuitive, achieving the fearless symbolic analysis is nontrivial. For precise analysis, QUERY X considers the unique aspects of the decompiled code generated from a binary code. In particular, decompiled code differs from an ordinary C program in the presence of binary-dependent code (e.g., offset-based memory ac- cess), binary-embedded data (e.g., global variables), and decompiler-induced code (e.g., LOBYTE macro in IDA Hex- Rays [28]). To address this difference, we devise DNR, a new IR lifted from decompiled code while preserving the semantics of the binary code. By considering the semantics of binary code in DNR , QUERY X can perform binary-aware and precise symbolic analysis. In addition, DNR includes which AST node is lifted to it. Therefore, this allows analysts to write queries based on decompiled code instead of DNR . For scalable symbolic analysis, QUERY X performs under- constrained symbolic execution, which starts the analysis from function entries as UC-KLEE [ 52]; however, this is insufficient for large binaries. QUERY X thus utilizes its callback-based analysis where callbacks ensure flexible anal- ysis and inherently represent interesting nodes for analysis. Thus, QUERY X can filter out uninteresting paths that do not include callbacks. In addition, QUERY X supports ordering dependencies between callbacks. These dependencies enable QUERY X to prune paths automatically without any com- plicated queries. This imparts scalability to QUERY X for supporting real-world binaries, such as the Windows kernel. We applied QUERY X to COTS binaries: the Windows kernel, the Windows system service, and an automotive binary. And we wrote four queries for four types of bugs: heap overflow, kernel memory address disclosure, path traversal, and out-of-bound access. As a result, we found 15 previously unknown bugs including 10 CVEs, and earned $180,000 from the Microsoft bug bounty program. We also present that QUERY X beat existing extensible static checking tools in terms of query writing and bug findings. And we experimentally show the effectiveness of our path pruning. In summary, our main contributions are as follows: • We propose fearless symbolic analysis, a precise and scalable symbolic analysis with intuitive queries for binaries based on decompiled code, and implemented it in Q UERY X. • We present binary-aware analysis to precisely analyze decompiled code while preserving the semantics of the unique aspects of decompiled code. • We effectively improve the scalability of symbolic anal- ysis with intuitive queries that specify callbacks on AST nodes of decompiled code and ordering dependencies between them. • By evaluating QUERY X on the Windows kernel, the Windows system service, and an automotive binary, we found 15 previously unknown bugs including 10 CVEs, and earned $180,000 from Microsoft as a bug bounty. 2. Goals and Approaches This section discusses the goals and approaches for accomplishing the proposed fearless symbolic analysis. 2.1. Analyst-friendly Query As previously mentioned, static analysis is powerful but inherently unscalable. To overcome this issue, extensible static checking tools rely on human capabilities. Analysts manually create queries that guide static analysis to avoid uninteresting paths and suppress false alarms. However, this approach is not straightforward when handling binaries because of inconsistent representations by analysts and tools. Unlike source-based analysis tools, binary-based analysis tools often use IR. IR avoids the complexity of machine code (e.g., several instruction types and side effects), sim- plifies the analysis, and provides multi-architecture support. Unfortunately, IR is not analyst-friendly (see, Figure 1), and analysts always prefer to read decompiled code, which contains more analyst-friendly information, such as types and high-level control flows. Because of this inconsistency, when analysts write IR-based queries, they must encode their understandings in decompiled code into IR, thereby complicating their query writing. 23280"
+      },
+      {
+        "source": "selected",
+        "value": "Extensible static checking tools, such as Sys and Cod-eQL, have successfully discovered bugs in source code. These tools allow analysts to write application-specific rules, referred to as queries. These queries can leverage the domain knowledge of analysts, thereby making the analysis more accurate and scalable. However, the majority of these tools are inapplicable to binary-only analysis. One exception, joern, translates a binary code into decompiled code and feeds the decompiled code into an ordinary C code analyzer. However, this approach is not sufficiently precise for symbolic analysis, as it overlooks the unique characteristics of decompiled code. While binary analysis platforms, such as angr, support symbolic analysis, analysts must understand their intermediate representations (IRs) although they are mostly working with decompiled code. In this paper, we propose a precise and scalable symbolic analysis called fearless symbolic analysis that uses intuitive queries for binary code and implement this in QUERYX. To make the query intuitive, QUERYX enables analysts to write queries on top of decompiled code instead of IRs. In particular, QUERYX supports callbacks on decompiled code, using which analysts can control symbolic analysis to discover bugs in the code. For precise analysis, we lift decompiled code into our IR named DNR and perform symbolic analysis on DNR while considering the characteristics of the decompiled code. Notably, DNR is only used internally such that it allows analysts to write queries regardless of using DNR. For scalability, QUERYX automatically reduces control-flow graphs using callbacks and ordering dependencies between callbacks that are specified in the queries. We applied QUERYX to the Windows kernel, the Windows system service, and an automotive binary. As a result, we found 15 unique bugs including 10 CVEs and earned $180,000 from the Microsoft bug bounty program. 3279 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hyungseok Han",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jeongoh Kyea",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yonghwi Jin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Jinoh Kang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Brian Pak",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Insu Yun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Theori Inc",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hyungseok Han",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jeongoh Kyea",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yonghwi Jin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jinoh Kang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Brian Pak",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Insu Yun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 8,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "QueryX: Symbolic Query on Decompiled Code for Finding Bugs in COTS Binaries",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "HyungSeok Han",
+          "affiliations": [
+            "Theori Inc., KAIST"
+          ]
+        },
+        {
+          "name": "JeongOh Kyea",
+          "affiliations": [
+            "Theori Inc."
+          ]
+        },
+        {
+          "name": "Yonghwi Jin",
+          "affiliations": [
+            "Theori Inc."
+          ]
+        },
+        {
+          "name": "Jinoh Kang",
+          "affiliations": [
+            "Theori Inc."
+          ]
+        },
+        {
+          "name": "Brian Pak",
+          "affiliations": [
+            "Theori Inc."
+          ]
+        },
+        {
+          "name": "Insu Yun",
+          "affiliations": [
+            "KAIST"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 6,
+      "proposed_count": 6,
+      "retained_count": 5,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

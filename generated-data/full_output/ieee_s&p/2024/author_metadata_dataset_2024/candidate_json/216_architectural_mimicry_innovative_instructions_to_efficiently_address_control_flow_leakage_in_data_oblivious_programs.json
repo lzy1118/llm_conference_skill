@@ -1,0 +1,271 @@
+{
+  "paper_id": "216_architectural_mimicry_innovative_instructions_to_efficiently_address_control_flow_leakage_in_data_oblivious_programs",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Architectural Mimicry: Innovative Instructions to Efficiently Address Control-Flow Leakage in Data-Oblivious Programs"
+      },
+      {
+        "source": "selected",
+        "value": "Architectural Mimicry: Innovative Instructions to Efficiently Address Control-Flow Leakage in Data-Oblivious Programs"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The control flow of a program can often be observed through side-channel attacks. Hence, when control flow depends on secrets, attackers can learn information about these secrets. Widely used software-based countermeasures ensure that attacker-observable aspects of the control flow do not depend on secrets, relying on techniques like dummy execution (for balancing code) or conditional execution (for linearizing code). In the current state-of-practice, the primitives to implement these techniques have to be found in an existing instruction set architecture (ISA) that was not designed a priori to provide them, leading to performance, security, and portability issues. To counter these issues, this paper proposes lightweight hardware extensions for supporting these techniques in a principled way. We propose (1) a novel hardware mechanism (mimic execution), that executes an instruction stream only for its attacker-observable effects, and suppresses (most) architectural effects, and (2) ISA support (called AMi, for Architectural Mimicry) and programming models to effectively use mimic execution to balance or linearize code. We show the feasibility and benefits of our proposal by implementing mimic execution and AMi for a 32-bit out-of-order RISC-V core that leaks control flow in multiple ways (via e.g., the branch predictor, instruction timings, and the data cache). Our experimental evaluation shows that the hardware cost is low (most importantly, no impact on the processor's critical path), and that AMi enables significant performance improvements. In particular, AMi reduces the overhead of state-of-the-art linearized code by 60% in our benchmarks. 3697 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The control flow of a program can often be observed through side-channel attacks. Hence, when control flow de- pends on secrets, attackers can learn information about these secrets. Widely used software-based countermeasures ensure that attacker-observable aspects of the control flow do not depend on secrets, relying on techniques like dummy execution (for balancing code) or conditional execution (for linearizing code). In the current state-of-practice, the primitives to imple- ment these techniques have to be found in an existing instruc- tion set architecture (ISA) that was not designed a priori to provide them, leading to performance, security, and portability issues. To counter these issues, this paper proposes lightweight hardware extensions for supporting these techniques in a principled way. We propose (1) a novel hardware mecha- nism ( mimic execution ), that executes an instruction stream only for its attacker-observable effects, and suppresses (most) architectural effects, and (2) ISA support (called AMi, for Architectural Mimicry) and programming models to effectively use mimic execution to balance or linearize code. We show the feasibility and benefits of our proposal by implementing mimic execution and AMi for a 32-bit out-of-order RISC-V core that leaks control flow in multiple ways (via e.g., the branch predictor, instruction timings, and the data cache). Our experimental evaluation shows that the hardware cost is low (most importantly, no impact on the processor's critical path), and that AMi enables significant performance improvements. In particular, AMi reduces the overhead of state-of-the-art linearized code by 60% in our benchmarks. 1. Introduction Control flow that depends on confidential information discloses (parts of) this information to an adversary that can observe the control flow via side channels. For instance, the outcome of a conditional branch might be inferred by mea- suring the execution time, one of many (micro)architectural timing measurements that expose control flow [ 1]. Counter- ing this leakage in software typically relies on two classes of countermeasures. First, code balancing balances the two sides of a secret-dependent branch to equalize their observ- able behavior [2]-[6]. If the two different execution paths of a conditional branch exhibit the same observable behavior, an attacker can no longer distinguish them. Unfortunately, for most types of computing platforms this approach is insecure, but, when applicable, it can have performance benefits compared to other approaches [ 5], [ 6]. Second, linearization [7]-[10] ensures that control flow does not depend on program secrets at all. Balancing and linearization are important ingredients in state-of-practice software-based countermeasures (such as constant-time programming [11]), as well as in recent re- search prototypes [5]-[7], [10], [12]. They are based on tech- niques like dummy execution (i.e., using architectural no-ops with an appropriate side-channel footprint) and conditional execution (e.g., conditional moves). In the current state-of- practice, the primitives to implement these techniques have to be found in an existing instruction set architecture (ISA) that was not designed a priori to provide them, leading to performance, security, and portability issues. Our proposal. In contrast to the above, this paper inves- tigates how to offer hardware support and a small ISA extension to support control-flow balancing and linearization in a principled way instead. We propose a novel hardware mechanism, called mimic execution . Mimic execution can be thought of as a mode in which the processor executes instructions only for their attacker-observable effects, and suppresses (most) architectural effects: every instruction be- comes a no-op, but a side-channel attacker cannot see the difference with a normal execution of the instruction. Mimic execution is a powerful primitive, but using it correctly in software to obtain secure and correct code is non-trivial. We design and formally specify suitable ISA support (called AMi, for Architectural Mimicry) to activate and deactivate mimic execution, and we show how to use it to develop efficient and portable side-channel resistant code. We provide two implementations; for a pipelined in-order, and an out-of-order 32-bit RISC-V processor. We show that AMi enables significant performance improvements for hardened code, while only incurring low hardware costs. Contributions. In summary, we contribute the following: • Mimic execution , a novel and lightweight hardware primitive for imitating computational behavior. • Architectural Mimicry (AMi) , a set of innovative in- structions to control mimic execution in an efficient and portable way. • Programming models showing how to balance and linearize control flow correctly and securely with AMi. • A simple formal ISA model of AMi and a formal characterization of AMi programming models. 3697 DOI 10.1109/SP54263.2024.00047 • An implementation of AMi for RISC-V . • An experimental evaluation showing that the hardware cost is low, and that AMi enables significant perfor- mance improvements for hardened code. We evaluate the benefits of AMi when manually writ- ing hardened code, in line with the state-of-practice for writing constant-time cryptographic code. But we see very interesting avenues for future work to build compilers or binary rewriters that automatically (and provably) harden code against side channels by relying on AMi. To support and enable such future work, and to improve reproducibility of our results, our RISC-V implementation of AMi, as well as the full set of benchmarks and experiments are open sourced at https://gitlab.com/hanswinderix/ami. 2. Problem Statement Prior work addressing the problem of control-flow leak- age via software-based side channels can broadly be cat- egorized into two classes with the common goal that the trace of observable side effects produced by a program's execution does not depend on secrets. The first approach is based on the insight that if the code is carefully balanced in such a way that all possible targets of a single control-flow transfer induce exactly the same observable behavior, then executing the code does not reveal via side-effect observa- tions which target has been executed [2]-[6]. Unfortunately, this balanced form does not prevent control-flow leakage in general as it is not possible on all platforms to balance out all side effects of a control-flow transfer. For instance, to predict the most likely target of a control flow transfer, modern CPUs are equipped with a branch predictor unit, which maintains a history of recent transfers. The predictor state encodes in a direct manner which target has been selected, and consequently, balanced control flow cannot prevent this shared microarchitectural state from being ex- posed. For this reason, the second approach avoids secret- dependent control flow altogether and linearizes the control flow using different techniques [7]-[10], [12]-[14]. Control flow in linearized form always executes the instructions from all possible targets in a fixed order, but makes sure that architectural state is only modified by the instructions whose associated path condition holds. The linearized form has been adopted by both the security and the architecture community as the de facto standard to prevent applications from leaking confidential data via the control flow. Avoiding secret-dependent branches is a key principle of the constant- time programming discipline [11], which is broadly adhered to for writing security-critical code. Performance. Both the balanced and the linearized form have in common that they rely on clever software tricks to achieve some form of dummy execution. The balanced form relies on the availability of dummy instructions (i.e., no-ops) to compensate for side-effects induced by instructions in alternate execution paths. The linearized form relies on the ability to neutralize the architectural effects of instructions that should not be executed according to program semantics. Implementing these forms of dummy execution incurs a significant performance overhead due to the use of extra instructions and additional registers. Security. More than 25 years after Kocher introduced the concept of timing attacks [15], it is well understood how to systematically harden applications to prevent control flow from exposing secrets: the timing behavior and the hardware resource utilization due to a control-flow transfer must not depend on confidential data. Unfortunately, despite this fun- damental understanding, vulnerabilities of this kind are be- ing found on a regular basis, even in high-profile code [16]- [18]. This is partially due to the common practice of hard- ening applications at the level of the source code [19], which is typically written in a high-level programming language. This enables so-called cross-layer vulnerabilities [20], [21], when lower layers such as the compiler or the underlying hardware are not made aware of the security semantics of the application. Portability. It is determined by the underlying hardware implementation what observable side effects are exposed. Since application hardening is typically done at high ab- straction levels [19], a comprehensive defense is needed that is effective for all target platforms, ranging from low-cost microcontrollers to high-end servers. Current practice adopts a worst-case adversary model and assumes that the control flow leaks in all situations and on all hardware. This is a se- cure assumption, but overly conservative. More importantly, it tightly couples the security policy to the source code and leaves no room to adopt more relaxed policies on simpler architectures that leak less information, which could have performance benefits. Furthermore, decoupling the security policy from the source code also improves other software qualities such as readability and maintainability. 3. Scope We argue that there are critical concerns with current countermeasures against control-flow leakage that rely on primitives not designed to solve this problem. We propose a novel approach and, additionally, we show that significant performance improvements for constant-time code are pos- sible (with stronger and future-proof security guarantees). The purpose of this work is to furnish developers with a new, efficient enforcement mechanism to prevent the dis- closure of sensitive information through a program's control flow. A developer or a secure compiler [22], [23], such as CompCert [24], FaCT [25], or Jasmin [26], can leverage this mechanism to efficiently balance or linearize secret- dependent control flow in a principled way (i.e., based on a hardware-software contract for security). Our work can be seen as complementary to OISA [27], which offers a security contract in the ISA expressing information leakage through unsafe instructions, but it does not directly address the control-flow leakage problem. It is not the purpose of this work to propose new tech- niques that deal with other sources of information leakage 3698"
+      },
+      {
+        "source": "selected",
+        "value": "The control flow of a program can often be observed through side-channel attacks. Hence, when control flow depends on secrets, attackers can learn information about these secrets. Widely used software-based countermeasures ensure that attacker-observable aspects of the control flow do not depend on secrets, relying on techniques like dummy execution (for balancing code) or conditional execution (for linearizing code). In the current state-of-practice, the primitives to implement these techniques have to be found in an existing instruction set architecture (ISA) that was not designed a priori to provide them, leading to performance, security, and portability issues. To counter these issues, this paper proposes lightweight hardware extensions for supporting these techniques in a principled way. We propose (1) a novel hardware mechanism (mimic execution), that executes an instruction stream only for its attacker-observable effects, and suppresses (most) architectural effects, and (2) ISA support (called AMi, for Architectural Mimicry) and programming models to effectively use mimic execution to balance or linearize code. We show the feasibility and benefits of our proposal by implementing mimic execution and AMi for a 32-bit out-of-order RISC-V core that leaks control flow in multiple ways (via e.g., the branch predictor, instruction timings, and the data cache). Our experimental evaluation shows that the hardware cost is low (most importantly, no impact on the processor's critical path), and that AMi enables significant performance improvements. In particular, AMi reduces the overhead of state-of-the-art linearized code by 60% in our benchmarks. 3697 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hans Winderix",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "imec-DistriNet"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "K ULeuven",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "imec-DistriNet"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Marton Bognar",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "imec-DistriNet"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Job Noorman",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "imec-DistriNet"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Lesly-Ann Daniel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "imec-DistriNet"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Frank Piessens",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "imec-DistriNet"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hans Winderix",
+          "email": "",
+          "affiliations": [
+            "imec-DistriNet KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Marton Bognar",
+          "email": "",
+          "affiliations": [
+            "imec-DistriNet KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Job Noorman",
+          "email": "",
+          "affiliations": [
+            "imec-DistriNet KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Lesly-Ann Daniel",
+          "email": "",
+          "affiliations": [
+            "imec-DistriNet KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Frank Piessens",
+          "email": "",
+          "affiliations": [
+            "imec-DistriNet KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 116,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Hans Winderix",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Marton Bognar",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Job Noorman",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Lesly-Ann Daniel",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Frank Piessens",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Architectural Mimicry: Innovative Instructions to Efficiently Address Control-Flow Leakage in Data-Oblivious Programs",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hans Winderix",
+          "affiliations": [
+            "imec-DistriNet, KU Leuven"
+          ]
+        },
+        {
+          "name": "Marton Bognar",
+          "affiliations": [
+            "imec-DistriNet, KU Leuven"
+          ]
+        },
+        {
+          "name": "Job Noorman",
+          "affiliations": [
+            "imec-DistriNet, KU Leuven"
+          ]
+        },
+        {
+          "name": "Lesly-Ann Daniel",
+          "affiliations": [
+            "imec-DistriNet, KU Leuven"
+          ]
+        },
+        {
+          "name": "Frank Piessens",
+          "affiliations": [
+            "imec-DistriNet, KU Leuven"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

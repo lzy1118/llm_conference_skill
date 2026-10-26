@@ -1,0 +1,298 @@
+{
+  "paper_id": "114_dynpre_protocol_reverse_engineering_via_dynamic_inference",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DYNPRE: Protocol Reverse Engineering via Dynamic Inference"
+      },
+      {
+        "source": "selected",
+        "value": "DYNPRE: Protocol Reverse Engineering via Dynamic Inference"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Automatic protocol reverse engineering is essential for various security applications. While many existing techniques achieve this task by analyzing static network traces, they face increasing challenges due to their dependence on high-quality samples. This paper introduces DYNPRE, a protocol reverse engineering tool that exploits the interactive capabilities of protocol servers to obtain more semantic information and additional traffic for dynamic inference. DYNPRE first processes the initial input network traces and learns the rules for interacting with the server in different contexts based on session-specific identifier detection and adaptive message rewriting. It then applies exploratory request crafting to obtain semantic information and supplementary samples and performs real-time analysis. Our evaluation on 12 widely used protocols shows that DYNPRE identifies fields with a perfection score of 0.50 and infers message types with a V-measure of 0.94, significantly outperforming state-of-the-art methods like Netzob, Netplier, FieldHunter, BinaryInferno, and Nemesys, which achieve average perfection and V-measure scores of (0.15, 0.72), (0.16, 0.73), (0.15, 0.83), (0.15,-), and (0.31,-), respectively. Furthermore, case studies on unknown protocols highlight the effectiveness of DYNPRE in real-world applications."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Automatic protocol reverse engineering is essential for various security applications. While many existing techniques achieve this task by analyzing static network traces, they face increasing challenges due to their dependence on high-quality samples. This paper introduces D YNPRE, a protocol reverse en- gineering tool that exploits the interactive capabilities of protocol servers to obtain more semantic information and additional traffic for dynamic inference. D YNPRE first processes the initial input network traces and learns the rules for interacting with the server in different contexts based on session-specific identifier detection and adaptive message rewriting. It then applies exploratory re- quest crafting to obtain semantic information and supplementary samples and performs real-time analysis. Our evaluation on 12 widely used protocols shows that D YNPRE identifies fields with a perfection score of 0.50 and infers message types with a V-measure of 0.94, significantly outperforming state-of-the-art methods like Netzob, Netplier, FieldHunter, BinaryInferno, and Nemesys, which achieve average perfection and V-measure scores of (0.15, 0.72), (0.16, 0.73), (0.15, 0.83), (0.15, -), and (0.31, -), respectively. Furthermore, case studies on unknown protocols highlight the effectiveness of D YNPRE in real-world applications. I. I NTRODUCTION Protocol reverse engineering facilitates the understanding of unknown protocol specifications and thus serves as the basis for various security analyses, including fuzzing [14], [20], model checking [18], [16], [28], automatic exploit gen- eration [35], [2], and code generation [54]. For example, recovering the protocol format and state machine enables the generation of legitimate packet sequences for protocol fuzzing and forms the foundation for model checking. Existing protocol reverse engineering methods can be di- vided into two main categories: program analysis based and network trace based. Program analysis based approaches em- ploy techniques such as taint analysis to dynamically monitor the internal execution of a protocol application and track the processing of received messages [7], [11], [27]. These methods can achieve high accuracy due to the availability of rich runtime semantics. However, they typically require access to the source code or binary of the protocol implementation, B Yu Jiang is the corresponding author. which is not always available. For instance, analyzing pro- tocols in embedded systems presents challenges in acquiring and emulating firmware. Network trace based approaches, on the other hand, take static network traces as input and perform statistical analysis [53], [6], [9], [12], [3]. They use techniques such as message sequence alignment to mine the format characteristics messages exhibit in the traces. While easy to use, these approaches often suffer from low accuracy due to the limited information available in the network traces. First, their effectiveness relies on high-quality network traces that contain diverse protocol messages and cover most protocol features. Providing such traces requires protocol knowledge and is not always feasible due to the distributional biases present in real- world network messages. Second, they frequently encounter difficulties in capturing field semantics not manifested in value changes across messages, which is a blind spot for their employed statistical analysis. This paper presents DYNPRE, a network trace based proto- col reverse engineering tool that introduces dynamic inference for more accurate analysis. Unlike traditional methods that require high-quality static network traces for comprehensive statistical analysis, DYNPRE establishes active communication with the server using carefully constructed probe messages to extract insightful information and acquire additional samples as needed, making it well-suited for input traces with limited information. To achieve this approach, we need to address two challenges. (i) The first challenge is how to interact with the server in the absence of protocol specifications. Since the server is a stateful system that requires well-formed messages in a specific sequence, randomly constructing requests is ineffective. (ii) The second challenge is to design a strategy that is applicable to various protocols while being able to induce diverse server behaviors to facilitate protocol understanding. For the first challenge, we leverage the initial input traces - records of actual client-server conversations - as a reference. In some cases, simply acting as a client and replicating requests from the input traces is sufficient for proper interaction. How- ever, this approach falls short with protocols that use session- specific identifiers such as cookies. The server dynamically assigns these identifiers to keep track of contextual information that may vary from session to session. Using outdated values from previous dialogues may cause the server to reject the request. It is therefore crucial to ensure the validity of these identifiers during live sessions. To this end, we take a two-stage approach. First, we leverage heuristics to detect all locations where session-specific identifiers occur and determine how subsequent requests reference these values, i.e., their constraint relationships. Based on these inferred rules, we then implement Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.24083 www.ndss-symposium.org on-the-fly message rewriting to dynamically detect and extract these identifiers from server responses and adaptively update the corresponding values in requests during the interaction. To address the second challenge, we perform modifications to the original requests in the initial traces and observe the server's responses, which serve two purposes. (i) First, these responses reveal the server's interpretation of the requests it receives, providing valuable feedback for request analysis. Since different fields usually exhibit distinct semantics, we approach field identification to identify semantically analogous successive message bytes. To achieve this, D YNPRE modifies each message byte individually and scrutinizes the correspond- ing server response, the content of which mirrors the internal execution results of the modified message and can, therefore, serve as a semantic indicator of the byte for further field recovery. Meanwhile, to improve the accuracy, we minimize noises stemming from random nonces in the responses and eliminate positional effects of different bytes by analyzing the value propagation under modification. Moreover, considering that the server's input space is tightly regulated by its state, we employ a preprocess to drive the server into the state of accepting the message M to be analyzed, thus maximizing the exposure of insightful feedback regarding M's variants. We achieve this by exploiting the input network trace and the online message rewriting established in the first stage. (ii) Second, these responses can enrich the samples available for statistical analysis. Unlike the traditional passive network trace acquisition through manual operation on protocol par- ties, which is restricted by protocol specification and runtime context, our proposed active probing approach offers more flexibility. It can cover cases not commonly found in standard conversations, thus helping to uncover hidden nuances for a deeper understanding of the underlying protocol structure. Finally, we introduce a refinement process to further improve the accuracy of the inferred protocol format by synthesizing the results of dynamic inference and statistical analysis. During this process, we also infer the type for each message, facili- tating downstream analysis such as state machine inference. We implement DYNPRE and evaluate it against five state- of-the-art protocol reverse engineering tools on 12 widely used public protocols. The experimental results demonstrate that D YNPRE outperforms prior approaches in both field identification and message type inference. Specifically, D YN- PRE identifies fields with a perfection score of 0.50 and infers message types with a V-measure of 0.94, whereas Netzob [6], Netplier [53], FieldHunter [3], BinaryInferno [9], and Nemesys [22] achieve on average (0.15, 0.72), (0.16, 0.73), (0.15, 0.83), (0.15, -), and (0.31, -), respectively. Even when these tools are given datasets enhanced with dynamic interaction, D YNPRE is still superior. In addition, we apply DYNPRE to several unknown protocols employed in real IoT devices to validate its generality. The results show that the messages generated based on the format inferred by D YNPRE effectively trigger behaviors not observed in the initial network traces, demonstrating its effectiveness in practical applications. In summary, our main contributions are as follows: • We propose the idea of dynamic inference, which ex- ploits the interactive capabilities of the server to obtain additional traffic for protocol reverse engineering. • We design the adaptive message rewriting to allow proper interaction with the server and propose an intelligent request crafting method to obtain semantic information and supplementary samples for analysis. • We implement D YNPRE 1 and evaluate it on both public and unknown protocols. The results show that DYNPRE outperforms the state-of-the-art and proves effective in real-world applications. II. M OTIVATION We use the SMB2 protocol [29] to illustrate the limitations of traditional network trace based approaches and our work's basic idea and challenges. An example SMB2 message, which typically consists of three main parts as indicated by the different background colors, is shown in Figure 1. f edcba9876543210 0000000000000040424D53FE6A0000000000h: 000000030000000000000000000100030010h: DB9954550000000000000000000000000020h: 000000000000000000000000000000000030h: 005C005C0022004800000009000000000040h: 0030002E00370031002E0032003700310050h: 0024004300500049005C0033002E0060h: Type Length ProtocolID StructureSizeFlagsBlobOffsetBlobLength CommandCredits Requested Flags ChainOffset MessageID ProcessID TreeID SessionID Signature Tree: \\\\172.17.0.3\\IPC$ HeaderLengthCredits Charge Channel SequenceReserved SMB2 HeaderNetBIOS Session SMB2 DataSession-Specific Fig. 1: An example SMB2 request message Static Network Trace Analysis . Traditional approaches based on static analysis of network traces have two problems: First, the optimal performance of these approaches usually necessitates high-quality network traces with various proto- col messages and extensive feature coverage. For instance, Netzob's partitioning of this message's first four bytes as |0x0000|0x006A| misplaces the highest byte of the Length field into the Type field. This is because the value of the Length field in all input messages is always less than 0x010000. As a result, M [0..1] (where M [a] denotes the a-th byte and M [a..b] indicates the bytes from indexa tob) remains 0x0000, while M [2..3] varies. This difference in distribution causes Netzob to erroneously treat M [0..1] as a constant field and M [2..3] as a variable field. Such misidentification of field boundaries can negatively impact protocol comprehension and downstream tasks such as protocol testing and traffic auditing. For instance, misinterpreting the highest byte of a length field as a constant could compromise fuzzing since the length field typically affects the memory behavior of a program. Analogous misidentification also occurs in fields such as the HeaderLenghth and CreditCharge fields. This problem can be mitigated by increasing message diversity, i.e., providing messages with various values of these fields. However, this process presents significant challenges as it necessitates man- ual operation in controlled environments based on protocol knowledge and is not always feasible due to the uneven distribution of messages (e.g., some message types are rarely"
+      },
+      {
+        "source": "selected",
+        "value": "Automatic protocol reverse engineering is essential for various security applications. While many existing techniques achieve this task by analyzing static network traces, they face increasing challenges due to their dependence on high-quality samples. This paper introduces DYNPRE, a protocol reverse engineering tool that exploits the interactive capabilities of protocol servers to obtain more semantic information and additional traffic for dynamic inference. DYNPRE first processes the initial input network traces and learns the rules for interacting with the server in different contexts based on session-specific identifier detection and adaptive message rewriting. It then applies exploratory request crafting to obtain semantic information and supplementary samples and performs real-time analysis. Our evaluation on 12 widely used protocols shows that DYNPRE identifies fields with a perfection score of 0.50 and infers message types with a V-measure of 0.94, significantly outperforming state-of-the-art methods like Netzob, Netplier, FieldHunter, BinaryInferno, and Nemesys, which achieve average perfection and V-measure scores of (0.15, 0.72), (0.16, 0.73), (0.15, 0.83), (0.15,-), and (0.31,-), respectively. Furthermore, case studies on unknown protocols highlight the effectiveness of DYNPRE in real-world applications."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zhengxiong Luo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Kai Liang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science and Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yanyang Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Feifan Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Junze Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Heyuan Shi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Electronic Information, Central South University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zhengxiong Luo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Kai Liang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science and Engineering"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yanyang Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Feifan Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Junze Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Heyuan Shi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Electronic Information, Central South University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KLISS, BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 109,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DynPRE: Protocol Reverse Engineering via Dynamic Inference",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/dynpre-protocol-reverse-engineering-via-dynamic-inference/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zhengxiong Luo",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Kai Liang",
+          "affiliations": [
+            "Central South University"
+          ]
+        },
+        {
+          "name": "Yanyang Zhao",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Feifan Wu",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Junze Yu",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Heyuan Shi",
+          "affiliations": [
+            "Central South University"
+          ]
+        },
+        {
+          "name": "Yu Jiang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

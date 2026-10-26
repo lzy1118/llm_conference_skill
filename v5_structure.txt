@@ -1,0 +1,338 @@
+PARAGRAPHS
+0: 基于Skill的学术会议论文 元数据自动化处理方法研究
+1: 摘要：学术会议论文元数据分布于会议官网、文献数据库、出版平台和论文全文，不同来源在数据格式、字段内容和发布方式上存在差异。机构缩写、名称变体、跨国分支、联合实验室和复合署名等情况还会造成机构实体拆分或错误归并，影响国家分布、机构排名和合作网络等统计结果。本文围绕学术会议论文元数据处理，构建一套基于Skill的自动化流程，依次完成论文数据采集、记录清洗、PDF解析、作者-机构映射、机构名称规范化、国家归属判定和标准化结果生成。
+2: 流程首先汇总会议论文清单、出版页面和PDF文件，完成论文记录清洗及数据对齐；随后使用GROBID提取题名、作者、机构等信息，并结合PDF版面特征和网页DOM结构处理上标编号、作者信息块、多列排版、共享机构和符号脚注等署名形式。在机构规范化阶段，利用本地机构规则库、AffilGood和ROR识别机构主体，归并名称变体，补充国家信息。各处理环节以Skill形式组织执行说明、处理程序和规则资源，实现从数据采集到统计输出的自动衔接。
+3: 本文以ASIACRYPT、CRYPTO、EUROCRYPT、NDSS、CCS、IEEE S&P和USENIX Security七个会议为案例进行实验，覆盖2020—2025年的7079篇论文，共形成35680条作者-机构关系记录。基于标准化数据，本文进一步分析论文规模、国家分布、机构分布和合作网络，为学术会议论文计量分析提供结构统一的数据基础。
+5: 关键词：学术论文；论文元数据；机构名称规范化；Skill；PDF解析
+6: A Skill-Based Method for Automated Processing of Academic Conference Paper Metadata
+7: Abstract:
+8: Keywords:
+11: 引言
+12: 学术会议及其论文集是前沿成果传播和学术交流的重要载体[1]。基于会议论文开展国家贡献、机构分布、合作关系和研究主题分析，可以反映特定领域的知识生产格局及科研合作特征[2-3]。会议论文元数据通常分布于会议官网、出版平台、文献数据库和论文全文，不同来源在页面结构、字段设置、访问方式和数据完整程度上存在差异[4-5]。同一篇论文还可能出现标题格式不同、作者顺序不一致、机构字段缺失或作者-机构对应关系不清等情况。因此，会议论文计量分析需要先完成论文记录采集、信息解析和机构名称规范化[6-7]。
+13: 现有文献数据库、开放学术平台和PDF解析工具已为论文元数据获取提供了基础[4-5,8]，机构实体链接和计量分析工具也逐渐成熟[2-3,6,9]。然而，单一数据源通常难以完整覆盖特定会议，PDF首页的复杂版式又会影响作者-机构关系识别；机构规范化工具则多以已经提取的署名字符串为输入，较少涉及前置的数据获取和关系重建。现有方法多服务于单个处理环节，缺少面向会议论文的连续处理方式。
+14: 基于此，本文构建了一种基于Skill的学术会议论文元数据自动化处理框架。该框架以会议官网、文献数据库、出版平台和论文PDF为主要数据来源，将论文记录获取、PDF信息解析、作者—机构关系识别和机构名称规范化纳入统一处理过程。各环节分别形成相应的Skill，对处理要求、方法步骤和规则依据进行归纳，使不同阶段的处理结果能够连续传递，并保持数据结构和字段含义的一致性。本文以2020—2025年七个安全与密码学会议的论文为案例，覆盖7079篇论文，形成35680条作者—机构关系记录。
+15: 本文的主要工作如下：
+16: （1）构建基于Skill的学术会议论文元数据自动化处理框架。该框架涵盖论文记录获取、PDF信息解析、作者—机构关系识别、机构名称规范化和统计数据生成等环节，并采用统一的数据结构保存和传递各阶段结果。
+17: （2）设计面向会议论文复杂署名形式的作者—机构信息处理流程。该流程结合GROBID解析结果和PDF版面信息，识别上标编号、作者信息块、多列排版、共享机构及符号脚注等形式，恢复作者、机构和作者角色之间的对应关系；在此基础上，结合本地机构规则库、AffilGood和ROR完成机构名称归并、机构标识映射及国家信息补充。
+18: （3）以2020—2025年七个安全与密码学会议为应用对象，形成包含论文、作者、机构、国家和作者角色等字段的标准化数据，并据此开展论文规模、国家分布、机构分布和合作网络分析，检验所构建框架对会议论文数据处理及后续统计分析的支持作用。
+19: 本文其余部分安排如下：第2章介绍论文数据抽取、作者机构规范化和学术数据处理自动化等相关研究；第3章说明总体架构、Skill模块设计及统计口径；第4章介绍实验范围和具体处理过程；第5章基于标准化数据开展应用分析；第6章总结全文。
+20: RQ1.如何构建面向会议论文元数据处理的领域Skill？
+21: RQ2.该Skill如何支持多来源、多版式会议论文的统一处理？
+22: RQ3.标准化元数据能够揭示怎样的国家、机构及合作特征？
+23: 相关工作
+24: 学术会议论文元数据处理涉及论文记录获取、PDF信息抽取、作者-机构关系识别、机构名称规范化和统计分析等环节。现有研究已经针对其中部分任务提出了较成熟的方法，也有学术数据平台将相关方法组成大规模处理流水线。本章从论文数据抽取、作者-机构规范化、会议论文统计分析和学术数据处理自动化四个方面进行梳理。
+25: 论文数据抽取
+26: 学术论文数据主要来自文献数据库、开放学术平台、出版页面、会议官网和论文全文。Web of Science、Scopus、OpenAlex和Semantic Scholar等可提供题名、作者、出版时间、来源和引用等结构化字段[4-5]；会议官网和出版平台还提供录用清单、分会场信息和PDF链接。由于各来源字段标准不一，需在抽取后完成字段清洗、记录匹配和重复数据合并。
+27: Kinney等[4]介绍了Semantic Scholar的数据处理流程。该平台从Crossref、arXiv、出版机构和网络资源等多个来源汇集论文记录，经格式转换、记录匹配和实体识别后构建学术图谱，并结合PDF解析结果补充论文结构和全文信息[10]。Lopez[8]提出的GROBID采用机器学习方法识别学术论文中的书目信息，可将PDF转换为TEI XML，并提取题名、作者、机构、摘要和参考文献等字段。由于PDF内部文本顺序、字符编码和页面布局存在差异，基于连续文本的解析仍可能出现阅读顺序错乱、姓名拆分和特殊字符缺失等问题。Tkaczyk等[11]提出的CERMINE从PDF中构建包含页面、文本区域、文本行和字符坐标的层次结构，并结合文本内容与几何特征识别题名、作者、机构、摘要和参考文献等信息。Boukhers等[12]将自然语言处理与视觉信息结合用于科学PDF元数据抽取，利用文本内容、页面坐标和版面特征辅助复杂模板中的字段定位。
+28: 作者-机构规范化
+29: 作者-机构规范化包含两个环节：识别每位作者对应的机构，以及将机构署名映射为统一实体。前者通常依赖上标编号、符号标记或版面位置，若仅按照文本顺序处理，在多列排版、集中机构列表和一人多机构等情况下容易发生关系错位。
+30: 机构名称规范化旨在建立名称变体与规范实体之间的映射。Jonnalagadda和Topham[6]提出的NEMO系统从PubMed作者署名字符串中提取机构、城市和国家等信息，并通过规则、词典和聚类完成机构名称归并，较早将署名信息抽取与机构规范化组成连续流程。国内研究中，贾君枝等[13]结合编辑距离、K-means和TF-IDF词权重对科研机构名称进行二次聚类；杨昭和任娟[14]利用名称相似度、共现关系和机构特征构建中文文献机构名称归一化方法。Backes等[15]进一步研究了机构署名与不同层级组织实体之间的对应关系，并构建了层次化机构解析框架、基线方法和实验数据集。Ancona等[16]综合采用字符串预处理、相似度计算及人工辅助规则识别同一机构的名称变体，并通过欧洲框架计划数据分析机构名称消歧对合作网络的影响。
+31: 近年的机构规范化研究逐渐转向以ROR等开放机构注册库为参照的实体链接。Duran-Silva等[9]提出的AffilGood将机构名称消歧划分为署名片段识别、命名实体识别和实体链接三个任务，重点处理多语言机构署名和自动抽取产生的噪声，并使用ROR标识构建实体链接数据集。Muñoz-Jordán等[17]提出3SA方法，先根据地理位置和机构类型筛选候选机构，再利用编辑距离完成机构实体链接，从而减少与完整机构库逐一比较的计算开销。Kallipoliti等[18]提出AffRo，通过机构署名解析和消歧处理，将包含多个机构或附加信息的复杂署名映射至标准机构标识。
+32: 会议论文统计分析
+33: 会议论文统计分析通常关注论文数量及其年度变化、国家与机构分布、作者构成和科研合作等内容。根据论文中的机构共现和国家共现关系，还可构建不同层级的科研合作网络。VOSviewer和bibliometrix等工具已被广泛用于合作网络、共被引网络、关键词共现和主题演化等分析任务[2-3]。
+34: 机构名称的处理质量会直接影响统计结果。同一机构的不同名称若未被归并，其论文产出和合作关系可能分散到多个机构实体；不同机构被错误合并，则可能改变机构发文量、国家归属及合作网络结构。Donner等[7]比较了不同机构消歧系统生成的机构计量指标，发现机构归属结果的差异会影响论文产出、科研合作和引用等指标。Ancona等[16]针对欧洲框架计划项目参与机构开展名称消歧，并比较原始数据、规范化数据和EUPRO基准数据形成的合作网络。结果表明，机构名称变体的归并能够提高合作网络与基准数据的一致性。
+35: 学术数据处理自动化
+36: 学术数据处理自动化主要包括面向大规模学术资源建设的数据流水线，以及面向通用任务执行的工作流系统。Semantic Scholar、OpenAIRE Research Graph和OpenAlex等平台已建立覆盖多源数据采集、格式转换、记录去重、实体识别和关系链接的处理流程[4-5,19]。Kinney等[4]介绍了Semantic Scholar从Crossref、arXiv、出版机构和网络资源中汇集数据，并经过论文匹配、PDF解析、作者识别和机构处理形成学术图谱的过程。OpenAIRE Research Graph将论文、数据、软件、作者、机构、基金项目和出版载体等对象组织为相互关联的实体[19]。Priem等[5]介绍的OpenAlex则以论文、作者、来源、机构和研究主题等实体组织开放学术数据，并建立实体之间的关联关系。
+37: 机构实体识别也逐渐成为学术数据流水线的组成环节。Kallipoliti等[18]提出的AffRo对复杂机构署名进行解析和实体匹配，将机构署名链接至规范机构标识。此类方法可以嵌入学术数据处理流水线，为机构层面的数据整合和关系构建提供标准化实体。
+38: 通用工作流系统主要负责多个程序之间的任务依赖和执行管理。Oinn等[20]提出的Taverna可连接不同的数据服务和分析程序，以工作流形式组织多个计算任务；Köster和Rahmann[21]提出的Snakemake通过输入、输出和规则声明任务之间的依赖关系，并根据文件变化确定需要重新执行的步骤；Apache Airflow通过有向无环图组织批处理任务，提供任务编排、调度和运行状态监控功能[22]。这些工作流系统能够按照预定依赖关系调用处理程序，并在输入数据或程序发生变化时重新执行相应任务。
+39: 在智能体任务组织方面，Agent Skills开放规范使用SKILL.md描述任务名称、适用范围和执行说明，并允许配套保存脚本、参考资料和其他资源[23]。与主要描述程序依赖关系的工作流配置相比，Skill还可组织会议入口、版式识别规则、机构别名和统计口径等任务知识，为智能体选择和执行相应处理模块提供依据。大型学术平台提供了多源数据加工的实践基础，工作流系统提供了任务衔接和运行管理机制，Skill则将处理程序与任务规则组织为可复用的执行单元。
+40: 现有研究不足
+41: 从上述研究可以看出，现有方法仍存在三方面不足。第一，会议论文数据获取与作者—机构关系识别缺少连续处理。文献数据库覆盖范围和机构字段完整性有限，PDF解析对上标编号、符号脚注、多列排版和共享机构等复杂署名形式的处理仍不充分。第二，机构名称规范化多以已有机构署名为输入，与前序PDF或网页信息解析衔接不足，容易造成字段缺失和关系错位。第三，论文清单获取、PDF解析、关系识别、机构规范化和统计生成通常由不同工具完成，数据结构、字段含义和处理规则缺乏统一组织。
+42: 针对上述问题，本文围绕论文清单构建、署名信息解析、作者—机构关系恢复、机构名称归并和国家归属判定设置相应Skill，形成从数据获取到标准化结果生成的连续处理流程，为国家分布、机构分布和合作网络分析提供统一的数据基础。
+43: 方法论
+44: 本章介绍基于Skill的学术会议论文元数据处理框架。框架涵盖论文数据采集、信息解析、作者—机构关系识别、机构名称规范化和标准化数据生成等环节。本章依次介绍框架的总体架构、Skill模块设计、PDF获取阶段、元数据提取阶段及机构规范化阶段。
+45: 总体架构
+46: 学术会议论文元数据处理框架如图1所示。框架以IACR结构化数据、DBLP、会议官网、出版平台和论文PDF为输入，经过数据采集、信息解析、机构规范化等阶段，形成论文、作者、机构和国家等标准化数据，并进一步支持论文规模、国家分布、机构分布和合作网络分析。Skill模块位于处理流程的组织层，负责流程调度、模块执行、规则配置、数据传递和局部重跑。
+48: 图 1 基于Skill的学术会议论文元数据自动化处理框架
+50: Skill模块设计
+51: 本文按照会议论文元数据处理的连续阶段设置相应Skill。每个Skill将任务描述、处理程序、规则资源和阶段输出组织为可复用的执行单元，其中SKILL.md用于说明适用范围、处理顺序和结果要求，scripts、configs及参考资源用于执行具体的数据转换与规则匹配。会议入口、论文版式、机构别名和计数语义等领域知识因此能够随相应模块配置、调用和复用。
+52: 设第k个Skill记为 Sₖ＝〈Iₖ，Pₖ，Rₖ，Oₖ〉，其中Iₖ为阶段输入，Pₖ为处理程序，Rₖ为规则及参考资源，Oₖ为阶段输出。各Skill以结构化阶段产物衔接：数据采集阶段形成论文清单与经整理的PDF数据集；信息解析阶段形成论文、作者、原始机构及作者角色事实；机构规范化阶段生成可比较的机构与国家实体；计量分析阶段在稳定事实表基础上输出统计结果。结合图1中的处理阶段，框架主要设置表1四类Skill：
+53: 表1 Skill类型及其阶段性产物
+54: 数据采集Skill
+55: 数据采集Skill面向按会议与年份构建论文数据集的任务，将会议官网、文献数据库和出版平台中的论文记录及PDF文件组织为信息解析的统一输入。该Skill以会议名称、年份范围和来源入口为条件，依据会议注册表和来源解析规则确定具体采集路径，依次完成来源发现、论文记录获取、PDF地址解析、文件整理和论文清单生成。其输出同时保留题名、会议、年份、来源页面和文件状态等索引信息，使后续模块能够通过统一论文标识关联网页记录、PDF及TEI结果。
+56: 上述规则将不同出版平台的入口差异封装在采集模块内，而向信息解析阶段提供一致的论文级输入。具体的来源访问、PDF地址解析及数据集构建过程在第3.3节中进一步说明。
+57: 信息解析Skill
+58: 信息解析Skill位于数据采集与机构规范化之间，面向原始论文记录、PDF全文、GROBID生成的TEI以及论文首页署名证据，构建结构一致的论文—作者元数据。该模块由conference-paper-extraction、conference-grobid-extract-metadata、conference-clean-paper-metadata和conference-author-role-extraction四个Skill组成，依次承担基础记录构建、PDF/TEI字段解析、记录清洗与作者角色事实生成。四者通过论文标识和作者顺序衔接，形成从多源材料到论文—作者—原始机构—角色信息的连续转换。如表2所示。
+59: 表2 信息解析Skill类型及其阶段性产物
+60: 其中，conference-paper-extraction首先建立跨来源可对齐的基础记录。conference-grobid-extract-metadata以header TEI为结构化起点，并结合PDF页面上下文恢复作者块、机构块、邮箱、脚注和作者—机构关联；conference-clean-paper-metadata再以论文为处理单元汇合候选结果与原始证据，完成字段级对齐。作者角色抽取并非计量分析中的附属判断，而是信息解析的组成部分：它将作者在论文署名中的位置及有证据支持的角色信息独立组织为角色事实，供后续作者分析直接调用。
+63: 信息解析模块的具体PDF/TEI解析、字段融合和作者—机构关系恢复方法在第3.4节展开。
+64: 机构规范化Skill
+65: 机构规范化Skill接收信息解析阶段输出的作者—原始机构明细，将论文中的affiliation转换为可跨会议、跨年份比较的机构实体。该Skill以原始署名为证据基础，结合AffilGood的机构解析结果、ROR规范实体和经审核的本地机构规则，识别机构主体、组织层级和地理信息，并生成规范机构名称、机构标识及国家等结构化字段。
+67: 该模块输出作者—机构—国家事实表和机构维表，作为计量分析Skill的统一输入。原始机构名称的解析、候选实体链接和本地规则补全方法在第3.5节说明。
+68: 计量分析Skill
+69: 计量分析Skill建立在规范化后的作者—机构—国家事实表和信息解析阶段生成的角色事实之上，负责生成论文规模、国家分布、机构分布、作者参与和合作关系等结果。该Skill以稳定的论文、作者、机构和国家标识及指定的会议—年份范围为输入，先确定分析范围，再分别组织论文、实体参与、作者产出和共现关系的聚合，使角色定义、实体归并和统计计算保持一致。
+70: 计量分析Skill封装的统计语义包括四个层次。第一，论文数量以分析范围内去重后的独立论文为单位；机构和国家参与度以论文中去重后的论文—实体关系为单位，同一论文中同一实体只计一次，不同实体分别计入，因此实体参与量之和可以超过论文总数。第二，机构统计区分第一作者单位与全部参与单位：第一作者单位取最终第一作者集合的首个署名机构，第一作者的其他机构及其余作者的署名机构计入参与单位；同一机构可以同时具有两种属性。第三，作者产出按作者与论文的去重关联计量，一人多机构不重复计算作者参与，第一作者指标依据角色事实或最终作者顺序确定。第四，合作关系以论文内实体共现为基础。每篇论文中相同实体对形成一条无向边，跨论文按照共同论文数累计边权，机构和国家网络采用相同的计量语义；规范化名称用于结果展示，稳定实体标识用于统计聚合，独立研究者或无机构署名不作为机构合作网络节点。计量分析Skill输出国家、机构和作者统计表、趋势结果及合作边表，为第5章的应用分析提供直接输入。
+72: PDF获取
+73: 本节落实3.2.1数据采集Skill的执行设计。为构建元数据解析所需的论文全文数据集，本文针对IACR、Springer、ACM Digital Library、IEEE Xplore及会议官网等数据来源，按照会议和年份配置采集入口，并使用Selenium访问论文页面、提取PDF地址。具体流程如图2所示。
+75: 图 2 会议论文PDF获取与数据集构建流程
+76: 第一步，配置会议入口。根据会议名称和年份读取对应的论文集目录。同一会议年度包含多个分卷或论文集页面时，将各入口合并为该年度的完整采集范围。
+77: 第二步，构建目标论文清单。从DBLP论文集目录、会议官网及出版平台获取论文题名、作者、年份、页码、DOI和出版页面地址等信息。对不同来源的字段和论文题名进行统一处理，形成会议年度目标论文清单，用于确定PDF获取范围和核对下载结果。
+78: 第三步，访问论文详情页并提取PDF地址。根据DOI、出版页面地址或平台内部标识定位论文详情页，使用Selenium加载页面内容，从中提取PDF地址。对于下载需要页面访问状态的平台，同时读取相应的会话信息，并传递给文件下载程序。
+79: 第四步，下载并校验PDF。根据提取的PDF地址获取论文文件，并通过文件类型、文件头和文件大小检查文件有效性，排除错误页面、空文件和不完整文件。同时计算文件的SHA-256值，用于识别内容重复的PDF。
+80: 第五步，完成题名匹配、去重及数据集生成。对下载文件名和目标论文题名进行大小写、标点和空格统一，再将PDF与目标论文清单进行匹配。匹配成功且文件有效的论文按照会议、年份和统一编号保存；重复、未匹配或文件异常的记录写入采集结果清单。
+81: 最终形成按会议和年份组织的PDF数据集，并生成包含论文题名、来源页面、PDF地址、本地路径、匹配状态和文件哈希等信息的采集结果清单。PDF数据集作为后续GROBID解析的输入。
+82: 元数据提取
+83: 本节落实3.2.2信息解析Skill的执行设计。本文以GROBID生成的TEI结构作为初始结果，结合PDF前两页的文本内容与版面信息，提取题名、作者、机构、邮箱、ORCID及作者角色。GROBID提供字段结构和作者顺序，PDF版面解析用于识别上标编号、文本分栏、局部信息块和脚注关系。两类结果经字段级融合后，得到论文元数据及作者—机构对应关系。
+84: 页面解析以文本块的纵向位置、横向位置和字号为主要依据。页面上部的连续大字号文本构成题名候选，题名之后、机构区域之前的姓名文本构成作者候选。多行题名按照纵向顺序合并；多行或多列作者先按纵坐标分组，再在同一行内按横坐标排序。GROBID结果完整时保留其题名和作者顺序；字段缺失、截断或混入页面噪声时，使用相应的版面候选进行补充。
+85: 版式规则集 用于生成PDF侧的作者—机构关系候选。针对不同署名区域的组织形式，本文设置上标编号、作者信息块、横向矩阵、纵向堆叠、分组共享、全体共享以及脚注与跨页补充七类规则，具体方法见表3。
+86: 表3 典型署名版式的作者—机构关联规则
+87: 上标编号式版面根据作者标记与机构编号建立对应关系，可处理一名作者具有多个机构以及多名作者共享同一机构的情况。作者信息块、横向矩阵和纵向堆叠分别依据局部区域、列对齐和上下文边界确定机构归属；共享机构则根据对应范围区分为分组共享和全体共享。脚注和跨页信息用于补充机构、邮箱及作者角色。数字或符号与机构编号一致时用于确定机构归属；与通讯作者或共同贡献说明对应时，用于识别相应作者角色。
+88: 字段融合以GROBID结果为基础，结合版面信息补充缺失内容并修正题名、作者、机构和邮箱等字段。作者—机构关系主要依据上标编号、姓名指向、局部信息块和稳定列对齐确定，共享机构规则用于处理多名作者对应同一机构的情况。无法确定唯一归属的候选不进行自动合并。第一作者按最终作者顺序确定，共同一作和通讯作者依据明确的姓名、符号及角色说明识别。
+89: 机构规范化
+90: 本节落实3.2.3机构规范化Skill的执行设计。GROBID提取的机构字段通常保留论文中的原始署名，其中可能同时包含院系、实验室、主体机构、地址和国家等信息，同一机构还可能存在全称、简称及不同层级的写法。为统一机构署名，本文采用AffilGood对原始affiliation进行解析，并将识别出的机构主体链接至Research Organization Registry（ROR）中的规范实体。整体过程如图3所示。
+92: 图 3基于AffilGood的机构规范化流程
+93: AffilGood先对原始机构署名进行字段解析，识别机构主体、下属单位、城市和国家。机构主体用于实体匹配，院系、实验室和研究中心等内容作为组织层级保留，城市和国家则作为候选检索和一致性判断的辅助信息。对于包含多个组织成分的署名，保留其原始组成和层级关系。
+94: 字段解析后，AffilGood利用ROR中的规范名称、别名、缩写和地理信息进行直接匹配。机构名称能够唯一对应某一ROR实体，且城市和国家信息不存在冲突时，直接接受该实体；未获得唯一结果的记录进入候选检索阶段。
+95: 在本文的运行配置中，候选检索分别使用机构名称、机构名称与国家、机构名称与城市及国家等查询形式，从ROR中召回前10个候选实体。同一实体被多次召回时保留其最高得分，候选国家与原始署名一致时增加0.05，城市一致时增加0.03。随后使用cometadata/jina-reranker-v2-multilingual-affiliations-v5对候选进行重排。最高重排得分低于0.038时，当前署名保留为未匹配。
+96: 对于最高得分低于0.50且候选数不少于2的记录，调用Qwen/Qwen2.5-3B-Instruct在已有候选范围内进行判别。模型只能选择一个候选或拒绝全部候选，不能生成新的机构名称或ROR标识。未触发该条件时，采用重排结果中的最高分候选。最终候选得分达到0.30时建立ROR链接；低于阈值或模型拒绝全部候选时，保留原始机构署名及未匹配状态。
+97: AffilGood处理完成后，本地机构词典用于补充未匹配记录或缺失字段。词典收录已经核实的历史名称、常用简称、拼写变体和组织对应关系，仅补充尚未确定的规范名称、机构标识及地理信息，不覆盖已经接受的ROR链接。对于ROR中尚无对应实体、但能够通过既有规则确定的机构，使用项目内部机构标识进行统一。
+98: 机构名称归并以ROR标识或项目内部机构标识为依据。大小写、空格、标点、缩写和别名等差异在机构主体一致时统一处理；历史名称仅在组织延续关系明确时合并；跨国分支和具有独立组织属性的机构分别保留。规范化结果同时保存原始机构署名、统一机构名称、机构标识和匹配方式，供后续机构统计及合作关系分析使用。
+99: 实验设置
+100: 研究范围
+101: 以2020—2025 年七个安全与密码学会议：ASIACRYPT、CRYPTO、EUROCRYPT、CCS、IEEE Symposium on Security and Privacy（IEEE S&P）、Network and Distributed System Security Symposium（NDSS）及 USENIX Security Symposium为案例，对自动化流程进行实验。表4为各年度各会议论文数。
+102: 表4 各年度各会议论文数
+104: 典型异常处理案例
+105: 针对部分论文PDF的文本层未完整保留作者上标、分组符号及机构编号等版面标记，导致作者与机构字段虽可被识别，但作者—机构对应关系存在缺失。例如，多名作者共享机构、一名作者对应多个机构或机构编号未被提取时，仅依据文本顺序难以恢复原始署名关系。
+106: 本文将官方论文页面作为作者—机构关系的补充数据源。对于论文 ，首先根据会议、年份、论文编号和规范化题名定位其在官方页面中的论文节点 ，再按照对应会议和年份的网页结构规则 提取作者—机构关系：
+108: 其中， 表示作者， 表示机构， 表示会议 在年份 下的网页解析规则。网页端生成作者—机构关系，PDF端保留作者顺序、邮箱、ORCID以及通讯作者、共同第一作者和同等贡献等角色信息。两类结果按照论文标识和规范化作者姓名进行对齐，形成完整的作者元数据记录。
+109: 以CCS 2025为例，其官方录用论文页面将论文题名、PDF链接及作者-机构信息组织在同一列表节点中。论文题名位于标题元素，作者-机构信息存储于相邻的文本元素，并采用“作者（机构）”的连续形式，如图4所示。
+111: 图4 CCS 2025录用论文页面及作者—机构信息的DOM定位
+112: 以论文 Nebula: Efficient, Private and Accurate Histogram Estimation 为例，网页节点中包含如下作者-机构文本：
+113: Ali Shahin Shamsabadi (Brave Software),
+114: Peter Snyder (Brave Software),
+115: Ralph Giles (Brave Software),
+116: Aurélien Bellet (INRIA),
+117: Hamed Haddadi (Imperial College London & Brave Software)
+118: 程序在单篇论文节点范围内扫描文本，依据最外层括号确定作者-机构单元，并按网页署名顺序生成关系记录。由此得到Ali Shahin Shamsabadi、Peter Snyder和Ralph Giles对应Brave Software，Aurélien Bellet对应INRIA，Hamed Haddadi对应复合署名“Imperial College London & Brave Software”。复合机构署名在关系提取阶段保持原始形式，随后进入机构字段解析和名称规范化流程。
+119: 网页解析结果保存论文标识、作者顺序、作者原始姓名、机构原始署名、来源页面和解析规则， PDF中提取的作者角色字段通过规范化作者姓名与网页关系记录合并，形成统一的论文元数据。
+121: 应用案例：国家、机构与合作网络
+122: 为考察标准化数据在会议论文计量分析中的应用，本节以2020—2025年七大会议的最终数据为基础，对机构参与、国家分布及合作关系进行统计。数据共包含7,079篇论文和35,680条作者—机构记录，覆盖ASIACRYPT、CRYPTO、EUROCRYPT、NDSS、CCS、IEEE S&P和USENIX Security。
+123: 机构分布
+124: 表5列出参与论文数量排名前10的机构。CISPA Helmholtz Center for Information Security共参与351篇论文，位列首位；Tsinghua University以335篇紧随其后。ETH Zurich、Zhejiang University和Purdue University分别参与248篇、233篇和228篇论文。前10机构同时包括欧洲科研机构、中国高校以及美国高校，反映出七大会议中主要研究力量的跨区域分布。
+125: 表 5 主要机构的第一作者单位与参与单位统计
+127: 图 5 七大会议主要参与机构分布
+128: 从排名结构看，前两名机构的参与规模较为接近，第三位以后呈逐级下降趋势。CISPA、Centre National de la Recherche Scientifique和Ruhr University Bochum等欧洲研究机构，与Tsinghua University、Zhejiang University及美国高校共同构成高频参与机构。
+129: 国家分布
+130: 在国家参与度方面，美国、中国和德国分别参与3,763篇、1,613篇和1,013篇论文，占全部论文的53.16%、22.79%和14.31%；瑞士和法国分别参与509篇和471篇论文，占7.19%和6.65%。美国的参与规模明显高于其他国家，中国和德国构成第二层次，瑞士、法国、英国、以色列和荷兰等国家也保持较高的论文参与量。
+132: 图 6 七大会议主要参与国家或地区分布
+133: 跨机构与跨国家合作
+134: 机构合作网络共包含2247个机构节点和13326条合作边，平均度为11.86。其中，10074条合作边仅对应1篇共同署名论文，3252条合作边对应2篇及以上论文，共同署名论文数达到10篇及以上的机构组合共有145组。结果表明，七大会议形成了覆盖范围较广的机构合作网络。多数机构组合仅在少量论文中共同署名，高频合作关系主要集中于部分机构组合。
+135: 表6 主要跨机构和跨国家合作组合
+136: 机构层面，Tsinghua University与Zhongguancun Laboratory的共同署名论文数最高，达到108篇；Institut national de recherche en sciences et technologies du numérique与Centre National de la Recherche Scientifique、Chinese Academy of Sciences与University of Chinese Academy of Sciences分别共同署名100篇和92篇论文。这些高频组合主要分布于高校、科研机构及国家科研体系内部，反映出相关机构之间较为密切的论文合作联系。国家层面，美国出现在排名前五的跨国合作组合中，其中中国与美国共同参与603篇论文。德国、以色列、英国和瑞士与美国也具有较高的共同署名频次，表明美国在国家合作网络中具有较强的连接作用。
+137: 综合来看，2020—2025年七大会议的论文参与机构与国家分布具有较为明显的集中性，高产机构和主要科研国家构成了该领域论文产出的主体。与此同时，跨机构与跨国家合作较为普遍，部分机构组合和国家组合保持了较高的合作频次，形成了相对稳定的合作联系。上述结果从机构参与、国家分布和合作关系三个方面呈现了七大会议的科研活动特征。
+138: 结论
+139: 本文面向学术会议论文元数据来源分散、作者—机构关系复杂及机构名称不统一等问题，提出了一种基于Skill的学术会议论文元数据自动化处理方法。该方法将论文数据采集、PDF信息解析、作者—机构关系识别、机构名称规范化和统计结果生成组织为连续处理流程，并通过统一的数据结构衔接各处理阶段。
+140: 在信息解析阶段，本文以GROBID生成的结构化结果为基础，结合PDF文本与版面信息，处理上标编号、作者信息块、多列排版、共享机构及符号脚注等署名形式，并利用会议官方页面的DOM结构补充部分PDF中缺失的作者—机构关系。在机构规范化阶段，结合AffilGood、ROR和本地机构规则，对机构名称变体进行归并，补充规范机构标识及国家信息。
+141: 各处理环节以Skill形式组织执行说明、处理程序和规则资源，使会议入口、版式规则、机构别名和统计口径能够随处理模块统一配置和调用。本文以2020—2025年ASIACRYPT、CRYPTO、EUROCRYPT、NDSS、CCS、IEEE S&P和USENIX Security七个会议为案例，共处理7079篇论文，形成35680条作者—机构关系记录，并据此完成论文规模、机构参与、国家分布和合作网络分析。
+142: 研究结果表明，该方法能够将不同来源和署名形式的会议论文元数据转换为结构统一的标准化数据，为学术会议论文的机构统计、国家统计和合作关系分析提供数据基础。后续工作将进一步扩展会议及出版平台的解析规则，完善机构历史名称、分支机构和联合实验室等组织关系的处理。
+143: 参考文献
+144: LISÉE C, LARIVIÈRE V, ARCHAMBAULT É. Conference proceedings as a source of scientific information: A bibliometric analysis[J]. Journal of the American Society for Information Science and Technology, 2008, 59(11): 1776-1784. DOI: 10.1002/asi.20888.
+145: VAN ECK N J, WALTMAN L. Software survey: VOSviewer, a computer program for bibliometric mapping[J]. Scientometrics, 2010, 84(2): 523-538. DOI: 10.1007/s11192-009-0146-3.
+146: ARIA M, CUCCURULLO C. bibliometrix: An R-tool for comprehensive science mapping analysis[J]. Journal of Informetrics, 2017, 11(4): 959-975. DOI: 10.1016/j.joi.2017.08.007.
+147: KINNEY R, ANASTASIADES C, AUTHUR R, et al. The Semantic Scholar Open Data Platform[EB/OL]. arXiv:2301.10140, 2023. DOI: 10.48550/arXiv.2301.10140.
+148: PRIEM J, PIWOWAR H, ORR R. OpenAlex: A fully-open index of scholarly works, authors, venues, institutions, and concepts[EB/OL]. arXiv:2205.01833, 2022. DOI: 10.48550/arXiv.2205.01833.
+149: JONNALAGADDA S R, TOPHAM P. NEMO: Extraction and normalization of organization names from PubMed affiliation strings[J]. Journal of Biomedical Discovery and Collaboration, 2010, 5: 50-75. DOI: 10.5210/disco.v5i0.3047.
+150: DONNER P, RIMMERT C, VAN ECK N J. Comparing institutional-level bibliometric research performance indicator values based on different affiliation disambiguation systems[J]. Quantitative Science Studies, 2020, 1(1): 150-170. DOI: 10.1162/qss_a_00013.
+151: LOPEZ P. GROBID: Combining automatic bibliographic data recognition and term extraction for scholarship publications[C]//Research and Advanced Technology for Digital Libraries. Berlin: Springer, 2009: 473-474. DOI: 10.1007/978-3-642-04346-8_62.
+152: DURAN-SILVA N, ACCUOSTO P, PRZYBYŁA P, SAGGION H. AffilGood: Building reliable institution name disambiguation tools to improve scientific literature analysis[C]//Proceedings of the Fourth Workshop on Scholarly Document Processing. Bangkok: Association for Computational Linguistics, 2024: 135-144. DOI：10.18653/v1/2024.sdp-1.13.
+153: HENDRICKS G, TKACZYK D, LIN J, FEENEY P. Crossref: The sustainable source of community-owned scholarly metadata[J]. Quantitative Science Studies, 2020, 1(1): 414-427. DOI: 10.1162/qss_a_00022.
+154: TKACZYK D, SZOSTEK P, FEDORYSZAK M, DENDEK P J, BOLIKOWSKI Ł. CERMINE: Automatic extraction of structured metadata from scientific literature[J]. International Journal on Document Analysis and Recognition, 2015, 18(4): 317-335. DOI: 10.1007/s10032-015-0249-8.
+155: BOUKHERS Z, BOUABDALLAH A. Vision and natural language for metadata extraction from scientific PDF documents: A multimodal approach[C]//Proceedings of the 22nd ACM/IEEE Joint Conference on Digital Libraries. New York: ACM, 2022: 1-5. DOI: 10.1145/3529372.3533295.
+156: 贾君枝, 曾建勋, 李捷佳, 等. 科研机构名称归一化实现[J]. 图书情报工作, 2018, 62(13): 103-110. DOI：10.13266/j.issn.0252-3116.2018.13.013.
+157: 杨昭, 任娟. 中文文献题录数据机构名称归一化研究[J]. 图书情报工作, 2020, 64(4): 95-102. DOI: 10.13266/j.issn.0252-3116.2020.04.011.
+158: BACKES T, HIENERT D, DIETZE S. Towards hierarchical affiliation resolution: Framework, baselines, dataset[J]. International Journal on Digital Libraries, 2022, 23(3): 267-288. DOI: 10.1007/s00799-022-00326-1.
+159: ANCONA A, CERQUETI R, VAGNANI G. A novel methodology to disambiguate organization names: An application to EU Framework Programmes data[J]. Scientometrics, 2023, 128: 4447-4474. DOI: 10.1007/s11192-023-04746-x.
+160: MUÑOZ-JORDÁN D, RUIZ G, CABRIADA P, et al. 3SA: An entity-linking algorithm for the Institution Name Disambiguation problem in affiliations using edit distance[J]. Scientometrics, 2025, 130: 4073-4091. DOI: 10.1007/s11192-025-05368-1.
+161: KALLIPOLITI M, CHATZOPOULOS S, BAGLIONI M, et al. From raw affiliations to organization identifiers[EB/OL]. arXiv:2505.07577, 2025. DOI: 10.48550/arXiv.2505.07577.
+162: MANGHI P, ATZORI C, BARDI A, et al. OpenAIRE Research Graph Dataset[DS/OL]. Zenodo, 2022. DOI: 10.5281/zenodo.7488618.
+163: OINN T, ADDIS M, FERRIS J, et al. Taverna: A tool for the composition and enactment of bioinformatics workflows[J]. Bioinformatics, 2004, 20(17): 3045-3054. DOI: 10.1093/bioinformatics/bth361.
+164: KÖSTER J, RAHMANN S. Snakemake—A scalable bioinformatics workflow engine[J]. Bioinformatics, 2012, 28(19): 2520-2522. DOI: 10.1093/bioinformatics/bts480.
+165: YASMIN J, WANG J A, TIAN Y, ADAMS B. An empirical study of developers’ challenges in implementing Workflows as Code: A case study on Apache Airflow[J]. Journal of Systems and Software, 2025, 219: 112248. DOI: 10.1016/j.jss.2024.112248.
+166: ANTHROPIC. Agent Skills Specification[EB/OL]. [2026-08-04].https://agentskills.io/specification.
+168: 附录A SKILL.md结构示例
+169: 本附录进一步按照SKILL.md的实际组织方式，给出每个Skill的可维护文本结构。示例保留YAML元数据区、职责边界、项目架构、常见模式和输出契约，便于说明Agent如何识别并调用具体Skill。
+170: A.1 conference-crawler的SKILL.md结构
+171: 代码A.1 conference-crawler SKILL.md结构示例
+172: ---
+173: name: conference-crawler
+174: description: 从会议注册表和出版平台发现论文集入口，获取论文记录与 PDF，并通过去重、官方论文匹配和人工复核形成可供后续 GROBID 处理的论文 PDF 集合。 该 Skill 将原始下载、整理后的文件和待复核记录分开保存，只有通过清单审核的 PDF 才进入元数据解析阶段。
+175: ---
+176: # conference-crawler
+177: 从会议注册表和出版平台发现论文集入口，获取论文记录与 PDF，并通过去重、官方论文匹配和人工复核形成可供后续 GROBID 处理的论文 PDF 集合。 该 Skill 将原始下载、整理后的文件和待复核记录分开保存，只有通过清单审核的 PDF 才进入元数据解析阶段。
+178: ## 职责边界
+179: 负责会议来源发现、论文记录构建、PDF获取与数据集交接；不负责PDF内部字段解析和机构实体规范化。
+180: ## 常见模式
+181: 1. 依据会议名称和年份解析 proceedings 入口，并生成统一的来源记录。
+182: 2. 调用相应后端获取论文记录和 PDF；保留下载状态、缺失状态和可恢复的批次信息。
+183: 3. 对 workshop、poster、demo、tutorial、keynote、proceedings 等非目标论文记录进行标记或排除。
+184: 4. 对 PDF 进行标题匹配、SHA-256 去重和官方清单比对；高分但不确定的匹配进入复核队列。
+185: 5. 检查来源清单、论文清单、文件状态、论文数量和复核结果，形成按会议—年份隔离的 curated PDF 集合。
+186: 6. 仅将 accepted PDF 及其清单证据交给 `conference-grobid-extract-metadata`，并保留原始下载和复核记录。
+187: ## 输出契约
+188: 输出标准化记录、验证结果和可供下游Skill调用的阶段产物。
+189: A.2 conference-grobid-extract-metadata的SKILL.md结构
+190: 代码A.2 conference-grobid-extract-metadata SKILL.md结构示例
+191: ---
+192: name: conference-grobid-extract-metadata
+193: description: 从审核通过的论文 PDF 生成 header 级 TEI，并结合 PDF 首页和版面证据恢复题名、作者顺序、机构、邮箱、摘要、年份及作者角色线索。 该 Skill 以字段级证据融合为核心，保留候选、选择理由和复核状态，并向论文元数据清洗阶段提供结构化输入。
+194: ---
+195: # conference-grobid-extract-metadata
+196: 从审核通过的论文 PDF 生成 header 级 TEI，并结合 PDF 首页和版面证据恢复题名、作者顺序、机构、邮箱、摘要、年份及作者角色线索。 该 Skill 以字段级证据融合为核心，保留候选、选择理由和复核状态，并向论文元数据清洗阶段提供结构化输入。
+197: ## 职责边界
+198: 负责从论文PDF提取结构化元数据和作者证据；不直接覆盖来源记录中的原始值。
+199: ## 常见模式
+200: 1. 批量调用 GROBID 生成 header TEI，并核对输入论文、生成 TEI 和解析错误的批次闭合关系。
+201: 2. 先进行通用版式分类，再在确有样本依据时调用会议专属策略。
+202: 3. 分别解析 TEI 和 PDF 页面上下文，对题名、作者、机构、邮箱、摘要和角色线索生成字段候选。
+203: 4. 按照字段语义恢复作者—机构、作者—邮箱和作者角色关系，不以单一来源的完整性覆盖其他直接证据。
+204: 5. 只自动采用有直接证据支持的修正；冲突、低置信候选、作者缺失或覆盖率异常保留原始值并进入复核。
+205: 6. 输出 TEI、作者级 CSV/JSON、摘要结果、证据轨迹和复核队列，并交给 `conference-clean-paper-metadata`。
+206: ## 输出契约
+207: 输出标准化记录、验证结果和可供下游Skill调用的阶段产物。
+208: A.3 conference-clean-paper-metadata的SKILL.md结构
+209: 代码A.3 conference-clean-paper-metadata SKILL.md结构示例
+210: ---
+211: name: conference-clean-paper-metadata
+212: description: 审计、修复和补全由 GROBID 或 PDF 解析产生的论文—作者元数据，使作者顺序、角色标记、机构文本、邮箱、摘要和 DOI 等字段结构稳定且可追溯。 该 Skill 以单篇论文为修复单位，区分证据支持的修复与待人工确认的候选，不把正则命中直接当作事实。
+213: ---
+214: # conference-clean-paper-metadata
+215: 审计、修复和补全由 GROBID 或 PDF 解析产生的论文—作者元数据，使作者顺序、角色标记、机构文本、邮箱、摘要和 DOI 等字段结构稳定且可追溯。 该 Skill 以单篇论文为修复单位，区分证据支持的修复与待人工确认的候选，不把正则命中直接当作事实。
+216: ## 职责边界
+217: 负责题名、作者和记录级字段清洗与一致性检查；不替代需要人工判定的证据复核。
+218: ## 常见模式
+219: 1. 先审计数据结构、作者顺序、角色约束、重复行、邮箱和疑似 OCR 异常，再决定是否编辑。
+220: 2. 按年份、会议和题名将作者行组织为单篇论文，保持无关记录、原始行序和论文键不变。
+221: 3. 将可疑作者、机构、邮箱和角色候选与 PDF、TEI 或 metadata JSON 对照，仅进行窄范围证据支持的修改。
+222: 4. 对共同一作、共同贡献和通讯作者等依赖版面证据的事实，不根据正则或单个邮箱自动推断。
+223: 5. 添加摘要、DOI 或机构片段时按论文和作者关系精确匹配，核对行数、字段覆盖率和行序。
+224: 6. 再次运行审计，报告已修复内容与未解决候选；通过清洗的原始 affiliation 进入机构规范化阶段。
+225: ## 输出契约
+226: 输出标准化记录、验证结果和可供下游Skill调用的阶段产物。
+227: A.4 conference-affiliation-normalizer的SKILL.md结构
+228: 代码A.4 conference-affiliation-normalizer SKILL.md结构示例
+229: ---
+230: name: conference-affiliation-normalizer
+231: description: 将论文中的原始 affiliation 转换为可比较、可统计且可追溯的机构、子单位、地点、国家和标识事实。 该 Skill 以 AffilGood/ROR 结果为主要身份依据，同时保留原始署名，并以审核过的机构规则补充缺失字段。
+232: ---
+233: # conference-affiliation-normalizer
+234: 将论文中的原始 affiliation 转换为可比较、可统计且可追溯的机构、子单位、地点、国家和标识事实。 该 Skill 以 AffilGood/ROR 结果为主要身份依据，同时保留原始署名，并以审核过的机构规则补充缺失字段。
+235: ## 职责边界
+236: 负责机构别名归并、实体识别和国家字段补充；保留原始机构署名，不以相似度结果直接覆盖证据。
+237: ## 常见模式
+238: 1. 读取原始记录并保留稳定标识；对拆分的作者—机构记录先提取显式国家和城市证据，不由城市单独推断国家。
+239: 2. 生成完整机构、组成机构和括号内机构候选，但在 AffilGood 运行前不以参考表替代机构身份判断。
+240: 3. 运行 AffilGood/ROR，按可靠身份拆分可对齐的机构组件，同时保留完整原始复合署名。
+241: 4. 仅用机构参考表填补空缺，不覆盖已存在的 AffilGood/ROR 机构、国家、城市或标识。
+242: 5. 应用审核规则，区分主要机构、子单位、非机构标记和未知机构；无法可靠识别的残余不进入机构排名。
+243: 6. 为每个输入行写入 `ok`、`skipped` 或 `error` 状态，按 `record_id` 回连，并生成最终展示表和复核队列。
+244: ## 输出契约
+245: 输出标准化记录、验证结果和可供下游Skill调用的阶段产物。
+246: A.5 conference-author-role-extraction的SKILL.md结构
+247: 代码A.5 conference-author-role-extraction SKILL.md结构示例
+248: ---
+249: name: conference-author-role-extraction
+250: description: 从规范化作者记录中形成一人一论文的作者角色事实，将作者角色判断从后续统计逻辑中独立出来。 当前实现稳定生成第一作者和参与作者；通讯作者、共同一作及 equal contribution 仅在获得明确证据或人工确认后写入。
+251: ---
+252: # conference-author-role-extraction
+253: 从规范化作者记录中形成一人一论文的作者角色事实，将作者角色判断从后续统计逻辑中独立出来。 当前实现稳定生成第一作者和参与作者；通讯作者、共同一作及 equal contribution 仅在获得明确证据或人工确认后写入。
+254: ## 职责边界
+255: 负责作者顺序、第一作者、共同一作和通讯作者等角色事实提取；不改变原始作者顺序。
+256: ## 常见模式
+257: 1. 按论文和作者组织输入事实，确保每位作者在同一论文中只形成一条角色记录。
+258: 2. 依据确定的作者顺序将 `author_order == 0` 识别为第一作者，并将出现在作者列表中的作者标记为参与作者。
+259: 3. 对通讯作者、共同一作和 equal contribution 初始化为未确认状态，不从姓名位置或单个邮箱推断。
+260: 4. 仅将明确的 PDF、HTML、OpenReview 或人工覆盖证据转换为相应角色事实，并保留复核标记。
+261: 5. 生成作者角色表、报告和覆盖表模板，供后续统计模块统一消费。
+262: ## 输出契约
+263: 输出标准化记录、验证结果和可供下游Skill调用的阶段产物。
+264: A.6 conference-author-statistics的SKILL.md结构
+265: 代码A.6 conference-author-statistics SKILL.md结构示例
+266: ---
+267: name: conference-author-statistics
+268: description: 基于规范化后的会议论文数据生成作者产出、参与、第一作者、合作和重复贡献统计，并支持单个作者的论文与合作者查询。 该 Skill 将作者身份归并、论文去重和合作关系构建作为统计前提，并在结果中显式说明身份不确定性。
+269: ---
+270: # conference-author-statistics
+271: 基于规范化后的会议论文数据生成作者产出、参与、第一作者、合作和重复贡献统计，并支持单个作者的论文与合作者查询。 该 Skill 将作者身份归并、论文去重和合作关系构建作为统计前提，并在结果中显式说明身份不确定性。
+272: ## 职责边界
+273: 负责基于规范化作者事实生成统计结果与合作网络；不重新解析PDF或机构名称。
+274: ## 常见模式
+275: 1. 按 `author_key`、规范化全名和经明确说明的保守匹配顺序确定作者身份，并记录可能的同名歧义。
+276: 2. 先应用会议和年份筛选，再按论文键或题名—会议—年份—作者签名对论文去重。
+277: 3. 计算作者论文数、参与会议数、活跃年份数和第一作者论文数；作者统计与机构统计保持分离。
+278: 4. 从同一论文的作者集合生成无向合作边，并统计共同论文数。
+279: 5. 识别跨年份、跨会议或跨会议家族持续出现的重复贡献者。
+280: 6. 生成作者汇总、年度明细、第一作者汇总、合作边和作者查询结果，并在排序和报告中保留身份限制。
+281: ## 输出契约
+282: 输出标准化记录、验证结果和可供下游Skill调用的阶段产物。
+
+TABLES
+TABLE 0 rows=5 cols=3
+0: Skill类型 | 核心处理任务 | 阶段性产物
+1: 数据采集Skill | 发现会议入口，获取论文记录和PDF，形成可审计的论文清单。 | 来源清单、论文处理清单、经整理的PDF数据集
+2: 信息解析Skill | 从论文记录、PDF、TEI及首页证据中恢复论文—作者—原始机构与角色信息。 | 论文元数据、作者—原始机构明细、作者角色事实
+3: 机构规范化Skill | 将原始affiliation映射为规范机构、标识与国家。 | 作者—机构—国家事实表、机构维表
+4: 计量分析Skill | 依照统一分析对象和计数规则生成机构、国家、作者与合作结果。 | 统计表、趋势结果、合作边表与分析报告
+TABLE 1 rows=1 cols=1
+0: SKILL.md中的代表性规则（conference-crawler）： • 以会议注册表和来源解析器确定会议—年份对应的论文集入口，并以统一记录形式写入来源清单。 • 以官方论文清单为参照进行题名匹配、文件去重和论文类型筛选；论文记录、PDF状态和处理清单作为阶段产物保留。
+TABLE 2 rows=5 cols=3
+0: Skill | 处理重点 | 阶段产物
+1: conference-paper-extraction | 将论文清单和原始记录转换为可对齐的基础论文记录。 | 论文标识、题名、会议、年份及来源索引
+2: conference-grobid-extract-metadata | 解析TEI与PDF首页证据，恢复题名、作者顺序、机构、邮箱和角色线索。 | 作者级候选记录、证据与候选结果
+3: conference-clean-paper-metadata | 以论文为单位审计、对齐和补全解析记录。 | 字段结构稳定的作者—原始机构明细
+4: conference-author-role-extraction | 将作者顺序和已确认角色线索整理为独立角色事实。 | paper_author_roles.csv及角色报告
+TABLE 3 rows=1 cols=1
+0: SKILL.md中的代表性规则（conference-grobid-extract-metadata）： • GROBID生成的header TEI作为结构化主结果；pdfplumber用于核验首页文本块、摘要边界和版面位置，pypdf补充文档与链接证据。 • 标题、作者、机构、邮箱、作者—机构关系及角色按字段分别融合；会议专属版式差异由相应strategy处理。 • 解析结果保留TEI/PDF证据、候选值和字段决策，形成作者级CSV与论文级JSON等阶段产物。
+TABLE 4 rows=1 cols=1
+0: SKILL.md中的代表性规则（conference-clean-paper-metadata）： • 以论文为修复单位，按“审计—证据核验—字段修复—再次审计”的顺序处理作者级记录。 • 作者顺序以author_rank表示；共同一作、共同贡献和通讯作者依据PDF/TEI中的姓名、符号或脚注证据进行确认。 • 清洗后的原始affiliation与后续规范机构字段分开保存，为机构规范化保留论文原始署名。
+TABLE 5 rows=1 cols=1
+0: SKILL.md中的代表性规则（conference-author-role-extraction）： • 角色事实表以“一人一论文一行”组织，避免作者因多机构归属而重复进入角色记录。 • 第一作者由author_order == 0确定，参与作者由论文作者列表确定；后续分析直接使用paper_author_roles.csv。 • 已人工确认的通讯作者或共同一作可通过角色覆盖表补充，作为角色事实的组成部分。
+TABLE 6 rows=1 cols=1
+0: SKILL.md中的代表性规则（conference-affiliation-normalizer）： • 保留原始affiliation及原始输入行；规范机构名称、ROR标识、国家和城市作为补充字段写入。 • AffilGood/ROR结果作为机构身份识别的主要依据，本地机构参考表用于补充缺失字段并固化经审核的名称变体。 • 统计所用country字段复制AffilGood识别的国家结果；同一原始affiliation层级记录保留为可追溯的来源事实。
+TABLE 7 rows=1 cols=1
+0: SKILL.md中的代表性规则（conference-author-statistics）： • 作者身份优先依据标准化作者标识；作者论文数、参与会议数和活跃年份数均在论文去重后计算。 • 第一作者指标依据最终作者顺序或角色事实识别；合作者按标准化作者实体去重，并按共同论文数构建合作关系。 • 作者统计、机构和国家参与统计与合作边构建分别以作者—论文、论文—实体和实体共现为聚合单位。
+TABLE 8 rows=2 cols=1
+0: Algorithm 1基于版式信息的元数据提取算法
+1: 输入: 论文PDF ，版式规则集 输出: 论文元数据 ，作者—机构关系集合 1: T ← 对P执行GROBID头部解析 2: B ← 提取P前两页的文本块、坐标和字号 3: B ← 清除页眉、版权信息、页码及出版信息 4: Zt, Za, Zi, Ze, Zn ← 划分题名、作者、机构、邮箱和脚注区域 5: title ← 融合T中的题名与Zt中的题名候选 6: authors ← 融合T中的作者列表与Za中的版面顺序 7: C ← ∅ 8: for each 规则r ∈ R do 9: if r适用于当前署名区域 then 10: C ← C ∪ 根据r生成的作者—机构关系候选 11: end if 12: end for 13: affiliations ← 融合T中的机构字段与PDF机构候选 14: emails, roles ← 根据局部版面和脚注识别邮箱及作者角色 15: A ← 根据authors、affiliations及候选集合C确定作者—机构关系 16: M ← 汇总题名、作者、机构、邮箱、ORCID及作者角色 17: return M, A
+TABLE 9 rows=8 cols=3
+0: 版式类型 | 识别依据 | 关联方法
+1: 上标编号式 | 作者姓名与机构条目具有相同数字或符号 | 按标记建立作者与机构的多对多映射
+2: 作者信息块式 | 姓名、机构、地址和邮箱形成局部卡片 | 在局部信息块内完成作者与机构关联
+3: 横向矩阵式 | 作者、机构和邮箱按横向列排列 | 根据横向重叠及纵向层次确定对应关系
+4: 纵向堆叠式 | 每名作者之后依次出现机构、地址和邮箱 | 以作者姓名为信息块起点，按纵向顺序归并后续字段
+5: 分组共享式 | 一组作者之后出现对应的公共机构块 | 将机构关联至当前作者组，不向后续作者传播
+6: 全体共享式 | 完整作者集合后仅出现一个公共机构块 | 在作者集合与机构区域关系完整时关联全部作者
+7: 脚注与跨页式 | 机构或角色位于页脚、页侧或第二页 | 根据姓名、符号和页面完整度补充机构及作者角色
+TABLE 10 rows=9 cols=8
+0: 会议 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 合计
+1: ASIACRYPT | 85 | 95 | 98 | 106 | 127 | 143 | 654
+2: CCS | 121 | 196 | 218 | 234 | 328 | 316 | 1,413
+3: CRYPTO | 85 | 103 | 99 | 124 | 143 | 156 | 710
+4: EUROCRYPT | 81 | 78 | 85 | 109 | 105 | 123 | 581
+5: IEEE S&P | 104 | 115 | 147 | 200 | 261 | 255 | 1,082
+6: NDSS | 88 | 87 | 83 | 94 | 140 | 211 | 703
+7: USENIX Security | 157 | 246 | 256 | 422 | 417 | 438 | 1,936
+8: 每年合计 | 721 | 920 | 986 | 1,289 | 1,521 | 1,642 | 7,079
+TABLE 11 rows=11 cols=5
+0: 排名 | 机构 | 全部参与论文 | 含该机构为第一单位的论文数 | 含该机构为非第一单位署名的论文数
+1: 1 | CISPA Helmholtz Center for Information Security | 351 | 208 | 336
+2: 2 | Tsinghua University | 335 | 207 | 313
+3: 3 | ETH Zurich | 248 | 152 | 228
+4: 4 | Zhejiang University | 233 | 158 | 229
+5: 5 | Purdue University | 228 | 147 | 218
+6: 6 | Centre National de la Recherche Scientifique | 215 | 102 | 143
+7: 7 | Ruhr University Bochum | 210 | 132 | 190
+8: 8 | University of Illinois Urbana-Champaign | 190 | 109 | 175
+9: 9 | Carnegie Mellon University | 183 | 107 | 162
+10: 10 | Georgia Institute of Technology | 170 | 111 | 163
+TABLE 12 rows=11 cols=4
+0: 类型 | 排名 | 合作组合 | 合作论文数
+1: 机构 | 1 | Tsinghua University -- Zhongguancun Laboratory | 108
+2: 机构 | 2 | Institut national de recherche en sciences et technologies du numérique -- Centre National de la Recherche Scientifique | 100
+3: 机构 | 3 | Chinese Academy of Sciences -- University of Chinese Academy of Sciences | 92
+4: 机构 | 4 | Institute of Information Engineering -- University of Chinese Academy of Sciences | 52
+5: 机构 | 5 | CISPA Helmholtz Center for Information Security -- Saarland University | 44
+6: 国家 | 1 | China -- United States | 603
+7: 国家 | 2 | Germany -- United States | 311
+8: 国家 | 3 | Israel -- United States | 206
+9: 国家 | 4 | United Kingdom -- United States | 195
+10: 国家 | 5 | Switzerland -- United States | 159

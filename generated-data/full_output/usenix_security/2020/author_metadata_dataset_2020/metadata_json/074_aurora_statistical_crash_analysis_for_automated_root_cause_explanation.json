@@ -1,0 +1,2093 @@
+{
+  "title": "location is most likely not the root cause of the fault, as the invariant “points to an instance of B” is violated in a different spot. The code that creates the object of type A is also most likely correct. Instead, the particular control flow that makes a value from type A end up in B's place is at fault. In a naive approach, an analyst could inspect stack and register values with a debugger. Starting from the crash, they can manually backtrace the execution to the root cause. Using state-of-the-art sanitizers such as the ASAN family [51] may detect illegal memory accesses closer to the root cause. In our example, the manual analysis would start at the crashing location, while ASAN would detect the location where the memory corruption occurred. Still, the analyst has to manually recognize the type confusion as the root cause-a complicated task since most code involved is behaving correctly. More involved approaches such as POMP [57], RE- TRACER [33], REPT [32] and DEEPVSA [38] use auto- mated reverse execution and backward taint analysis. These are particularly useful if the crash is not reproducible. For example, REPT and RET RACER can analyze crashes that occurred on end-devices by combining core dumps and In- tel PT traces. However, these approaches generally do not allow to automatically identify the root cause unless there is a direct data dependency connecting root cause and crashing instruction. Furthermore, REPT and RET RACER focus on providing an interactive debugging session for an analyst to inspect manually what happened before the crash. In cases such as the type confusion above, or when debug- ging JIT-based software such as JavaScript engines, a single crashing input may not allow identifying the root cause with- out extensive manual reasoning. Therefore, one can use a fuzzer to perform crash exploration. In this mode, the fuzzer is seeded with crashing inputs which it mutates as long as they keep crashing the target application. This process gener- ates new inputs that are related to the original crashing input, yet slightly different (e. g., they could trigger the crash via a different path). A diverse set of crashing inputs that mostly trigger the same bug can aid analysis. Observing multiple ranges of values and different control-flow edges taken can help narrow down potential root causes. However, none of the aforementioned methods takes advantage of this infor- mation. Consequently, identifying the root cause remains a challenging task, especially if there is no direct data depen- dency between root cause and crashing instruction. Although techniques such as ASAN , POMP , REPT and RET RACER provide more context, they often fail to identify the root cause and provide no explanation of the fault. In this paper, we address this problem by developing an automated approach capable of finding the root cause given a crashing input. This significantly reduces human effort: unlike the approaches discussed previously, we do not only identify a code location, but also an explanation of the prob- lem. This also reduces the number of locations an analyst has to inspect, as AURORA only considers instructions with a plausible explanation. To enable precise identification of the root cause, we first pick one crashing input and produce a diverse set of similar inputs, some of which cause a crash while others do not. We then execute these newly-generated inputs while tracking the binary program's internal state. This includes control-flow information and relevant register values for each instruction. Given such detailed traces for many different inputs, we create a set of simple Boolean expressions (around 1,000 per instruc- tion) to predict whether the input causes a crash. Intuitively, these predicates capture interesting runtime behavior such as whether a specific branch is taken or whether a register contains a suspiciously small value. Consider our previous type confusion example and assume that a pointer to the constructor is called at some location in the program. Using the tracked information obtained from the diversified set of inputs, we can observe that (nearly) all calls in crashing inputs invoke the constructor of typeA, while calls to the constructor of B imply that the input is not going to cause a crash. Thus, we can pinpoint the problem at an earlier point of the execution, even when no data taint connection exists between crashing location and root cause. This exam- ple also demonstrates that our approach needs to evaluate a large set of predicates, since many factors have to be captured, including different program contexts and vulnerability types. Using the predicates as a metric for each instruction, we can automatically pinpoint the possible root cause of crashes. Ad- ditionally, the predicates provide a concrete explanation of why the software fault occurs. We built a prototype implementation of our approach in a tool called AURORA . To evaluate AURORA , we analyze 25 targets that cover a diverse set of vulnerability classes, including five use-after-free vulnerabilities, ten heap buffer overflows and two type confusion vulnerabilities that previous work fails to account for. We show that AURORA reliably allows identifying the root cause even for complex binaries. For example, we analyzed a type confusion bug in mruby where an exception handler fails to raise a proper exception type. It took an expert multiple days to identify the actual fault. Using our technique, the root cause was pinpointed automatically. In summary, our key contributions are threefold: • We present the design of AURORA , a generic approach to automatically pinpoint the location of the root cause and provide a semantic explanation of the crash. • We propose a method to synthesize domain-specific pred- icates for binary programs, tailored to the observed be- havior of the program. These predicates allow accurate predictions on whether a given input will crash or not.",
+  "year": "2020",
+  "abstract": "Given the huge success of automated software testing techniques, a large amount of crashes is found in practice. Identifying the root cause of a crash is a time-intensive endeavor, causing a disproportion between finding a crash and fixing the underlying software fault. To address this problem, various approaches have been proposed that rely on techniques such as reverse execution and backward taint analysis. Still, these techniques are either limited to certain fault types or provide an analyst with assembly instructions, but no context information or explanation of the underlying fault. In this paper, we propose an automated analysis approach that does not only identify the root cause of a given crashing input for a binary executable, but also provides the analyst with context information on the erroneous behavior that characterizes crashing inputs. Starting with a single crashing input, we generate a diverse set of similar inputs that either also crash the program or induce benign behavior. We then trace the program's states while executing each found input and generate predicates, i. e., simple Boolean expressions that capture behavioral differences between crashing and noncrashing inputs. A statistical analysis of all predicates allows us to identify the predicate pinpointing the root cause, thereby not only revealing the location of the root cause, but also providing an analyst with an explanation of the misbehavior a crash exhibits at this location. We implement our approach in a tool called AURORA and evaluate it on 25 diverse software faults. Our evaluation shows that AURORA is able to uncover root causes even for complex bugs. For example, it succeeded in cases where many millions of instructions were executed between developer fix and crashing location. In contrast to existing approaches, AURORA is also able to handle bugs with no data dependency between root cause and crash, such as type confusion bugs.",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Tim Blazytko",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Ruhr-Universität Bochum"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Germany"
+      ]
+    },
+    {
+      "order": 1,
+      "name": "Moritz Schlögel",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Ruhr-Universität Bochum"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Germany"
+      ]
+    },
+    {
+      "order": 2,
+      "name": "Cornelius Aschermann",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Ruhr-Universität Bochum"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Germany"
+      ]
+    },
+    {
+      "order": 3,
+      "name": "Ali Abbasi",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Ruhr-Universität Bochum"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Germany"
+      ]
+    },
+    {
+      "order": 4,
+      "name": "Joel Frank",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Ruhr-Universität Bochum"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Germany"
+      ]
+    },
+    {
+      "order": 5,
+      "name": "Simon Wörner",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Ruhr-Universität Bochum"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Germany"
+      ]
+    },
+    {
+      "order": 6,
+      "name": "Thorsten Holz",
+      "email": "",
+      "orcid": "",
+      "affiliations": [
+        "Ruhr-Universität Bochum"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false,
+      "pdf_countries": [
+        "Germany"
+      ]
+    }
+  ],
+  "first_authors": [
+    "Tim Blazytko"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "Ruhr-Universität Bochum"
+  ],
+  "first_affiliation": "Ruhr-Universität Bochum",
+  "participating_affiliations": [
+    "Ruhr-Universität Bochum"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Tim Blazytko",
+      "affiliation": "Ruhr-Universität Bochum",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Moritz Schlögel",
+      "affiliation": "Ruhr-Universität Bochum",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Cornelius Aschermann",
+      "affiliation": "Ruhr-Universität Bochum",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Ali Abbasi",
+      "affiliation": "Ruhr-Universität Bochum",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Joel Frank",
+      "affiliation": "Ruhr-Universität Bochum",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Simon Wörner",
+      "affiliation": "Ruhr-Universität Bochum",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Thorsten Holz",
+      "affiliation": "Ruhr-Universität Bochum",
+      "source": "conference_official_web"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "AURORA: Statistical Crash Analysis for Automated Root Cause Explanation"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2020"
+      },
+      {
+        "evidence_id": "tei:abstract",
+        "source": "grobid_tei",
+        "field": "abstract",
+        "raw_text": "Given the huge success of automated software testing techniques, a large amount of crashes is found in practice. Identifying the root cause of a crash is a time-intensive endeavor, causing a disproportion between finding a crash and fixing the underlying software fault. To address this problem, various approaches have been proposed that rely on techniques such as reverse execution and backward taint analysis. Still, these techniques are either limited to certain fault types or provide an analyst with assembly instructions, but no context information or explanation of the underlying fault. In this paper, we propose an automated analysis approach that does not only identify the root cause of a given crashing input for a binary executable, but also provides the analyst with context information on the erroneous behavior that characterizes crashing inputs. Starting with a single crashing input, we generate a diverse set of similar inputs that either also crash the program or induce benign behavior. We then trace the program's states while executing each found input and generate predicates, i. e., simple Boolean expressions that capture behavioral differences between crashing and noncrashing inputs. A statistical analysis of all predicates allows us to identify the predicate pinpointing the root cause, thereby not only revealing the location of the root cause, but also providing an analyst with an explanation of the misbehavior a crash exhibits at this location. We implement our approach in a tool called AURORA and evaluate it on 25 diverse software faults. Our evaluation shows that AURORA is able to uncover root causes even for complex bugs. For example, it succeeded in cases where many millions of instructions were executed between developer fix and crashing location. In contrast to existing approaches, AURORA is also able to handle bugs with no data dependency between root cause and crash, such as type confusion bugs."
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Tim Blazytko",
+        "order": 0,
+        "email": "",
+        "affiliations": [
+          "Ruhr-Universität Bochum, Germany"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Moritz Schlögel",
+        "order": 1,
+        "email": "",
+        "affiliations": [
+          "Ruhr-Universität Bochum, Germany"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Cornelius Aschermann",
+        "order": 2,
+        "email": "",
+        "affiliations": [
+          "Ruhr-Universität Bochum, Germany"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Ali Abbasi",
+        "order": 3,
+        "email": "",
+        "affiliations": [
+          "Ruhr-Universität Bochum, Germany"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:4",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Joel Frank",
+        "order": 4,
+        "email": "",
+        "affiliations": [
+          "Ruhr-Universität Bochum, Germany"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:5",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Simon Wörner",
+        "order": 5,
+        "email": "",
+        "affiliations": [
+          "Ruhr-Universität Bochum, Germany"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:6",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Thorsten Holz",
+        "order": 6,
+        "email": "",
+        "affiliations": [
+          "Ruhr-Universität Bochum, Germany"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "AURORA : Statistical Crash Analysis for Automated Root Cause Explanation"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Tim Blazytko, Moritz Schlögel, Cornelius Aschermann, Ali Abbasi,"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Joel Frank, Simon Wörner and Thorsten Holz"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Ruhr-Universität Bochum, Germany"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          73.02,
+          663.546,
+          503.076,
+          677.892
+        ],
+        "font_size": 14.346,
+        "raw_text": "A : Statistical Crash Analysis for Automated Root Cause Explanation",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          83.45,
+          663.546,
+          109.273,
+          675.023
+        ],
+        "font_size": 11.477,
+        "raw_text": "URORA",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          143.059,
+          622.598,
+          487.369,
+          634.553
+        ],
+        "font_size": 11.955,
+        "raw_text": "Tim Blazytko, Moritz Schlögel, Cornelius Aschermann, Ali Abbasi,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          196.593,
+          608.651,
+          422.546,
+          620.606
+        ],
+        "font_size": 11.955,
+        "raw_text": "Joel Frank, Simon Wörner and Thorsten Holz",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          219.111,
+          580.755,
+          391.266,
+          592.71
+        ],
+        "font_size": 11.955,
+        "raw_text": "Ruhr-Universität Bochum, Germany",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          151.818,
+          530.037,
+          194.857,
+          541.992
+        ],
+        "font_size": 11.955,
+        "raw_text": "Abstract",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          530.037,
+          604.803,
+          540.0
+        ],
+        "font_size": 9.963,
+        "raw_text": "tion both in industry and academia [28, 29, 31, 47, 49, 53, 59].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          518.082,
+          582.387,
+          528.045
+        ],
+        "font_size": 9.963,
+        "raw_text": "In essence, fuzzing capitalizes on a high throughput of in-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          517.766,
+          314.024,
+          527.729
+        ],
+        "font_size": 9.963,
+        "raw_text": "Given the huge success of automated software testing tech-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          506.127,
+          595.837,
+          516.09
+        ],
+        "font_size": 9.963,
+        "raw_text": "puts that are successively modified to uncover different paths",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          505.81,
+          336.44,
+          515.773
+        ],
+        "font_size": 9.963,
+        "raw_text": "niques, a large amount of crashes is found in practice. Identi-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.521,
+          494.172,
+          568.579,
+          504.135
+        ],
+        "font_size": 9.963,
+        "raw_text": "within a target program. The recent focus on new fuzzing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          493.855,
+          327.473,
+          503.818
+        ],
+        "font_size": 9.963,
+        "raw_text": "fying the root cause of a crash is a time-intensive endeavor,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          482.217,
+          577.904,
+          492.18
+        ],
+        "font_size": 9.963,
+        "raw_text": "methods has produced a myriad of crashes for software sys-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          481.9,
+          314.024,
+          491.863
+        ],
+        "font_size": 9.963,
+        "raw_text": "causing a disproportion between finding a crash and fixing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          470.262,
+          577.904,
+          480.225
+        ],
+        "font_size": 9.963,
+        "raw_text": "tems, sometimes overwhelming the developers who are tasked",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          469.945,
+          327.473,
+          479.908
+        ],
+        "font_size": 9.963,
+        "raw_text": "the underlying software fault. To address this problem, vari-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.521,
+          458.306,
+          595.478,
+          468.269
+        ],
+        "font_size": 9.963,
+        "raw_text": "with fixing them [37, 50]. In many cases, finding a new crash-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          457.99,
+          309.541,
+          467.953
+        ],
+        "font_size": 9.963,
+        "raw_text": "ous approaches have been proposed that rely on techniques",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          446.351,
+          591.353,
+          456.314
+        ],
+        "font_size": 9.963,
+        "raw_text": "ing input has become the easy and fully automated part, while",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          446.035,
+          327.473,
+          455.998
+        ],
+        "font_size": 9.963,
+        "raw_text": "such as reverse execution and backward taint analysis. Still,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          434.396,
+          600.32,
+          444.359
+        ],
+        "font_size": 9.963,
+        "raw_text": "triaging crashes remains a manual, labor-intensive effort. This",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          434.079,
+          327.473,
+          444.042
+        ],
+        "font_size": 9.963,
+        "raw_text": "these techniques are either limited to certain fault types or",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          422.441,
+          586.87,
+          432.404
+        ],
+        "font_size": 9.963,
+        "raw_text": "effort is mostly spent on identifying the actual origin of a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          422.124,
+          327.473,
+          432.087
+        ],
+        "font_size": 9.963,
+        "raw_text": "provide an analyst with assembly instructions, but no context",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          410.486,
+          577.904,
+          420.449
+        ],
+        "font_size": 9.963,
+        "raw_text": "crash [58]. The situation is worsened as fuzzing campaigns",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          410.169,
+          282.642,
+          420.132
+        ],
+        "font_size": 9.963,
+        "raw_text": "information or explanation of the underlying fault.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          398.531,
+          600.32,
+          408.494
+        ],
+        "font_size": 9.963,
+        "raw_text": "often result in a large number of crashing inputs, even if only",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.963,
+          398.214,
+          315.021,
+          408.177
+        ],
+        "font_size": 9.963,
+        "raw_text": "In this paper, we propose an automated analysis approach",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          386.575,
+          591.353,
+          396.538
+        ],
+        "font_size": 9.963,
+        "raw_text": "one actual bug is found: a fuzzer can identify multiple paths",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          386.259,
+          322.99,
+          396.222
+        ],
+        "font_size": 9.963,
+        "raw_text": "that does not only identify the root cause of a given crash-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          374.62,
+          591.353,
+          384.583
+        ],
+        "font_size": 9.963,
+        "raw_text": "to a crash, while the fault is always the same. Thus, an ana-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          374.304,
+          327.473,
+          384.267
+        ],
+        "font_size": 9.963,
+        "raw_text": "ing input for a binary executable, but also provides the ana-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          362.665,
+          591.353,
+          372.628
+        ],
+        "font_size": 9.963,
+        "raw_text": "lyst has to investigate an inflated number of potential bugs.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          362.348,
+          322.99,
+          372.311
+        ],
+        "font_size": 9.963,
+        "raw_text": "lyst with context information on the erroneous behavior that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          350.71,
+          582.387,
+          360.673
+        ],
+        "font_size": 9.963,
+        "raw_text": "Consequently, developers lose time on known bugs that could",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          350.393,
+          331.957,
+          360.356
+        ],
+        "font_size": 9.963,
+        "raw_text": "characterizes crashing inputs. Starting with a single crashing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          338.755,
+          434.442,
+          348.718
+        ],
+        "font_size": 9.963,
+        "raw_text": "be spent on fixing others.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          338.438,
+          331.957,
+          348.401
+        ],
+        "font_size": 9.963,
+        "raw_text": "input, we generate a diverse set of similar inputs that either",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          326.483,
+          309.541,
+          336.446
+        ],
+        "font_size": 9.963,
+        "raw_text": "also crash the program or induce benign behavior. We then",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          327.843,
+          324.929,
+          578.901,
+          334.892
+        ],
+        "font_size": 9.963,
+        "raw_text": "To reduce the influx of crashes mapping to the same bug,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          314.528,
+          318.507,
+          324.491
+        ],
+        "font_size": 9.963,
+        "raw_text": "trace the program's states while executing each found input",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          312.974,
+          403.06,
+          322.937
+        ],
+        "font_size": 9.963,
+        "raw_text": "analysts attempt to bucket",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          395.998,
+          312.974,
+          543.943,
+          322.937
+        ],
+        "font_size": 9.963,
+        "raw_text": "such inputs. Informally speaking,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          302.573,
+          336.44,
+          312.536
+        ],
+        "font_size": 9.963,
+        "raw_text": "and generate predicates, i. e., simple Boolean expressions that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          301.019,
+          577.904,
+          310.982
+        ],
+        "font_size": 9.963,
+        "raw_text": "bucketing groups crashing inputs according to some metric-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          290.617,
+          305.058,
+          300.58
+        ],
+        "font_size": 9.963,
+        "raw_text": "capture behavioral differences between crashing and non-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          289.064,
+          582.387,
+          299.027
+        ],
+        "font_size": 9.963,
+        "raw_text": "often coverage or hashes of the call stack-into equivalence",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          278.662,
+          340.923,
+          288.625
+        ],
+        "font_size": 9.963,
+        "raw_text": "crashing inputs. A statistical analysis of all predicates allows",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          277.108,
+          600.32,
+          287.071
+        ],
+        "font_size": 9.963,
+        "raw_text": "classes. Typically, it is assumed that analyzing one input from",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          266.707,
+          340.923,
+          276.67
+        ],
+        "font_size": 9.963,
+        "raw_text": "us to identify the predicate pinpointing the root cause, thereby",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          265.153,
+          577.904,
+          275.116
+        ],
+        "font_size": 9.963,
+        "raw_text": "each class is sufficient. However, recent experiments have",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          254.752,
+          340.923,
+          264.715
+        ],
+        "font_size": 9.963,
+        "raw_text": "not only revealing the location of the root cause, but also pro-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          253.198,
+          568.938,
+          263.161
+        ],
+        "font_size": 9.963,
+        "raw_text": "shown that common bucketing schemes produce far too many",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          53.751,
+          242.797,
+          313.775,
+          252.76
+        ],
+        "font_size": 9.963,
+        "raw_text": "viding an analyst with an explanation of the misbehavior a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          241.243,
+          586.87,
+          251.206
+        ],
+        "font_size": 9.963,
+        "raw_text": "buckets and, even worse, cluster distinct bugs into the same",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          230.841,
+          327.473,
+          240.804
+        ],
+        "font_size": 9.963,
+        "raw_text": "crash exhibits at this location. We implement our approach in",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          229.288,
+          604.803,
+          239.251
+        ],
+        "font_size": 9.963,
+        "raw_text": "bucket [42]. Even if there are only a few inputs to investigate,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          218.886,
+          282.796,
+          228.849
+        ],
+        "font_size": 9.963,
+        "raw_text": "a tool called A and evaluate it on 25 diverse software",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          112.436,
+          218.886,
+          130.369,
+          226.856
+        ],
+        "font_size": 7.97,
+        "raw_text": "URORA",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          217.333,
+          582.387,
+          227.296
+        ],
+        "font_size": 9.963,
+        "raw_text": "an analyst still faces another challenge: Understanding the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          206.931,
+          273.613,
+          216.894
+        ],
+        "font_size": 9.963,
+        "raw_text": "faults. Our evaluation shows that A is able to uncover",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          192.916,
+          206.931,
+          210.849,
+          214.901
+        ],
+        "font_size": 7.97,
+        "raw_text": "URORA",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          205.377,
+          582.387,
+          215.34
+        ],
+        "font_size": 9.963,
+        "raw_text": "reasons why a given input leads to a crash. Often, the real",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          194.976,
+          322.99,
+          204.939
+        ],
+        "font_size": 9.963,
+        "raw_text": "root causes even for complex bugs. For example, it succeeded",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          193.422,
+          456.858,
+          203.385
+        ],
+        "font_size": 9.963,
+        "raw_text": "cause of a crash-referred to as root cause",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          485.925,
+          193.422,
+          566.622,
+          203.385
+        ],
+        "font_size": 9.963,
+        "raw_text": "-is not located at",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          183.021,
+          314.024,
+          192.984
+        ],
+        "font_size": 9.963,
+        "raw_text": "in cases where many millions of instructions were executed",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          181.467,
+          600.32,
+          191.43
+        ],
+        "font_size": 9.963,
+        "raw_text": "the point the program crashes; instead, it might be far earlier",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          171.066,
+          318.507,
+          181.029
+        ],
+        "font_size": 9.963,
+        "raw_text": "between developer fix and crashing location. In contrast to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          169.512,
+          586.87,
+          179.475
+        ],
+        "font_size": 9.963,
+        "raw_text": "in the program's execution flow. Therefore, an analyst needs",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          159.11,
+          285.911,
+          169.073
+        ],
+        "font_size": 9.963,
+        "raw_text": "existing approaches, A is also able to handle bugs with",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          142.45,
+          159.11,
+          160.383,
+          167.08
+        ],
+        "font_size": 7.97,
+        "raw_text": "URORA",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          157.557,
+          577.904,
+          167.52
+        ],
+        "font_size": 9.963,
+        "raw_text": "to analyze the path from the crashing location backward to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          147.155,
+          305.058,
+          157.118
+        ],
+        "font_size": 9.963,
+        "raw_text": "no data dependency between root cause and crash, such as",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          145.602,
+          564.454,
+          155.565
+        ],
+        "font_size": 9.963,
+        "raw_text": "find the root cause, which requires significant effort.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          135.2,
+          143.663,
+          145.163
+        ],
+        "font_size": 9.963,
+        "raw_text": "type confusion bugs.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          327.843,
+          131.776,
+          583.384,
+          141.739
+        ],
+        "font_size": 9.963,
+        "raw_text": "Consider, for example, a type confusion bug: a pointer to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          119.821,
+          394.094,
+          129.784
+        ],
+        "font_size": 9.963,
+        "raw_text": "an object of type A",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          388.32,
+          119.821,
+          554.197,
+          129.784
+        ],
+        "font_size": 9.963,
+        "raw_text": "is used in a place where a pointer to B",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          543.727,
+          119.821,
+          553.69,
+          129.784
+        ],
+        "font_size": 9.963,
+        "raw_text": "is",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          107.866,
+          420.993,
+          117.829
+        ],
+        "font_size": 9.963,
+        "raw_text": "expected. If a field of B",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          409.289,
+          107.866,
+          566.2,
+          117.829
+        ],
+        "font_size": 9.963,
+        "raw_text": "is accessed, an invalid access on a",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          106.222,
+          129.318,
+          118.177
+        ],
+        "font_size": 11.955,
+        "raw_text": "1 Introduction",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          95.91,
+          376.161,
+          105.873
+        ],
+        "font_size": 9.963,
+        "raw_text": "subsection of A",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          372.008,
+          95.91,
+          587.2,
+          105.873
+        ],
+        "font_size": 9.963,
+        "raw_text": "can result. If the structures are not compatible",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          83.955,
+          143.663,
+          93.918
+        ],
+        "font_size": 9.963,
+        "raw_text": "Fuzz testing (short: fuzzing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          165.586,
+          83.955,
+          348.933,
+          93.918
+        ],
+        "font_size": 9.963,
+        "raw_text": ") is a powerful software testing (e. g., A",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          342.482,
+          83.955,
+          557.674,
+          93.918
+        ],
+        "font_size": 9.963,
+        "raw_text": "contains a string where a pointer is expected by B",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          553.321,
+          83.955,
+          563.284,
+          93.918
+        ],
+        "font_size": 9.963,
+        "raw_text": "),",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          72.0,
+          345.406,
+          81.963
+        ],
+        "font_size": 9.963,
+        "raw_text": "technique that, especially in recent years, gained a lot of trac-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          317.88,
+          72.0,
+          586.87,
+          81.963
+        ],
+        "font_size": 9.963,
+        "raw_text": "this can cause memory corruption. In this case, the crashing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Given the huge success of automated software testing tech- niques, a large amount of crashes is found in practice. Identi- fying the root cause of a crash is a time-intensive endeavor, causing a disproportion between finding a crash and fixing the underlying software fault. To address this problem, vari- ous approaches have been proposed that rely on techniques such as reverse execution and backward taint analysis. Still, these techniques are either limited to certain fault types or provide an analyst with assembly instructions, but no context information or explanation of the underlying fault. In this paper, we propose an automated analysis approach that does not only identify the root cause of a given crash- ing input for a binary executable, but also provides the ana- lyst with context information on the erroneous behavior that characterizes crashing inputs. Starting with a single crashing input, we generate a diverse set of similar inputs that either also crash the program or induce benign behavior. We then trace the program's states while executing each found input and generate predicates, i. e., simple Boolean expressions that capture behavioral differences between crashing and non- crashing inputs. A statistical analysis of all predicates allows us to identify the predicate pinpointing the root cause, thereby not only revealing the location of the root cause, but also pro- viding an analyst with an explanation of the misbehavior a crash exhibits at this location. We implement our approach in a tool called AURORA and evaluate it on 25 diverse software faults. Our evaluation shows that AURORA is able to uncover root causes even for complex bugs. For example, it succeeded in cases where many millions of instructions were executed between developer fix and crashing location. In contrast to existing approaches, AURORA is also able to handle bugs with no data dependency between root cause and crash, such as type confusion bugs.",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "CreationDate": "D:20200302153704Z",
+          "Creator": "LaTeX with hyperref package",
+          "ModDate": "D:20200302153704Z",
+          "PTEX.Fullbanner": "This is pdfTeX, Version 3.14159265-2.6-1.40.18 (TeX Live 2017) kpathsea version 6.2.3",
+          "Producer": "pdfTeX-1.40.18",
+          "Trapped": "/False"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "field": "author_affiliation_relation",
+        "author": "Tim Blazytko",
+        "affiliations": [
+          "Ruhr-Universität Bochum"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "field": "author_affiliation_relation",
+        "author": "Moritz Schlögel",
+        "affiliations": [
+          "Ruhr-Universität Bochum"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "field": "author_affiliation_relation",
+        "author": "Cornelius Aschermann",
+        "affiliations": [
+          "Ruhr-Universität Bochum"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "field": "author_affiliation_relation",
+        "author": "Ali Abbasi",
+        "affiliations": [
+          "Ruhr-Universität Bochum"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:4",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "field": "author_affiliation_relation",
+        "author": "Joel Frank",
+        "affiliations": [
+          "Ruhr-Universität Bochum"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:5",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "field": "author_affiliation_relation",
+        "author": "Simon Wörner",
+        "affiliations": [
+          "Ruhr-Universität Bochum"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:6",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "field": "author_affiliation_relation",
+        "author": "Thorsten Holz",
+        "affiliations": [
+          "Ruhr-Universität Bochum"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "AURORA: Statistical Crash Analysis for Automated Root Cause Explanation"
+        },
+        {
+          "source": "selected",
+          "value": "location is most likely not the root cause of the fault, as the invariant “points to an instance of B” is violated in a different spot. The code that creates the object of type A is also most likely correct. Instead, the particular control flow that makes a value from type A end up in B's place is at fault. In a naive approach, an analyst could inspect stack and register values with a debugger. Starting from the crash, they can manually backtrace the execution to the root cause. Using state-of-the-art sanitizers such as the ASAN family [51] may detect illegal memory accesses closer to the root cause. In our example, the manual analysis would start at the crashing location, while ASAN would detect the location where the memory corruption occurred. Still, the analyst has to manually recognize the type confusion as the root cause-a complicated task since most code involved is behaving correctly. More involved approaches such as POMP [57], RE- TRACER [33], REPT [32] and DEEPVSA [38] use auto- mated reverse execution and backward taint analysis. These are particularly useful if the crash is not reproducible. For example, REPT and RET RACER can analyze crashes that occurred on end-devices by combining core dumps and In- tel PT traces. However, these approaches generally do not allow to automatically identify the root cause unless there is a direct data dependency connecting root cause and crashing instruction. Furthermore, REPT and RET RACER focus on providing an interactive debugging session for an analyst to inspect manually what happened before the crash. In cases such as the type confusion above, or when debug- ging JIT-based software such as JavaScript engines, a single crashing input may not allow identifying the root cause with- out extensive manual reasoning. Therefore, one can use a fuzzer to perform crash exploration. In this mode, the fuzzer is seeded with crashing inputs which it mutates as long as they keep crashing the target application. This process gener- ates new inputs that are related to the original crashing input, yet slightly different (e. g., they could trigger the crash via a different path). A diverse set of crashing inputs that mostly trigger the same bug can aid analysis. Observing multiple ranges of values and different control-flow edges taken can help narrow down potential root causes. However, none of the aforementioned methods takes advantage of this infor- mation. Consequently, identifying the root cause remains a challenging task, especially if there is no direct data depen- dency between root cause and crashing instruction. Although techniques such as ASAN , POMP , REPT and RET RACER provide more context, they often fail to identify the root cause and provide no explanation of the fault. In this paper, we address this problem by developing an automated approach capable of finding the root cause given a crashing input. This significantly reduces human effort: unlike the approaches discussed previously, we do not only identify a code location, but also an explanation of the prob- lem. This also reduces the number of locations an analyst has to inspect, as AURORA only considers instructions with a plausible explanation. To enable precise identification of the root cause, we first pick one crashing input and produce a diverse set of similar inputs, some of which cause a crash while others do not. We then execute these newly-generated inputs while tracking the binary program's internal state. This includes control-flow information and relevant register values for each instruction. Given such detailed traces for many different inputs, we create a set of simple Boolean expressions (around 1,000 per instruc- tion) to predict whether the input causes a crash. Intuitively, these predicates capture interesting runtime behavior such as whether a specific branch is taken or whether a register contains a suspiciously small value. Consider our previous type confusion example and assume that a pointer to the constructor is called at some location in the program. Using the tracked information obtained from the diversified set of inputs, we can observe that (nearly) all calls in crashing inputs invoke the constructor of typeA, while calls to the constructor of B imply that the input is not going to cause a crash. Thus, we can pinpoint the problem at an earlier point of the execution, even when no data taint connection exists between crashing location and root cause. This exam- ple also demonstrates that our approach needs to evaluate a large set of predicates, since many factors have to be captured, including different program contexts and vulnerability types. Using the predicates as a metric for each instruction, we can automatically pinpoint the possible root cause of crashes. Ad- ditionally, the predicates provide a concrete explanation of why the software fault occurs. We built a prototype implementation of our approach in a tool called AURORA . To evaluate AURORA , we analyze 25 targets that cover a diverse set of vulnerability classes, including five use-after-free vulnerabilities, ten heap buffer overflows and two type confusion vulnerabilities that previous work fails to account for. We show that AURORA reliably allows identifying the root cause even for complex binaries. For example, we analyzed a type confusion bug in mruby where an exception handler fails to raise a proper exception type. It took an expert multiple days to identify the actual fault. Using our technique, the root cause was pinpointed automatically. In summary, our key contributions are threefold: • We present the design of AURORA , a generic approach to automatically pinpoint the location of the root cause and provide a semantic explanation of the crash. • We propose a method to synthesize domain-specific pred- icates for binary programs, tailored to the observed be- havior of the program. These predicates allow accurate predictions on whether a given input will crash or not."
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2020"
+        },
+        {
+          "source": "selected",
+          "value": "2020"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": "Given the huge success of automated software testing techniques, a large amount of crashes is found in practice. Identifying the root cause of a crash is a time-intensive endeavor, causing a disproportion between finding a crash and fixing the underlying software fault. To address this problem, various approaches have been proposed that rely on techniques such as reverse execution and backward taint analysis. Still, these techniques are either limited to certain fault types or provide an analyst with assembly instructions, but no context information or explanation of the underlying fault. In this paper, we propose an automated analysis approach that does not only identify the root cause of a given crashing input for a binary executable, but also provides the analyst with context information on the erroneous behavior that characterizes crashing inputs. Starting with a single crashing input, we generate a diverse set of similar inputs that either also crash the program or induce benign behavior. We then trace the program's states while executing each found input and generate predicates, i. e., simple Boolean expressions that capture behavioral differences between crashing and noncrashing inputs. A statistical analysis of all predicates allows us to identify the predicate pinpointing the root cause, thereby not only revealing the location of the root cause, but also providing an analyst with an explanation of the misbehavior a crash exhibits at this location. We implement our approach in a tool called AURORA and evaluate it on 25 diverse software faults. Our evaluation shows that AURORA is able to uncover root causes even for complex bugs. For example, it succeeded in cases where many millions of instructions were executed between developer fix and crashing location. In contrast to existing approaches, AURORA is also able to handle bugs with no data dependency between root cause and crash, such as type confusion bugs."
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Given the huge success of automated software testing tech- niques, a large amount of crashes is found in practice. Identi- fying the root cause of a crash is a time-intensive endeavor, causing a disproportion between finding a crash and fixing the underlying software fault. To address this problem, vari- ous approaches have been proposed that rely on techniques such as reverse execution and backward taint analysis. Still, these techniques are either limited to certain fault types or provide an analyst with assembly instructions, but no context information or explanation of the underlying fault. In this paper, we propose an automated analysis approach that does not only identify the root cause of a given crash- ing input for a binary executable, but also provides the ana- lyst with context information on the erroneous behavior that characterizes crashing inputs. Starting with a single crashing input, we generate a diverse set of similar inputs that either also crash the program or induce benign behavior. We then trace the program's states while executing each found input and generate predicates, i. e., simple Boolean expressions that capture behavioral differences between crashing and non- crashing inputs. A statistical analysis of all predicates allows us to identify the predicate pinpointing the root cause, thereby not only revealing the location of the root cause, but also pro- viding an analyst with an explanation of the misbehavior a crash exhibits at this location. We implement our approach in a tool called AURORA and evaluate it on 25 diverse software faults. Our evaluation shows that AURORA is able to uncover root causes even for complex bugs. For example, it succeeded in cases where many millions of instructions were executed between developer fix and crashing location. In contrast to existing approaches, AURORA is also able to handle bugs with no data dependency between root cause and crash, such as type confusion bugs."
+        },
+        {
+          "source": "selected",
+          "value": "Given the huge success of automated software testing techniques, a large amount of crashes is found in practice. Identifying the root cause of a crash is a time-intensive endeavor, causing a disproportion between finding a crash and fixing the underlying software fault. To address this problem, various approaches have been proposed that rely on techniques such as reverse execution and backward taint analysis. Still, these techniques are either limited to certain fault types or provide an analyst with assembly instructions, but no context information or explanation of the underlying fault. In this paper, we propose an automated analysis approach that does not only identify the root cause of a given crashing input for a binary executable, but also provides the analyst with context information on the erroneous behavior that characterizes crashing inputs. Starting with a single crashing input, we generate a diverse set of similar inputs that either also crash the program or induce benign behavior. We then trace the program's states while executing each found input and generate predicates, i. e., simple Boolean expressions that capture behavioral differences between crashing and noncrashing inputs. A statistical analysis of all predicates allows us to identify the predicate pinpointing the root cause, thereby not only revealing the location of the root cause, but also providing an analyst with an explanation of the misbehavior a crash exhibits at this location. We implement our approach in a tool called AURORA and evaluate it on 25 diverse software faults. Our evaluation shows that AURORA is able to uncover root causes even for complex bugs. For example, it succeeded in cases where many millions of instructions were executed between developer fix and crashing location. In contrast to existing approaches, AURORA is also able to handle bugs with no data dependency between root cause and crash, such as type confusion bugs."
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Tim Blazytko",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Moritz Schlögel",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Cornelius Aschermann",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Ali Abbasi",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 3
+          },
+          {
+            "order": 4,
+            "name": "Joel Frank",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 4
+          },
+          {
+            "order": 5,
+            "name": "Simon Wörner",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 5
+          },
+          {
+            "order": 6,
+            "name": "Thorsten Holz",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 6
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Tim Blazytko",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Moritz Schlögel",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Cornelius Aschermann",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 3,
+            "name": "Ali Abbasi",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 4,
+            "name": "Joel Frank",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 5,
+            "name": "Simon Wörner",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 6,
+            "name": "Thorsten Holz",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ruhr-Universität Bochum, Germany"
+            ],
+            "affiliation_source": "author_node",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 5,
+        "author_count": 7,
+        "matched_author_count": 0,
+        "exact_author_match_count": 0,
+        "dominant_author_font_size": 0.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "author_sequence_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 7,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "AURORA: Statistical Crash Analysis for Automated Root Cause Explanation",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity20/presentation/blazytko",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Tim Blazytko",
+            "affiliations": [
+              "Ruhr-Universität Bochum"
+            ]
+          },
+          {
+            "name": "Moritz Schlögel",
+            "affiliations": [
+              "Ruhr-Universität Bochum"
+            ]
+          },
+          {
+            "name": "Cornelius Aschermann",
+            "affiliations": [
+              "Ruhr-Universität Bochum"
+            ]
+          },
+          {
+            "name": "Ali Abbasi",
+            "affiliations": [
+              "Ruhr-Universität Bochum"
+            ]
+          },
+          {
+            "name": "Joel Frank",
+            "affiliations": [
+              "Ruhr-Universität Bochum"
+            ]
+          },
+          {
+            "name": "Simon Wörner",
+            "affiliations": [
+              "Ruhr-Universität Bochum"
+            ]
+          },
+          {
+            "name": "Thorsten Holz",
+            "affiliations": [
+              "Ruhr-Universität Bochum"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "preserve_pdf_countries_before_official_web",
+        "stage": "pdf_country_preservation",
+        "field": "country",
+        "authors_restored": 7,
+        "country_values_restored": 7,
+        "source": "pdf_extraction_csv"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      }
+    ]
+  }
+}

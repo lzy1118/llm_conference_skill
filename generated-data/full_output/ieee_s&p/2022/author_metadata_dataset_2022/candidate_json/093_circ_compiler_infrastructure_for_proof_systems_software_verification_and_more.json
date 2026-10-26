@@ -1,0 +1,199 @@
+{
+  "paper_id": "093_circ_compiler_infrastructure_for_proof_systems_software_verification_and_more",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "CirC: Compiler infrastructure for proof systems, software verification, and more"
+      },
+      {
+        "source": "selected",
+        "value": "CirC: Compiler infrastructure for proof systems, software verification, and more"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Cryptographic tools like proof systems, multi-party computation, and fully homomorphic encryption are usually applied to computations expressed as systems of arithmetic constraints. In practice, this means that these applications rely on compilers from high-level programming languages (like C) to such constraints. This compilation task is challenging, but not entirely new: the software verification community has a rich literature on compiling programs to logical constraints (like SAT or SMT). In this work, we show that building shared compiler infrastructure for compiling to constraint representations is possible, because these representations share a common abstraction: stateless, non-uniform, non-deterministic computations that we call existentially quantified circuits, or EQCs. Moreover, we show that this shared infrastructure is useful, because it allows compilers for proof systems to benefit from decades of work on constraint compilation techniques for software verification. To make our approach concrete we create CirC, an infrastructure for building compilers to EQCs. CirC makes it easy to compile to new EQCs: we build support for three, R1CS (used for proof systems), SMT (used for verification and bug-finding), and ILP (used for optimization), in ≈2000 LOC. It's also easy to extend CirC to support new source languages: we build a feature-complete compiler for a cryptographic language in one week and ≈900 LOC, whereas the reference compiler for the same language took years to write, comprises ≈24000 LOC, and produces worse-performing output than our compiler. Finally, CirC enables novel applications that combine multiple EQCs. For example, we build the first pipeline that (1) automatically identifies bugs in programs, then (2) automatically constructs cryptographic proofs of the bugs' existence. 1. Here, W captures the program's execution transcript and, in the zeroknowledge case, any secret inputs provided by the prover. 2. Note that EQCs do not capture digital circuits, which are stateful and deterministic; thus, we do not consider them in this work. See Section 2.5. 2248 2022 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Cryptographic tools like proof systems, multi-party computation, and fully homomorphic encryption are usually applied to computations expressed as systems of arithmetic constraints. In practice, this means that these applications rely on compilers from high-level programming languages (like C) to such constraints. This compilation task is challenging, but not entirely new: the software verification community has a rich literature on compiling programs to logical constraints (like SAT or SMT). In this work, we show that building shared compiler infrastructure for compiling to constraint representations is pos- sible, because these representations share a common abstrac- tion: stateless, non-uniform, non-deterministic computations that we call existentially quantified circuits , or EQCs. Moreover, we show that this shared infrastructure is useful, because it allows compilers for proof systems to benefit from decades of work on constraint compilation techniques for software verification. To make our approach concrete we create CirC, an infras- tructure for building compilers to EQCs. CirC makes it easy to compile to new EQCs: we build support for three, R1CS (used for proof systems), SMT (used for verification and bug-finding), and ILP (used for optimization), in ≈2000 LOC. It's also easy to extend CirC to support new source languages: we build a feature-complete compiler for a cryptographic language in one week and ≈900 LOC, whereas the reference compiler for the same language took years to write, comprises ≈24000 LOC, and produces worse-performing output than our compiler. Finally, CirC enables novel applications that combine multiple EQCs. For example, we build the first pipeline that (1) automatically identifies bugs in programs, then (2) automatically constructs cryptographic proofs of the bugs' existence. 1. Introduction Cryptographic proof systems allow one entity, a prover, to construct a short and easily verified proof that convinces another entity, a verifier, that the prover knows a witness W satisfying a relation R(X,W ), for an instance X specified by the verifier. Roughly speaking, a proof convinces the verifier that X corresponds to a true input-output pair for a program specified by the relation R; a zero-knowledge proof does so without revealing W .1 Applications of this paradigm have seen explosive growth; examples include computing over the prover's secret data, as in Zcash [ 1, 2], and verifiably out- sourcing computation, as in Rollups [ 3-6]. In most general-purpose proof systems, the relationR must be reduced to a system of equations or constraints, often in a format called a rank-1 constraint system (R1CS; §2.2). Writing a proof about a program's execution thus requires expressing faithful execution of the program as a set of constraints. This has motivated a large body of work on creating compilers from various high- and low-level languages to constraints, both in academia [7-11] and in industry [ 12-18]. Besides proofs, other settings give rise to similar compi- lation problems. Secure multi-party computation (MPC) [ 19] 1. Here, W captures the program's execution transcript and, in the zero- knowledge case, any secret inputs provided by the prover. and fully homomorphic encryption (FHE) [ 20] both support computation over secrets, and both require a computation to be expressed as a set of constraints, frequently an arithmetic or boolean circuit. And compiling to constraints is neither new nor peculiar to cryptography: the programming languages and formal methods communities have a long tradition of translat- ing programs to logical constraints, e.g., Satisfiability Modulo Theories [ 21] (SMT) formulas, to verify properties [ 22-27], synthesize new programs [ 28-30], and more. Further afield, researchers also compile to integer linear programs [ 31, 32]: a kind of constraint system used for optimization problems. Compilers to constraints are crucial in all of these appli- cations, but they are hard to build. For example, Torlak and Bodik identify compilers to SMT as “the most difficult aspect of creating solver-aided tools,” taking “years to develop” [ 26]. As a result, communities that work on constraint compil- ers have poured enormous effort into building them (§ 2.5). Unfortunately, there has been little cross-pollination among communities, and duplicated efforts within them. Worse, many research results never escape the academy, largely because turning a research prototype into a robust, extensible toolchain is a huge amount of work. Anecdotally, deployed applications of proofs (e.g., Zcash [ 1, 2]) eschew compilation in favor of hand-crafted constraints because, despite years of effort, no existing software artifact synthesizes research results and engineering know-how into a compelling case for compilation. Thus, our animating question: is it possible to create shared infrastructure for building constraint compilers that is useful across such disparate applications? In this paper, we show that the answer is yes! This means that newer ap- plications like proof systems can leverage decades of insights from the compilers and verification communities. It also means that future work can build on common infrastructure, avoiding duplication and promoting use beyond the prototype stage. To start, we observe that shared infrastructure is possiblein principle, because all the constraint representations discussed above can be viewed as instances of the same abstraction: a class of non-deterministic execution substrates that we call existentially quantified circuits , or EQCs. 2 EQCs have two main features that differentiate them from CPUs, the tar- gets of traditional compilers. First, EQCs are stateless-they do not support mutable variables, control flow, memory, or storage. Second, they admit non-determinism in the form of existentially quantified variables. As one example EQC: a system of rank-1 constraints (R1CS; § 2.2) is “executed” by a cryptographic proof system; an R1CS is a system of equations, so it is stateless and free of control flow; and a cryptographic proof establishes∃W.R(X,W ), so the witness variables in an R1CS are existentially quantified. By leveraging the EQC abstraction, we show that shared infrastructure for compiling to constraints is possible- and 2. Note that EQCs do not capture digital circuits, which are stateful and deterministic; thus, we do not consider them in this work. See Section 2.5. 2248 DOI 10.1109/SP46214.2022.00093 C ... Rust LLVM IR: random-access machine x86 ... ARM C subset ZKlog ZoKrates CirC IR: state-free, non-uniform, non-deterministic computation SMT Solver ILP Solver Proof System Figure 1. LLVM uses a random-access machine abstraction to make it easy for new front-ends to target CPUs. CirC uses a non-uniform non-deterministic state-free abstraction to make it easy to target EQCs. useful-in practice, for three reasons. First, the process of compiling from a high-level language to an EQC is similar, even for very different EQCs. To compile, say, a C pro- gram to SMT, there is a well-known procedure: explore all paths through the program (i.e., unroll all loops, consider all branches) while guarding all state modifications by the condition under which the corresponding path is taken [27]. The same procedure is used to compile a program to boolean circuits for multi-party computation [33] or to R1CS for proof systems [11, 34]. Since this procedure is largely independent of the application, sharing compilation infrastructure avoids duplicated effort. We describe our language-agnostic machin- ery for turning programs into circuits in Section 3. Second, EQCs have performance characteristics different from processors, but similar to other EQCs. As a result, shared EQC infrastructure can support shared optimizations, whereas reusing existing infrastructure geared towards CPUs wouldn't make sense. As one example, while CPUs support load and store instructions for memory access, simulating memory in EQCs (which are state-free) is very expensive: there are ac- tive lines of research on memory representations and related optimizations for both software verification [35-40] and proof systems [6, 7, 10, 11, 41, 42]. We show that proof system and software verifier performance both improve under the same memory optimizations (and more) in Section 6. Finally, shared compiler infrastructure unlocks benefits with few analogs in traditional compilers. In a traditional compiler, each target CPU supported by the compiler does essentially the same thing: it executes code. EQCs, in contrast, often have very different purposes-and shared infrastructure makes it easy to combine those purposes in ways that enable new applications. For example, verification allows users to prove that a program has some property (e.g., “contains no undefined behavior”), while proof systems allow users to prove facts to one another in spite of mutual distrust (e.g., proving “I know my password” without revealing it). Combining these functionalities, we show in Section 7 that our work helps analysts find a bug (using expert hints and an SMT solver) and then prove the bug's existence without revealing how to trigger it (using a proof system). We also demonstrate other combinations, e.g., optimizing R1CS using an SMT solver. To make these benefits concrete, we implement an in- frastructure for building compilers to EQCs, which we call CirC (“SIR-see”). CirC is analogous to-and inspired by- LLVM [43], an infrastructure for compiling programs to machine code. LLVM's key abstraction is its intermediate representation, LLVM IR, which captures the computational model of random-access machines (i.e., CPUs). CirC builds on a different abstraction (Fig. 1): state-free, non-deterministic, non-uniform computation , which captures the computational model of EQCs (§2.1). As in LLVM, language designers can write front-ends that compile to CirC-IR; build CirC-IR analyses, transformations, and optimizations; and create back- ends that lower from CirC-IR to a given EQC (e.g., R1CS), allowing them to run the resulting executable (e.g., by feeding the resulting R1CS to a proof system). In sum, our contributions are: • We build CirC, an infrastructure for compiling programs to circuits (§3). • We demonstrate CirC's extensibility. We extend CirC to the ZoKrates proof language in a week with ≈900 lines of code, whereas the language's reference compiler was developed over years and comprises ≈24000 lines (§4). • We evaluate the accuracy of CirC's SMT output and the performance (size) of its R1CS output. For example, we find that for ZoKrates programs, CirC produces R1CS instances which perform slightly better than those from the language's reference compiler. CirC also closely matches a hand-tuned constraint system deployed by Zcash [2] (§5). • We evaluate the effect of common optimizations on the performance of verification and proof-system applications, finding that some optimizations provide substantial benefit to both (§6). • We demonstrate the ease of combining back-end function- ality using CirC. We use an SMT solver to optimize and analyze R1CS compilation, and use a proof system to prove knowledge of (1) a bug identified by an SMT solver and (2) a high-value input identified by an ILP solver (§7). Summarizing our key insights: (1) many subfields rely on the same abstraction, the EQC; (2) compiling to different EQCs uses similar steps, and EQCs have similar performance char- acteristics, so shared infrastructure makes sense; and (3) with shared infrastructure, different EQCs can be combined in service of new applications. 2. Background and related work In this section, we start with a slightly more formal defini- tion of EQCs. Then, to set the stage for our evaluation (§5-§7), we discuss our three example use cases: cryptographic proof systems (§2.2) , automated verification (§2.3), and constrained optimization (§2.4). Finally, we describe related work (§2.5). 2.1. Existentially quantified circuits"
+      },
+      {
+        "source": "selected",
+        "value": "Cryptographic tools like proof systems, multi-party computation, and fully homomorphic encryption are usually applied to computations expressed as systems of arithmetic constraints. In practice, this means that these applications rely on compilers from high-level programming languages (like C) to such constraints. This compilation task is challenging, but not entirely new: the software verification community has a rich literature on compiling programs to logical constraints (like SAT or SMT). In this work, we show that building shared compiler infrastructure for compiling to constraint representations is possible, because these representations share a common abstraction: stateless, non-uniform, non-deterministic computations that we call existentially quantified circuits, or EQCs. Moreover, we show that this shared infrastructure is useful, because it allows compilers for proof systems to benefit from decades of work on constraint compilation techniques for software verification. To make our approach concrete we create CirC, an infrastructure for building compilers to EQCs. CirC makes it easy to compile to new EQCs: we build support for three, R1CS (used for proof systems), SMT (used for verification and bug-finding), and ILP (used for optimization), in ≈2000 LOC. It's also easy to extend CirC to support new source languages: we build a feature-complete compiler for a cryptographic language in one week and ≈900 LOC, whereas the reference compiler for the same language took years to write, comprises ≈24000 LOC, and produces worse-performing output than our compiler. Finally, CirC enables novel applications that combine multiple EQCs. For example, we build the first pipeline that (1) automatically identifies bugs in programs, then (2) automatically constructs cryptographic proofs of the bugs' existence. 1. Here, W captures the program's execution transcript and, in the zeroknowledge case, any secret inputs provided by the prover. 2. Note that EQCs do not capture digital circuits, which are stateful and deterministic; thus, we do not consider them in this work. See Section 2.5. 2248 2022 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Alex Ozdemir",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Fraser Brown",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University",
+            "Carnegie Mellon University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Riad SWahby",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University",
+            "Carnegie Mellon University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Alex Ozdemir",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Fraser Brown",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University",
+            "Carnegie Mellon University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Riad SWahby",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University",
+            "Carnegie Mellon University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 143,
+      "author_count": 3,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Alex Ozdemir",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Alex Ozdemir",
+          "affiliation_raw": "Stanford University Carnegie Mellon University",
+          "confidence": 0.92,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.414,
+          "center_distance": 94.995,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "CirC: Compiler infrastructure for proof systems, software verification, and more",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Alex Ozdemir",
+          "affiliations": [
+            "Stanford University"
+          ]
+        },
+        {
+          "name": "Fraser Brown",
+          "affiliations": [
+            "Stanford University, Carnegie Mellon University"
+          ]
+        },
+        {
+          "name": "Riad Wahby",
+          "affiliations": [
+            "Stanford University, Carnegie Mellon University, and Algorand"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

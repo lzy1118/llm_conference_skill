@@ -1,0 +1,172 @@
+{
+  "paper_id": "121_redefining_indirect_call_analysis_with_kallgraph",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Redefining Indirect Call Analysis with KallGraph"
+      },
+      {
+        "source": "selected",
+        "value": "Redefining Indirect Call Analysis with KallGraph"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Call graph construction is a crucial prerequisite for a wide range of static analysis applications. State-of-the-art methods minimize precise but expensive pointer tracking by falling back to so-called \"type analysis\" which scales well to large programs such as the Linux kernel. In this paper, we undertake an in-depth evaluation and analysis of type-based methods that reveal new insights into flaws due to their adhoc nature. First, we find that in a number of cases, the soundness claims of recent type-based methods do not hold, resulting in missing indirect call targets. Second, we find the analysis is overly conservative in multiple aspects, leading to a large number of false indirect call targets. Based on these insights, we make the observation that such type-based methods can be converted into a hybrid pointer analysis framework that unifies the traditional pointer tracking methods and typebased methods. Based on such a framework, we develop a practical indirect call analysis that addresses both soundness and precision limitations. Our results demonstrate a remarkable level of soundness and precision improvements. KallGraph simultaneously improves precision and soundness by pruning up to 90% of indirect call targets and eliminating hundreds to thousands of missed indirect calls. Finally, KallGraph is fully parallelizable and can complete the analysis of Linux kernels in times ranging from tens of minutes to a few hours."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Call graph construction is a crucial prerequisite for a wide range of static analysis applications. State-of-the-art methods minimize precise but expensive pointer tracking by falling back to so-called “type analysis” which scales well to large programs such as the Linux kernel. In this paper, we undertake an in-depth evaluation and analysis of type-based methods that reveal new insights into flaws due to their ad- hoc nature. First, we find that in a number of cases, the soundness claims of recent type-based methods do not hold, resulting in missing indirect call targets. Second, we find the analysis is overly conservative in multiple aspects, leading to a large number of false indirect call targets. Based on these insights, we make the observation that such type-based methods can be converted into a hybrid pointer analysis framework that unifies the traditional pointer tracking methods and type- based methods. Based on such a framework, we develop a practical indirect call analysis that addresses both soundness and precision limitations. Our results demonstrate a remarkable level of soundness and precision improvements. KallGraph simultaneously improves precision and soundness by pruning up to 90% of indirect call targets and eliminating hundreds to thousands of missed indirect calls. Finally, KallGraph is fully parallelizable and can complete the analysis of Linux kernels in times ranging from tens of minutes to a few hours. 1. Introduction Call graphs maintain the relationship between caller and callee functions. They are widely used in inter-procedural program analysis for a variety of purposes [ 1- 15]. Constructing call graphs is challenging because of indi- rect calls, which, in C programs, occur through dereferencing a function pointer. Classic points-to analysis can identify indirect call targets by tracking how a function address flows to a dereferenced function pointer. However, this approach is unscalable for large programs such as the Linux kernel [ 16]. This leads to the development of type-based indirect call analysis, offering superior scalability with decent precision and soundness [ 17, 18]. The most straightforward method along this direction is called function signature analysis (FSA) [ 17], which matches indirect calls and address-taken functions that share the same signature, i.e., return type and parameter types. However, this method is highly imprecise when resolving an indirect call with a common signature. To refine FSA, multi-layer type-based analysis (MLT A) [ 18]w a s proposed to refine the analysis results based on “type contexts” of indirect calls and function address-taken sites, i.e., match- ing the struct types a function pointer from which a function pointer is retrieved with the structure types into which a function address is stored. This method requires computing partial data flows (to track pointer propagation) and allows many indirect call targets to be pruned successfully. More recently, TyPM [ 11], KELP [ 19], TFA [ 20], SMLTA [ 21] were proposed as improved successors of MLTA. In this paper, we conduct an in-depth evaluation and analysis of the state-of-the-art type-based methods and have two major observations: (1) MLTA 's soundness claim does not hold due to flaws at the design level, and its precision is still limited due to conservative design regarding type handling; (2) Most of these limitations/flaws are not resolved by its successors [ 11, 19- 21], causing still imprecise and unsound results. To address this, we map the MLT A algorithm that does partly data-flow and type-based analysis into a recent hybrid pointer analysis framework that unifies the two analyses. Through the framework, we develop a sound, precise, and scalable indirect call analysis, dubbed KallGraph, that revamps the current type-based analysis in a principled and systematic manner. Through extensive evaluation, we show that KallGraph outperforms state-of-the-art methods in both soundness and precision: (1) correcting thousands of false negative indirect call results of MLT A and its successors in large programs such as Linux kernels (with a subset of them verified by dynamic execution), (2) eliminating 75% to 90% of indirect call targets compared to MLT A, and over 60% compared to MLT A 's successors. Finally, KallGraph is highly parallelizable, making it scalable for practical uses, i.e., tens of minutes to a few hours in our experiments. In summary, we make the following contributions: •An in-depth study revealing fundamental and previously unknown limitations in state-of-the-art type-based indirect call analysis, regarding both soundness and precision. •An insight into the connection between existing type-based methods and a grounded hybrid pointer analysis, effec- tively addresses both soundness and precision limitations. •A fully working and open-sourced indirect call analysis, *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ (VPSFO-J6OEFSMJDFOTFUP*&&& %0*41 called KallGraph1, based on the hybrid pointer analysis. The solution works well on large-scale programs such as the Linux kernel. •A comprehensive evaluation demonstrating how KallGraph outperforms the existing methods with detailed data and case studies, which establishes a new standard. 2. Indirect Call Analysis At a high level, there are two categories of approaches to resolve indirect calls ( icall in short), points-to analysis and type-based methods. The points-to analysis treats the indirect call analysis as resolving the points-to set of the function pointer operand of the icall instruction. It keeps track of the object allocations and pointer propagation and resolves points-to set for pointers recursively. This makes it more precise but also resource-intensive. For example, two classic pointer analyses, Andersen's [ 22] and Steensgaard's [ 23] are both implemented in SVF [ 24, 25]. According to our experiments, when analyzing the Linux kernel, the former easily times out, while the latter spends 2 days generating an over-approximated result (§ 7.1). Other recent points-to analyses [ 26, 27] also fail to generate call graphs in days for large-scale programs such as the Linux kernel. In contrast, instead of tracking the flow from address- taken functions to indirect calls, type-based methods bypass such tracking by conservatively assuming the function point- ers “may” point to a target function simply because their types “match.” Here we introduce a few type-based methods: Function Signature Analysis (FSA). Traditionally, FSA [17] is widely used to resolve icalls for many applications such as CFI [ 1, 14, 28- 30]. Given an icall, FSA considers all address-taken functions with the same signature (i.e., return type and parameter types) as targets. For example, Figure 1 shows icall at line 27 with type rwptr. FSA considers m1_read(), m1_write() and m2_read() as potential targets since they are address-taken and with the same type. This method is highly scalable because it is linear - only needs to check signatures across icall instructions and address-taken functions. It is also sound when type information is available and correct [ 31], including the source and destination types in type casts. However, it suffers high imprecision due to the over-approximation where false icall targets are included, e.g., m1_read() and m2_read(). Multi-Layer Type Analysis (MLTA) [18] has become the de facto standard of indirect call analysis for many applica- tions [ 2, 9, 12, 13, 32- 36] targeting large-scale programs. It refines the FSA call graph through “type contexts” on top of the function signature. For the same example in Figure 1, MLTA will look at how the icall's function pointer is retrieved from struct fields and which function addresses are stored in the same fields. For example, MLTA sees that icall is retrieved from ops1->write. This means that m1_read() and m2_read() are no longer possible icall targets because they are never stored in the same struct 1. https://github.com/seclab-ucr/KallGraph 1 typedef int (*rwptr)(char*); 2 void* gops = NULL; 3 4 // module1.h 5 struct M1 { rwptr read; rwptr write; } m1_ops; 6 int m1_read(char* str){ ... } 7 int m1_write(char* str){ ... } 8 void m1_init(){ 9 m1_ops.read = m1_read; // struct M1, fd1 10 m1_ops.write = m1_write; // struct M1, fd2 11 gops = (void*) &m1_ops; 12 } 13 14 // module2.h 15 struct M2 { rwptr read; } m2_ops; 16 int m2_read(char* str){ ... } 17 void m2_init(){ 18 m2_ops.read = m2_read; // struct M2, fd1 19 } 20 21 // module3.c 22 #include \"module1.h\" 23 struct M1* getops(){ return gops; } 24 int m3_exec(){ 25 struct M1* ops = getops(); 26 rwptr icall = ops->write; 27 return icall(\"/file\"); // m1_write() 28 } Figure 1. Code Snippet of Sample Indirect Calls layer, denoted as {struct M1, 2 } (2nd field of struct M1). Such refinement precision can be improved if there are additional “struct layers”, hence the name of “multi- layer type analysis” (MLT A). For instance, a three-layer type context of icall may look like “ a->b->icall”, potentially allowing further refinement (by a) of targets. However, it is not always possible to perform such refinements in MLTA. If we look at the type struct M1 again which has an important statement in line 11, we will see a “type escape” where struct M1 * is cast to void*. Unfortunately, void* is an unsupported type in MLTA, forcing it to fall back to FSA conservatively. This means that icall is still considered to call m1_read(), m1_write(), and m2_read(), as shown in Figure 2. MLTA reasons that void* pointers may subsequently be used in arbitrary ways, e.g., to be cast into many other types (more details in § 3). More recently, TyPM [ 11], KELP [ 19], TFA [ 20], and SMLTA [21] have been proposed to improve MLTA. TyPM uses an additional dependence analysis to refine which types (e.g., struct layers in MLTA) could be accessed in which modules (i.e., source files). As shown in Figure 1, TyPM will figure out that there is no dependence relationship between module2.h and module3.c. Thus struct M2 defined in module2.h will not be accessed in module3.c, and m2_read() will not be an icall target of icall. But TyPM cannot remove m1_write() from the MLTA result, as it is defined in module1.h, which was indeed dependent by module3.c. With such an additional refinement based on the module dependence analysis, TyPM is shown to eliminate 40% indirect call targets of MLTA for the Linux kernel. KELP refines MLTA by dividing icalls into two categories: simple and complex. A simple icall means its target functions are propagated through short and simple paths from address- taken sites and can be handled through a “regional” (i.e., not whole-program) points-to analysis. A complex icall means the propagation is more complex to track (e.g., through many higher struct layers). For complex icalls, KELP falls back to MLT A. Similar to TyPM, KELP is shown to eliminate about 40% indirect call targets of MLTA. This is likely due to the fact that only 35% of icalls are simple."
+      },
+      {
+        "source": "selected",
+        "value": "Call graph construction is a crucial prerequisite for a wide range of static analysis applications. State-of-the-art methods minimize precise but expensive pointer tracking by falling back to so-called \"type analysis\" which scales well to large programs such as the Linux kernel. In this paper, we undertake an in-depth evaluation and analysis of type-based methods that reveal new insights into flaws due to their adhoc nature. First, we find that in a number of cases, the soundness claims of recent type-based methods do not hold, resulting in missing indirect call targets. Second, we find the analysis is overly conservative in multiple aspects, leading to a large number of false indirect call targets. Based on these insights, we make the observation that such type-based methods can be converted into a hybrid pointer analysis framework that unifies the traditional pointer tracking methods and typebased methods. Based on such a framework, we develop a practical indirect call analysis that addresses both soundness and precision limitations. Our results demonstrate a remarkable level of soundness and precision improvements. KallGraph simultaneously improves precision and soundness by pruning up to 90% of indirect call targets and eliminating hundreds to thousands of missed indirect calls. Finally, KallGraph is fully parallelizable and can complete the analysis of Linux kernels in times ranging from tens of minutes to a few hours."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Guoren Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Manu Sridharan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhiyun Qian",
+          "email": "zhiyunq@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Guoren Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Manu Sridharan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zhiyun Qian",
+          "email": "zhiyunq@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 11,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Redefining Indirect Call Analysis with KallGraph",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Guoren Li",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Manu Sridharan",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Zhiyun Qian",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

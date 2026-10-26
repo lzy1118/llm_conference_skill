@@ -1,0 +1,602 @@
+{
+  "paper_id": "035_drawn_apart_a_device_identification_technique_based_on_remote_gpu_fingerprinting",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DRAWNAPART: A Device Identification Technique based on Remote GPU Fingerprinting"
+      },
+      {
+        "source": "selected",
+        "value": "DRAWNAPART: A Device Identification Technique based on Remote GPU Fingerprinting"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Browser fingerprinting aims to identify users or their devices, through scripts that execute in the users' browser and collect information on software or hardware characteristics. It is used to track users or as an additional means of identification to improve security. Fingerprinting techniques have one significant limitation: they are unable to track individual users for an extended duration. This happens because browser fingerprints evolve over time, and these evolutions ultimately cause a fingerprint to be confused with those from other devices sharing similar hardware and software."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Browser fingerprinting aims to identify users or their devices, through scripts that execute in the users' browser and collect information on software or hardware characteristics. It is used to track users or as an additional means of iden- tification to improve security. Fingerprinting techniques have one significant limitation: they are unable to track individual users for an extended duration. This happens because browser fingerprints evolve over time, and these evolutions ultimately cause a fingerprint to be confused with those from other devices sharing similar hardware and software. In this paper, we report on a new technique that can signif- icantly extend the tracking time of fingerprint-based tracking methods. Our technique, which we call D RAWNAPART, is a new GPU fingerprinting technique that identifies a device from the unique properties of its GPU stack. Specifically, we show that variations in speed among the multiple execution units that comprise a GPU can serve as a reliable and robust device signature, which can be collected using unprivileged JavaScript. We investigate the accuracy of D RAWNAPART under two sce- narios. In the first scenario, our controlled experiments confirm that the technique is effective in distinguishing devices with similar hardware and software configurations, even when they are considered identical by current state-of-the-art fingerprinting algorithms. In the second scenario, we integrate a one-shot learning version of our technique into a state-of-the-art browser fingerprint tracking algorithm. We verify our technique through a large-scale experiment involving data collected from over 2,500 crowd-sourced devices over a period of several months and show it provides a boost of up to 67% to the median tracking duration, compared to the state-of-the-art method. DRAWNAPART makes two contributions to the state of the art in browser fingerprinting. On the conceptual front, it is the first work that explores the manufacturing differences between *Both authors are considered co-first authors. identical GPUs and the first to exploit these differences in a privacy context. On the practical front, it demonstrates a robust technique for distinguishing between machines with identical hardware and software configurations, a technique that delivers practical accuracy gains in a realistic setting. I. I NTRODUCTION Privacy is dignity. It is a human right. In the domain of web browsing, the right to privacy should prevent websites from tracking user browsing activity without consent. This is the case in particular for cross-site tracking, in which website owners collude to build browsing profiles spanning multiple websites over extended periods of time. Unfortunately for users, the right to privacy conflicts with business interests. Website owners are highly interested in tracking users for the purpose of showing them ads they are more likely to click on, or to recommend products they are more likely to purchase. We focus on the common scenario where identifying a browser is equivalent to tracking a user. The traditional way to track users is with cookies, small files that are stored by the browser at the request of the website, and forwarded to the website on demand [50]. Recent regulations restrict and supervise the acquisition of private data by websites [4, 31], and in particular require that users consent to the use of cookies. Furthermore, in an effort to protect users' privacy and curb tracking, modern browsers restrict cookie-based tracking, especially third-party trackers that attempt to track users across multiple unrelated websites. To overcome the limitations of cookies, less scrupulous websites often resort to an approach called browser fingerprint- ing. To fingerprint a browser, the website provides a script that queries the browser's software and hardware configuration to collect attributes, such as the browser's version, OS, timezone, screen, language, list of fonts, or even the way the browser renders text and graphics. The diversity of configurations allows websites to discriminate devices and, hence, to track users, without the use of cookies [52], even in a collection spanning millions of fingerprints [43]. Surveying the Internet Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24093 www.ndss-symposium.org demonstrates that browser fingerprinting techniques are preva- lent and used by many websites, no matter their category or ranking [38, 40, 59]. A significant difficulty of fingerprint-based tracking is that browser fingerprints evolve. As shown by Vastel et al. [73], fingerprints change frequently, sometimes multiple times per day, due to software updates and configuration changes. To track a user, an adversary must link fingerprint evolutions into a single coherent chain. This process is made difficult by the existence of devices with identical hardware and software configurations. It is difficult for an adversary to correctly link a fingerprint if there is a set of identical devices to which it might belong. This limits the adversary's tracking duration. In Vastel et al.'s evaluation over a dataset of nearly 100,000 fingerprints collected from 1,905 distinct browser instances, with a wide variety of fingerprinting attributes, their state- of-the-art machine learning technique was able to deliver a median tracking time of less than two months. In this work, we bring a new insight to the challenge of browser fingerprinting identical computers, by observing that even nominally identical hardware devices have slight differences induced by their manufacturing process. These manufacturing variations are shown to enable the extraction of unique and robust fingerprints from a variety of devices, both large and small, in other settings [44, 71]. If an adversary were able to extract such a hardware fingerprint from the user's device, it would significantly extend the adversary's ability to track them. Extracting a hardware fingerprint from a browser, however, is far from trivial-since the attacker has little control. In particular, the attacker can only interact with the system through unprivileged JavaScript code and WebGL graphics primitives-the attacker has no control over the runtime environment of the system, including background processes and simultaneous user activity-and the attacker has very limited exposure to the system, making classical machine learning pipelines that rely on long training phases all but useless. Thus, in this paper we raise the following question: Can browser fingerprinting work on devices with identical hardware and software configurations? Our Contribution. We claim this is possible, and we assess this claim with D RAWN APART, a technique that measures small differences among the Execution Units (EUs) that make up a modern Graphics Processing Unit (GPU). By fingerprint- ing the GPU stack, D RAWN APART can tell apart devices with nominally identical configurations, both in the lab and in the wild. In a nutshell, to create a fingerprint, DRAWN APART gen- erates a sequence of rendering tasks, each targeting different EUs. It times each rendering task, creating a fingerprint trace. This trace is transformed by a deep learning network into an embedding vector that describes it succinctly and points the adversary towards the specific device that generated it. We evaluate DRAWN APART in two main scenarios. First, to validate the method's ability to distinguish nominally identical configurations, we perform a series of controlled experiments under lab conditions. We experiment with multiple sets of identical devices from vendors including Intel, Apple, Nvidia and Samsung, and demonstrate that D RAWN APART consis- tently improves identification of these nominally identical devices, achieving high identification accuracy in multiple hardware configurations, even though state-of-the-art browser- based fingerprinting methods cannot tell them apart. Second, to show that D RAWN APART affects user privacy, we integrate the technique into Vastel et al.'s state-of-the-art fingerprinting learning to link browser fingerprint evolutions. We show that the median tracking duration is improved by up to 66.66% once we add the D RAWN APART fingerprint. In summary, this paper makes the following contributions: • We design and implement DRAWN APART1, a GPU finger- printing technique based on the relative speed of EUs, that observes minute differences between GPUs (Section III). • We investigate the performance of our fingerprinting tech- nique with multiple sets of identical devices, demonstrat- ing that it can tell apart devices with identical hardware and software configurations (Section V). • We integrate D RAWN APART into Vastel et al.'s finger- printing algorithm and show, through a large-scale crowd- sourced experiment with over 2,500 unique devices and almost 371,000 fingerprints, that D RAWN APART delivers considerable gains to the tracking accuracy of this state- of-the-art approach (Section VI). • We suggest possible countermeasures against our fin- gerprinting technique, and discuss their advantages and drawbacks (Section VII-B). II. B ACKGROUND A. Browser Fingerprinting Mowery et al. [56] discuss fingerprinting on the Web. As they state, fingerprinting can be applied constructively or destructively. An example of constructive use of fingerprints would be to identify fraudulent users trying to log in while masquerading as legitimate users. Browser fingerprinting can be used to detect bots [27, 48, 74], or support authentication, where the fingerprint is used in addition to a traditional authen- tication mechanism [20, 51]. A destructive use might involve tracking users without consent [17, 40]. In this scenario, fingerprinting is used to augment or replace cookies-e.g., to track across multiple domains, or when users disable or delete cookies. Our technique can be applied to either scenario. Many fingerprinting techniques exist in the wild [24, 39, 57, 58]. They rely heavily on differences in devices' hardware and software characteristics found in HTTP header fields and JavaScript attributes. The key challenge is to identify features and attributes that further discriminate devices and allow for their unique identification, and to overcome the tendency of these features to evolve over time because of changes to the user's software, configuration, or environment. B. GPU Programming The Graphics Processing Unit (GPU) is specialized hard- ware for rendering graphics. GPUs have highly parallel ar- chitectures that are composed of multiple Execution Units 1The artifact accompanying this paper can be found at: https://github.com/ drawnapart/drawnapart. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Browser fingerprinting aims to identify users or their devices, through scripts that execute in the users' browser and collect information on software or hardware characteristics. It is used to track users or as an additional means of identification to improve security. Fingerprinting techniques have one significant limitation: they are unable to track individual users for an extended duration. This happens because browser fingerprints evolve over time, and these evolutions ultimately cause a fingerprint to be confused with those from other devices sharing similar hardware and software."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Tomer Laor",
+          "email": "tomerlao@post.bgu.ac.il",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Naif Mehanna",
+          "email": "naif.mehanna@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Antonin Durey",
+          "email": "antonin.durey@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Vitaly Dyadyuk",
+          "email": "vitalyd@post.bgu.ac.il",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Pierre Laperdrix",
+          "email": "pierre.laperdrix@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Clémentine Maurice",
+          "email": "clementine.maurice@inria.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Yossi Oren",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Romain Rouvoy",
+          "email": "romain.rouvoy@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Walter Rudametkin",
+          "email": "walter.rudametkin@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Yuval Yarom",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ben-Gurion Univ. of the Negev, Univ. Lille, CNRS, Inria"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ben-Gurion Univ. of the Negev, Univ. Lille, CNRS, Inria"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 12
+        },
+        {
+          "order": 13,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 13
+        },
+        {
+          "order": 14,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ben-Gurion Univ. of the Negev, Univ. Lille, CNRS, Inria, IUF"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 14
+        },
+        {
+          "order": 15,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 15
+        },
+        {
+          "order": 16,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Univ. of Adelaide"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 16
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Tomer Laor",
+          "email": "tomerlao@post.bgu.ac.il",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Naif Mehanna",
+          "email": "naif.mehanna@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Antonin Durey",
+          "email": "antonin.durey@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Vitaly Dyadyuk",
+          "email": "vitalyd@post.bgu.ac.il",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Pierre Laperdrix",
+          "email": "pierre.laperdrix@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Clémentine Maurice",
+          "email": "clementine.maurice@inria.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Yossi Oren",
+          "email": "yos@bgu.ac.il",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Romain Rouvoy",
+          "email": "romain.rouvoy@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Walter Rudametkin",
+          "email": "walter.rudametkin@univ-lille.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Yuval Yarom",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 118,
+      "author_count": 10,
+      "matched_author_count": 10,
+      "exact_author_match_count": 10,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Tomer Laor",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Naif Mehanna",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Antonin Durey",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Vitaly Dyadyuk",
+          "block_id": "pdf:p1:b8",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Pierre Laperdrix",
+          "block_id": "pdf:p1:b15",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Clémentine Maurice",
+          "block_id": "pdf:p1:b16",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Yossi Oren",
+          "block_id": "pdf:p1:b17",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 7,
+          "author": "Romain Rouvoy",
+          "block_id": "pdf:p1:b18",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 8,
+          "author": "Walter Rudametkin",
+          "block_id": "pdf:p1:b25",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 9,
+          "author": "Yuval Yarom",
+          "block_id": "pdf:p1:b26",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 1,
+          "author": "Naif Mehanna",
+          "affiliation_raw": "Univ. Lille, CNRS, Inria Univ. Lille, CNRS, Inria",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "email_raw": "naif.mehanna@univ-lille.fr",
+          "email_block_ids": [
+            "pdf:p1:b13"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 66.458,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Antonin Durey",
+          "affiliation_raw": "Univ. Lille, CNRS, Inria Univ. Lille, CNRS, Inria",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "email_raw": "naif.mehanna@univ-lille.fr",
+          "email_block_ids": [
+            "pdf:p1:b13"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 55.31,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Pierre Laperdrix",
+          "affiliation_raw": "Univ. Lille, CNRS, Inria Univ. Lille, CNRS, Inria",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b15",
+          "affiliation_block_ids": [
+            "pdf:p1:b19"
+          ],
+          "email_raw": "pierre.laperdrix@univ-lille.fr",
+          "email_block_ids": [
+            "pdf:p1:b22"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 64.343,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Clémentine Maurice",
+          "affiliation_raw": "Univ. Lille, CNRS, Inria Univ. Lille, CNRS, Inria",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b16",
+          "affiliation_block_ids": [
+            "pdf:p1:b19"
+          ],
+          "email_raw": "pierre.laperdrix@univ-lille.fr",
+          "email_block_ids": [
+            "pdf:p1:b22"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 61.611,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 7,
+          "author": "Romain Rouvoy",
+          "affiliation_raw": "Univ. Lille, CNRS, Inria / IUF",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b18",
+          "affiliation_block_ids": [
+            "pdf:p1:b21"
+          ],
+          "email_raw": "romain.rouvoy@univ-lille.fr",
+          "email_block_ids": [
+            "pdf:p1:b24"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 8.45,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 8,
+          "author": "Walter Rudametkin",
+          "affiliation_raw": "Univ. Lille, CNRS, Inria",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b25",
+          "affiliation_block_ids": [
+            "pdf:p1:b27"
+          ],
+          "email_raw": "walter.rudametkin@univ-lille.fr",
+          "email_block_ids": [
+            "pdf:p1:b29"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 4.751,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_compact_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DRAWN APART: A Device Identification Technique based on Remote GPU Fingerprinting",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/drawn-apart-a-device-identification-technique-based-on-remote-gpu-fingerprinting/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Tomer Laor",
+          "affiliations": [
+            "Ben-Gurion Univ. of the Negev"
+          ]
+        },
+        {
+          "name": "Naif Mehanna",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ]
+        },
+        {
+          "name": "Antonin Durey",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ]
+        },
+        {
+          "name": "Vitaly Dyadyuk",
+          "affiliations": [
+            "Ben-Gurion Univ. of the Negev"
+          ]
+        },
+        {
+          "name": "Pierre Laperdrix",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ]
+        },
+        {
+          "name": "Clémentine Maurice",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ]
+        },
+        {
+          "name": "Yossi Oren",
+          "affiliations": [
+            "Ben-Gurion Univ. of the Negev"
+          ]
+        },
+        {
+          "name": "Romain Rouvoy",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria / IUF"
+          ]
+        },
+        {
+          "name": "Walter Rudametkin",
+          "affiliations": [
+            "Univ. Lille, CNRS, Inria"
+          ]
+        },
+        {
+          "name": "Yuval Yarom",
+          "affiliations": [
+            "University of Adelaide"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

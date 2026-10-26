@@ -1,0 +1,282 @@
+{
+  "paper_id": "028_kasper_scanning_for_generalized_transient_execution_gadgets_in_the_linux_kernel",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "KASPER: Scanning for Generalized Transient Execution Gadgets in the Linux Kernel"
+      },
+      {
+        "source": "selected",
+        "value": "KASPER: Scanning for Generalized Transient Execution Gadgets in the Linux Kernel"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Due to the high cost of serializing instructions to mitigate Spectre-like attacks on mispredicted conditional branches (Spectre-PHT), developers of critical software such as the Linux kernel selectively apply such mitigations with annotations to code paths they assume to be dangerous under speculative execution. The approach leads to incomplete protection as it applies mitigations only to easy-to-spot gadgets. Still, until now, this was sufficient, because existing gadget scanners (and kernel developers) are pattern-driven: they look for known exploit signatures and cannot detect more generic gadgets. In this paper, we abandon pattern scanning for an approach that models the essential steps used in speculative execution attacks, allowing us to find more generic gadgets-well beyond the reach of existing scanners. In particular, we present KASPER, a speculative execution gadget scanner that uses taint analysis policies to model an attacker capable of exploiting arbitrary software/hardware vulnerabilities on a transient path to control data (e.g., through memory massaging or LVI), access secrets (e.g., through out-of-bounds or use-after-free accesses), and leak these secrets (e.g., through cache-based, MDS-based, or port contention-based covert channels). Finally, where existing solutions target user programs, KASPER finds gadgets in the kernel, a higher-value attack target, but also more complicated to analyze. Even though the kernel is heavily hardened against transient execution attacks, KASPER finds 1379 gadgets that are not yet mitigated. We confirm our findings by demonstrating an end-to-end proof-of-concept exploit for one of the gadgets found by KASPER."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Due to the high cost of serializing instructions to mitigate Spectre-like attacks on mispredicted conditional branches (Spectre-PHT), developers of critical software such as the Linux kernel selectively apply such mitigations with annota- tions to code paths they assume to be dangerous under speculative execution. The approach leads to incomplete protection as it applies mitigations only to easy-to-spot gadgets. Still, until now, this was sufficient, because existing gadget scanners (and kernel developers) are pattern-driven: they look for known exploit signatures and cannot detect more generic gadgets. In this paper, we abandon pattern scanning for an approach that models the essential steps used in speculative execution attacks, allowing us to find more generic gadgets-well beyond the reach of existing scanners. In particular, we present K ASPER , a speculative execution gadget scanner that uses taint analysis policies to model an attacker capable of exploiting arbitrary software/hardware vulnerabilities on a transient path to control data (e.g., through memory massaging or LVI), access secrets (e.g., through out-of-bounds or use-after-free accesses), and leak these secrets (e.g., through cache-based, MDS-based, or port contention-based covert channels). Finally, where existing solutions target user programs, KASPER finds gadgets in the kernel, a higher-value attack target, but also more complicated to analyze. Even though the kernel is heavily hardened against transient execution attacks, K ASPER finds 1379 gadgets that are not yet mitigated. We confirm our findings by demonstrating an end-to-end proof-of-concept exploit for one of the gadgets found by K ASPER . I. I NTRODUCTION Ever since Meltdown and Spectre burst onto the scene in January 2018 [23, 32, 36], transient execution vulnerabilities have had the security community scrambling for solutions. While some of the vulnerabilities, such as Meltdown, can be mitigated fairly easily [16], this is not the case for others. In particular, Spectre-PHT (commonly referred to as Spectre- V1)-which leaks secrets by abusing the transient execution that follows a mispredicted conditional branch-cannot be fully eradicated without crippling performance. One possible mitigation is to forbear all speculation after a conditional branch. However, since speculative execution in modern CPUs x = get_user(ptr); if ( x < size) { y = arr1[x]; z = arr2[y]; } Listing 1: Spectre-PHT BCB pattern, where attacker data bypasses an array bounds check in order to leak secret data. is essential to performance and conditional branches are ev- erywhere, it is crucial that such an expensive mitigation be applied only where necessary. The attack itself requires spe- cific Spectre-PHT gadgets: that is, vulnerable branches which can indeed leak secrets through the microarchitectural state. Therefore, to maintain acceptable performance, we should only serialize or otherwise instrument these gadgets. Beyond pattern-matching. However, current methods to iden- tify gadgets are limited as they are entirely pattern-driven. By searching for specific features of well-known Bounds Check Bypass (BCB) patterns (Listing 1)-e.g., suspicious copies from userspace [11], potential out-of-bounds accesses [43], or attacker-dependent memory accesses [47]-they only ap- proximate the presence of BCB gadgets. Our experiments show that today's state-of-the-art scanners [43, 47] yield a false positive rate of 99% (Section IX-A). In other words, 99% of the code snippets identified as gadgets cannot actually lead to information disclosure. Adding expensive defenses to such code snippets incurs substantial and unnecessary overhead. More, the false negative rate is up to 33%. In other words, they miss many vulnerable branches that should be protected. Furthermore, existing approaches are limited in scope. They all broadly assume the same primitives as the traditional BCB pattern: direct attacker input, an out-of-bounds secret access, and a cache-based covert channel. Such primitives are of little use in the hardened Linux kernel since the large majority of BCB gadgets have been mitigated. However, this does not mean the kernel is free of Spectre-PHT gadgets. Far from it: the problem goes much deeper than BCB patterns. In reality, attackers do not care about patterns; they just want to find any instructions in the wake of any conditional branch, controllable by any means, which access secrets in arbitrary ways, and leak the secrets through any covert channel. A principled approach. In this paper, we propose a novel ap- proach for finding vulnerable gadgets in the kernel, abstracting away all pattern-specific details and instead precisely modeling the essential steps of a Spectre-PHT attack shown in Figure 1. Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24221 www.ndss-symposium.org Step 1: Inject controlled values into transient execution. Step 2: Force the execution to access a secret. Step 3: Force the execution to leak the secret. Fig. 1: Essential steps in a Spectre attack. Around these steps, we use targeted taint analysis policies to generically model the effects of arbitrary hardware/software vulnerabilities on a transient path. To evaluate the approach, we present K ASPER , a Spectre- PHT gadget scanner. By modeling the effects of vulnerabilities on a transient path-e.g., memory errors [13, 32], load value injection [55], cache-based covert channels [32], MDS-based covert channels [10, 51, 56], and port contention-based covert channels [9, 19]-K ASPER finds gadgets well beyond the scope of existing approaches. Moreover, rather than focusing on user processes (to which our approach is easily applicable), we developed our tech- niques specifically for the Linux kernel-a high-value target like few other programs; since the kernel has access to all memory in the system, a kernel attacker can target data from any of the running processes in the system. Existing kernel gadget scanners however, are all based on static analysis [11, 30], which previous work observes is imprecise [43, 47]. Instead, we take a dynamic analysis-based approach, which simply requires us to build the kernel with K ASPER support, fuzz the syscall interface (to simulate the possible coverage from a user-to-kernel attacker), then K ASPER will report gadgets at runtime. Even though the kernel has undergone intensive scrutiny and mitigation efforts to neuter all gadgets, we still find 1379 gadgets in an automated fashion-including many gadgets which would be non-trivial to find statically. Furthermore, we present a case study of a gadget found by K ASPER which is pervasive throughout the codebase and non-trivial to mitigate. In total, we have found 63 instances of the demonstrated gadget sprinkled all over the kernel. We demonstrate the efficacy of our approach by presenting a proof- of-concept exploit of this gadget. Contributions. We make the following contributions: • We present taint-assisted generic gadget scanning, a new approach to identify pattern-agnostic transient execution gadgets that stem from arbitrary software/hardware vul- nerabilities on a transient execution path. • We present KASPER , an implementation1 of our approach for the Linux kernel. • We evaluate K ASPER on a recent version of the Linux kernel to identify 1379 previously unknown transient execution gadgets and present a proof-of-concept exploit for one of the gadgets. The Linux kernel developers are currently working on mitigations for the disclosed gadgets and requested access to K ASPER for mainline kernel regression testing moving forward. The rest of this paper is organized as follows. Section II presents background on the attack primitives modeled by KASPER . Section III describes the threat model. Section IV defines the problem scope for K ASPER . Section V describes 1KASPER is available at https://www.vusec.net/projects/kasper [2]. TABLE I: Overview of the possible primitives of a Spectre gadget. K ASPER models the primitives in bold. Speculation Attacker input Secret output PHT BTB RSB STL ARCH :a USER, F ILE, N ET, D EV, MASSAGE LVI FPVI CACHE MDS PORT AVX a We only list the set of A RCH inputs that are relevant to the kernel. the design of K ASPER at a high level. Section VI explains speculative emulation, including unique implementation chal- lenges posed by the kernel. Section VII explains K ASPER 's vulnerability detectors and the taint policies which model their effects. Section VIII briefly describes implementation details. Section IX evaluates the efficacy of K ASPER compared to existing approaches and KASPER 's gadgets found in the kernel. Section X discusses the limitations of our approach. Section XI presents a case study of a gadget found by K ASPER . Finally, Section XIII concludes. II. B ACKGROUND In this section, we will first provide a background on the components involved in a Spectre attack and the defenses which combat them, motivating the need for Spectre-PHT gadget scanners. Then, we will provide background on previ- ous gadget-scanning tools, highlighting the need for a pattern- agnostic gadget scanner. A. Speculative execution attacks and defenses Spectre attacks exploit the fact that modern processors predict the outcome of operations such as conditional branches, and speculatively continue executing as if its prediction is correct. If it turns out the prediction was incorrect, the pro- cessor reverts the results of any speculative operations and restarts from the correct state. The modifications made by the incorrect path to the microarchitectural state, however, can be examined by an attacker using a covert channel to leak sensitive information. We propose that the underlying primitives used by a Spectre gadget-i.e., the type of speculation it abuses, the type of attacker data it depends on, and the type of leakage it exploits-define a Spectre variant. The interactions between the different primitives affect whether the variant is indeed exploitable and whether it is easily mitigated. We summarize these primitives in Table I. Speculation type. Spectre variants based on speculation from anything other than the Pattern History Table-that is, Spectre- BTB [32], Spectre- RSB [34, 40], and Spectre- STL [24]-are easily mitigated with relatively low overhead using microcode updates [26] or software updates such as retpolines [25] and static calls [64]. Unfortunately, this is not so for Spectre-PHT. Spectre-PHT gadgets can be mitigated by adding an lfence instruction after conditional branches; this approach does not scale, however, as adding an lfence after every conditional branch would incur up to a massive 440% overhead [42]. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Due to the high cost of serializing instructions to mitigate Spectre-like attacks on mispredicted conditional branches (Spectre-PHT), developers of critical software such as the Linux kernel selectively apply such mitigations with annotations to code paths they assume to be dangerous under speculative execution. The approach leads to incomplete protection as it applies mitigations only to easy-to-spot gadgets. Still, until now, this was sufficient, because existing gadget scanners (and kernel developers) are pattern-driven: they look for known exploit signatures and cannot detect more generic gadgets. In this paper, we abandon pattern scanning for an approach that models the essential steps used in speculative execution attacks, allowing us to find more generic gadgets-well beyond the reach of existing scanners. In particular, we present KASPER, a speculative execution gadget scanner that uses taint analysis policies to model an attacker capable of exploiting arbitrary software/hardware vulnerabilities on a transient path to control data (e.g., through memory massaging or LVI), access secrets (e.g., through out-of-bounds or use-after-free accesses), and leak these secrets (e.g., through cache-based, MDS-based, or port contention-based covert channels). Finally, where existing solutions target user programs, KASPER finds gadgets in the kernel, a higher-value attack target, but also more complicated to analyze. Even though the kernel is heavily hardened against transient execution attacks, KASPER finds 1379 gadgets that are not yet mitigated. We confirm our findings by demonstrating an end-to-end proof-of-concept exploit for one of the gadgets found by KASPER."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Brian Johannesmeyer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jakob Koschel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Kaveh Razavi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Herbert Bos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Cristiano Giuffrida",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "V UAmsterdam",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Eth Zurich",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Brian Johannesmeyer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jakob Koschel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Kaveh Razavi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Herbert Bos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Cristiano Giuffrida",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Eth Zurich",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 117,
+      "author_count": 6,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 10.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 5,
+          "author": "Eth Zurich",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Kasper: Scanning for Generalized Transient Execution Gadgets in the Linux Kernel",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-247/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Brian Johannesmeyer",
+          "affiliations": [
+            "VU Amsterdam"
+          ]
+        },
+        {
+          "name": "Jakob Koschel",
+          "affiliations": [
+            "VU Amsterdam"
+          ]
+        },
+        {
+          "name": "Kaveh Razavi",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Herbert Bos",
+          "affiliations": [
+            "VU Amsterdam"
+          ]
+        },
+        {
+          "name": "Cristiano Giuffrida",
+          "affiliations": [
+            "VU Amsterdam"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 7,
+      "proposed_count": 5,
+      "retained_count": 5,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "remove_organization_author",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "removed_name": "V UAmsterdam"
+    },
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "baseline_count": 7,
+      "proposed_count": 6,
+      "retained_count": 6,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "remove_organization_author",
+      "stage": "post_strategy_author_cleanup",
+      "field": "authors",
+      "removed_name": "V UAmsterdam"
+    }
+  ]
+}

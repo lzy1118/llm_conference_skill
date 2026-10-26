@@ -1,0 +1,255 @@
+{
+  "paper_id": "027_deepbindiff_learning_program_wide_code_representations_for_binary_diffing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DEEPBINDIFF: Learning Program-Wide Code Representations for Binary Diffing"
+      },
+      {
+        "source": "selected",
+        "value": "DEEPBINDIFF: Learning Program-Wide Code Representations for Binary Diffing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Binary diffing analysis quantitatively measures the differences between two given binaries and produces fine-grained basic block level matching. It has been widely used to enable different kinds of critical security analysis. However, all existing program analysis and machine learning based techniques suffer from low accuracy, poor scalability, coarse granularity, or require extensive labeled training data to function. In this paper, we propose an unsupervised program-wide code representation learning technique to solve the problem. We rely on both the code semantic information and the program-wide control flow information to generate basic block embeddings. Furthermore, we propose a khop greedy matching algorithm to find the optimal diffing results using the generated block embeddings. We implement a prototype called DEEPBINDIFF and evaluate its effectiveness and efficiency with a large number of binaries. The results show that our tool outperforms the state-of-the-art binary diffing tools by a large margin for both cross-version and cross-optimization-level diffing. A case study for OpenSSL using real-world vulnerabilities further demonstrates the usefulness of our system."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Binary diffing analysis quantitatively measures the differences between two given binaries and produces fine-grained basic block level matching. It has been widely used to enable different kinds of critical security analysis. However, all existing program analysis and machine learning based techniques suffer from low accuracy, poor scalability, coarse granularity, or require extensive labeled training data to function. In this paper, we pro- pose an unsupervised program-wide code representation learning technique to solve the problem. We rely on both the code semantic information and the program-wide control flow information to generate basic block embeddings. Furthermore, we propose a k- hop greedy matching algorithm to find the optimal diffing results using the generated block embeddings. We implement a prototype called D EEP BINDIFF and evaluate its effectiveness and efficiency with a large number of binaries. The results show that our tool outperforms the state-of-the-art binary diffing tools by a large margin for both cross-version and cross-optimization-level diffing. A case study for OpenSSL using real-world vulnerabilities further demonstrates the usefulness of our system. I. I NTRODUCTION Binary Code Differential Analysis, a.k.a, binary diffing, is a fundamental analysis capability, which aims to quanti- tatively measure the similarity between two given binaries and produce the fine-grained basic block level matching. Given two input binaries, it precisely characterizes the program- wide differences by generating the optimal matching among basic blocks with quantitative similarity scores. It not only presents precise, fine-grained and quantitative results about the differences at a whole binary scale but also explicitly reveals how code evolves across different versions or optimization levels. Because of the precision and fine-granularity, it has enabled many critical security usages in various scenarios when program-wide analysis is required, such as changed parts locating [1], malware analysis [28], [45], security patch analysis [55], [38], binary wide plagiarism detection [40] and patch-based exploit generation [11]. As a result, binary diffing *This work was conducted while Yue Duan was a PhD student at UC Riverside, advised by Prof. Heng Yin. has been an active research focus. In general, existing works can be put into two categories. Traditional Approaches. BinDiff [10], which is the de facto commercial binary diffing tool, performs many-to-many graph isomorphism detection [35] on callgraph and control-flow graph (CFG), and leverages heuristics (e.g., function name, graph edge MD index) to match functions and basic blocks. Other static analysis based techniques perform matching on the generated control and data flow graphs [25], [30], [49], [27] or decompose the graphs into fragments [20], [17], [18], [40] for similarity detection. Most of these approaches consider only the syntax of instructions rather than the semantics, which can be critical during analysis, especially when dealing with different compiler optimization techniques. Moreover, graph matching algorithms such as Hungarian algorithm [35] are expensive and cannot guarantee optimal matching. Another line of research utilizes dynamic analysis. These techniques carry out the analysis by directly executing the given code [26], [53], performing dynamic slicing [44] or tainting [43] on the given binaries, and checking the semantic level equivalence based on the information collected during the execution. In general, these techniques excel at extract- ing semantics of the code and have good resilience against compiler optimizations and code obfuscation but usually suffer from poor scalability and incomplete code coverage, due to the nature of the dynamic analysis. Learning-based Approaches. Recent works have leveraged the advance of machine learning to tackle the binary diff- ing problem. Various techniques [29], [54], [58], [23] have been proposed to leverage graph representation learning tech- niques [16], [42], [37] and incorporate code information into embeddings (i.e., high dimensional numerical vectors). Then they use these embeddings for similarity detection. Inner- Eye [58] and Asm2Vec [23] further rely on NLP techniques to automatically extract semantic information and generate embeddings for diffing. These approaches embrace two major advantages over the traditional static and dynamic approaches: 1) higher accuracy as they incorporate unique features of the code into the analysis by using either manual engineered features [29], [54] or deep learning based automatic meth- ods [23], [58]; 2) better scalability since they avoid heavy graph matching algorithm or dynamic execution. What's more, the learning process can be significantly accelerated by GPUs. Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24311 www.ndss-symposium.org Limitations. Despite the advantages, we identify three major limitations of the existing learning-based approaches. First, no existing learning-based technique can perform efficient program-wide binary diffing at a fine-grained basic block level. Most of the current techniques conduct diffing at a granularity of functions [29], [54], [36], [23], [39]. Inner- Eye [58] is the only learning-based technique that achieves basic block level granularity. Nevertheless, it is not scalable enough for program-wide binary diffing due to its design. Each calculation of basic block similarity has to go through a complex neural network (with a total of 3,700,440 parameters in the current implementation), which significantly affects the performance. To evaluate the scalability, we use pre-trained models from the authors [7] and measure the performance. The results show that it takes an average of 0.6ms for InnerEye to process one pair of blocks. Note that a binary diffing could easily involve millions of basic block distance calculations. Therefore, it takes hours for InnerEye to finish diffing between two small binaries unless a powerful GPU is used. As afore- mentioned, fine-grained binary diffing is an essential analysis, upon which many critical security analyses can be built. Hence, a fine-grained and efficient diffing tool is strongly desired. Second, none of the learning-based techniques considers both program-wide dependency information and basic block semantic information during analysis. The program-wide de- pendency information, which can be extracted from the inter- procedural control flow graph (ICFG), provides the contextual information of a basic block. It is particularly useful in binary diffing as one binary could contain multiple very sim- ilar functions, and the program-wide contextual information can be vital to differentiate these functions as well as the blocks within them. Basic block semantic information, on the other hand, characterizes the uniqueness of each basic block. InnerEye [58] extracts basic block semantic information with NLP techniques [42] but only considers local control dependency information within a small code component by adopting the Longest Common Subsequence. Asm2Vec [23] generates random walks only within functions to learn token and function embeddings. Third, most of the existing learning-based techniques [55], [36], [58], [39] are built on top of supervised learning. Thus, the performance is heavily dependent on the quality of training data. To begin with, we argue that a large, representative and balanced training dataset can be very hard to collect, because of the extreme diversity of the binary programs. Also, supervised learning could suffer from the overfitting problem [22]. Moreover, state-of-the-art supervised learning technique InnerEye [58] considers a whole instruction (opcode + operands) as a word, therefore, may lead to serious out- of-vocabulary (OOV) problem. To show this, we follow the same preprocessing step described in the paper and evaluate the pre-trained model using the same dataset CoreUtils v8.29. The results show that the pre-trained model could only achieve an average of 78.37% instruction coverage for the binaries in CoreUtils v8.29. In other words, 21.63% of the instruction cannot be modeled, as compared to only 3.7% reported in the paper. This is due to the fact that we use GCC compiler while clang was used in the InnerEye paper. Nonetheless, it shows that the InnerEye model could easily become much less useful when facing even a small change in the test setting. Our Approach. To this end, we propose an unsupervised deep neural network based program-wide code representation learning technique for binary diffing. In particular, our tech- nique first learns basic block embeddings via unsupervised deep learning. Each learned embedding represents a specific basic block by carrying both the semantic information of the basic block and the contextual information from the ICFG. These embeddings are then used to efficiently and accurately calculate the similarities among basic blocks. To achieve this goal, we modify state-of-the-art NLP technique Word2Vec [42] to extract semantic information for tokens (opcode and operands), and further assemble basic block level feature vectors. Hence, these feature vectors con- tain the semantic information for blocks. Modeling opcode and operand separately also eliminates the OOV problem. Then, we model the basic block embedding generation as a network representation learning problem and feed the feature vectors into Text-associated DeepWalk algorithm (TADW) [56] to generate basic block embeddings that contain program-wide control flow contextual information. Consequently, these basic block embeddings contain both the program-wide contextual information and the semantics from the basic blocks. Finally, we present a k-hop greedy matching algorithm to match basic blocks to cope with compiler optimizations including function inlining and basic block reordering. We implement a prototype D EEP BINDIFF, and conduct an extensive evaluation with representative datasets containing 113 C binaries and 10 C++ binaries. The evaluation shows that our tool soundly outperforms state-of-the-art techniques BinDiff and Asm2Vec, for both cross-version and cross- optimization-level diffing. Furthermore, we conduct a case study using real-world vulnerabilities in OpenSSL [9] and show that our tool has unique advantages when analyzing vulnerabilities. Contributions. The contributions of this paper are as follows: • We propose a novel unsupervised program-wide code representation learning technique for binary diffing. Our technique relies on both the code semantic in- formation and the program-wide control-flow graph contextual information to generate high quality basic block embeddings. Then we propose a k-hop greedy matching algorithm to obtain the optimal results. • We implement a prototype D EEP BINDIFF. It first extracts semantic information by leveraging NLP tech- niques. Then, it performs TADW algorithm to generate basic block embeddings that contain both the semantic and the program-wide dependency information. • An extensive evaluation shows that D EEP BINDIFF could outperform state-of-the-art binary diffing tools for both cross-version and cross-optimization-level diffing. A case study further demonstrates the useful- ness of D EEP BINDIFF with real-world vulnerabilities. To facilitate further research, we have made the source code and dataset publicly available. 1 1https://github.com/deepbindiff/DeepBinDiff 2"
+      },
+      {
+        "source": "selected",
+        "value": "Binary diffing analysis quantitatively measures the differences between two given binaries and produces fine-grained basic block level matching. It has been widely used to enable different kinds of critical security analysis. However, all existing program analysis and machine learning based techniques suffer from low accuracy, poor scalability, coarse granularity, or require extensive labeled training data to function. In this paper, we propose an unsupervised program-wide code representation learning technique to solve the problem. We rely on both the code semantic information and the program-wide control flow information to generate basic block embeddings. Furthermore, we propose a khop greedy matching algorithm to find the optimal diffing results using the generated block embeddings. We implement a prototype called DEEPBINDIFF and evaluate its effectiveness and efficiency with a large number of binaries. The results show that our tool outperforms the state-of-the-art binary diffing tools by a large margin for both cross-version and cross-optimization-level diffing. A case study for OpenSSL using real-world vulnerabilities further demonstrates the usefulness of our system."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yue Duan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Cornell University UC Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Xuezixiang Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Cornell University UC Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jinghan Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Cornell University UC Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Heng Yin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Cornell University UC Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yue Duan",
+          "email": "",
+          "affiliations": [
+            "Cornell University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Xuezixiang Li",
+          "email": "xli287@ucr.edu",
+          "affiliations": [
+            "Cornell University UC Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jinghan Wang",
+          "email": "jwang131@ucr.edu",
+          "affiliations": [
+            "Cornell University UC Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Heng Yin",
+          "email": "heng@cs.ucr.edu",
+          "affiliations": [
+            "Cornell University UC Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 106,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Heng Yin",
+          "block_id": "pdf:p1:b9",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 3,
+          "author": "Heng Yin",
+          "affiliation_raw": "Cornell University UC Riverside",
+          "confidence": 0.83,
+          "author_block_id": "pdf:p1:b9",
+          "affiliation_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.806,
+          "center_distance": 96.947,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DeepBinDiff: Learning Program-Wide Code Representations for Binary Diffing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/deepbindiff-learning-program-wide-code-representations-for-binary-diffing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yue Duan",
+          "affiliations": [
+            "Cornell University"
+          ]
+        },
+        {
+          "name": "Xuezixiang Li",
+          "affiliations": [
+            "UC Riverside"
+          ]
+        },
+        {
+          "name": "Jinghan Wang",
+          "affiliations": [
+            "UC Riverside"
+          ]
+        },
+        {
+          "name": "Heng Yin",
+          "affiliations": [
+            "UC Riverside"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xuezixiang Li",
+      "field": "affiliations",
+      "restored_value": [
+        "Cornell University UC Riverside"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jinghan Wang",
+      "field": "affiliations",
+      "restored_value": [
+        "Cornell University UC Riverside"
+      ],
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Heng Yin",
+      "field": "affiliations",
+      "restored_value": [
+        "Cornell University UC Riverside"
+      ],
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+{
+  "paper_id": "071_sparta_practical_anonymity_with_long_term_resistance_to_traffic_analysis",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Sparta: Practical Anonymity with Long-Term Resistance to Traffic Analysis"
+      },
+      {
+        "source": "selected",
+        "value": "Sparta: Practical Anonymity with Long-Term Resistance to Traffic Analysis"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Existing metadata-private messaging systems are either non-scalable or vulnerable to long-term traffic analysis. Approaches that mitigate traffic analysis attacks often suffer from unrealistic and unimplementable assumptions or impose system-wide bandwidth restrictions, degrading usability, and performance. In this work, we present a new model for metadata-private communication systemsdeferred retrieval-that guarantees traffic analysis resistance under realistic, implementable user assumptions. We introduce Sparta systems, practical and scalable instantiations of deferred retrieval that are distributable, achieve high throughput, and support multiple concurrent conversations without message loss. Specifically, we present three Sparta constructions optimized for different scenarios: (i) low-latency, (ii) high-throughput in shared-memory environments (multithread implementations), and (iii) high throughput in sharednothing (distributed) environments. Our low latency Sparta supports latencies of less than one millisecond, while our highthroughput Sparta can scale to deliver over 700,000 100B messages per second on a single 48-core server."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Existing metadata-private messaging systems are either non-scalable or vulnerable to long-term traffic anal- ysis. Approaches that mitigate traffic analysis attacks of- ten suffer from unrealistic and unimplementable assump- tions or impose system-wide bandwidth restrictions, degrad- ing usability, and performance. In this work, we present a new model for metadata-private communication systems- deferred retrieval-that guarantees traffic analysis resistance under realistic, implementable user assumptions. We intro- duce Sparta systems, practical and scalable instantiations of deferred retrieval that are distributable, achieve high throughput, and support multiple concurrent conversations without message loss. Specifically, we present three Sparta constructions optimized for different scenarios: (i) low-latency, (ii) high-throughput in shared-memory environments (multi- thread implementations), and (iii) high throughput in shared- nothing (distributed) environments. Our low latency Sparta supports latencies of less than one millisecond, while our high- throughput Sparta can scale to deliver over 700,000 100B messages per second on a single 48-core server . 1. Introduction Today's messaging systems, like WhatsApp, iMes- sage, and Signal, use end-to-end encryption to protect message contents. However, this does not hide meta- data-information about who communicates with whom, when, and how much-which remains visible to systems and network observers. Metadata is highly sensitive and valuable; as former NSA general counsel, Stuart Baker, said, “metadata absolutely tells you everything about somebody's life. If you have enough metadata, you don't really need content”. For example, if an employee sends encrypted files to a journalist who later exposes company corruption, the employee becomes a prime suspect based on metadata alone. Messaging systems must therefore protect both content and metadata to be truly private. Metadata privacy has been a topic of significant interest over the past decades. Despite this, Tor [1] remains the only widely used metadata-private communication system. Tor is well-known to be vulnerable to global adversaries capable of observing all network links; however, the lesson of Tor is not that the non-global adversary model is too weak (though it is), but that traffic analysis is a much more pertinent concern [2], [3]. While significant research efforts have been devoted to designing scalable, metadata-private messaging systems secure against global adversaries [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], the problem of traffic analysis has received much less attention. Traffic Analysis Attacks. Traffic analysis attacks aim to infer protected information, such as who is talking to whom, by identifying correlations in traffic patterns at users. For example, consider a trusted messaging service that never discloses how a message was routed. Such a system would be secure against a global adversary by assumption of trust. However, if we observe Alice sending a message to the service and Bob receiving a message shortly after, this strongly suggests they are communicating. These attacks are statistical and improve with time and additional observations [2], [18], [19], [20]. Mitigating Traffic Analysis Attacks & Limitations. To mitigate traffic analysis attacks, existing systems either broadcast or impose global bandwidth restrictions. Broad- cast is robust against traffic analysis attacks since messages are sent to all potential recipients simultaneously, hiding the specific sender-receiver pairs. However, broadcast becomes infeasible as the number of users increases. Bandwidth restrictions ensure all users' traffic looks identical, eliminating correlations between communicating users. These come in two forms: restrictions on input rates and restrictions on output rates. Asynchronous systems [13], [21], [22], [23] impose restrictions on output rates, building these restrictions into the system by implementing a set of mailboxes for each user with fixed size, k. Senders deposit messages into these mailboxes, and receivers explicitly fetch to receive their messages. On a fetch, the entire mailbox, i.e., k messages, is downloaded whether or not the mailbox is full. While asynchronous systems allow users to fetch independently of the other users, to prevent traffic analysis, many assume all users will fetch at a fixed rate. [13], [21] Combined with the fixed mailbox size, this results in a globally fixed output rate, denoted kout. While there is often nothing to prevent users from fetching more frequently, these systems face an additional problem. If a user receives more messages than the capacity of the mailbox, messages collide, corrupting them and preventing their correct delivery. Mailbox sizes, *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ ,ZMF'SFESJDLTPO6OEFSMJDFOTFUP*&&& %0*41 k, are most often 1, [13], [21] effectively prohibiting users from having multiple concurrent conversations. Synchronous systems, e.g., mixnets [4], [7], [8], [9], [10], [16], [24], [25] and secret sharing based schemes [5], [6], [12], [26], impose restrictions on input rates by making assumptions about user behavior, i.e., all users will send k =1 messages each round-the “one message assump- tion”. At the end of the round after messages are accrued, all messages are randomly permuted and delivered. Because all users are bound by the same round schedule and are required to send equal volumes of messages, this results in a globally fixed input rate, denoted kin. But this assumption is unrealistic and unimplementable. Users cannot be expected to be online to send a message each round, especially in mobile environments where they may lose connectivity, and systems cannot control how users behave. Groove [11] addressed this problem by designing components to enforce that one message per user is submitted each round to its internal mixnet, but still suffers from globally set input rates. While global bandwidth restrictions like the one message assumption prevent traffic analysis, [27], [28], [29] they lead to significant and previously unacknowledged problems in real deployments. If a user of a synchronous system sends at a higher rate than the round rate, these additional messages will be delayed/deferred to subsequent rounds. By Little's law [30], we know that this outbound message queue will grow without bound, translating to unbounded latency for these highly active users. If, in response to this, we increase the bandwidth rate to be higher than the rate of the most active user, this will result in much higher overhead for low- activity users. Thus, even if all users could realistically meet this assumption, global bandwidth restrictions would lead to significant performance problems. Our goal is to build practical metadata-private messag- ing systems that are secure in the long term. Toward this goal, we raise two questions. 1) Can systems provide long-term traffic analysis re- sistance with practical performance and realistic user assumptions? And if so, 2) Can they be securely and scalably implemented? In this work. We affirmatively address both questions as we summarize in Fig. 1. In §3.2 we introduce a new model- deferred retrieval-for how metadata-private messaging sys- tems can operate so that traffic patterns at communicating users do not reveal correlations. Deferred retrieval provides traffic analysis resistance under realistic user assumptions, without imposing global bandwidth restrictions, and with practical latencies and overheads in deployed systems. In §4, we introduce Sparta systems, which securely and effi- ciently support deferred retrieval. These systems are scal- able, achieve high throughput, and support multiple con- current conversations without message loss. Sparta systems implement deferred retrieval using Intel SGX and oblivi- ous algorithms and data structures. Our implementations of Sparta ensure that all operations on the server leak no more than users' traffic patterns, which themselves are secure against traffic analysis due to deferred retrieval. We present three Sparta constructions that provide the listed system and usability properties optimized for different use cases. Sparta-LL is optimized for low-latency and based on oblivious data structures. It supports latency of less than one millisecond on database sizes of 220. Sparta-SB is based on sort and can scale to deliver over 700,000 100B messages per second on a single 48-core server with a database of size 220. Sparta-D is distributable and can scale to database sizes of 223 with less than one second of latency. Contributions. We offer three core contributions that lead to these results: 1) First, we precisely define traffic analysis resis- tance. To achieve this, we propose a new frame- work for describing traffic leakage that is system- independent and can be used to categorize all exist- ing work. This is the first framework that captures long-term statistical leakages and identifies the spe- cific features that enable traffic analysis attacks. Using this, we observe that we can relax existing proposals for leakage without disclosing informa- tion that could be used for long-term correlation of communicating users. 2) We propose a new model for metadata private communication systems-deferred retrieval-that achieves traffic analysis resistance with less strin- gent assumptions on users than prior work. We evaluate the practical costs of this model under real email workloads and find that it is orders of mag- nitude cheaper than existing proposals for traffic analysis systems and supports sub-minute latencies with low network overhead. This remains true even when we compare our systems with non-optimal parameters to prior works with optimal parameters. To our knowledge, this is the first evaluation of the costs associated with methods for achieving long- term traffic analysis resistance. 3) Finally, we present three implementations of de- ferred retrieval. Sparta-LL is optimized for low processing latency, Sparta-SB is optimized for high throughput on existing workloads, and Sparta-D is designed to be distributable. These systems im- pose no global bandwidth restrictions on users, place no assumptions on the number of contacts users can have, and do not suffer from message loss like many prior systems. In our experimen- tal evaluation, we show that our systems achieve high throughput. Our implementations are aligned with the Signal Messaging App, which combines hardware enclaves (Intel SGX) with oblivious al- gorithms and data structures to implement private contact discovery. Limitations. The latency and overhead of deferred retrieval is highly dependent on the fetch rates that users choose. Setting these rates is not trivial, as they must be set to"
+      },
+      {
+        "source": "selected",
+        "value": "Existing metadata-private messaging systems are either non-scalable or vulnerable to long-term traffic analysis. Approaches that mitigate traffic analysis attacks often suffer from unrealistic and unimplementable assumptions or impose system-wide bandwidth restrictions, degrading usability, and performance. In this work, we present a new model for metadata-private communication systemsdeferred retrieval-that guarantees traffic analysis resistance under realistic, implementable user assumptions. We introduce Sparta systems, practical and scalable instantiations of deferred retrieval that are distributable, achieve high throughput, and support multiple concurrent conversations without message loss. Specifically, we present three Sparta constructions optimized for different scenarios: (i) low-latency, (ii) high-throughput in shared-memory environments (multithread implementations), and (iii) high throughput in sharednothing (distributed) environments. Our low latency Sparta supports latencies of less than one millisecond, while our highthroughput Sparta can scale to deliver over 700,000 100B messages per second on a single 48-core server."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kyle Fredrickson",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Santa Uc",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Cruz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "James PHughes",
+          "email": "japhughe@ucsc.edu",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Darrell D ELong",
+          "email": "darrell@ucsc.edu",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kyle Fredrickson",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Santa Uc",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "James PHughes",
+          "email": "japhughe@ucsc.edu",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Darrell D ELong",
+          "email": "darrell@ucsc.edu",
+          "orcid": "",
+          "affiliations": [
+            "UC Santa Cruz"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 14,
+      "author_count": 4,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Sparta: Practical Anonymity with Long-Term Resistance to Traffic Analysis",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kyle Fredrickson",
+          "affiliations": [
+            "UC Santa Cruz"
+          ]
+        },
+        {
+          "name": "Ioannis Demertzis",
+          "affiliations": [
+            "UC Santa Cruz"
+          ]
+        },
+        {
+          "name": "James Hughes",
+          "affiliations": [
+            "UC Santa Cruz"
+          ]
+        },
+        {
+          "name": "Darrell Long",
+          "affiliations": [
+            "UC Santa Cruz"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 4,
+      "proposed_count": 4,
+      "retained_count": 3,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

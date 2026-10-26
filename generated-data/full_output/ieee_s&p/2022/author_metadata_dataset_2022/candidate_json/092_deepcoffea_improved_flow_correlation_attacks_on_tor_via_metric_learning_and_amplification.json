@@ -1,0 +1,389 @@
+{
+  "paper_id": "092_deepcoffea_improved_flow_correlation_attacks_on_tor_via_metric_learning_and_amplification",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DeepCoFFEA: Improved Flow Correlation Attacks on Tor via Metric Learning and Amplification"
+      },
+      {
+        "source": "selected",
+        "value": "DeepCoFFEA: Improved Flow Correlation Attacks on Tor via Metric Learning and Amplification"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "End-to-end flow correlation attacks are among the oldest known attacks on low-latency anonymity networks, and are treated as a core primitive for traffic analysis of Tor. However, despite recent work showing that individual flows can be correlated with high accuracy, the impact of even these state-of-the-art attacks is questionable due to a central drawback: their pairwise nature, requiring comparison between N 2 pairs of flows to deanonymize N users. This results in a combinatorial explosion in computational requirements and an asymptotically declining base rate, leading to either high numbers of false positives or vanishingly small rates of successful correlation. In this paper, we introduce a novel flow correlation attack, DeepCoFFEA, that combines two ideas to overcome these drawbacks. First, DeepCoFFEA uses deep learning to train a pair of feature embedding networks that respectively map Tor and exit flows into a single low-dimensional space where correlated flows are similar; pairs of embedded flows can be compared at lower cost than pairs of full traces. Second, DeepCoFFEA uses amplification, dividing flows into short windows and using voting across these windows to significantly reduce false positives; the same embedding networks can be used with an increasing number of windows to independently lower the false positive rate. We conduct a comprehensive experimental analysis showing that DeepCoFFEA significantly outperforms state-of-the-art flow correlation attacks on Tor, e.g. 93% true positive rate versus at most 13% when tuned for high precision, with two orders of magnitude speedup over prior work. We also consider the effects of several potential countermeasures on DeepCoFFEA, finding that existing lightweight defenses are not sufficient to secure anonymity networks from this threat. 1915 2022 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "End-to-end flow correlation attacks are among the oldest known attacks on low-latency anonymity networks, and are treated as a core primitive for traffic analysis of Tor. However, despite recent work showing that individual flows can be correlated with high accuracy, the impact of even these state-of-the-art attacks is questionable due to a central drawback: their pairwise nature, requiring comparison between N 2 pairs of flows to deanonymize N users. This results in a combinatorial explosion in computational requirements and an asymptotically declining base rate, leading to either high numbers of false positives or vanishingly small rates of successful correlation. In this paper, we introduce a novel flow correlation attack, DeepCoFFEA, that combines two ideas to overcome these drawbacks. First, DeepCoFFEA uses deep learning to train a pair of feature embedding networks that respectively map Tor and exit flows into a single low-dimensional space where correlated flows are similar; pairs of embedded flows can be compared at lower cost than pairs of full traces. Second, DeepCoFFEA uses amplification, dividing flows into short windows and using voting across these windows to significantly reduce false positives; the same embedding networks can be used with an increasing number of windows to independently lower the false positive rate. We conduct a comprehensive experimental analysis showing that DeepCoFFEA significantly outperforms state-of-the-art flow correlation attacks on Tor, e.g. 93% true positive rate versus at most 13% when tuned for high precision, with two orders of magnitude speedup over prior work. We also consider the effects of several potential countermeasures on DeepCoFFEA, finding that existing lightweight defenses are not sufficient to secure anonymity networks from this threat. I. I NTRODUCTION Tor is perhaps the most well-known anonymous network, used by millions of people each day [ 1] to hide their sensitive internet activities from servers, ISPs, and potentially, nation- state adversaries. Tor provides low-latency anonymity by rout- ing traffic through a series of relays using layered encryption to prevent any single entity from learning the source and destination of a connection through its content alone. Nevertheless, it is well known that in low-latency anonymity networks, the timing and volume of traffic sent between the network and end systems (clients and servers) can be used for traffic analysis. For example, recent work applying traffic analysis to Tor has focused on website fingerprinting [ 2]-[9], identifying which website a client has downloaded based on the traffic between the client and the entry relay. Perhaps the most fundamental traffic analysis attack on a low-latency anonymity system is the end-to-end flow corre- lation attack: an adversary observes traffic flows entering the network and leaving the network and attempts to correlate these flows, thereby pairing each user with a likely destination. Such attacks were known and discussed in the context of system designs that predate Tor, such as the Onion Routing network [10] and the Freedom network [ 11]. The Tor design [ 12] explicitly acknowledges that such attacks can be effective and concentrates on a more limited threat model. In turn, many published analyses of the security of Tor treat flow correlation as a core primitive and simply account for the fraction of flows that can be observed by an adversary [13]-[24]. These works typically describe methods to increase or limit the fraction of flows that an adversary can observe through some combination of internal manipulation of Tor protocols, manipulation of the Internet routing infrastruc- ture, or network positioning and resources, and assume that flow correlation will work on these observations. Despite these assumptions, the extent to which end-to-end flow correlation attacks are a realistic threat against the Tor network remains unclear. A problem with directly applying these attacks to Tor traffic is that traffic between the client and entry relay is not identical to traffic between the exit relay and the destination server, due to a variety of factors: multiplexing of encrypted traffic; the use of fixed-size cells to carry data between Tor nodes; and delays caused by buffering, congestion, interaction between circuits, and Tor's flow control mechanisms. For example, when Sun et al. [ 17] applied Spearman's rank correlation to a small set of entry flows (called Tor flows since they are wrapped in the Tor cell protocol), they found that nearly 100MB of traffic per flow was needed to get adequate performance. Nasr, Bahramali, and Houmansadr [ 25] addressed this limitation by using deep neural networks (DNNs) to learn a more effective Tor-specific flow correlation metric, DeepCorr, that classifies pairs of flows as correlated or uncorrelated with very high accuracy using much less traffic. Another fundamental limitation, however, on the end-to-end correlation of Tor flows is the pairwise nature of the attack. To decide if a flow entering the Tor network and one leaving it are on the same Tor connection, these attacks compute the correlation between the two flow vectors (consisting of packet times and sizes); to deanonymize a set of flows, the attacks must compute the correlation between all possible incoming and outgoing flows. Thus, to deanonymize N Tor connections, they will perform N2 comparisons. 1915 DOI 10.1109/SP46214.2022.00083 Fig. 1. Threat model of DeepCoFFEA: We have two types of attackers - one controls ISPs (blue) and the other runs their own relays (red). Naturally, this is computationally expensive when the num- ber of flows at a given moment can be in the tens of thousands. Perhaps more critically, the pairwise comparison results in poor Bayesian Detection Rates (BDRs), since the base rate - the probability that both ends of a Tor connection are correlated - is very low (i.e., 1 N ). Any correlation metric with a fixed False Positive Rate (FPR) ofρ will incorrectly classify ρN exit flows as being correlated with each entry flow, so that the probability that a given pair is actually correlated given that the metric classifies them that way is 1 1+ρN , which approaches 0 as N increases. This paper presents a novel approach that (i) significantly reduces the cost for each of these comparisons by using a modified triplet network approach [26] that first embeds both Tor flows and exit flows into a low-dimensional space, and then uses much more efficient comparisons between these embeddings; and (ii) uses amplification [27] to aggregate multiple comparisons for each pair of flows, allowing the FPR to be significantly reduced without the need to learn a new embedding or metric. To better see the advantage of the triplet network approach, note that DeepCorr learns a pairwise combination of Tor and exit flow features and thus must evaluate a costly DNN on every pair of flows (cost of N2 DNN runs). In contrast, we develop feature embedding networks to learn two types of embeddings, namely Tor and exit flow embeddings, extending ideas from prior work in website fingerprinting attacks [28]. This architecture learns a pair of functions to generate entry flow and exit flow embeddings separately, and both functions are applied to each flow, which costs just two DNN evaluations per flow (cost of 2N DNN runs). The pairwise comparisons can then be done much less expensively using simple distance functions in the embedding space. The key advantage of amplification, an idea borrowed from randomized algorithms [27], comes from the ability to conduct multiple, partially independent tests of correlation on each pair of flows. To do this, we divide flows into a sequence of k short time segments, or windows. We then extractk embeddings per flow (modestly raising our computational cost by a factor ofk), and conduct step-by-step pairwise comparisons of Tor and exit flows. Correctly matched flows should be correlated in nearly all k windows, while mismatched flows are likely to only be correlated for at most some of the windows. This windowing approach thus amplifies the difference between true positives (TPs) and potential false positives (FPs). We call the resulting attack DeepCoFFEA, for Deep Corre- lated Flow Feature Extraction and Amplification. 1 To sketch our attack at a high level, the network-level adversary monitors Tor flows ti, between clients and entry guards, and exit flows xj, between exit relays and destination servers, by running its own relays or controlling autonomous systems (ASes) as shown in Figure 1. After extracting packet timing and size information, the adversary jointly trains two DNN models ( G and H) in which Tor flows and exit flows are used as inputs, respectively; G and H should have the property that if Tor flow t and exit flow x are correlated, then d(G(t),H (x))≥τ for some correlation metric d and threshold τ, but if they are not correlated, then d(G(t),H (x)) < τ. Then, the adversary applies G and H to k consecutive flow windows to extract feature embedding vectors and computes the pairwise correla- tion matrix. Finally, if two flows are seen as correlated by d in at least k−ℓ windows (for a small threshold ℓ), the adversary determines that the flows are correlated, and otherwise they are not; this exponentially amplifies the difference in TPs and FPs. Even though both DeepCorr and DeepCoFFEA both per- form pairwise correlation, DeepCoFFEA is much more effi- cient, since G and H generate a total of 2kN embedding vectors, while DeepCorr deals with N2 pairs. This is because DeepCoFFEA compares the embedding vectors for each pair of flows using inexpensive distance computations, while Deep- Corr performs expensive DNN evaluations based on pairwise information about the Tor and exit flows together. This improved strategy enables DeepCoFFEA to simul- taneously decrease the required computing resources while increasing the BDR compared to DeepCorr. For instance, when performing a correlation analysis among 10,000 flows, DeepCoFFEA detects an order of magnitude more true corre- lated pairs (85% vs 8% TPR) for a given FPR ( 10−4), while decreasing the compute time by two orders of magnitude . We also show that the effectiveness of DeepCoFFEA can be trans- ferable across destinations, circuits, and time; in particular, DeepCoFFEA was able to effectively correlate flows on an evaluation dataset that was collected 14 months apart from its training dataset. We also show that, due to amplification, DeepCoFFEA can learn enough useful features to correlate flows that have been protected by unknown padding defenses. Combined with the DeepCorr results and recent advances in website fingerprinting [5], these results show an urgent need to develop and deploy traffic analysis countermeasures to protect the users of Tor. II. B ACKGROUND A. Flow Correlation Attacks We first review past end-to-end flow correlation studies in Appendix A. Then, we discuss more recent flow correlation techniques, RAPTOR and DeepCorr, which we call state-of- the-art attacks in this paper and compare to DeepCoFFEA. 1We pronounce it “Deep Coffee.” 1916"
+      },
+      {
+        "source": "selected",
+        "value": "End-to-end flow correlation attacks are among the oldest known attacks on low-latency anonymity networks, and are treated as a core primitive for traffic analysis of Tor. However, despite recent work showing that individual flows can be correlated with high accuracy, the impact of even these state-of-the-art attacks is questionable due to a central drawback: their pairwise nature, requiring comparison between N 2 pairs of flows to deanonymize N users. This results in a combinatorial explosion in computational requirements and an asymptotically declining base rate, leading to either high numbers of false positives or vanishingly small rates of successful correlation. In this paper, we introduce a novel flow correlation attack, DeepCoFFEA, that combines two ideas to overcome these drawbacks. First, DeepCoFFEA uses deep learning to train a pair of feature embedding networks that respectively map Tor and exit flows into a single low-dimensional space where correlated flows are similar; pairs of embedded flows can be compared at lower cost than pairs of full traces. Second, DeepCoFFEA uses amplification, dividing flows into short windows and using voting across these windows to significantly reduce false positives; the same embedding networks can be used with an increasing number of windows to independently lower the false positive rate. We conduct a comprehensive experimental analysis showing that DeepCoFFEA significantly outperforms state-of-the-art flow correlation attacks on Tor, e.g. 93% true positive rate versus at most 13% when tuned for high precision, with two orders of magnitude speedup over prior work. We also consider the effects of several potential countermeasures on DeepCoFFEA, finding that existing lightweight defenses are not sufficient to secure anonymity networks from this threat. 1915 2022 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Eun Oh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Taiji Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Nate Mathews",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "James KHolland",
+          "email": "holla556@umn.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Mohammad Saidur Rahman",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Nicholas Hopper",
+          "email": "hoppernj@umn.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Matthew Wright",
+          "email": "matthew.wright@rit.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Eun Oh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Ewha Womans University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Taiji Yang",
+          "email": "yang6682@umn.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Nate Mathews",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "James KHolland",
+          "email": "holla556@umn.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Mohammad Saidur Rahman",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Nicholas Hopper",
+          "email": "hoppernj@umn.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Matthew Wright",
+          "email": "matthew.wright@rit.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 128,
+      "author_count": 7,
+      "matched_author_count": 4,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Eun Oh",
+          "block_id": "pdf:p1:b7",
+          "match_score": 0.6667
+        },
+        {
+          "author_index": 4,
+          "author": "Mohammad Saidur Rahman",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Nicholas Hopper",
+          "block_id": "pdf:p1:b13",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Matthew Wright",
+          "block_id": "pdf:p1:b11",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 4,
+          "author": "Mohammad Saidur Rahman",
+          "affiliation_raw": "3 Rochester Institute of Technology { njm3308, mr6564, matthew.wright } @rit.edu",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b12",
+            "pdf:p1:b19",
+            "pdf:p1:b21"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.822,
+          "center_distance": 35.961,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Nicholas Hopper",
+          "affiliation_raw": "Ewha Womans University University of Minnesota,",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b13",
+          "affiliation_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b20",
+            "pdf:p1:b20"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 25.481,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 6,
+          "author": "Matthew Wright",
+          "affiliation_raw": "Rochester Institute of Technology { njm3308, mr6564, matthew.wright } @rit.edu",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b11",
+          "affiliation_block_ids": [
+            "pdf:p1:b19",
+            "pdf:p1:b21"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 16.435,
+          "center_distance": 87.914,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 0,
+          "author": "Eun Oh",
+          "affiliation_raw": "2 Ewha Womans University University of Minnesota,",
+          "confidence": 0.83,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b14",
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.822,
+          "center_distance": 101.586,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DeepCoFFEA: Improved Flow Correlation Attacks on Tor via Metric Learning and Amplification",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Se Eun Oh",
+          "affiliations": [
+            "Ewha Womans University"
+          ]
+        },
+        {
+          "name": "Taiji Yang",
+          "affiliations": [
+            "University of Minnesota"
+          ]
+        },
+        {
+          "name": "Nate Mathews",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ]
+        },
+        {
+          "name": "James K Holland",
+          "affiliations": [
+            "University of Minnesota"
+          ]
+        },
+        {
+          "name": "Mohammad Saidur Rahman",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ]
+        },
+        {
+          "name": "Nicholas Hopper",
+          "affiliations": [
+            "University of Minnesota"
+          ]
+        },
+        {
+          "name": "Matthew Wright",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

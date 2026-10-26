@@ -1,0 +1,383 @@
+{
+  "paper_id": "052_saecred_a_state_aware_over_the_air_protocol_testing_approach_for_discovering_parsing_bugs_in_sae_handshake_implementations_of_cots_wi_fi_access_points",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SAECRED: A State-Aware, Over-the-Air Protocol Testing Approach for Discovering Parsing Bugs in SAE Handshake Implementations of COTS Wi-Fi Access Points"
+      },
+      {
+        "source": "selected",
+        "value": "SAECRED: A State-Aware, Over-the-Air Protocol Testing Approach for Discovering Parsing Bugs in SAE Handshake Implementations of COTS Wi-Fi Access Points"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "WPA3-Personal introduced the stateful Simultaneous Authentication of Equals (SAE) handshake protocol to achieve forward secrecy and resistance to passphrase guessing attacks during Wi-Fi connection bootstrapping, guarantees that are lacking in WPA2-Personal. However, the initial design of WPA3-Personal with SAE was susceptible to connection downgrade and denial-of-service (DoS) attacks. The current, enhanced version introduces mechanisms to mitigate these vulnerabilities. Enabling these security-enhancing mechanisms, however, results in a variable-structured, context-sensitive packet format that can be challenging to parse and interpret correctly. Misparsing SAE handshake packets can negatively impact Wi-Fi protocol security. To uncover SAE handshake packet misparsing in commercial-off-the-shelf (COTS) Wi-Fi access points (APs), we present SAECRED, a packet-structureguided, SAE-state-aware black-box fuzzer. SAECRED reduces the underlying problem of misparsing discovery to a twodimensional search problem, where the dimensions are the packet structure and the underlying SAE protocol state. It solves this search problem by combining Iterative Deepening Search (IDS) with a context-sensitive grammar-based fuzzing approach, where the latter relies on a Syntax-Guided Synthesis (SyGuS) solver. SAECRED's effectiveness is demonstrated by evaluating it on 6 COTS APs and the widely used opensource hostapd. Our evaluation discovered several instances of 4 classes of bugs. Bugs in two of these classes violate the two fundamental guarantees SAE expects to achieve (i.e., resistance to downgrade and DoS attacks). We reported our findings to the relevant stakeholders, which resulted in patches and security advisories."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "WPA3-Personal introduced the stateful Simultane- ous Authentication of Equals (SAE) handshake protocol to achieve forward secrecy and resistance to passphrase guessing attacks during Wi-Fi connection bootstrapping, guarantees that are lacking in WPA2-Personal. However, the initial design of WPA3-Personal with SAE was susceptible to connection downgrade and denial-of-service (DoS) attacks. The current, enhanced version introduces mechanisms to mitigate these vulnerabilities. Enabling these security-enhancing mechanisms, however, results in a variable-structured, context-sensitive packet format that can be challenging to parse and interpret correctly. Misparsing SAE handshake packets can negatively impact Wi-Fi protocol security. To uncover SAE handshake packet misparsing in commercial-off-the-shelf (COTS) Wi-Fi access points (APs), we present S AECRED , a packet-structure- guided, SAE-state-aware black-box fuzzer . S AECRED reduces the underlying problem of misparsing discovery to a two- dimensional search problem, where the dimensions are the packet structure and the underlying SAE protocol state. It solves this search problem by combining Iterative Deepening Search (IDS) with a context-sensitive grammar-based fuzzing approach, where the latter relies on a Syntax-Guided Synthesis (SyGuS) solver . S AECRED 's effectiveness is demonstrated by evaluating it on 6 COTS APs and the widely used open- source hostapd. Our evaluation discovered several instances of 4 classes of bugs. Bugs in two of these classes violate the two fundamental guarantees SAE expects to achieve ( i.e., resistance to downgrade and DoS attacks). We reported our findings to the relevant stakeholders, which resulted in patches and security advisories. 1. Introduction The ubiquity of Wi-Fi and its over-the-air (OTA) com- munication makes it a lucrative target for local adversaries. Wi-Fi security, and especially its connection bootstrapping protocol's security, has been the focal point of numer- ous recent efforts [1], [2], [3], [4]. The Wi-Fi connection bootstrapping protocol in the WPA2-Personal Mode 1 lacks 1. Unless explicitly mentioned, whenever we refer to WPA2 or WPA3, we mean the WPA2-Personal and WPA3-Personal modes, respectively. forward secrecy and is also susceptible to brute-force at- tacks on the secret passphrase shared between the Wi-Fi Access Point (AP) and the user (a.k.a., supplicant) [5]. 802.11 standard went through multiple revisions [6], [7] before settling on the WPA3 standard. The WPA3 standard introduces a stateful password-authenticated key exchange (PAKE) protocol called the Simultaneous Authentication of Equals (SAE). The SAE protocol enjoys both forward secrecy and resistance to offline dictionary attacks on the credentials. At a high level, this paper focuses on checking the correctness of SAE implementations in commercial-off- the-shelf (COTS) APs . Tool Mode Grammar Mutation State Bugs GREYHOUND B/P StateAFL B/P Braktooth B/P TCP-Fuzz P Tyr P SGFuzz B Nautilus G SNPSFuzzer B/P StateFuzz B EvoGFuzz G Superion G Owfuzz B AFLNet B/P PULSAR B/P FuzzPD P DPIFuzz B/P BLEEM B/P AFLNetLegion B/P L2Fuzz B A TFuzz G DIKEUE NA NA TLSAttacker B/P SAECRED G/P TABLE 1: Comprehensive fuzzer capability matrix. Mode: : white-box, : gray-box, : black-box. Mutation: B: bit- level, P: packet-level, G: grammar-based, B/P: bit+packet, G/P: grammar+packet. Capability: : crashes, : semantic bugs, : crashes+semantic bugs. Despite its secure-by-design motto, the security of the *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ .VIBNNBE%BOJZBM1JSXBOJ%BS6OEFSMJDFOTFUP*&&& %0*41 SAE handshake protocol has been under constant scrutiny due to design flaws and implementation choices. Concretely, the initial design and implementation in the widely used hostapd library [8] were shown to be susceptible to con- nection downgrade and DoS attacks [2], [9]. These findings led to the current enhanced version of the SAE standard, which introduces mechanisms ( e.g., explicitly tracking re- jected elliptic curve groups, introducing anti-clogging to- kens) for mitigating these attacks. To enable these security- enhancing mechanisms, however, the SAE handshake packet structure has become more complex. These packets have variable lengths, with inter-field dependencies and crypto- graphic contexts. Precisely capturing this structure requires a context-sensitive grammar with calculated fields. As a consequence, parsing the packet format correctly and then faithfully updating internal and protocol states can be a challenging and error-prone task for AP implementations. Misparsing SAE handshake packets can lead to several un- desirable consequences: erroneous protocol state transitions, memory safety issues ( e.g., crashes, leakage of sensitive information), undefined behavior, and unsafe or erroneous internal state updates ( e.g., updating an internal variable with incorrect values, impacting future protocol behavior). These undesired consequences can be exploited by adversaries to launch attacks ranging from DoS to connection downgrades. To mitigate these issues we designed, developed, and exper- imentally evaluated S AECRED , a packet-structure-guided, SAE-state-aware black-box over-the-air testing approach for uncovering parsing bugs in COTS APs . Due to the SAE protocol's statefulness, discovering pars- ing bugs is challenging. In particular, triggering a parsing bug may require not only generating the concrete SAE packet (potentially nonconformant with the SAE packet format) that triggers the bug but also injecting it only when the AP is in a SAE state that does trigger the bug. Reaching the bug-triggering SAE state may require sending a long sequence of SAE packets, which induces a large input universe to sample from. Since we consider a black-box setting, justified by the lack of access to proprietary AP firmware, we do not have information about the internal SAE protocol state of the AP under test. Further, we do not have faithful coverage information ( e.g., code coverage) to guide the input generation part of testing, where each input is a sequence of SAE protocol packets. A popular choice is using proxy coverage measures, such as the execution time of a test case, to approximate code coverage. Unfortunately, such proxy measures tend to guide the testing approach towards inputs that trigger timeouts rather than parsing bugs. One key advantage of our testing setup is that one can easily test a COTS AP with S AECRED with little to no configuration or programming efforts. The setup also requires an SAE-aware driver that can not only inject the test inputs OTA to the AP under test but also decode and classify the AP responses as expected or unexpected. The driver has to support such intricacies of the SAE protocol as cryptographic operations, contextual behavior ( e.g., handling anti-clogging tokens), timeouts, and retransmissions. Finally, as with testing of stateful wireless protocols, executing each test case may take a long time as the driver has to account for timeouts and retransmissions, and also reset the AP to a known initial state before injecting the next test case. Faithfully resetting may require power cycling the AP . Ignoring the SAE-specific driver (which is essential for testing APs), Table 1 summarizes the existing gray-box and black-box testing approaches, including those specifically targeting stateful network protocols. These fuzzers are un- suitable for our testing setup because they suffer from one or more of the following limitations: (1) they require access to source code or the firmware binary [10], [11], [12], [13], [14]; (2) they do not consider malformed packets [15], [16], [17]; (3) they lack support for stateful protocol behavior [18], [13], [19], [20], [21]; (4) they cannot identify undesired parsing behavior that does not induce a crash [13], [14], [22], [23], [20], [17], [24], [25]; (5) they consider inputs of certain shapes only [26], [27]; (6) they cannot handle packet formats that can be expressed only with context- sensitive grammars [13], [15], [11], [18], [28], [29]; (7) they rely on test cases having a short execution time.[10], [18], [15], [11]. A more detailed breakdown of the limitations of these works in the WPA3-SAE context can be found in Sec- tion 10. One key insight that enables S AECRED to address these limitations is that discovering parsing bugs in SAE implementations can be reduced to a search problem over two dimension: the packet structure and the underlying SAE protocol state space. S AECRED solves this two-dimensional search problem by combining IDS with a grammar-based fuzzing technique that uses context-sensitive grammars. Generally speaking, S AECRED follows an iterative ap- proach. Starting from some fixed seed inputs, at each it- eration, it generates new test inputs - to be executed on the AP under test - by mutating specific inputs from the previous iteration, chosen based on some scoring criteria. Internally, S AECRED can be viewed as running an IDS along with grammar-based fuzzing. Concretely, for each input we keep track of the inferred SAE protocol state, the path ( i.e.,a sequence of concrete SAE packets) that got us to that state, and the packet format to generate the next concrete SAE packet. The packet format is specified by a context-sensitive grammar, which can be viewed as an extension of a Backus- Naur form (BNF) grammar with constraints on some of its syntactic categories ( e.g., the length of a certain packet field f1 must be equal to the value of another packet field f2). Mutations in S AECRED take the form of mutating the gram- mar instead of concrete packets. The mutations can result in (1) the structural modification of the packet format or (2) the modification of some data-dependent constraints in the grammar. After the grammar is mutated, S AECRED uses a syntax-guided program synthesizer (SyGuS [30]) to generate a concrete SAE packet that conforms to the mutated gram- mar. Mutating the grammar, rather than mutating concrete packets, has two key advantages: (1) it allows S AECRED to explore subtle changes in both the packet structure and the data-dependent constraints, which is difficult to achieve by mutating concrete packets; (2) if an input generate from a grammar causes a parsing bug in the AP under test, the grammar can be used as symbolic evidence of the bug's root"
+      },
+      {
+        "source": "selected",
+        "value": "WPA3-Personal introduced the stateful Simultaneous Authentication of Equals (SAE) handshake protocol to achieve forward secrecy and resistance to passphrase guessing attacks during Wi-Fi connection bootstrapping, guarantees that are lacking in WPA2-Personal. However, the initial design of WPA3-Personal with SAE was susceptible to connection downgrade and denial-of-service (DoS) attacks. The current, enhanced version introduces mechanisms to mitigate these vulnerabilities. Enabling these security-enhancing mechanisms, however, results in a variable-structured, context-sensitive packet format that can be challenging to parse and interpret correctly. Misparsing SAE handshake packets can negatively impact Wi-Fi protocol security. To uncover SAE handshake packet misparsing in commercial-off-the-shelf (COTS) Wi-Fi access points (APs), we present SAECRED, a packet-structureguided, SAE-state-aware black-box fuzzer. SAECRED reduces the underlying problem of misparsing discovery to a twodimensional search problem, where the dimensions are the packet structure and the underlying SAE protocol state. It solves this search problem by combining Iterative Deepening Search (IDS) with a context-sensitive grammar-based fuzzing approach, where the latter relies on a Syntax-Guided Synthesis (SyGuS) solver. SAECRED's effectiveness is demonstrated by evaluating it on 6 COTS APs and the widely used opensource hostapd. Our evaluation discovered several instances of 4 classes of bugs. Bugs in two of these classes violate the two fundamental guarantees SAE expects to achieve (i.e., resistance to downgrade and DoS attacks). We reported our findings to the relevant stakeholders, which resulted in patches and security advisories."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Muhammad Daniyal",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Pirwani Dar",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Rob Lorch",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Iowa"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Aliakbar Sadeghi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Vincenzo Sorcigli",
+          "email": "vincenzo.sorcigli@stonybrook.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Héloïse Gollier",
+          "email": "heloise.gollier@kuleuven.be",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Cesare Tinelli",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Iowa"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Mathy Vanhoef",
+          "email": "mathy.vanhoef@kuleuven.be",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Omar Chowdhury",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stony Brook University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Distrinet",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "K ULeuven",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 10
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Muhammad Daniyal Pirwani Dar",
+          "email": "",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Rob Lorch",
+          "email": "",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Aliakbar Sadeghi",
+          "email": "",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Vincenzo Sorcigli",
+          "email": "vincenzo.sorcigli@stonybrook.edu",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Héloïse Gollier",
+          "email": "heloise.gollier@kuleuven.be",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Cesare Tinelli",
+          "email": "cesare-tinelli@uiowa.edu",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Mathy Vanhoef",
+          "email": "mathy.vanhoef@kuleuven.be",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Omar Chowdhury",
+          "email": "omar@cs.stonybrook.edu",
+          "affiliations": [
+            "Stony Brook University † The University of Iowa ‡ DistriNet, KU Leuven"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 8,
+      "author_count": 8,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SAECRED: A State-Aware, Over-the-Air Protocol Testing Approach for Discovering Parsing Bugs in SAE Handshake Implementations of COTS Wi-Fi Access Points",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Muhammad Daniyal Pirwani Dar",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        },
+        {
+          "name": "Rob Lorch",
+          "affiliations": [
+            "The University of Iowa"
+          ]
+        },
+        {
+          "name": "Aliakbar Sadeghi",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        },
+        {
+          "name": "Vincenzo Sorcigli",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        },
+        {
+          "name": "Héloïse Gollier",
+          "affiliations": [
+            "DistriNet, KU Leuven"
+          ]
+        },
+        {
+          "name": "Cesare Tinelli",
+          "affiliations": [
+            "The University of Iowa"
+          ]
+        },
+        {
+          "name": "Mathy Vanhoef",
+          "affiliations": [
+            "DistriNet, KU Leuven"
+          ]
+        },
+        {
+          "name": "Omar Chowdhury",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Vincenzo Sorcigli",
+      "field": "email",
+      "restored_value": "vincenzo.sorcigli@stonybrook.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Héloïse Gollier",
+      "field": "email",
+      "restored_value": "heloise.gollier@kuleuven.be",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Cesare Tinelli",
+      "field": "email",
+      "restored_value": "cesare-tinelli@uiowa.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Mathy Vanhoef",
+      "field": "email",
+      "restored_value": "mathy.vanhoef@kuleuven.be",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Omar Chowdhury",
+      "field": "email",
+      "restored_value": "omar@cs.stonybrook.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

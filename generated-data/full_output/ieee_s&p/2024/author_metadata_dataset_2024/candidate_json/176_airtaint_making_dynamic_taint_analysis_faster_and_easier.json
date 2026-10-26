@@ -1,0 +1,268 @@
+{
+  "paper_id": "176_airtaint_making_dynamic_taint_analysis_faster_and_easier",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "AirTaint: Making Dynamic Taint Analysis Faster and Easier"
+      },
+      {
+        "source": "selected",
+        "value": "AirTaint: Making Dynamic Taint Analysis Faster and Easier"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Dynamic Taint Analysis (DTA) is a widely used data flow tracking technique and helps security researchers in various applications, such as fuzzing and vulnerability analysis. One critical problem that affects its practicability is the significant overhead. According to our analysis, in some scenarios, the stateof-the-art works even slow the program execution efficiency by more than 100x. The high overhead is mainly because most of them conduct taint analysis at the instruction level and use just-in-time instrumentation methods to insert the tracking codes into the original program. In this paper, we propose AirTaint, a novel approach that combines the basic block-level abstraction of taint rules and assembly code-level instrumentation to conduct highlevel dynamic taint analysis. Specifically, AirTaint leverages instruction-level emulation to identify the in and out operands (i.e., registers and memory variables) of each basic block, and then uses the existing taint engine to infer the taint rule abstraction for each basic block. Finally, it inserts the assembly code of the taint rule abstraction into the original program. While running, the program will execute the inserted taint analysis code quickly. In our evaluation based on 14 CVEs in 9 real-world applications, AirTaint detects all these vulnerabilities successfully. And in the comparison experiments, AirTaint performs much better than the existing tools in efficiency on 29 real-world applications, with maximum improvements of 931.0x, 5.97x, and 328.3x than libdft, SelectiveTaint, and TaintRabbit, respectively. 3998"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Dynamic Taint Analysis (DTA) is a widely used data flow tracking technique and helps security researchers in various applications, such as fuzzing and vulnerability analysis. One critical problem that affects its practicability is the significant overhead. According to our analysis, in some scenarios, the state- of-the-art works even slow the program execution efficiency by more than 100x. The high overhead is mainly because most of them conduct taint analysis at the instruction level and use just-in-time instrumentation methods to insert the tracking codes into the original program. In this paper, we propose AirTaint, a novel approach that combines the basic block-level abstraction of taint rules and assembly code-level instrumentation to conduct high- level dynamic taint analysis. Specifically, AirTaint leverages instruction-level emulation to identify the in and out operands (i.e., registers and memory variables) of each basic block, and then uses the existing taint engine to infer the taint rule abstraction for each basic block. Finally, it inserts the assembly code of the taint rule abstraction into the original program. While running, the program will execute the inserted taint analysis code quickly. In our evaluation based on 14 CVEs in 9 real-world applications, AirTaint detects all these vulnerabilities successfully. And in the comparison experiments, AirTaint performs much better than the existing tools in efficiency on 29 real-world applications, with maximum improvements of 931.0x, 5.97x, and 328.3x than libdft, SelectiveTaint, and TaintRabbit, respectively. 1. Introduction Dynamic Taint Analysis (DTA) is a kind of data flow tracking technique, which is widely used in software security, including vulnerability discovery [ 17, 18, 23, 27, 37, 45], reverse engineering [ 9, 14, 46], privacy leak detection [ 40, 49], etc. With DTA, analyzers can tag the sensitive user input or risk information as taints, monitor the propagation of taints during program execution, and check the sink points (e.g., critical function entries) to find security problems. There are mainly two approaches to achieving DTA, online and offline. Online analysis handles taint propagation † co-leading authors. ∗ corresponding authors. at runtime along with the program execution. In contrast, offline analysis first records the program execution trace and then performs the taint analysis based on the trace. The online analysis approach has the advantage of great flexibility and is used in many dynamic analysis scenarios, such as fuzzing [ 17, 18, 27, 37, 45]. However, it has to deal with the problem of high runtime overhead [ 10] because existing tools [ 16, 22, 26] are usually implemented based on common dynamic instrumentation frameworks, such as Pin [28], Valgrind [30], DynamoRIO [ 7], and QEMU [ 5]. In the past decade, several methods have been proposed to reduce the performance overhead of dynamic taint analysis to enhance its practicability. Speck [32], ShadowReplica [21], and TaintPipe [ 29] leverage parallel and pipeline methods to speed up the taint analysis process. And some other works [ 20, 34] leverage runtime on-demand instrumenta- tion for taint tracking to improve performance. Recently, TaintRabbit [16] reduces analysis overhead just-in-time by dynamically generating separate fast paths for each basic block and selecting whether to execute the fast paths based on the in and out taint states. SelectiveTaint [10] instruments the instructions selectively, filtering the instructions unrelated to the taint source. However, even though some improvements in instrumen- tation and taint analysis process have been proposed, the run- time overhead remains significant. Additionally, parts of them need more resources (e.g., CPU cores or memory space) or specific conditions to achieve the claimed performance [ 22]. According to our knowledge, most previous works conduct dynamic taint analysis at the instruction level (instruction by instruction), which suffers a high overhead in design because of the high frequency of taint status calculation and context switches between the original program logic and the taint analysis logic. Thus, we propose to improve the performance of DTA from the following three factors: (1) reduce the number of instrumentations via hybrid analysis; (2) conduct taint tracking on a high level (rather than instruction level) and optimize the taint analysis process via inferring the data flow abstract; and (3) leverage the assembly code-level instrumentation to speed up the context switch. In this paper, we propose AirTaint, a novel approach that combines the basic block-level data flow abstract and 3998 DOI 10.1109/SP54263.2024.00045 assembly code-level taint rule instrumentation to conduct high-performance dynamic taint tracking. Specially, we pre- analyze all operands of each basic block, generate the data flow abstract which describes the influence relations between the in and out operands of each basic block, and further optimize the abstract to perform taint calculation for all instructions in one basic block at once. Then we use the second technique, i.e., assembly code-level instrumentation, to generate the assembly codes of the taint logic according to the data flow abstract, and fuse the taint logic codes with the original program code. These two techniques make AirTaint avoid frequent switching between the context of the original program logic and the taint analysis logic, thus improving the efficiency of dynamic taint analysis. Specifically, to infer the data flow abstract and keep the accuracy of generated rules without redundancy, we need to precisely identify all in and out operands (i.e., memory and register variables) of a basic block and extract the relationship between different memory variables (e.g., alias and inclusion relation). We propose a hybrid method, which combines the static disassembler and emulation executor. We first identify the source and destination operands of each instruction in a basic block, then leverage the emulator to execute the basic block. In this way, we associate memory operands (e.g., [ebx], x86 representation) with the concrete memory cells and identify the in-out operands precisely. Additionally, to optimize the data flow abstract and make AirTaint extensible, we design it as an interface to abstract taint rules based on existing tools. We first mark the input operands of one basic block, then conduct instruction- level analysis based on the existing dynamic taint analysis engine (e.g., Triton [38]), and finally infer the basic block- level information abstract based on the instruction-level analysis results. In this way, users can leverage the taint rules of existing dynamic taint analysis engines, and keep updating the back-end dynamic taint engine to support more instructions and architectures easily, even replace the based engine without making significant changes. We develop AirTaint as three components, including in- out operand identification to determine the inputs and outputs of each basic block, taint flow abstraction to infer the taint flow in each basic block, and taint rule instrumentation to generate the assembly codes of the taint logic and insert them to the original program binary. Our prototype is implemented based on Capstone [ 35], Unicorn [36], and Triton [38] with around 9.7k lines of code. It currently supports generating basic block-level taint logic and performing assembly code- level instrumentation on x86 and x86-64 architecture. To understand the efficacy of AirTaint on conducting dynamic taint analysis in the real world, we apply AirTaint on 14 CVEs in 9 real-world applications and successfully detect all of them. We also use 29 real-world programs, including 16 utility programs (e.g., tar and gzip), 6 service daemon programs (e.g., nginx web server), and 7 other applications, as benchmarks for performance comparison experiments with SelectiveTaint [10], libdft [26], TaintRabbit [ 16] with different test seed sets. As a result, AirTaint outperforms all other tools by up to 931.0x, 5.97x, and 328.3x than libdft, SelectiveTaint, and TaintRabbit, respectively. In summary, we make the following contributions. • We propose a novel taint tracking method, AirTaint, which combines the basic block-level taint flow abstrac- tion and assembly code-level taint rule instrumentation to conduct basic block-level dynamic taint analysis with high performance. • We design and implement the prototype of AirTaint. Specially, we identify in-out operands precisely based on emulated execution, and abstract the taint flow automatically based on existing taint engines. To foster future research, we will release the prototype of AirTaint at https://github.com/thatchesang/airtaint. • We apply AirTaint on 14 CVEs in 9 popular real- world software to verify its ability to perform DTA accurately and detect vulnerabilities. We also compare the performance of AirTaint with the state-of-the-art tools (e.g., libdft and SelectiveTaint) based on 29 real- world programs with kinds of inputs. The results show that AirTaint has superior performance than other tools. 2. Background and Motivation To explain the performance problem we focus on, we first introduce the dynamic taint analysis technique, then use an example to illustrate how the state-of-the-art tools work and demonstrate the limitations of existing approaches. At last, we propose our basic idea to overcome the limitations. 2.1. Dynamic Taint Analysis (DTA) DTA is a popular program analysis approach that marks sensitive data and tracks the data flow during the target program execution. DTA tools usually include three critical steps, (1) marking the taint source (e.g., input data from certain files, network, stdin, and so on) via hooking some related functions (e.g., read()), (2) monitoring the program execution and changing the taint status of the destination operands while executing one instruction based on the source operands' taint status and the pre-defined taint logic (rule) for each type of instruction, (3) checking sink points (e.g., control flow hijacking points) via pre-defined security policies. DTA tools usually insert analysis code into the original program logic via instrumentation to achieve the above steps. Figure 1 shows the sample assembly code, which is related to the second step and instrumented by the widely used DTA tool, libdft [26], to perform taint analysis for one instruction, sub eax, [ebx] . The functionality of the instrumented code can be divided into three parts: (1) context switching, shown as a.1 and a.2, which saves and restores the context (CPU registers) for achieving the switch between the original program execution and taint analysis logic. (2) taint checking, shown as b.1 and b.2, gets the taint status of the source operands via addressing the operands in the taint map (i.e., shadow memory). (3) taint calculating, shown as c, updates the taint status according to the pre-defined taint rules. As shown in Figure 1, there are a total of 16 instructions instrumented by libdft for just one simple instruction. 23999"
+      },
+      {
+        "source": "selected",
+        "value": "Dynamic Taint Analysis (DTA) is a widely used data flow tracking technique and helps security researchers in various applications, such as fuzzing and vulnerability analysis. One critical problem that affects its practicability is the significant overhead. According to our analysis, in some scenarios, the stateof-the-art works even slow the program execution efficiency by more than 100x. The high overhead is mainly because most of them conduct taint analysis at the instruction level and use just-in-time instrumentation methods to insert the tracking codes into the original program. In this paper, we propose AirTaint, a novel approach that combines the basic block-level abstraction of taint rules and assembly code-level instrumentation to conduct highlevel dynamic taint analysis. Specifically, AirTaint leverages instruction-level emulation to identify the in and out operands (i.e., registers and memory variables) of each basic block, and then uses the existing taint engine to infer the taint rule abstraction for each basic block. Finally, it inserts the assembly code of the taint rule abstraction into the original program. While running, the program will execute the inserted taint analysis code quickly. In our evaluation based on 14 CVEs in 9 real-world applications, AirTaint detects all these vulnerabilities successfully. And in the comparison experiments, AirTaint performs much better than the existing tools in efficiency on 29 real-world applications, with maximum improvements of 931.0x, 5.97x, and 328.3x than libdft, SelectiveTaint, and TaintRabbit, respectively. 3998"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Qian Sang",
+          "email": "sangqian2020@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yanhao Wang",
+          "email": "wangyanhao136@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yuwei Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Xiangkun Jia",
+          "email": "xiangkun@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Tiffany Bao",
+          "email": "tbao@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Purui Su",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Qian Sang",
+          "email": "sangqian2020@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 1,
+          "name": "Yanhao Wang",
+          "email": "wangyanhao136@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 2,
+          "name": "Yuwei Liu",
+          "email": "yuwei2018@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Xiangkun Jia",
+          "email": "xiangkun@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 4,
+          "name": "Tiffany Bao",
+          "email": "tbao@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Purui Su",
+          "email": "purui@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 119,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "AirTaint: Making Dynamic Taint Analysis Faster and Easier",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Qian Sang",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yanhao Wang",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yuwei Liu",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Xiangkun Jia",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Tiffany Bao",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Purui Su",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

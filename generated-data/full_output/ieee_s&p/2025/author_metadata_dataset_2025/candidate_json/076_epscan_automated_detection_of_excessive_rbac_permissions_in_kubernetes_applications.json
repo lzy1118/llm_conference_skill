@@ -1,0 +1,224 @@
+{
+  "paper_id": "076_epscan_automated_detection_of_excessive_rbac_permissions_in_kubernetes_applications",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "EPScan: Automated Detection of Excessive RBAC Permissions in Kubernetes Applications"
+      },
+      {
+        "source": "selected",
+        "value": "EPScan: Automated Detection of Excessive RBAC Permissions in Kubernetes Applications"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "As the dominant container orchestration system, Kubernetes has a large ecosystem of third-party applications. The third-party Kubernetes applications access various cluster resources to extend the cluster functionality and Kubernetes adopts the RBAC mechanism to manage the resource access permissions. Recently, researchers revealed that third-party applications are granted excessive permissions and proposed an excessive permission attack. The attacker can exploit some critical excessive permissions to escape from the worker node and take over the whole Kubernetes cluster. However, this attack assumes that the attacker has compromised a worker node via container escape, which is difficult to realize in real scenarios. Therefore, we propose a new excessive permission attack with simpler attack conditions in this paper. We reveal that an attacker who has compromised one pod (less difficult than compromising a worker node) can exploit some other excessive privileges to take over worker nodes or break the availability and data confidentiality of other pods. Although excessive permissions of third-party applications pose a great threat to the security of Kubernetes clusters, there is no effective approach for detecting them. In this paper, we propose a novel approach, namely EPScan, which automatically detects exploitable excessive permissions in third-party applications. To achieve this, EPScan employs a novel pod-oriented program analysis, which utilizes several new techniques to accurately identify the resource access behavior of the programs running in each pod. EPScan then compares the permissions required for these behaviors with those requested by the pod in its configuration file and finally reports the exploitable permissions that can be abused to launch an excessive permissions attack. We applied EPScan on 108 third-party applications from the CNCF projects and discovered previously unknown exploitable excessive permissions in 106 pods across 50 applications with a precision of 94.6% and 9 CVE identifiers assigned."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "As the dominant container orchestration system, Kubernetes has a large ecosystem of third-party applications. The third-party Kubernetes applications access various cluster resources to extend the cluster functionality and Kubernetes adopts the RBAC mechanism to manage the resource access permissions. Recently, researchers revealed that third-party applications are granted excessive permissions and proposed an excessive permission attack. The attacker can exploit some critical excessive permissions to escape from the worker node and take over the whole Kubernetes cluster. However, this attack assumes that the attacker has compromised a worker node via container escape, which is difficult to realize in real scenarios. Therefore, we propose a new excessive permission attack with simpler attack conditions in this paper. We reveal that an attacker who has compromised one pod (less difficult than compromising a worker node) can exploit some other excessive privileges to take over worker nodes or break the availability and data confidentiality of other pods. Although excessive permissions of third-party applications pose a great threat to the security of Kubernetes clusters, there is no effective approach for detecting them. In this paper, we propose a novel approach, namely EPScan, which automatically detects exploitable excessive per- missions in third-party applications. To achieve this, EPScan employs a novel pod-oriented program analysis, which utilizes several new techniques to accurately identify the resource access behavior of the programs running in each pod. EPScan then compares the permissions required for these behaviors with those requested by the pod in its configuration file and finally reports the exploitable permissions that can be abused to launch an excessive permissions attack. We applied EPScan on 108 third-party applications from the CNCF projects and discovered previously unknown exploitable excessive permis- sions in 106 pods across 50 applications with a precision of 94.6% and 9 CVE identifiers assigned. 1. Introduction Kubernetes is an open-source container orchestration platform for managing containerized workloads and services [1]. In recent years, Kubernetes [1] has been widely used by a great many companies and cloud vendors [2], [3] and has become the de-facto standard for container orchestration. The great success of Kubernetes is due in large part to its excellent and rapidly growing ecosystem. The Kubernetes ecosystem comprises various tools, technologies, and plat- forms from third-party organizations that help organizations manage their Kubernetes clusters and enhance their DevOps practices [4]. More importantly, the community also pro- vides a large number of third-party plug-ins and applications running on Kubernetes control plane which extends the functionality of Kubernetes. According to our investigation, over 100 of the 187 projects hosted by CNCF [5] belong to Kubernetes applications. Additionally, there are over 1,000 third-party Kubernetes applications on the Artifact Hub [6] (the largest cloud-native package distribution platform). Some top Kubernetes applications have been widely used. For example, KEDA [7], an autoscaling application that provides event-driven scale for containers in Kubernetes, has more than 7.9k stars [8] and has been deployed to production environments of well-known cloud vendors such as AWS [9] and Azure [10]. To realize their functionality, the third-party applications utilize various Kubernetes cluster resources [11] via the Kubernetes API [12]. The Kubernetes API server employs Role-based access control (RBAC) to control resource ac- cess from applications. Specifically, the Kubernetes cluster grants permissions (i.e., what operations can be performed on what resources) to applications based on the permissions specified in the deployment configurations. At runtime, the API server authenticates the application that launched the request. As these third-party applications are granted critical permissions, the security flaws related to RBAC permissions would lead to serious consequences to the cluster. Unfortunately, the security of permission management in these third-party applications has not yet been fully explored. Most existing research on Kubernetes security targets the co-residency attacks [13] and misconfigura- tions [14], [15], [16] and does not study the RBAC per- missions. Recently, Yang et al. [17] proposed a new at- tack surface called excessive permission attack. That is, the third-party application is granted critical RBAC permissions that are not required for its functionality, called excessive permissions (EP for short). Yang et al. [17] demonstrated that excessive permissions can be abused to escape from the worker node and gain control over the whole Kuber- netes cluster, resulting in privilege escalation in Kubernetes. However, the proposed attack requires a strong condition, 3199 DOI 10.1109/SP61157.2025.00011 i.e., assuming that the attacker has compromised a worker node, which is usually achieved by container escape. In this paper, we propose a new attack model for abusing excessive permissions, which assumes the attacker has compromised the application within a container. We propose three attack paths for the model that lead to three different security con- sequences: controlling worker nodes, information leakage, and denial of service. In summary, excessive permissions in third-party appli- cations can lead to serious consequences. However, there is no approach that can effectively detect excessive permis- sions in Kubernetes applications. Yang et al. [17] devel- oped a tool [18] to analyze configuration files and identify applications that request critical permissions. However, this tool does not analyze the application program, so it cannot determine if the requested permission is really being used by the application. In addition, there are many efforts to detect excessive permissions in Android system [19], [20], [21], [22], [23]. Unfortunately, due to the unique nature of Ku- bernetes and the Go programming language, there are many technical challenges in migrating these work to Kubernetes applications. First, the third-party application often consists of multiple pods, each running different executables. The complex compilation and image-building process of the ap- plication makes it difficult to identify the specific programs running in each pod and their code-level entries for program analysis. Second, the resource access APIs and libraries have never been systematically studied. This poses a challenge for program analysis in identifying and modeling resource access behavior in source code. Third, the function call chains in third-party applications are very long and compli- cated, containing virtual calls, external library calls, and Go goroutines. This leads to significant challenges in accurately analyzing what resource access behaviors can be reached by each code entry. In conclusion, analyzing resource access behavior in Kubernetes applications is challenging, which hinders the automatic detection of excessive permissions in third-party applications. In this paper, we propose a novel end-to-end exces- sive RBAC permission analysis approach, named EPScan (Excessive P ermission Scan ). EPScan consists of three components. First, EPScan performs RBAC-centered con- figuration analysis to identify the permissions requested by the application. Then it employs a novel pod-oriented pro- gram analysis to determine the permissions required by the application's functionality. The proposed program analysis leverages the script understanding capability of the large language model (termed LLM) as well as a new reacha- bility approximation method for Kubernetes applications to achieve accurate behavior analysis at the pod granularity. At last, it identifies the inconsistency between the requested permissions and the required permissions, as well as reports excessive permissions that can be exploited to launch the attacks proposed by Yang et al. [17] or the attack proposed in this paper. We implement a prototype of EPScan based on the CodeQL framework [24] and leverage gpt-4o as the dis- tillation LLM. We then applied EPScan to 108 third-party applications from the CNCF project list [5] to evaluate its ef- fectiveness. It turns out that EPScan successfully identified excessive permissions in 106 pods across 50 applications, with only 6 false positives. As of now, the developers have confirmed 39 of them and assigned 9 CVEs. In addition, we evaluated the efficiency of EPScan. The results show that it takes an average of 14 minutes to analyze an appli- cation. Therefore, we believe EPScan can be extended to a large range of third-party applications, which has great practical value for permission management of Kubernetes applications. We also evaluated the effectiveness of each key component of the program analysis of EPScan. In summary, we make the following contributions: • We propose a new attack model for abusing excessive RBAC permissions. We reveal that an attacker inside a container can exploit excessive RBAC permissions to make attacks and cause severe consequences without con- tainer escape. • We propose an automated approach to detect excessive RBAC permissions in third-party applications statically. Our proposed approach utilizes several new techniques to overcome the challenges of analyzing the resource access behaviors of Kubernetes applications. • We implement a prototype of EPScan and evaluate its effectiveness in 108 third-party Kubernetes applications. As a result, EPScan successfully identified exploitable excessive permissions in 106 pods across 50 applications, with 9 CVE identifiers assigned. Available Artifact. We open-source the prototype of EPScan under the Apache-2.0 license at https://git hub.com/seclab-fudan/EPScan. 2. Background 2.1. Kubernetes Kubernetes Architecture. Kubernetes is an open-source system for automating deployment, scaling, and manage- ment of containerized applications [25]. From an architec- tural point of view, a Kubernetes cluster mainly consists of worker machines called nodes (also known as the data plane) and a control plane [26], [27]. A node may be a virtual or physical machine, where workloads are executed as pods. Pods are the smallest deployable units of computing that are created and managed by Kubernetes [28]. In particular, a pod is a group of one or more containers, with shared storage and network resources, and a specification for how to run the containers. The control plane is responsible for managing and main- taining the Kubernetes cluster. In particular, the control plane consists of various official management components and some third-party extensions, which extend the clus- ter's functionalities. One of the core components is the Kubernetes API server, which serves as the API front end of the cluster. Through the interface exposed by the API server, worker nodes can access kinds of Kubernetes cluster resources (e.g., creating pods) to realize their functionalities. 3200"
+      },
+      {
+        "source": "selected",
+        "value": "As the dominant container orchestration system, Kubernetes has a large ecosystem of third-party applications. The third-party Kubernetes applications access various cluster resources to extend the cluster functionality and Kubernetes adopts the RBAC mechanism to manage the resource access permissions. Recently, researchers revealed that third-party applications are granted excessive permissions and proposed an excessive permission attack. The attacker can exploit some critical excessive permissions to escape from the worker node and take over the whole Kubernetes cluster. However, this attack assumes that the attacker has compromised a worker node via container escape, which is difficult to realize in real scenarios. Therefore, we propose a new excessive permission attack with simpler attack conditions in this paper. We reveal that an attacker who has compromised one pod (less difficult than compromising a worker node) can exploit some other excessive privileges to take over worker nodes or break the availability and data confidentiality of other pods. Although excessive permissions of third-party applications pose a great threat to the security of Kubernetes clusters, there is no effective approach for detecting them. In this paper, we propose a novel approach, namely EPScan, which automatically detects exploitable excessive permissions in third-party applications. To achieve this, EPScan employs a novel pod-oriented program analysis, which utilizes several new techniques to accurately identify the resource access behavior of the programs running in each pod. EPScan then compares the permissions required for these behaviors with those requested by the pod in its configuration file and finally reports the exploitable permissions that can be abused to launch an excessive permissions attack. We applied EPScan on 108 third-party applications from the CNCF projects and discovered previously unknown exploitable excessive permissions in 106 pods across 50 applications with a precision of 94.6% and 9 CVE identifiers assigned."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yue Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Xin Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Siyan Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Min Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yue Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Fudan University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Xin Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Fudan University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Fudan University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Siyan Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Fudan University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Min Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Fudan University"
+          ],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 104,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "EPScan: Automated Detection of Excessive RBAC Permissions in Kubernetes Applications",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yue Gu",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Xin Tan",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Yuan Zhang",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Siyan Gao",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Min Yang",
+          "affiliations": [
+            "Fudan University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

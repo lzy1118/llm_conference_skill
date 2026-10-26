@@ -1,0 +1,335 @@
+{
+  "paper_id": "075_wave_a_verifiably_secure_webassembly_sandboxing_runtime",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "WaVe: a verifiably secure WebAssembly sandboxing runtime"
+      },
+      {
+        "source": "selected",
+        "value": "WaVe: a verifiably secure WebAssembly sandboxing runtime"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The promise of software sandboxing is flexible, fast and portable isolation; capturing the benefits of hardwarebased memory protection without requiring operating system involvement. This promise is reified in WebAssembly (Wasm), a popular portable bytecode whose compilers automatically insert runtime checks to ensure that data and control flow are constrained to a single memory segment. Indeed, modern compiled Wasm implementations have advanced to the point where these checks can themselves be verified, removing the compiler from the trusted computing base. However, the resulting integrity properties are only valid for code executing strictly inside the Wasm sandbox. Any interactions with the runtime system, which manages sandboxes and exposes the WebAssembly System Interface (WASI) used to access operating system resources, operate outside this contract. The resulting conundrum is how to maintain Wasm's strong isolation properties while still allowing such programs to interact with the outside world (i.e., with the file system, the network, etc.). Our paper presents a solution to this problem, via WaVe, a verified secure runtime system that implements WASI. We mechanically verify that interactions with WaVe (including OS side effects) not only maintain Wasm's memory safety guarantees, but also maintain access isolation for the host OS's storage and network resources. Finally, in spite of completely removing the runtime from the trusted computing base, we show that WaVe offers performance competitive with existing industrial (yet unsafe) Wasm runtimes. 2940 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The promise of software sandboxing is flexible, fast and portable isolation; capturing the benefits of hardware- based memory protection without requiring operating system involvement. This promise is reified in WebAssembly (Wasm), a popular portable bytecode whose compilers automatically insert runtime checks to ensure that data and control flow are constrained to a single memory segment. Indeed, modern compiled Wasm implementations have advanced to the point where these checks can themselves be verified, removing the compiler from the trusted computing base. However, the result- ing integrity properties are only valid for code executing strictly inside the Wasm sandbox. Any interactions with the runtime system, which manages sandboxes and exposes the WebAssem- bly System Interface (W ASI) used to access operating system resources, operate outside this contract. The resulting conun- drum is how to maintain Wasm's strong isolation properties while still allowing such programs to interact with the outside world (i.e., with the file system, the network, etc.). Our paper presents a solution to this problem, via WaV e, a verified secure runtime system that implements W ASI. We mechanically verify that interactions with WaV e (including OS side effects) not only maintain Wasm's memory safety guarantees, but also maintain access isolation for the host OS's storage and network resources. Finally, in spite of completely removing the runtime from the trusted computing base, we show that WaV e offers performance competitive with existing industrial (yet unsafe) Wasm runtimes. 1. Introduction WebAssembly (Wasm) is a portable bytecode designed to run everywhere at near-native speeds [ 1], [2]. Unlike most other bytecodes, Wasm was designed with safety in mind from the start: Wasm code runs in a sandboxed environment, because the compiler (or interpreter) inserts runtime checks that restrict the code to its own region of memory. As a result, Wasm has become popular beyond its original home, the Web; it has been used to isolate code on edge clouds [ 3], [4], embedded devices [ 5], blockchains [ 6], browsers [ 7], [8], and network proxies [9]. At the surface, Wasm's safety guarantees are clear: a Wasm program is isolated to its own sandboxed region of memory as long as the Wasm compiler (or interpreter) inserts safety checks in all the right places. Getting safety checks right, then, has become a focus of serious effort. Researchers have fuzzed Wasm compilers [10], [11], verified the safety of Wasm binaries [ 12], and built verified Wasm compilers [ 13] and interpreters [14]. Unfortunately, enforcing strong memory isolation alone is not enough. In practice, every Wasm program relies on a runtime system-and today, that runtime system is trusted. It's trusted to correctly set up and tear down Wasm sandboxes, which involves low-level memory management code that's error-prone even in memory-safe languages like Rust [ 15], [16]. More significantly, the runtime is trusted to correctly implement the WebAssembly System Interface (W ASI) [ 17], the interface Wasm programs use to read files, make network requests, and otherwise access operating system resources. Implementing W ASI is also extremely tricky. For one, W ASI was based on (a subset of) POSIX [ 18] and so inherits many of POSIX's flaws; as one example, WASI, like POSIX, is written in informal English. This means that W ASI runtimes must implement an interface from informal semantics, and for different OS platforms-each with slightly different, similarly informal specifications [ 19]. Another challenge in implementing WASI is correctly enforcing security. First, the runtime must enforce Wasm's memory isolation end-to-end, i.e., ensure that every hostcall into the runtime (and, in turn, every syscall into the underly- ing OS) on behalf of one sandbox does not read or clobber memory that belongs to another sandbox or the runtime itself. Second, the runtime must enforce W ASI's resource isolation policies, which restrict the sandbox's access to resources like the file system and network. To do this, developers must essentially replicate parts of the kernel's logic (e.g., how paths are resolved)-which they do by wrapping system calls with low-level glue code and security checks. In practice, they often get it wrong [ 20], [ 21], [ 22], [ 23], [ 24], [ 25] and, unfortunately, this is not surprising: there's a history of bugs in similar sandbox runtime systems, and a history of attackers exploiting those bugs [26], [27], [28]. In response to this problem, we built WaVe, a new Wasm runtime system that is verifiably secure, fast, and WASI- compliant across POSIX platforms. At its core, WaVe uses automated verification to ensure that the runtime code, even when calling into the underlying OS, preserves Wasm's memory isolation guarantees and correctly restricts each sandbox's access to OS resources like the filesystem and network. Two insights make WaVe work in practice. First, we believe that security policies (e.g., memory isolation, filesystem isolation, and network isolation) should be explicit and decoupled from enforcement. This not only makes it clear (and easy to audit) which policies WaVe enforces but also ensures that WaVe enforces a uniform policy across all WASI hostcalls for all target operating 2940 DOI 10.1109/SP46215.2023.00114 systems. This also makes it easy to safely extend the runtime with new functionality. For example, beyond the core set of W ASI hostcalls, WaVe exposes the networking hostcalls described in the WASI-sockets proposal [ 29] and enforces the proposal's described safety policy. Our second insight is to only model OS semantics in as much detail as necessary to capture any system call's effects on security. For example, WaVe's model of the POSIX read(fd,buf,count) syscall does not model kernel data structures (e.g., file descriptor tables, inodes, or buffer caches); instead it only models its impact on memory isolation- read may write count bytes starting at buf- and its impact on filesystem isolation- read may read from file (descriptor) fd. This makes it possible to “pay as you go” (e.g., you don't need to specify details about file descriptors if you only care about memory isolation). It also makes it possible for us to reuse specifications across operating systems. For example, though POSIX semantics actually vary across operating systems [ 19], our abstract semantics make it possible for WaVe to largely share specifications across Linux and MacOS. We implement WaVe (with support for W ASI on Linux and MacOS) in roughly 7.3K lines of Rust. Most of this code is untrusted and verified using Prusti [ 30]; the code that is trusted (beyond the verification tool itself) is specification code-the Wasm/WASI security policy (43 lines of code) and OS specifications (567 lines). While this code is short enough to be auditable, we use host- and system-call fuzzing to evaluate the correctness of our specification (and thus the security of WaVe); our fuzzing effort didn't reveal any bugs. We also evaluate WaVe on dimensions other than security: functional correctness, portability, and performance. First, we differentially fuzz WaVe against four popular runtimes, including the Wasmtime [ 31] used in production at Fastly; we find that our implementation of W ASI is consistent with these runtimes on both Linux and MacOS. And, second, we measure the performance overhead of WaVe relative to Wasmtime on micro-benchmarks (e.g., LMbench [ 32]) and macro-benchmarks (e.g., SQLite [ 33] and SPEC CPU [ 34]). We find that WaVe's performance is comparable to-and often better than-Wasmtime's, while also providing stronger (verifiable) security guarantees. Open source All source code, including WaVe and our benchmarks, are available at wave.programming.systems. 2. Overview In this section, we give background on W ASI runtimes, and describe how bugs in system interfaces can break language-level sandboxing guarantees. Then, we introduce WaVe and describe how it prevents isolation-breaking bugs by construction. 2.1. The W ASI runtime WASI's goal is to expose a system interface to Wasm code that is flexible enough to implement standard libraries like libc and portable enough to run across different operating systems. WASI accomplishes this by providing low level OS-agnostic APIs (known as hostcalls) to talk to the under- lying operating system-defining, for example, hostcalls for accessing the filesystem and network [ 35]. These hostcalls are exposed to potentially malicious code running inside the Wasm sandbox, and W ASI runtimes enforce a common safety policy described in the WASI spec to limit the resources exposed to sandboxed code. W ASI's safety guarantees WASI implementations are ex- pected to make three guarantees about how the sandbox interacts with the OS: they must guarantee memory isolation, file system isolation, and network isolation (Figure 1). Memory isolation ensures that all memory reads and writes performed on behalf of the sandbox operate on mem- ory that belongs to the sandbox (i.e., lies within the sandbox's linear memory). File system isolation ensures that each file the sandbox accesses is within the sandbox's assigned root directory. For example, a sandbox assigned /foo/bar as its root directory would be able to access /foo/bar/data.txt and /foo/bar/img.png but not /foo/secret.txt. Network isolation ensures that each socket created by the sandbox belongs to known and explicitly allowed network protocols (e.g., the sandbox only uses TCP and UDP). It also ensures that these sockets only connect to addresses specified by the host application in an allow-list that cannot be modified by the sandbox. It is the responsibility of the WASI runtime to enforce these safety guarantees for all hostcalls exposed to the sandbox. Hostcalls enforce W ASI's safety guarantees Hostcalls are responsible for checking the safety of hostcall parameters and translating them from the sandbox to the OS. They must perform this check-and-translate process such that any interactions with the underlying operating system do not violate the runtime's isolation invariants. Consider, for example, the path_remove_directory hostcall in W ASI: fn path_remove_directory(sbox: &VmCtx, dirfd: i32, path: SboxPtr, path_len: u32) {...} This W ASI hostcall deletes the directory at path, relative to file descriptor dirfd (i.e., if dirfd referred to a directory at /foo/bar and path is ./baz, this call should remove /foo/bar/baz). To implement path_remove_directory correctly, the runtime must: • Check that the buffer specified by path and path_len is entirely within the sandbox's allocated memory. • Check that path is within the sandbox's root directory- making sure to account for symbolic links. • Translate path from the sandbox's string representation to the OS's representation and convert it to a path relative to the sandbox's root directory. • Invoke the OS with the correct set of flags (on POSIX, path_remove_directory(sbox, dirfd, path, path_len) calls unlinkat(host_dirfd, host_path, AT_REMOVEDIR) ). • Translate the system call return error code from the OS's representation to the W ASI representation. And, at each step, the runtime needs to account for portability across all POSIX systems. 2941"
+      },
+      {
+        "source": "selected",
+        "value": "The promise of software sandboxing is flexible, fast and portable isolation; capturing the benefits of hardwarebased memory protection without requiring operating system involvement. This promise is reified in WebAssembly (Wasm), a popular portable bytecode whose compilers automatically insert runtime checks to ensure that data and control flow are constrained to a single memory segment. Indeed, modern compiled Wasm implementations have advanced to the point where these checks can themselves be verified, removing the compiler from the trusted computing base. However, the resulting integrity properties are only valid for code executing strictly inside the Wasm sandbox. Any interactions with the runtime system, which manages sandboxes and exposes the WebAssembly System Interface (WASI) used to access operating system resources, operate outside this contract. The resulting conundrum is how to maintain Wasm's strong isolation properties while still allowing such programs to interact with the outside world (i.e., with the file system, the network, etc.). Our paper presents a solution to this problem, via WaVe, a verified secure runtime system that implements WASI. We mechanically verify that interactions with WaVe (including OS side effects) not only maintain Wasm's memory safety guarantees, but also maintain access isolation for the host OS's storage and network resources. Finally, in spite of completely removing the runtime from the trusted computing base, we show that WaVe offers performance competitive with existing industrial (yet unsafe) Wasm runtimes. 2940 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Evan Johnson",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Evan Laufer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zijie Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Dan Gohman",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Shravan Narayan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Stefan Savage",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Deian Stefan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Fraser Brown",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "U CSan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Diego ‡ Stanford",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Evan Johnson",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Evan Laufer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zijie Zhao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Dan Gohman",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Shravan Narayan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Stefan Savage",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Deian Stefan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Fraser Brown",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "U CSan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 18,
+      "author_count": 9,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 8,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "WaVe: A Verifiably Secure WebAssembly Sandboxing Runtime",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Evan Johnson",
+          "affiliations": [
+            "UC San Diego, USA"
+          ]
+        },
+        {
+          "name": "Evan Laufer",
+          "affiliations": [
+            "Stanford, USA"
+          ]
+        },
+        {
+          "name": "Zijie Zhao",
+          "affiliations": [
+            "UIUC, USA"
+          ]
+        },
+        {
+          "name": "Dan Gohman",
+          "affiliations": [
+            "Fastly Labs, USA"
+          ]
+        },
+        {
+          "name": "Shravan Narayan",
+          "affiliations": [
+            "UC San Diego, USA"
+          ]
+        },
+        {
+          "name": "Stefan Savage",
+          "affiliations": [
+            "UC San Diego, USA"
+          ]
+        },
+        {
+          "name": "Deian Stefan",
+          "affiliations": [
+            "UC San Diego, USA"
+          ]
+        },
+        {
+          "name": "Fraser Brown",
+          "affiliations": [
+            "Carnegie Mellon University, USA"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 9,
+      "proposed_count": 7,
+      "retained_count": 7,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    }
+  ]
+}

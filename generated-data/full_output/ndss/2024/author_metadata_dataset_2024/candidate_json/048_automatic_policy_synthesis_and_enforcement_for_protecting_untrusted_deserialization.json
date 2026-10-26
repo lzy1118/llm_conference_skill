@@ -1,0 +1,236 @@
+{
+  "paper_id": "048_automatic_policy_synthesis_and_enforcement_for_protecting_untrusted_deserialization",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Automatic Policy Synthesis and Enforcement for Protecting Untrusted Deserialization"
+      },
+      {
+        "source": "selected",
+        "value": "Automatic Policy Synthesis and Enforcement for Protecting Untrusted Deserialization"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Java deserialization vulnerabilities have long been a grave security concern for Java applications. By injecting malicious objects with carefully crafted structures, attackers can reuse a series of existing methods during deserialization to achieve diverse attacks like remote code execution. To mitigate such attacks, developers are encouraged to implement policies restricting the object types that applications can deserialize. However, the design of precise policies requires expertise and significant manual effort, often leading to either the absence of policy or the implementation of inadequate ones. In this paper, we propose DESERIGUARD, a tool designed to assist developers in securing their applications seamlessly against deserialization attacks. It can automatically formulate a policy based on the application's semantics and then enforce it to restrict illegal deserialization attempts. First, DESERIGUARD utilizes dataflow analysis to construct a semantic-aware property tree, which records the potential structures of deserialized objects. Based on the tree, DESERIGUARD identifies the types of objects that can be safely deserialized and synthesizes an allowlist policy. Then, with the Java agent, DESERIGUARD can seamlessly enforce the policy during runtime to protect various deserialization procedures. In evaluation, DESERIGUARD successfully blocks all deserialization attacks on 12 real-world vulnerabilities. In addition, we compare DESERIGUARD's automatically synthesized policies with 109 developer-designed policies. The results demonstrate that DESERIGUARD effectively restricts 99.12% more classes. Meanwhile, we test the policy-enhanced applications with their unit tests and integration tests, which demonstrate that DESERIGUARD's policies will not interfere with applications' execution and induce a negligible time overhead of 2.17%."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Java deserialization vulnerabilities have long been a grave security concern for Java applications. By injecting malicious objects with carefully crafted structures, attackers can reuse a series of existing methods during deserialization to achieve diverse attacks like remote code execution. To mitigate such attacks, developers are encouraged to implement policies restricting the object types that applications can deserialize. However, the design of precise policies requires expertise and significant manual effort, often leading to either the absence of policy or the implementation of inadequate ones. In this paper, we propose D ESERI GUARD, a tool designed to assist developers in securing their applications seamlessly against deserialization attacks. It can automatically formulate a policy based on the application's semantics and then enforce it to restrict illegal deserialization attempts. First, D ESERI GUARD utilizes dataflow analysis to construct a semantic-aware property tree, which records the potential structures of deserialized objects. Based on the tree, D ESERI GUARD identifies the types of objects that can be safely deserialized and synthesizes an allowlist policy. Then, with the Java agent, DESERI GUARD can seamlessly enforce the policy during runtime to protect various deserialization procedures. In evaluation, D ESERI GUARD successfully blocks all deserialization attacks on 12 real-world vulnerabilities. In addition, we compare D ESERI GUARD's automatically synthesized policies with 109 developer-designed policies. The results demon- strate that D ESERI GUARD effectively restricts 99.12% more classes. Meanwhile, we test the policy-enhanced applications with their unit tests and integration tests, which demonstrate that DESERI GUARD's policies will not interfere with applications' execution and induce a negligible time overhead of 2.17%. I. I NTRODUCTION Serialization and deserialization are essential mechanisms offered by programming languages such as Java, JavaScript, PHP, and C# for object and byte stream transformation. These mechanisms facilitate the seamless transmission of objects across networks and their storage in databases [1]. However, these capabilities also introduce a type of significant vulner- ability, which can cause severe consequences such as remote code execution (RCE), denial of service (DoS), and server- side request forgery (SSRF). Over the past five years, approx- imately 800 vulnerabilities collected by Common Vulnerabil- ities and Exposures (CVE) [2] are related to the Common * Yu Jiang is the corresponding author. Weakness Enumeration (CWE) 502 [3], which represents the deserialization of untrusted data. The root cause of deserialization vulnerability is that an application tries to deserialize an untrusted object without protection, allowing attackers to control the execution flow of the applications during the deserialization process. Specifically, attackers begin by carefully constructing a nested object with classes in the application's classpath. This nested object pos- sesses a precisely designed structure, in which its properties are assigned specific objects. During the deserialization process of the nested object, the application is forced to recursively deserialize its properties in the desired order of attackers, which leads to the execution of a series of methods that form an exploitation gadget chain. Such a gadget chain could finally lead to the execution of some security-sensitive methods such as Runtime.exec(), causing malicious impacts like RCE [4]. However, if we prevent the deserialization of any classes involved in the gadget chain, we can effectively defend applications against deserialization attacks. Therefore, at present, a prevailing approach for mitigating deserialization attacks is to examine the currently deserialized object and verify its legitimacy. Developers have long been advised to set appropriate deserialization policies for blocking potentially malicious types to secure their applications. For introduced a new feature that allows users to specify a policy for a deserialization entry. Popular deserialization libraries, such as XStream and FastJson [6], [7], also provide flexible interfaces for setting blocklist or allowlist policies. Never- theless, up to this point, the community is still plagued by deserialization attacks. The primary obstacle preventing developers from ade- quately protecting their applications stems from the challenge of formulating fine-grained deserialization policies. Firstly, since setting policies requires significant human effort for debugging and maintenance, many developers, who lack suffi- cient security awareness, choose not to set policies. Secondly, some applications employ a blocklist policy by collecting known exploitation gadgets. Nevertheless, attackers contin- ually discover new exploitable gadgets to pursue malicious intentions, rendering such blocklists inadequate over time. For example, in CVE-2017-1000353 [8], attackers successfully by- passed Jenkins's blocklist and achieved an RCE attack. There- fore, the allowlist policy containing limited permitted classes is recognized as the most effective approach to safeguarding applications' deserialization process. However, designing an accurate allowlist policy demands laborious manual efforts and is prone to errors. Thus, many applications opt for a loose policy to avoid interrupting applications' normal execution, Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.24053 www.ndss-symposium.org which gives attackers opportunities to bypass existing defenses. For instance, the application Ofbiz sets a policy and allows deserialization of all classes whose names match “java \\..*”, which can be bypassed by attackers and causes the vulnera- bility CVE-2021-26295 [9]. To save developers' efforts, this paper proposes D ESERI - GUARD , a framework designed to automate the synthesis and enforcement of deserialization policies. The key insight behind DESERI GUARD is that the types of deserialized objects can be deduced from program semantics. Following the insight, DESERI GUARD first traces the dataflow of the deserialized object and its properties (i.e., member variables) to deduce their object types based on applications' semantics, finally constructing the Semantic-Aware Property Tree (SAPT). This tree records the possible structures of potentially deserialized objects. Based on the tree, D ESERI GUARD identifies all pos- sible classes that should be permitted for deserialization and synthesizes an allowlist policy. Next, D ESERI GUARD auto- matically resolves the auditing positions where deserialization libraries decode the type information from the byte stream of serialized objects. After identifying the positions, D ESERI - GUARD leverages a Java agent to enforce the policy on the ob- jects that are being deserialized. Finally, with D ESERI GUARD , developers can secure their applications' deserializations with automatically synthesized and enforced allowlist policies. We comprehensively evaluated D ESERI GUARD using 12 real-world vulnerabilities and 109 developer-designed policies. Specifically, D ESERI GUARD successfully resists the deserial- ization attack on all 12 vulnerabilities with only 2.17% of runtime overhead on average. Meanwhile, we carry out ex- tensive testing to verify that D ESERI GUARD will not interfere with the normal execution of policy-enhanced applications, which can pass all unit tests and integration tests in their projects. Furthermore, we conduct a comparison between D E- SERI GUARD 's policies and 109 policies that are formulated by developers of popular applications. Our findings reveal that, on average, D ESERI GUARD 's policies restrict the deserialization of 99.12% more classes than the developer-defined policies. We also compare D ESERI GUARD with a state-of-the-art dese- rialization defense tool proposed by Cristalli et al. [10], where DESERI GUARD provides identical defense performance with no false alarms. Our contributions are listed as follows. • We propose an automatic policy generation and enforce- ment framework to safeguard the deserialization processes of Java applications. • We implement D ESERI GUARD , which synthesizes the allowlist policy based on the Semantic-Aware Property Tree and seamlessly enforces the policy for different deserialization libraries. • We evaluate the D ESERI GUARD on 12 real-world vul- nerabilities and compare the generated policies with 109 developer-designed policies. The results show that D E- SERI GUARD can synthesize more fine-grained policies and will not interfere with applications' normal execution. II. B ACKGROUND AND MOTIVATION A. Deserialization Vulnerability Serialization and deserialization are fundamental mecha- nisms offered by numerous popular programming languages, such as Java, JavaScript, and PHP. These mechanisms enable the transformation between objects and byte streams, making them widely employed for network transmission and persistent storage of objects. Meanwhile, with different deserialization libraries, developers can transform objects into byte streams in various formats, such as JSON through the FastJson library and XML through the XStream library. However, according to the Common Weakness Enumeration (CWE) 502 [3], attackers can perform RCE or DoS attacks from the deserialization entries if developers do not restrict the object classes to be deserialized. The deserialization vulnerability has constantly been a severe threat. Over the past five years, approximately 800 vulnerabilities related to deserialization have been regis- tered in CVEs [2]. The exploitation of a Java deserialization vulnerabil- ity begins with an exposed deserialization entry, like the readObject method included in JDK [11] and the parse method in the FastJson library [6]. These methods take a byte stream as input and return the deserialized object. Given that deserialization is commonly used in network transmission, many deserialization entries have to parse byte streams that may come from untrusted sources, providing extensive attack surfaces for attackers. PriorityQueue Comparator comparator . . . TransformingComparator Transformer transformer . . . ChainedTransformer Transformer [ ] iTransformers . . . ConstantTransformer(Runtime.class, ...) InvokeTransformer(\"getMethod\", ... ) InvokeTransformer(\"invoke\", ...) InvokeTransformer(\"exec\", ...) Fig. 1. A malicious nested object crafted by attackers. This object's deserialization can trigger a gadget chain that performs an RCE attack. After finding an exposed deserialization entry, attackers will send a malicious byte stream to the target application for deserialization. Such a malicious byte stream is serialized from a carefully structured nested object. To reconstruct such an object from the malicious byte stream, the victim application needs to recursively deserialize the objects of its properties, re- sulting in the invocation of a sequence of methods. Therefore, by controlling the structure of the nested object, attackers can connect a series of methods to a chain, named gadget chain , and hijack the victim application to execute such a chain. Notably, all these methods on gadget chains must belong to the classes in the victim application's classpath, allowing the application to find their definitions and invoke them. Figure 1 depicts an example of a nested object. The object is of the class PriorityQueue, where its comparator property is assigned a TransformingComparator ob- ject. Within the object, there exists a property of type 2"
+      },
+      {
+        "source": "selected",
+        "value": "Java deserialization vulnerabilities have long been a grave security concern for Java applications. By injecting malicious objects with carefully crafted structures, attackers can reuse a series of existing methods during deserialization to achieve diverse attacks like remote code execution. To mitigate such attacks, developers are encouraged to implement policies restricting the object types that applications can deserialize. However, the design of precise policies requires expertise and significant manual effort, often leading to either the absence of policy or the implementation of inadequate ones. In this paper, we propose DESERIGUARD, a tool designed to assist developers in securing their applications seamlessly against deserialization attacks. It can automatically formulate a policy based on the application's semantics and then enforce it to restrict illegal deserialization attempts. First, DESERIGUARD utilizes dataflow analysis to construct a semantic-aware property tree, which records the potential structures of deserialized objects. Based on the tree, DESERIGUARD identifies the types of objects that can be safely deserialized and synthesizes an allowlist policy. Then, with the Java agent, DESERIGUARD can seamlessly enforce the policy during runtime to protect various deserialization procedures. In evaluation, DESERIGUARD successfully blocks all deserialization attacks on 12 real-world vulnerabilities. In addition, we compare DESERIGUARD's automatically synthesized policies with 109 developer-designed policies. The results demonstrate that DESERIGUARD effectively restricts 99.12% more classes. Meanwhile, we test the policy-enhanced applications with their unit tests and integration tests, which demonstrate that DESERIGUARD's policies will not interfere with applications' execution and induce a negligible time overhead of 2.17%."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Quan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yiwen Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zijing Yin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Chijin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Quan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yiwen Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zijing Yin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Chijin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "BNRist, School of Software, Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 113,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Automatic Policy Synthesis and Enforcement for Protecting Untrusted Deserialization",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/automatic-policy-synthesis-and-enforcement-for-protecting-untrusted-deserialization/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Quan Zhang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yiwen Xu",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Zijing Yin",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Chijin Zhou",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yu Jiang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

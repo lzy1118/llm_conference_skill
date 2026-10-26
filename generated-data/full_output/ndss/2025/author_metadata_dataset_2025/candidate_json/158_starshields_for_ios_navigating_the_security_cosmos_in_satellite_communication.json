@@ -1,0 +1,517 @@
+{
+  "paper_id": "158_starshields_for_ios_navigating_the_security_cosmos_in_satellite_communication",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Starshields for iOS: Navigating the Security Cosmos in Satellite Communication"
+      },
+      {
+        "source": "selected",
+        "value": "Starshields for iOS: Navigating the Security Cosmos in Satellite Communication"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Apple has integrated satellite communication into their latest iPhones, enabling emergency communication, roadside assistance, location sharing with friends, iMessage, and SMS. This technology allows communication when other wireless services are unavailable. However, the use of satellites poses restrictions on bandwidth and delay, making it difficult to use modern communication protocols with their security and privacy guarantees. To overcome these challenges, Apple designed and implemented a proprietary satellite communication protocol. We are the first to successfully reverse-engineer this protocol and analyze its security and privacy properties. In addition, we develop a simulation-based testbed for testing emergency services without causing emergency calls. Our tests reveal protocol and infrastructure design issues. For example, compact protocol messages come at the cost of missing integrity protection and require an internet-based setup phase. We further demonstrate various restriction bypasses, such as misusing location sharing to send arbitrary text messages on old iOS versions and sending iMessages over satellite from region-locked countries. These bypasses allow us to overcome censorship and operator control of text messaging services."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Apple has integrated satellite communication into their latest iPhones, enabling emergency communication, road- side assistance, location sharing with friends, iMessage, and SMS. This technology allows communication when other wireless services are unavailable. However, the use of satellites poses restrictions on bandwidth and delay, making it difficult to use modern communication protocols with their security and privacy guarantees. To overcome these challenges, Apple designed and implemented a proprietary satellite communication protocol. We are the first to successfully reverse-engineer this protocol and analyze its security and privacy properties. In addition, we develop a simulation-based testbed for testing emergency services without causing emergency calls. Our tests reveal protocol and infrastructure design issues. For example, compact protocol messages come at the cost of missing integrity protection and require an internet-based setup phase. We further demonstrate various restriction bypasses, such as misusing location sharing to send arbitrary text messages on old iOS versions and sending iMessages over satellite from region-locked countries. These bypasses allow us to overcome censorship and operator control of text messaging services. I. I NTRODUCTION Apple introduced satellite communication support with the iPhone 14 [5], allowing users to request assistance during emergencies in areas without cellular coverage. Further fea- tures include sharing the current location with friends over Find My [10] and requesting roadside assistance [9]. iMessage and SMS text messaging were added in iOS 18 [14]. Apple relies on the satellite network provided by Globalstar, a company operating satellites in Low Earth Orbits (LEOs) at around 1 414 km height, orbiting the earth multiple times a day. We found that the oldest satellite used by Apple *Both authors contributed equally to this research. was launched in 2007, the same year the first iPhone was released [51]. Operating a 17-year-old infrastructure implicates technological challenges by itself [84], but Apple must also deal with satellites' fast movement during transmission, high delays, and generally low bandwidth requirements. At the same time, users need to be able to operate satellite commu- nication intuitively under high stress in emergencies. This fact necessitates fast transmissions, ideally within a minute, and high satellite network availability. Apple's emergency SOS via satellite proved instrumental in saving lives during wildfires and hurricanes, when cellular network communication was no longer possible [52], [81]. Globalstar offers satellite network subscriptions directly to customers for location, text, data, and voice services [34]. In 2015, researchers revealed severe vulnerabilities in Glob- alstar's satellite communication protocol and released tools for decoding it [55]. We confirm that these attacks still work as of 2024 to intercept Globalstar's services. With this troubled security history, Apple invented a novel, proprietary protocol and only shares the Globalstar infrastructure. Apple's satellite protocol aims to protect highly privacy-sensitive data: A location shared via satellite should only be accessible to the designated recipients. More sensitive data leaves the phone during Emergency SOS via satellite: Health information from the user's medical ID [15], text messages, location informa- tion, and accurate information about the current emergency. This work represents the first comprehensive investiga- tion into Apple's satellite services' security and privacy. We reverse-engineer previously undocumented internals to answer the following research questions: RQ1: How are security and privacy features implemented in this resource-constrained satellite communication environment? RQ2: Can users bypass service restrictions imposed by Apple? Contributions. At the time of writing, only limited related work on the security of end-device to satellite communication exists [55], [46], [84], [86]. We are the first to analyze satellite communication implemented in the iPhone. Our main contributions are: Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240124 www.ndss-symposium.org Target Anchor Internet Fig. 1: Communication principle for Find My location sharing. • We reverse-engineer the protocols for Emergency Tex- ting, Roadside Assistance, Find My, iMessage, and SMS over satellite. • We show how data exchanges are minimized and com- pressed to meet technological limitations, including a complex scheme to set up various encryption parameters when the user has a regular internet connection. • We analyze the cryptographic properties of the transmis- sion of privacy-sensitive data. • We create an app to send and receive arbitrary, unlim- ited SMS-like messages over Find My location sharing (Demo: https://youtu.be/3qYby6CeBxs). • We demonstrate that various restrictions are only im- plemented on the client side, allowing adversaries to bypass regional restrictions and enable satellite services in countries where they are not supported. • We build a simulation-based testbed to analyze satellite features in iOS without communicating with actual satel- lites (Demo: https://youtu.be/igaYCdnqdjE). • We propose mitigations to design secure satellite com- munication systems. Responsible Disclosure: We responsibly disclosed our find- ings to Apple, allowing for improvements in their satellite sharper restrictions on text messaging over Find My, but their system architecture prevents a complete resolution. Ethical Considerations: Emergency SOS over satellite allows a user to contact first responders without cellular cover- age. During our tests, we never alarmed any first responders. Instead, we built a simulation-based testbed to safely study satellite features without resulting in real-world emergency calls. Furthermore, we never bypassed regional restrictions in countries where satellite communication is illegal. Availability: Our Artifact Appendix includes an app allow- ing text messaging via satellite, the Wireshark dissector for the satellite protocol, and scripts to setup our test environment. For ethical reasons, we do not publish code for the client-side communication restriction bypasses we demonstrate. II. B ACKGROUND This section describes satellite communication basics with a focus on Globalstar's setup. This setup differs from other popular satellite networks, thereby creating novel challenges to be solved by Apple's protocol stack. Then, we dive into Apple's satellite features from a user's perspective. A. Satellite Communication was the first to launch a high-end smartphone with satellite functionality covering the U.S. , Canada, and Europe [5], [8]. Around the same time, Huawei launched the Mate 50 with satellite SMS support in China [80], followed a year later by the Mate 60 Pro, which introduced satellite phone calls [43]. In 2024, the Google Pixel 9 received an US-only emergency SOS feature via the Skylo satellite network [74]. AT&T partnered with AST SpaceMobile to create a new satellite that can send 4G and 5G signals to Earth, reaching download speeds of up to 14 Mbit/s [71]. T-Mobile, together with Starlink, also announced satellite support for 5G smartphones in 2022 [79], with the first satellite launched in early 2024 [25]. These projects share a fast-paced development of new features com- bined with infrastructure updates. Their technology stacks fundamentally differ: Apple uses legacy satellites but up- dated the iPhone's cellular modem and communication stack; SpaceX updated its satellites to enable off-the-shelf phones to communicate. Apple's approach to using legacy satellites is arguably the most challenging from a technological perspec- tive, with tight constraints that leave little room for security and privacy. Apple partnered with Qualcomm for a custom modem supporting satellite communication [59], developed a customized antenna to boost outgoing signals, and added custom hardware to ground stations to handle incoming data directly. In this work, we focus on Apple's implementation. Globalstar Satellite Communication Principle: Global- star satellites employ a bent-pipe architecture [34], acting as mirrors in space. They forward an iPhone's signal to a ground station and vice versa (see Figure 1). A satellite requires the iPhone and the ground station to be within range to establish a communication channel. Ground stations are connected to the internet, allowing interaction with services provided by Apple. In Apple's terminology, satellites are targets the user points their iPhone at, and ground stations are anchors. Globalstar's constellation consists of 48 satellites, with an additional four spare satellites [58]. The satellites orbit the earth in LEO at an altitude of 1 414 km, which equates to an orbital period of about 2 h or 12 turns around earth per day [33]. According satellites. The oldest satellite in use is M069, launched on May 29, 2007, and the newest one is M097, launched on February 6, 2013. Globalstar launched a newer satellite, M087, on June 19, 2022, which Apple is yet to use. Globalstar operates satellites from two generations: the first launched before October 2010 with a life expectancy of 71/2 years, and the second launched with a life expectancy of 15 years [28]. Consequently, some satellites are already past their expected lifetimes, increasing technological challenges in working with legacy hardware. Interestingly, Apple uses satellites from both generations. To future-proof the constellation, Globalstar ordered 17 new satellites, which are scheduled to launch in 2025 [68]. Satellite Orbits: The position of objects orbiting the Earth, such as satellites or space debris, is commonly specified by a 2"
+      },
+      {
+        "source": "selected",
+        "value": "Apple has integrated satellite communication into their latest iPhones, enabling emergency communication, roadside assistance, location sharing with friends, iMessage, and SMS. This technology allows communication when other wireless services are unavailable. However, the use of satellites poses restrictions on bandwidth and delay, making it difficult to use modern communication protocols with their security and privacy guarantees. To overcome these challenges, Apple designed and implemented a proprietary satellite communication protocol. We are the first to successfully reverse-engineer this protocol and analyze its security and privacy properties. In addition, we develop a simulation-based testbed for testing emergency services without causing emergency calls. Our tests reveal protocol and infrastructure design issues. For example, compact protocol messages come at the cost of missing integrity protection and require an internet-based setup phase. We further demonstrate various restriction bypasses, such as misusing location sharing to send arbitrary text messages on old iOS versions and sending iMessages over satellite from region-locked countries. These bypasses allow us to overcome censorship and operator control of text messaging services."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jiska Classen",
+          "email": "jiska.classen@hpi.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Alexander Heinrich",
+          "email": "aheinrich@seemoo.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Fabian Portner",
+          "email": "fportner@seemoo.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Felix Rohrbach",
+          "email": "felix.rohrbach@tu-darmstadt.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Matthias Hollick",
+          "email": "mhollick@seemoo.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Secure Mobile Networking Lab TU, Hasso Plattner Institute University of Potsdam, Darmstadt"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Secure Mobile Networking Lab TU, Cryptoplexity TU Darmstadt, Darmstadt"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Secure Mobile Networking Lab TU, Darmstadt"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jiska Classen",
+          "email": "jiska.classen@hpi.de",
+          "orcid": "",
+          "affiliations": [
+            "Hasso Plattner Institute University of Potsdam"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Alexander Heinrich",
+          "email": "aheinrich@seemoo.de",
+          "orcid": "",
+          "affiliations": [
+            "Secure Mobile Networking Lab TU Darmstadt"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Fabian Portner",
+          "email": "fportner@seemoo.de",
+          "orcid": "",
+          "affiliations": [
+            "Secure Mobile Networking Lab TU Darmstadt"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Felix Rohrbach",
+          "email": "felix.rohrbach@tu-darmstadt.de",
+          "orcid": "",
+          "affiliations": [
+            "Cryptoplexity TU Darmstadt"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Matthias Hollick",
+          "email": "mhollick@seemoo.de",
+          "orcid": "",
+          "affiliations": [
+            "Secure Mobile Networking Lab TU Darmstadt"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 93,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.0,
+        "candidates": [
+          {
+            "name": "Jiska Classen",
+            "block_id": "pdfplumber:p1:b4",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b7",
+              "pdfplumber:p1:b10"
+            ]
+          },
+          {
+            "name": "Alexander Heinrich",
+            "block_id": "pdfplumber:p1:b5",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b8",
+              "pdfplumber:p1:b11"
+            ]
+          },
+          {
+            "name": "Fabian Portner",
+            "block_id": "pdfplumber:p1:b6",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b9",
+              "pdfplumber:p1:b12"
+            ]
+          },
+          {
+            "name": "Felix Rohrbach",
+            "block_id": "pdfplumber:p1:b16",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b20"
+            ]
+          },
+          {
+            "name": "Matthias Hollick",
+            "block_id": "pdfplumber:p1:b17",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b19",
+              "pdfplumber:p1:b21"
+            ]
+          }
+        ],
+        "fully_supported": true,
+        "anchored_existing_count": 5
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Jiska Classen",
+          "block_id": "pdfplumber:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Alexander Heinrich",
+          "block_id": "pdfplumber:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Fabian Portner",
+          "block_id": "pdfplumber:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Felix Rohrbach",
+          "block_id": "pdfplumber:p1:b16",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Matthias Hollick",
+          "block_id": "pdfplumber:p1:b17",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Jiska Classen",
+          "affiliation_raw": "Hasso Plattner Institute University of Potsdam",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b4",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b7",
+            "pdfplumber:p1:b10"
+          ],
+          "email_raw": "jiska.classen@hpi.de",
+          "email_block_ids": [
+            "pdfplumber:p1:b13"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 2.366,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 1,
+          "author": "Alexander Heinrich",
+          "affiliation_raw": "Secure Mobile Networking Lab TU Darmstadt",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b5",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b8",
+            "pdfplumber:p1:b11"
+          ],
+          "email_raw": "aheinrich@seemoo.de",
+          "email_block_ids": [
+            "pdfplumber:p1:b14"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 2.366,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 2,
+          "author": "Fabian Portner",
+          "affiliation_raw": "Secure Mobile Networking Lab TU Darmstadt",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b6",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b9",
+            "pdfplumber:p1:b12"
+          ],
+          "email_raw": "fportner@seemoo.de",
+          "email_block_ids": [
+            "pdfplumber:p1:b15"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 3,
+          "author": "Felix Rohrbach",
+          "affiliation_raw": "Cryptoplexity TU Darmstadt",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b16",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b18",
+            "pdfplumber:p1:b20"
+          ],
+          "email_raw": "felix.rohrbach@tu-darmstadt.de",
+          "email_block_ids": [
+            "pdfplumber:p1:b22"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 4,
+          "author": "Matthias Hollick",
+          "affiliation_raw": "Secure Mobile Networking Lab TU Darmstadt",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b17",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b19",
+            "pdfplumber:p1:b21"
+          ],
+          "email_raw": "mhollick@seemoo.de",
+          "email_block_ids": [
+            "pdfplumber:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Starshields for iOS: Navigating the Security Cosmos in Satellite Communication",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/starshields-for-ios-navigating-the-security-cosmos-in-satellite-communication/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jiska Classen",
+          "affiliations": [
+            "Hasso Plattner Institute, University of Potsdam"
+          ]
+        },
+        {
+          "name": "Alexander Heinrich",
+          "affiliations": [
+            "TU Darmstadt, Germany"
+          ]
+        },
+        {
+          "name": "Fabian Portner",
+          "affiliations": [
+            "TU Darmstadt, Germany"
+          ]
+        },
+        {
+          "name": "Felix Rohrbach",
+          "affiliations": [
+            "TU Darmstadt, Germany"
+          ]
+        },
+        {
+          "name": "Matthias Hollick",
+          "affiliations": [
+            "TU Darmstadt, Germany"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Jiska Classen",
+      "field": "affiliations",
+      "selected_value": [
+        "Hasso Plattner Institute University of Potsdam"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b7",
+        "pdfplumber:p1:b10"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Alexander Heinrich",
+      "field": "affiliations",
+      "selected_value": [
+        "Secure Mobile Networking Lab TU Darmstadt"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b8",
+        "pdfplumber:p1:b11"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Fabian Portner",
+      "field": "affiliations",
+      "selected_value": [
+        "Secure Mobile Networking Lab TU Darmstadt"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b9",
+        "pdfplumber:p1:b12"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Felix Rohrbach",
+      "field": "affiliations",
+      "selected_value": [
+        "Cryptoplexity TU Darmstadt"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b18",
+        "pdfplumber:p1:b20"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Matthias Hollick",
+      "field": "affiliations",
+      "selected_value": [
+        "Secure Mobile Networking Lab TU Darmstadt"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdfplumber:p1:b19",
+        "pdfplumber:p1:b21"
+      ],
+      "validation_evidence_ids": []
+    }
+  ]
+}

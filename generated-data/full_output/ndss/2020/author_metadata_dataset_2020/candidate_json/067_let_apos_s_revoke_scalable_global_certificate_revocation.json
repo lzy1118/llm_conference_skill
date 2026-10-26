@@ -1,0 +1,178 @@
+{
+  "paper_id": "067_let_apos_s_revoke_scalable_global_certificate_revocation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Let's Revoke: Scalable Global Certificate Revocation"
+      },
+      {
+        "source": "selected",
+        "value": "Let's Revoke: Scalable Global Certificate Revocation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Current revocation strategies have numerous issues that prevent their widespread adoption and use, including scalability, privacy, and new infrastructure requirements. Consequently, revocation is often ignored, leaving clients vulnerable to man-in-the-middle attacks. This paper presents Let's Revoke, a scalable global revocation strategy that addresses the concerns of current revocation checking. Let's Revoke introduces a new unique identifier to each certificate that serves as an index to a dynamically-sized bit vector containing revocation status information. The bit vector approach enables significantly more efficient revocation checking for both clients and certificate authorities. We compare Let's Revoke to existing revocation schemes and show that it requires less storage and network bandwidth than other systems, including those that cover only a fraction of the global certificate space. We further demonstrate through simulations that Let's Revoke scales linearly up to ten billion certificates, even during mass revocation events."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Current revocation strategies have numerous issues that prevent their widespread adoption and use, including scalability, privacy, and new infrastructure requirements. Consequently, revocation is often ignored, leaving clients vulnerable to man-in-the-middle attacks. This paper presents Let's Revoke, a scalable global revocation strategy that addresses the concerns of current revocation checking. Let's Revoke introduces a new unique identifier to each certificate that serves as an index to a dynamically-sized bit vector containing revocation status information. The bit vector approach enables significantly more efficient revocation checking for both clients and certificate authorities. We compare Let's Revoke to existing revocation schemes and show that it requires less storage and network bandwidth than other systems, including those that cover only a fraction of the global certificate space. We further demonstrate through simulations that Let's Revoke scales linearly up to ten billion certificates, even during mass revocation events. I. I NTRODUCTION In the current web Public Key Infrastructure (PKI), Certificate Authorities (CAs) issue and sign the X.509 certificates that secure TLS connections. It is critical to identify any certificate that was erroneously issued or has had its key pair compromised. Once identified, the owner of the certificate requests the issuing CA to revoke or invalidate their certificate. Notice of this revocation needs disseminating to all clients that rely on the certificate. Otherwise, connections using the compromised certificate are vulnerable to man-in-the-middle (MitM) attacks until the certificate has expired, which can be up to 2 years later [1]. Without accurate and timely revocation checking, attackers can impersonate the server undetected and glean private information such as passwords, emails, financial data, and other personally-identifying information. Currently deployed revocation strategies have some critical issues that interfere with providing secure and practical revocation checking. Among these concerns are scalability [2]-[4], privacy [5], page loading delays [5], and susceptibility to downgrade attacks [2], [5], [6]. The remaining strategies have other debilitating weaknesses, such as requiring significant infrastructure changes [7], [8] or opening new attack surfaces [9]. Due to these critical issues, certificate revocation is ignored by most clients, leaving many computers and mobile devices vulnerable to attack [10]. Major browser vendors consider the security of their users a high priority. At the same time, browsers emphasize low latency and fast page loads to remain competitive, and mobile browsers must consider network bandwidth usage. Because of these concerns, combined with vulnerability to downgrade attacks, Firefox and Chrome have reduced their support for traditional revocation methods such as Certificate Revocation Lists (CRLs) [2] and Online Certificate Status Protocol (OCSP) [5]. Instead, Firefox and Chrome have both deployed custom revocation systems to protect their users against the compromise of a relatively few critical certificates. Liu et al. [10] additionally found that mobile browsers do not currently evaluate certificate revocation statuses due to the previously described concerns, especially those relating to network bandwidth consumption. Over the last few years, the certificate space has grown tremendously. From January 2017 to January 2018 alone, the number of live CA-trusted certificates observed in public Internet scans more than doubled, growing from 30 million [11] to over 80 million [12]. Two years later, in January 2020, this number has increased more than fivefold to over 434 million [12]. One reason for this explosive growth is the emergence of a new CA, Let's Encrypt [13], which freely issues certificates through an automated system. As of January 2020, the number of active trusted certificates signed by Let's Encrypt exceeded 231 million [12]. The recent efforts to promote using only encrypted web traffic [14] has also contributed to the increase of trusted certificates. As the number of certificates in use continues to grow, the scalability of revocation strategies becomes increasingly essential. While revocation strategies should maintain acceptable network bandwidth requirements during normal conditions, it is also imperative that they effectively handle mass revocation events such as the period following the announcement of that, before the announcement of Heartbleed, the percentage of revoked certificates was approximately 1% of all active certificates (non-expired certificates signed by a trusted CA). Following the announcement, the percentage spiked to nearly 11%. During this time, Cloudflare estimated that they incurred an additional cost of $400,000 per month to publish their enlarged CRL due to increased network bandwidth consumption [15]. After measuring the effects of Heartbleed, Durumeric et al. Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24084 www.ndss-symposium.org stated: “ The community needs to develop methods for scalable revocation that can gracefully accommodate mass revocation events, as seen in the aftermath of Heartbleed ” [16]. Despite the importance of these performance concerns, perhaps the most troubling issue is that many revocation strategies are subject to downgrade attacks. When a revocation status is unavailable because the authoritative server is inaccessible, modern browsers “soft-fail” by assuming the certificate in question is still valid. This default posture shows that browsers value accessibility over protection against the attack vectors exposed by a compromised certificate. Soft-failing is particularly dangerous since an attacker conducting a MitM attack using a revoked certificate can also trivially force soft-failure by blocking outgoing requests to verify revocation status. On this topic, Langley stated that “ soft-fail revocation checks are like a seat-belt that snaps when you crash” [17]. These issues motivate the general requirements for an effective revocation strategy, which Larisch et al. [11] formally enumerated as the following six criteria that a universal revocation strategy should fulfill: 1) Efficiency - The revocation strategy should require minimal network bandwidth, storage, and computational resources. 2) Timeliness - Revocation status updates should be sent frequently to ensure that they never become stale. 3) Failure Model - The strategy should enable clients to adopt a hard-failure policy. 4) Privacy - The strategy should preserve client traffic privacy. 5) Deployability - The revocation strategy should be incrementally deployable and provide incentives for adopters. 6) Auditability - Revocation information should be auditable by other parties. In this paper, we present Let's Revoke, a new revocation strategy designed to overcome the limitations of other revocation strategies and fulfill the six criteria set forth by Larisch et al. First, we provide a survey of current revocation strategies with their strengths and weaknesses. Second, we describe an efficient method for uniquely identifying certificates. Third, we propose a new revocation strategy, Let's Revoke, and describe how it fulfills the six criteria listed above and addresses the concerns surrounding current revocation strategies. Fourth, we compare Let's Revoke to other proposed revocation strategies. Fifth, we provide simulations showing the storage requirements of Let's Revoke for revocation spaces up to 10B certificates and a 10% revocation percentage. While we present Let's Revoke in the context of the web PKI, the scheme applies to any PKI where revocation scalability is an issue. CRLite, a recent proposal that satisfies the six criteria of a universal revocation strategy, inspired our work for more efficient revocation checking. Let's Revoke offers improvements over CRLite in computational resource efficiency, especially network bandwidth. Our measurements presented in this paper estimate that Let's Revoke clients require only approximately 28% of the network bandwidth of CRLite. Let's Revoke also eliminates the necessity of CRLite to acquire the revocation statuses of all certificates on the Internet to construct the cascading Bloom filter each day, which would currently require over 950 OCSP requests per second to the CA Let's Encrypt alone. The contributions of the paper are an analysis showing that Let's Revoke requires less storage and network bandwidth than currently deployed revocation methods, even those that cover only a small fraction of the certificate space. Further, we provide simulated revocation data anticipating the growth of the certificate space to both 1B and 10B certificates. These estimates show typical daily revocation download requirements as 612 KB and 7.4 MB, respectively. Storage estimates also remain manageable during mass revocation events that revoke 10% of all valid certificates. II. R ELATED WORK Many certificate revocation proposals have arisen in the past two decades. These strategies for certificate revocation generally fall into one of three classifications: pull-based, push-based, or network-assisted.1 A. Pull-Based Revocation Pull-based revocation is synonymous with on-demand revocation validation. Pull-based requests for a revocation status occur only at the time a certificate needs to be validated. Numerous revocation strategies of this type have been proposed such as Certificate Revocation Trees [18], [19], Certificate Revocation System [20], and Revocation Transparency [21]. Of the pull-based certificate revocation strategies, CRLs [2] and OCSP [5] are the most commonly used today. CRLs [2] are lists of all revoked certificates which the issuing CA assembles, signs, and distributes. A client seeking to check a single certificate must download and parse the corresponding CRL to ensure the certificate is not in the list. Scalability is the main criticism against CRLs as they can grow large2, consuming processor, memory, storage, and bandwidth resources. Due to these issues, Mozilla Firefox and Google Chrome have disabled revocation checks using CRLs. OCSP [5] responders provide a signed revocation status for individual certificates. OCSP requires clients to make this request for every web session initiated through HTTPS and must wait for the OCSP response to check the revocation status before the page can be fully loaded. In addition to page load delays, OCSP presents a significant privacy concern as each client divulges its browsing history to a third party. While some revocation strategies only share coarse-grained traffic patterns [2], OCSP divulges detailed client traffic patterns to the CA that signs the collection of certificates that the client checks and all the nodes along the path of an unencrypted OCSP request. Despite these concerns, most modern desktop browsers use OCSP. 1We employ the pull-based and push-based terminology given by Larisch et al., though clients download the revocation updates themselves [11]. 2Apple once published a 76 MB CRL [10]. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Current revocation strategies have numerous issues that prevent their widespread adoption and use, including scalability, privacy, and new infrastructure requirements. Consequently, revocation is often ignored, leaving clients vulnerable to man-in-the-middle attacks. This paper presents Let's Revoke, a scalable global revocation strategy that addresses the concerns of current revocation checking. Let's Revoke introduces a new unique identifier to each certificate that serves as an index to a dynamically-sized bit vector containing revocation status information. The bit vector approach enables significantly more efficient revocation checking for both clients and certificate authorities. We compare Let's Revoke to existing revocation schemes and show that it requires less storage and network bandwidth than other systems, including those that cover only a fraction of the global certificate space. We further demonstrate through simulations that Let's Revoke scales linearly up to ten billion certificates, even during mass revocation events."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Trevor Smith",
+          "email": "tsmith@isrl.byu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Brigham Young University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Luke Dickinson",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Brigham Young University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Kent Seamons",
+          "email": "seamons@cs.byu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Brigham Young University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Trevor Smith",
+          "email": "tsmith@isrl.byu.edu",
+          "affiliations": [
+            "Brigham Young University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Luke Dickinson",
+          "email": "luke@isrl.byu.edu",
+          "affiliations": [
+            "Brigham Young University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Kent Seamons",
+          "email": "seamons@cs.byu.edu",
+          "affiliations": [
+            "Brigham Young University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 95,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Let’s Revoke: Scalable Global Certificate Revocation",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/lets-revoke-scalable-global-certificate-revocation/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Trevor Smith",
+          "affiliations": [
+            "Brigham Young University"
+          ]
+        },
+        {
+          "name": "Luke Dickenson",
+          "affiliations": [
+            "Brigham Young University"
+          ]
+        },
+        {
+          "name": "Kent Seamons",
+          "affiliations": [
+            "Brigham Young University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Kent Seamons",
+      "field": "email",
+      "restored_value": "seamons@cs.byu.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

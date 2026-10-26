@@ -1,0 +1,266 @@
+{
+  "paper_id": "070_icsquartz_scan_cycle_aware_and_vendor_agnostic_fuzzing_for_industrial_control_systems",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "ICSQuartz: Scan Cycle-Aware and Vendor-Agnostic Fuzzing for Industrial Control Systems"
+      },
+      {
+        "source": "selected",
+        "value": "ICSQuartz: Scan Cycle-Aware and Vendor-Agnostic Fuzzing for Industrial Control Systems"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Industrial Control Systems (ICS) ensure the automation and safe operation of critical industry, energy, and commerce processes. Despite its importance, ICS code often cannot be evaluated as rigorously as software on traditional computing platforms, as existing code evaluation tools cannot readily interface with the closed ICS ecosystem. Moreover, the use of domain-specific languages, the lack of open and extensible compilers, and the deficiency of techniques developed for ICSspecific nuances, among other challenges, hinder the creation of specialized tools. This paper addresses these challenges by introducing ICSQuartz, the first native fuzzer for IEC 61131-3 Structured Text (ST), a standardized Programmable Logic Controller (PLC) programming language. Native support eliminates the necessity of any vendor or architecture-specific requirements. ICSQuartz outperforms the fastest state-of-the-art fuzzers in the ICS space by more than an order of magnitude in executions per second. In addition to natively fuzzing ST code, we introduce novel mutation strategies to ICSQuartz that uncover vulnerabilities due to the scan cycle architecture of ST programs-a nuance that traditional fuzzers do not consider. Using ICSQuartz, we perform the first large-scale fuzzing campaign of real-world ICS libraries, resulting in multiple vulnerability disclosures and bug fixes. In addition to vulnerabilities, ICSQuartz discovered a bug in an open-source ST compiler. These findings underscore the imperative impact of ICSQuartz in the ICS domain."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Industrial Control Systems (ICS) ensure the au- tomation and safe operation of critical industry, energy, and commerce processes. Despite its importance, ICS code often cannot be evaluated as rigorously as software on traditional computing platforms, as existing code evaluation tools cannot readily interface with the closed ICS ecosystem. Moreover, the use of domain-specific languages, the lack of open and extensible compilers, and the deficiency of techniques developed for ICS- specific nuances, among other challenges, hinder the creation of specialized tools. This paper addresses these challenges by introducing ICSQuartz, the first native fuzzer for IEC 61131-3 Structured Text (ST), a standardized Programmable Logic Con- troller (PLC) programming language. Native support eliminates the necessity of any vendor or architecture-specific requirements. ICSQuartz outperforms the fastest state-of-the-art fuzzers in the ICS space by more than an order of magnitude in executions per second. In addition to natively fuzzing ST code, we introduce novel mutation strategies to ICSQuartz that uncover vulnerabil- ities due to the scan cycle architecture of ST programs-a nuance that traditional fuzzers do not consider. Using ICSQuartz, we perform the first large-scale fuzzing campaign of real-world ICS libraries, resulting in multiple vulnerability disclosures and bug fixes. In addition to vulnerabilities, ICSQuartz discovered a bug in an open-source ST compiler. These findings underscore the imperative impact of ICSQuartz in the ICS domain. I. I NTRODUCTION Industrial Control Systems (ICS) represent a collection of systems, networks, and associated connected equipment that operate in tandem to control, monitor, and automate physical processes. ICS control processes in a wide array of fields, in- cluding manufacturing (e.g., operating assembly lines), energy (e.g., geographically distributed operation of electric smart grid), mining (e.g., material handling), and critical infrastruc- ture (e.g., automating water treatment facilities). Programmable Logic Controllers (PLCs), an integral part of ICS, are industrial computation platforms equipped with specialized hardware and peripherals and built for robust and reliable operation in harsh industrial conditions. In these environments, it is common for manufacturers to equip PLCs with firmware that utilizes standard operating systems such as RTLinux and VxWorks. These devices follow a periodic mode of operation known as the scan cycle: The PLC captures inputs from the monitored physical process (e.g., temperature read- ings, control signals, machinery status, etc.), processes these inputs based on its programming, and utilizes the outputs to control actuators that influence the underlying process. Process engineers program PLCs by writing control logic code using domain-specific programming languages, such as Structured Text (ST), that are defined under the IEC 61131-3 standard [1]. This code is then compiled using vendor-supplied proprietary compilers to non-standard formats. Compiled control programs are then executed by purpose-built software stacks, known as runtimes, which run on the PLC. The transformation of the industrial landscape by the movement dubbed the 4th Industrial Revolution [2], saw the operational technology (OT) space merge with solutions and practices from the Information Technology (IT) space. This development has seen ICS devices gain increased flex- ibility, support greater programmability, receive augmented with advanced real-time monitoring features, and numerous other capabilities that extensively benefited adopting indus- tries. Furthermore, ICS vendors have embraced open source software (OSS) solutions to support their ecosystems, reducing resources spent reimplementing and securing software, such as FTP servers, SSH clients, or even complete firmware stacks [3]. These developments have led to a paradigm shift in the security landscape of the ICS code, requiring that components previously thought of as isolated, such as the IEC 61131-3 programs [1], be rigorously evaluated and secured. Given their critical positioning and role, ICS are a prominent target for malicious parties. Historically, weaknesses in ICS software have led to events such as Stuxnet [4], allowing adversaries to compromise Iran's nuclear infrastructure by in- jecting malicious code into PLCs, thus impairing close to 20% of their centrifuges. ICS-specific malware was also discovered in 2016 by the FLARE team, which identified IRONGATE [5], a malware family built to manipulate industrial processes operating on Siemens' control system environment. Another incident in 2019 saw threat actors successfully enter the US Coast Guard network, forcing the facility to shut down opera- tions for more than 30 hours [6]. In 2022, the European Union Agency for Cybersecurity (ENISA) predicted an increased risk to OT systems, due to a rise in sophisticated state-level threats and malware targeting ICS [7]. The following year, Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240795 www.ndss-symposium.org ENISA remarked this coming to fruition with the discovery of Industroyer2, COSMICENERGY , and CRASHOVERRIDE, and called for proactive efforts to secure OT and ICS [8]. Therefore, identifying faulty programming and vulnerabil- ities in PLC code is a topic of great interest to the research community. The work carried out in this domain has consid- ered various directions, such as model checking [9], automated tests and generation of invariants for PLC code [10, 11], formal verification of control logic [12, 13, 14], and reverse engineering of control binaries [15]. These methods provide important insights and safety guarantees; however, they focus on PLC code that strictly follows the IEC 61131-3 standard and do not consider the effects of the underlying runtime, its libraries, and its dependencies. PLC vendors are expanding their software stacks to support an increasing amount of features [3], ranging from simple language tweaks, libraries, and visualization systems, to fully fledged machine learning solutions [16]. These increased capa- bilities of PLCs necessitate that PLC code security evaluation takes into consideration the a refined threat model. An obvious remedy would be to resort to mature tools from the IT space: Dynamic and static analysis, fuzzers, and symbolic execution- based tools. However, application of these tools to the ICS domain is not straightforward due to challenges stemming from the domain-specific languages, closed-source compilers, non-standard binaries, and proprietary protocols. Efforts to bridge IT with OT space tools need to overcome significant obstacles [17, 18, 19], while the lack of vulnerable ICS code corpora deters the creation and evaluation of such tools. In this work, we introduce ICSQuartz, a novel framework developed for fuzzing ST code. Our approach utilizes an open- source compiler to enable LLVM code instrumentation during the compilation of ST programs, which is notably vendor- agnostic and platform-independent. This enables us to conduct native fuzzing for ST programs, encompassing scan cycle fuzzing, coverage-guided fuzzing, and vulnerability localiza- tion. These improvements to state-of-the-art solutions manifest through multiple vulnerability disclosures. In summary, our contributions are the following: • We introduce ICSQuartz, the first native fuzzer for the IEC 61131-3 Structured Text language. ICSQuartz is vendor-agnostic and platform-independent, surpassing ex- isting solutions in performance and capability, incorporat- ing advances from non-OT state-of-the-art fuzzers. • We develop new ICS-specific scan cycle fuzzing com- ponents, which discover vulnerabilities unique to ICS environments, and extend ICSQuartz to support it. • We demonstrate the impact of ICSQuartz by producing multiple vulnerability disclosures and bug fixes in widely distributed ST libraries. We discovered, to the best of our knowledge, the first ST-related CVE . At the same time, ICSQuartz also discovered a bug in an ST compiler which was leading to generation of vulnerable ST programs. • ICSQuartz and developed benchmarks have been artifact- evaluated as reproducible (Appendix A) and are available: https://github.com/momalab/ICSQuartz. II. P RELIMINARIES A. IEC languages Code written for industrial control systems has been sys- tematized by the International Electrotechnical Commission through the formation of the IEC 61131 international stan- dard [1]. IEC 61131-3, the third component of the standard, defines an ensemble of five interoperable, domain-specific programming languages to be used with PLCs. The IEC 61131-3 family defines graphical languages, including Ladder Diagram, Function Block Diagram, and textual languages, such as Structured Text. For this work, we elect to use Struc- tured Text (ST), which closely resembles traditional imperative programming languages and is the most flexible language in the standard for writing complex control functionality code. B. The PLC Software Stack The typical PLC software stack is quite complex, involv- ing many components, including an Integrated Development Environment (IDE) for code development, compilers for IEC 61131-3 languages, a runtime that executes on the PLC, and special communication protocols. Due to the increasing complexity of the PLC software stack, and the costs associated with its maintenance and development, many ICS hardware vendors have adopted and customized readily available soft- ware stacks, such as Codesys [20]. Projects are written using a combination of IEC 61131-3 languages and are compiled using specialized proprietary com- pilers provided by ICS vendors. These compilers differ from commodity solutions like the GNU C Compiler ( gcc) and the Clang compiler ( clang), as they prioritize predictability, robustness, and stability, which are of paramount importance in OT, over performance and optimization, which are often preferred in IT. The compilation output is typically a binary in a proprietary format defined by the vendor. ICS control logic binaries can either be bytecode that is then interpreted during execution or assembly instructions. The IEC 61131-3 execution model diverges from traditional execution models, relying on scan cycles. In the traditional IT domain, typical programs have a standardized lifecycle: 1) An initial setup sequence by the operating system to allocate memory and resources. 2) Subsequent execution of instructions as a process. 3) System resources are released as the process terminates. In the case of PLCs, programs run as proprietary executables on top of a vendor runtime process. The runtime is responsible for executing the IEC 61131-3 program as part of the scan cycle at a predefined frequency configured by the operator [1]. In IEC 61131-3 programs, variables are initialized once by the runtime and are then mutated by program logic until the PLC is shut off. C. Vulnerabilities in PLC Software Previous work has explored how ST, similar to C and C++, is a memory-unsafe language and is inherently vulnerable to various memory-exploitation bugs [21]. A common example of this is arrays with an absence of bound checks prior to reading from memory, even when indexes may be greater than the size 2"
+      },
+      {
+        "source": "selected",
+        "value": "Industrial Control Systems (ICS) ensure the automation and safe operation of critical industry, energy, and commerce processes. Despite its importance, ICS code often cannot be evaluated as rigorously as software on traditional computing platforms, as existing code evaluation tools cannot readily interface with the closed ICS ecosystem. Moreover, the use of domain-specific languages, the lack of open and extensible compilers, and the deficiency of techniques developed for ICSspecific nuances, among other challenges, hinder the creation of specialized tools. This paper addresses these challenges by introducing ICSQuartz, the first native fuzzer for IEC 61131-3 Structured Text (ST), a standardized Programmable Logic Controller (PLC) programming language. Native support eliminates the necessity of any vendor or architecture-specific requirements. ICSQuartz outperforms the fastest state-of-the-art fuzzers in the ICS space by more than an order of magnitude in executions per second. In addition to natively fuzzing ST code, we introduce novel mutation strategies to ICSQuartz that uncover vulnerabilities due to the scan cycle architecture of ST programs-a nuance that traditional fuzzers do not consider. Using ICSQuartz, we perform the first large-scale fuzzing campaign of real-world ICS libraries, resulting in multiple vulnerability disclosures and bug fixes. In addition to vulnerabilities, ICSQuartz discovered a bug in an open-source ST compiler. These findings underscore the imperative impact of ICSQuartz in the ICS domain."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Corban Villa",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Constantine Doumanidis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Hithem Lamri",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Prashant Hari",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Narayan Rajput",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "InterSystems, Cambridge, MA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Michail Maniatakos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Corban Villa",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Constantine Doumanidis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Hithem Lamri",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Prashant Hari",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Narayan Rajput",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "InterSystems, Cambridge, MA, USA"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Michail Maniatakos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Center for Cyber Security, New York University Abu Dhabi, Abu Dhabi, UAE"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 95,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "ICSQuartz: Scan Cycle-Aware and Vendor-Agnostic Fuzzing for Industrial Control Systems",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/icsquartz-scan-cycle-aware-and-vendor-agnostic-fuzzing-for-industrial-control-systems/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Corban Villa",
+          "affiliations": [
+            "New York University Abu Dhabi"
+          ]
+        },
+        {
+          "name": "Constantine Doumanidis",
+          "affiliations": [
+            "New York University Abu Dhabi"
+          ]
+        },
+        {
+          "name": "Hithem Lamri",
+          "affiliations": [
+            "New York University Abu Dhabi"
+          ]
+        },
+        {
+          "name": "Prashant Hari Narayan Rajput",
+          "affiliations": [
+            "InterSystems"
+          ]
+        },
+        {
+          "name": "Michail Maniatakos",
+          "affiliations": [
+            "New York University Abu Dhabi"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 4,
+      "country_values_restored": 4,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

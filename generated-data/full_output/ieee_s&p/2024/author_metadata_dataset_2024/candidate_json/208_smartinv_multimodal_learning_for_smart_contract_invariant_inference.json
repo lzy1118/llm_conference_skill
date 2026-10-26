@@ -1,0 +1,173 @@
+{
+  "paper_id": "208_smartinv_multimodal_learning_for_smart_contract_invariant_inference",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SMARTINV: Multimodal Learning for Smart Contract Invariant Inference"
+      },
+      {
+        "source": "selected",
+        "value": "SMARTINV: Multimodal Learning for Smart Contract Invariant Inference"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Smart contracts are software programs that enable diverse business activities on the blockchain. Recent research has identified new classes of \"machine un-auditable\" bugs that arise from source code not meeting underlying transaction contexts. Existing detection methods require human understanding of underlying transaction logic and manual reasoning across different sources of context (i.e., modalities), such as code and natural language specifying the expected transaction behavior. To automate the detection of \"machine un-auditable\" bugs, we present SMARTINV, an accurate and fast smart contract invariant inference framework. Our key insight is that the expected behavior of smart contracts, as specified by invariants, relies on understanding and reasoning across multimodal information, such as source code and natural language. We propose a new finetuning and prompting strategy to foundation models, Tier of Thought (ToT), to reason across multiple modalities of smart contracts and to generate invariants. SMARTINV then localizes potential vulnerabilities by checking the violation of those generated invariants. We evaluate SMARTINV on real-world smart contract bugs that resulted in financial losses over the past 2.5 years (from January 1, 2021 to May 31, 2023). Extensive evaluation shows that SMARTINV can generate useful invariants to effectively localize \"machine un-auditable\" bugs, from which SMARTINV uncovers 119 zero-day bugs. We sampled eight bugs and reported them to the respective developers. Six vulnerabilities were quickly fixed by the developers, five of which are confirmed as \"high severity.\" 2217 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Smart contracts are software programs that enable diverse business activities on the blockchain. Recent research has identified new classes of “machine un-auditable” bugs that arise from source code not meeting underlying transaction contexts. Existing detection methods require human understanding of underlying transaction logic and manual reasoning across different sources of context (i.e., modalities), such as code and natural language specifying the expected transaction behavior. To automate the detection of “machine un-auditable” bugs, we present S MART INV, an accurate and fast smart contract invariant inference framework. Our key insight is that the expected behavior of smart contracts, as specified by invariants, relies on understanding and reasoning across multimodal infor- mation, such as source code and natural language. We propose a new finetuning and prompting strategy to foundation models, Tier of Thought (ToT), to reason across multiple modalities of smart contracts and to generate invariants. S MART INV then localizes potential vulnerabilities by checking the violation of those generated invariants. We evaluate S MART INV on real-world smart contract bugs that resulted in financial losses over the past 2.5 years (from January 1, 2021 to May 31, 2023). Extensive evaluation shows that S MART INV can generate useful invariants to effectively localize “machine un-auditable” bugs, from which S MART INV uncovers 119 zero-day bugs. We sampled eight bugs and reported them to the respective developers. Six vulnerabilities were quickly fixed by the developers, five of which are confirmed as “high severity.” 1. Introduction Bugs in smart contracts are often serious vulnerabilities that lead to significant loss of funds. In 2022 alone, $2 billion was lost due to smart contract bugs [62], [92]. What makes smart contract bugs particularly damaging is the fact that once a smart contract is deployed, it becomes immutable, making it difficult to fix any vulnerabilities in the code. Recent research has identified a new category of bugs known as “machine un-auditable” functional bugs, which are prevalent in smart contracts (Table 1). These bugs, as their name suggests, cannot be reliably detected using existing automated tools that rely on pre-defined bug patterns [92]. Unlike implementation bugs (e.g., integer overflows), which often exhibit universal patterns that can be easily checked, functional bugs arise from a failure to reason about extensive TABLE 1: Statistics on bountied vulnerabilities of Solidity- based smart contracts (from September, 2021 to May, 2023) Implementation Functional Others Total 929 (17.52%) 4,305 (81.20%) 68 (1.28%) 5,302 domain-specific properties, e.g., a specific transaction context. Detecting functional bugs requires nontrivial reasoning across multiple sources of information or modalities, such as source code and transaction logic additionally implied in natural language documentation. Existing smart contract bug detection tools rely heavily on human experts to express their knowledge of transaction context into bug specifications [7], [32], [70], [87], and are thus often tailored for specific bug types and do not scale to a large number of programs. While some approaches automate the construction of bug specifications [88], they are limited to those leaving explicit patterns in the transaction history and do not generalize to most functional bugs that would otherwise require a deep understanding of the expected transaction context. Listing 1 shows an example of a functional bug. The getPrice() function computes price by the ratio of token0 and token1 balances in address(this). Ide- ally, price is expected to remain stable within a range. However, as token0 and token1 are state variables, i.e., static variables, they can be easily manipulated by external parties. Therefore, when getPrice() is invoked to return price, its return value can fluctuate significantly, leading to the potential exploit of unexpected arbitrage on top of the newly manipulated price difference. The functional bug of getPrice() stems from not effectively meeting transaction requirements on the intended range of price. For example, inflating token1's balance via another malicious contract can throw price off its intended range (see §2.2 for details). Such a functional bug cannot be detected without first understanding how getPrice() would participate in the transactions. We present S MART INV, an automated framework based on foundation models to infer smart contract invariants and to detect bugs at scale. While there are machine learning approaches for generating invariants [31], [46], [64], [86], [89], they predate foundation models, and thus follow the typical paradigm in hand-engineering limited features that can be helpful for contract invariant inference. The unique 2217 DOI 10.1109/SP54263.2024.00126 1 u i n t p r i c e ; 2 IERC20 token0 , t o k e n 1 ; 3 4 f u n c t i o n g e t P r i c e ( ) { 5 / / f u n c t i o n a l bug : p r i c e m a n i p u l a t i o n 6 p r i c e = t o k e n 1 . balanceOf ( address ( t h i s) ) / t o k e n 0 .balanceOf ( address ( t h i s) ) ; 7 } Listing 1: Functional bug example. An attacker can pump up price by inflating token1's balance. feature of SMART INV, which differentiates from existing analyzers, is that SMART INV leverages foundation models to reason about multimodal inputs, such as source code and natural language (comments, meaningful function signatures, and documentation describing transaction scenarios). Founda- tion models are particularly suited for analyzing multimodal information and domain-specific bug detection, because they are pretrained on both natural language texts and code, and can be further finetuned for domain-specific knowledge. To reason across multiple modalities, we develop Tier of Thought (ToT), a new prompting strategy, that can be used to finetune and elicit explicit reasoning of foundation models on the program structure of smart contracts. In contrast to other foundation-model-based approaches [13], [16], [72], ToT applies universally across contract types, eliminating the need for bug-specific reasoning heuristics. ToT breaks down the process of invariant generation into intermediate abstract tiers based on the typical reasoning steps that human analyzers would take, such as predicting critical program points to check invariants, generating invariants associated with the predicted program points, and ranking the invariants by predicting their likelihood of preventing bugs. Based on the ranked invariants, SMART INV can efficiently verify the invariants by prioritizing the invariants that are more likely bug-preventive using a bounded model checker without exhaustively enumerating all of them. Contributions. We make the following contributions: • To the best of our knowledge, SMART INV proposes the first finetuning approach that can both infer invariants and detect bugs by reasoning across multiple smart con- tract modalities, critical to detecting functional bugs pre- deployment. • We design a new prompting approach to foundation models, Tier of Thought (ToT), to finetune and elicit their reasoning by following the thought process of human analyzers, significantly improving the accuracy of the generated invariants and detected bugs while reducing runtime overhead. • We unite the potential of finetuning foundation models with the soundness of formal verification to mitigate hallucination. One key benefit of inferring invariants using foundation models is that the inferred invariants can be validated by verification tools. • Our extensive evaluation demonstrates that SMART INV is effective in invariant generation and functional bug localization. Notably, SMART INV has found 119 zero-day TABLE 2: SMART INV detected bug classification. Modalities: the minimum modalities required to detect a given bug class. SC: source code. NL: natural language. Pattern Detectable: a bug class can be detected by identifying low-level coding patterns. ToT Detectable: a bug class can be detected by Tier of Thought. : a modality is sometimes required. Modalities Pattern Detectable ToT DetectableSC NL Implementation Bugs Reentrancy (RE) [44] \" ✗ \" \" Integer overflow/underflow (IF) [12] \" ✗ \" \" Arithmetic flaw (AF) [67] \" ✗ \" \" Suicidal contract (SC) [54] \" ✗ \" \" Ether leakage (EL) [54] \" ✗ \" \" Insufficient gas (IG) [51] \" ✗ \" \" Incorrect visibility/owner (IVO) [28] \" ✗ \" \" Functional Bugs Price manipulation (PM) [84] \" \" ✗ \" Privilege escalation (PE) [11] \" \" ✗ \" Atomicity violation (A V) [66] \" \" ✗ \" Business logic flaw (BLF) [27] \" ✗ \" Inconsistent state update (IS) [92] \" \" ✗ \" Cross bridge (CB) [88] \" ✗ \" ID uniqueness violation (IDV) [92] \" \" ✗ \" bugs in the wild. We sampled eight bugs and reported them to the respective developers. Six vulnerabilities were quickly fixed by the developers, five of which are confirmed as “high severity.” • We collect a large (2,173 samples) annotated smart contract invariant dataset for training and 89,621 real-world con- tracts for bug detection. We release the datasets and the tool for public use at https://github.com/columbia/SmartInv. 2. Overview This section introduces the necessary background ( §2.1), two motivating examples ( §2.2), followed by an overview of S MART INV's workflow (§2.3). 2.1. Background Smart Contract Modalities. Smart contract modalities can be broadly understood as sources of information under which bug-preventive invariants are generated. Accordingly, smart contracts contain two main modalities: i) contract source code; ii) natural language, usually in the form of implementation-related comments and domain-specific text description, e.g., documentation. From the contracts we studied in Table 1, 5,265 contracts (99.31%) contain natural language related to code logic and expected transaction behavior. Existing invariants generators [9] and bug detectors [10], [69], [70] focus only on a single modality, namely contract source code. To our knowledge, SMART INV is the 2218"
+      },
+      {
+        "source": "selected",
+        "value": "Smart contracts are software programs that enable diverse business activities on the blockchain. Recent research has identified new classes of \"machine un-auditable\" bugs that arise from source code not meeting underlying transaction contexts. Existing detection methods require human understanding of underlying transaction logic and manual reasoning across different sources of context (i.e., modalities), such as code and natural language specifying the expected transaction behavior. To automate the detection of \"machine un-auditable\" bugs, we present SMARTINV, an accurate and fast smart contract invariant inference framework. Our key insight is that the expected behavior of smart contracts, as specified by invariants, relies on understanding and reasoning across multimodal information, such as source code and natural language. We propose a new finetuning and prompting strategy to foundation models, Tier of Thought (ToT), to reason across multiple modalities of smart contracts and to generate invariants. SMARTINV then localizes potential vulnerabilities by checking the violation of those generated invariants. We evaluate SMARTINV on real-world smart contract bugs that resulted in financial losses over the past 2.5 years (from January 1, 2021 to May 31, 2023). Extensive evaluation shows that SMARTINV can generate useful invariants to effectively localize \"machine un-auditable\" bugs, from which SMARTINV uncovers 119 zero-day bugs. We sampled eight bugs and reported them to the respective developers. Six vulnerabilities were quickly fixed by the developers, five of which are confirmed as \"high severity.\" 2217 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sally Junsong Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, NY"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Kexin Pei",
+          "email": "kpei@cs.uchicago.edu",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, NY",
+            "The University of Chicago, IL"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Junfeng Yang",
+          "email": "junfeng@cs.columbia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, NY"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Sally Junsong Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, NY †The University of Chicago, IL"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Kexin Pei",
+          "email": "kpei@cs.uchicago.edu",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, NY †The University of Chicago, IL"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Junfeng Yang",
+          "email": "junfeng@cs.columbia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, NY †The University of Chicago, IL"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 117,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SMARTINV: Multimodal Learning for Smart Contract Invariant Inference",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sally Junsong Wang",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Kexin Pei",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Junfeng Yang",
+          "affiliations": [
+            "Columbia University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

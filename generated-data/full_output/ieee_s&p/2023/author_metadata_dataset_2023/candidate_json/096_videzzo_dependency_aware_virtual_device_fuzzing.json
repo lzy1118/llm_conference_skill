@@ -1,0 +1,229 @@
+{
+  "paper_id": "096_videzzo_dependency_aware_virtual_device_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "VIDEZZO: Dependency-aware Virtual Device Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "VIDEZZO: Dependency-aware Virtual Device Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "A virtual machine interacts with its host environment through virtual devices, driven by virtual device messages, e.g., I/O operations. By issuing crafted messages, an adversary can exploit a vulnerability in a virtual device to escape the virtual machine, gaining host access. Even though hundreds of bugs in virtual devices have been discovered, coverage-based virtual device fuzzers hardly consider intra-message dependencies (a field in a virtual device message may be dependent on another field) and inter-message dependencies (a message may depend on a previously issued message), thus resulting in limited scalability or efficiency. VIDEZZO, our new dependency-aware fuzzing framework for virtual devices, overcomes the limitations of existing virtual device fuzzers by annotating intra-message dependencies with a lightweight grammar, and by self-learning inter-message dependencies with new mutation rules. Specifically, VIDEZZO annotates message dependencies and applies three categories of message mutators. This approach avoids heavy manual effort to analyze specifications and speeds up the slow exploration by satisfying dependencies, resulting in a scalable and efficient fuzzer that boosts bug discovery in virtual devices. In our evaluation, VIDEZZO covers two hypervisors, four architectures, five device categories, and 28 virtual devices, and reaches competitive coverage faster. Moreover, VIDEZZO successfully finds 24 existing and 28 new bugs across diverse bug types. We are actively engaging with the community with 7 of our"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "A virtual machine interacts with its host environment through virtual devices, driven by virtual device messages, e.g., I/O operations. By issuing crafted messages, an adversary can exploit a vulnerability in a virtual device to escape the virtual machine, gaining host access. Even though hundreds of bugs in virtual devices have been discovered, coverage-based virtual device fuzzers hardly consider intra-message dependencies (a field in a virtual device message may be dependent on another field) and inter-message dependencies (a message may depend on a previously issued message), thus resulting in limited scalability or efficiency. VIDEZZO, our new dependency-aware fuzzing framework for virtual devices, overcomes the limitations of existing virtual device fuzzers by annotating intra-message dependencies with a lightweight grammar, and by self-learning inter-message dependencies with new mutation rules. Specifically, V IDEZZ O annotates message dependencies and applies three categories of message mutators. This approach avoids heavy manual effort to analyze specifications and speeds up the slow exploration by satisfying dependencies, resulting in a scalable and efficient fuzzer that boosts bug discovery in virtual devices. In our evaluation, V IDEZZO covers two hypervisors, four architectures, five device categories, and 28 virtual devices, and reaches competitive coverage faster. Moreover, V IDEZZO successfully finds 24 existing and 28 new bugs across diverse bug types. We are actively engaging with the community with 7 of our submitted patches already accepted. 1. Introduction Hypervisors (virtual machine monitors-VMMs) are widely deployed in cloud infrastructure. They transfer data and instructions from guest operating systems to the host environment through virtual devices that are driven by I/O operations (Port I/O-PIO or Memory-Mapped I/O-MMIO). These I/O operations follow specific protocols and thus are called virtual device messages . Virtual devices are the most prominent attack surface in hypervisors. Hypervisors isolate an untrusted guest from the hypervisor and all other virtual machines. A key security property is that a guest cannot escape from its virtual machine. However, hypervisors are complex pieces of software and researchers have discovered ways to escape them (e.g., QEMU, VirtualBox, and VMWare), with 41.5% (22/53) of these escapes due to bugs in virtual devices [ 1]. According to our CVE survey [ 2], 57.4% (252/439) of the vulnerabilities in QEMU were found in virtual devices. The security of virtual devices has been under heavy scrutiny [3], [4], [5], [6], [7], [8], [9], [10]. Since VFD [ 7] in 2017, fuzzing has become the dominant approach as it implicitly abstracts device complexity through concrete executions, outperforming symbolic approaches. Later, a platform-independent black-box hypervisor fuzzer [ 8] dis- covered multiple bugs due to its high throughput and multi- dimension inputs. Fuzzing of virtual devices advanced further when started considering coverage feedback [ 9] and guest- provided data through DMA channels [9], [10], [11]. Despite hundreds of bugs in virtual devices, existing so- lutions are limited due to two, so far, overlooked challenges. Intra-Message Dependency: a field in a virtual device message may be dependent on another field . Guests communicate with virtual devices through virtual device messages. Each virtual device message follows a given message structure and encodes message fields that have different semantics, e.g., a four-byte scalar or a pointer. Particularly, a field may be dependent on another field. For example, a bit in a data field may tell a virtual device the type of pointer field. Virtual device fuzzers unaware of the dependencies are slower in reaching certain code or may even miss critical functionalities. Inter-Message Dependency: a message may depend on a previously issued message . A virtual device message may modify the internal state of a virtual device and can be chained to form a sequence of complex interactions. In a virtual device, two messages might go through different paths but are entangled by the device-internal state, which implies an ordered sequence of messages. Mutators unaware of these dependencies may violate order constraints, which wastes time and hardware resources. Existing solutions have shown the importance of virtual device fuzzing but were unaware of these two challenges and suffered from either limited scalability or efficiency. Scalability. A scalable virtual device fuzzer requires low manual effort and a flexible system design to support different hypervisors, architectures, and virtual device cat- egories. N YX [9] introduces two configurations based on the same frontend: N YX-L EGACY and N YX-SPEC (If an argument applies to both N YX-LEGACY and N YX-SPEC, we refer to N YX). Compared to the former that only involves regular PIO/MMIO operations, the latter adds a manually encoded data structure to support object manipulation, e.g., adding allocation of linked lists for XHCI. Specifically, when handling guest-provided data through DMA channels, N YX- SPEC requires human effort to encode the specification of a given virtual device, achieving high code coverage quickly 13228 DOI 10.1109/SP46215.2023.00136 for supported targets but involving significant human effort for new virtual devices. Efficiency. An efficient virtual device fuzzer must quickly explore code coverage. Besides considering specifications to speed up code coverage exploration, NYX, V-SHUTTLE [10], and MORPHUZZ [11] miss other opportunities because they suffer from either too large or too small mutation granularity. In particular, NYX uses a generic graph that encodes multiple virtual device messages in each node. Since it avoids crossover mutation among nodes, this approach limits NYX in exploring more interleaved behaviors. V- SHUTTLE and MORPHUZZ , instead, mutate bytes randomly, thus violating the semantics of two consecutive messages since they ignore their structural representation. Our goal is to overcome the two challenges and achieve both scalability and efficiency in fuzzing virtual devices based on two observations. First, we notice that source code encodes message semantics, serving as a reference for message structures. Widely-used hypervisors (QEMU and VirtualBox) are open-source, encoding abundant information about how to interact with virtual devices. Moreover, source code is amenable to automatic analysis and inherently less labor- intensive to validate than complex specifications. Second, well-formed messages exercise more coverage and provide better feedback to the fuzzer for future mutations. Our Approach. We introduce a new dependency-aware virtual device fuzzing framework VIDEZZO (Virtual Device Fuzzer), which considers both intra-message and inter- message dependencies. Lightweight Intra-Message Annotation. To support intra- message dependencies, we design a novel and lightweight de- scriptive grammar (Section 3.1). When reviewing the source code, a security analyst of a virtual device may record intra- message annotation with our descriptive grammar to allow a fuzzer to know how to handle intra-message dependencies. We argue that our lightweight grammar is a good trade-off between the full grammar implementation from the hardware specification used in NYX-S PEC and the heuristic-based approach used in V-SHUTTLE and MORPHUZZ . We semi- automate the annotation extraction. Low manual effort here supports the scalability. Novel Inter-Message Mutators. To handle inter-message dependencies, we design three new categories of mutators based on a virtual device message as a mutation atom. These mutators create a single message or form message sequences leveraging the genetic nature of fuzzers to provide consistency (message-level), diversity (sequence-level), and semantics (group-level) (Section 3.2). These message-aware mutators not only self-learn the inter-message dependencies but also keep the advantages of different mutation granularity. Based on the above two techniques, we present the design of VIDEZZO in Section 4. VIDEZZO has two parts: VIDEZZO-C ORE and VIDEZZO-VMM bindings. The former manages fuzzing input, parses it into virtual device messages, and processes these messages according to our design. The latter, VIDEZZO-VMM , registers targeted vir- tual devices, initializes the guest VMM without running any operating system, and dispatches VMM-specific messages. VIDEZZ O-C ORE is VMM-agnostic, while VIDEZZO-VMM requires customization for each new VMM. The flexible system design enables the scalability of V IDEZZO. Importantly, VIDEZZ O-CORE enables persistent mode, avoiding a heavy fork server to improve performance. We leverage reflective delta-debugging to address side effects due to the accumulated internal state. Specifically, VIDEZZ O stores all intermediate test cases and supports delta debug- ging [12] to reduce the collected seeds to a minimal stable Proof of Concept (PoC). Compared to previous work, VIDEZZ O is both scalable and efficient. VIDEZZ O currently supports two hypervisors, i.e., QEMU and VirtualBox, four architectures, i.e., i386, x86 64, AArch32, AArch64, 28 virtual devices in five device categories, i.e., USB, net, display, audio, and storage, and reaches competitive coverage faster. VIDEZZO is also effective in finding bugs. We successfully reproduced 24 existing bugs and found 28 new bugs across diverse bug types with 1 CVE assigned so far. We have been actively engaging with the QEMU and VirtualBox communities and provided 7 accepted patches. Contributions. VIDEZZ O's main contributions are: • Design of a new scalable, efficient, and dependency-aware virtual device fuzzing framework that fully explores intra- and inter-message dependencies. • A descriptive grammar to encode intra-message dependen- cies and three new categories of message-aware mutators for inter-message dependencies, boosting virtual device coverage and fuzzing speed. • Instruction of persistent fuzzing for virtual devices while handling aggregate state through reflective delta- debugging. • Evaluation of VIDEZZ O against the state-of-the-art. In addition to deep coverage, we have discovered 28 new bugs, together with 7 accepted patches. 2. Background and Motivation Hardware interacts with software through hardware reg- isters and interrupts. The hardware registers are mapped to PIO or/and MMIO space, allowing software to control the hardware via PIO/MMIO read/write operations, i.e., in/out and load/store. Interrupts, in reverse, are signals from the hardware that inform the software of asynchronous tasks requiring attention. A heavy asynchronous task is to transfer a large chunk of data between the hardware and the main memory through DMA channels. Virtual devices implement I/O requests. Specifically, the hypervisor intercepts PIO and MMIO operations from the guest and forwards their requests to predefined callbacks in the virtual device. For instance, the MMIO write oper- ation of an EHCI register is redirected into the callback ehci_opreg_write() in QEMU, as shown in Figure 1. Next, the control flow goes to different specialized handlers based on the value of addr. Importantly, the hidden implementation definitely encodes the information about how hardware works, which is helpful for virtual device fuzzing. PIO and MMIO operations follow protocols to drive virtual devices and thus can be called virtual device messages . 23229"
+      },
+      {
+        "source": "selected",
+        "value": "A virtual machine interacts with its host environment through virtual devices, driven by virtual device messages, e.g., I/O operations. By issuing crafted messages, an adversary can exploit a vulnerability in a virtual device to escape the virtual machine, gaining host access. Even though hundreds of bugs in virtual devices have been discovered, coverage-based virtual device fuzzers hardly consider intra-message dependencies (a field in a virtual device message may be dependent on another field) and inter-message dependencies (a message may depend on a previously issued message), thus resulting in limited scalability or efficiency. VIDEZZO, our new dependency-aware fuzzing framework for virtual devices, overcomes the limitations of existing virtual device fuzzers by annotating intra-message dependencies with a lightweight grammar, and by self-learning inter-message dependencies with new mutation rules. Specifically, VIDEZZO annotates message dependencies and applies three categories of message mutators. This approach avoids heavy manual effort to analyze specifications and speeds up the slow exploration by satisfying dependencies, resulting in a scalable and efficient fuzzer that boosts bug discovery in virtual devices. In our evaluation, VIDEZZO covers two hypervisors, four architectures, five device categories, and 28 virtual devices, and reaches competitive coverage faster. Moreover, VIDEZZO successfully finds 24 existing and 28 new bugs across diverse bug types. We are actively engaging with the community with 7 of our"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Qiang Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Flavio Toffalini",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yajin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Mathias Payer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Qiang Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Flavio Toffalini",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yajin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Mathias Payer",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhejiang University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 123,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.2,
+        "candidates": [
+          {
+            "name": "I E",
+            "block_id": "pdf:p1:b2",
+            "font_size": 11.2,
+            "support_ids": []
+          },
+          {
+            "name": "Qiang Liu , Flavio Toffalini , Yajin Zhou",
+            "block_id": "pdf:p1:b4",
+            "font_size": 11.0,
+            "support_ids": []
+          },
+          {
+            "name": ", Mathias Payer",
+            "block_id": "pdf:p1:b5",
+            "font_size": 11.0,
+            "support_ids": []
+          }
+        ],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Mathias Payer",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "VIDEZZO: Dependency-aware Virtual Device Fuzzing",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Qiang Liu",
+          "affiliations": [
+            "Zhejiang University, China; EPFL, Switzerland"
+          ]
+        },
+        {
+          "name": "Flavio Toffalini",
+          "affiliations": [
+            "EPFL, Switzerland"
+          ]
+        },
+        {
+          "name": "Yajin Zhou",
+          "affiliations": [
+            "Zhejiang University, China"
+          ]
+        },
+        {
+          "name": "Mathias Payer",
+          "affiliations": [
+            "EPFL, Switzerland"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

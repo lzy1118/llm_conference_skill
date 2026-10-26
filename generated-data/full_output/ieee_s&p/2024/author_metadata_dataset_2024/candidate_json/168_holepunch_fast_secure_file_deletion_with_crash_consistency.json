@@ -1,0 +1,341 @@
+{
+  "paper_id": "168_holepunch_fast_secure_file_deletion_with_crash_consistency",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "HOLEPUNCH: Fast, Secure File Deletion with Crash Consistency"
+      },
+      {
+        "source": "selected",
+        "value": "HOLEPUNCH: Fast, Secure File Deletion with Crash Consistency"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "A file system provides secure deletion if, after a file is deleted, an attacker with physical possession of the storage device cannot recover any data from the deleted file. Unfortunately, secure deletion is not provided by commodity file systems. Even file systems which explicitly desire to provide secure deletion are challenged by the subtleties of hardware controllers on modern storage devices; those controllers obscure the mappings between logical blocks and physical blocks, silently duplicate physical blocks, and generally make it hard for host-level software to make reliable assumptions about how file data is kept on the device. State-of-the-art frameworks for secure deletion also have no crash consistency, meaning that an ill-timed power outage or software fault will desynchronize keys and the associated encrypted file data, corrupting the file system. In this paper, we present HOLEPUNCH, a new software-level approach for implementing secure deletion. HOLEPUNCH treats the storage device as a black box, providing secure deletion via cryptographic erasure. HOLEPUNCH uses per-file keys to transparently encrypt outgoing file writes and decrypt incoming file reads, ensuring that all physical data in the storage device is always encrypted. HOLEPUNCH uses puncturable pseudorandom functions (PPRFs) to quickly access file keys; upon the deletion of file f , HOLEPUNCH updates the PPRF so that, even if the PPRF is recovered, the PPRF cannot be used to generate f 's key. By using PPRFs instead of the key trees leveraged by prior work, HOLEPUNCH reduces both the memory pressure caused by key management and the number of disk IOs needed to access files. HOLEPUNCH stores its master key in secure TPM storage, and uses a novel journaling scheme to provide crash consistency between TPM state and on-disk state. 2705 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "A file system provides secure deletion if, after a file is deleted, an attacker with physical possession of the storage device cannot recover any data from the deleted file. Un- fortunately, secure deletion is not provided by commodity file systems. Even file systems which explicitly desire to provide secure deletion are challenged by the subtleties of hardware controllers on modern storage devices; those controllers obscure the mappings between logical blocks and physical blocks, silently duplicate physical blocks, and generally make it hard for host-level software to make reliable assumptions about how file data is kept on the device. State-of-the-art frameworks for secure deletion also have no crash consistency, meaning that an ill-timed power outage or software fault will desynchronize keys and the associated encrypted file data, corrupting the file system. In this paper, we present H OLEPUNCH , a new software-level approach for implementing secure dele- tion. H OLEPUNCH treats the storage device as a black box, providing secure deletion via cryptographic erasure. HOLEPUNCH uses per-file keys to transparently encrypt outgoing file writes and decrypt incoming file reads, ensur- ing that all physical data in the storage device is always encrypted. H OLEPUNCH uses puncturable pseudorandom functions (PPRFs) to quickly access file keys; upon the deletion of file f, H OLEPUNCH updates the PPRF so that, even if the PPRF is recovered, the PPRF cannot be used to generate f's key. By using PPRFs instead of the key trees leveraged by prior work, H OLEPUNCH reduces both the memory pressure caused by key management and the number of disk IOs needed to access files. H OLEPUNCH stores its master key in secure TPM storage, and uses a novel journaling scheme to provide crash consistency between TPM state and on-disk state. 1. Introduction File systems allow users to read and write data kept on an underlying storage device. An important file system operation is deletion, i.e., the removal of a file from a storage device. A file system provides secure deletion if, post-deletion, a file's data is unrecoverable by an attacker who obtains unrestricted access to the storage device. Secure deletion is a fundamental security property, en- suring the confidentiality of sensitive data (§2). However, commodity file systems often do not provide secure deletion. For example, on popular Linux file systems like EXT 4, deleting a file will mark the file's on-device data blocks as unallocated, but will not synchronously overwrite the contents of those blocks; the original data is only replaced if the file system eventually chooses to allocate the blocks to a new file. Even when users take explicit action to overwrite old file data (e.g., by using the Linux shred command to zero-fill deleted files), the solid-state drives (SSDs) common in modern laptops and desktops implement wear-leveling schemes [11]. Wear leveling evenly distributes writes across physical storage pages, regardless of the logical storage pages that are targeted by file system IOs. Wear leveling avoids write hot spots (and thus premature failures) for any particular SSD page; however, wear leveling means that, even if a file system or shred-like tool tries to explicitly overwrite a file's data, the file's data may continue to persist in the underlying SSD pages. Wear leveling is typically implemented via a hardware controller in the SSD itself. From the perspective of host software like an operating system, the controller is a black box. Early attempts to implement secure deletion via host- level software leveraged assumptions about how controllers worked [22], e.g., to allow the host to guess how logical stor- age regions are mapped to physical ones. However, for any given storage device, such assumptions might have never been true, or might have been true at some point but sub- sequently invalidated by an update to device firmware [20]. For example, prior attempts at secure deletion often assumed that each logical file block maps to a single physical block; this assumption of non-duplication is false on SSDs. Subsequent research demonstrated that host-level soft- ware could indeed provide secure deletion for black-box storage [20], [23]. To do so, the host software must leverage a small, trusted storage device like a TPM chip [29] that can generate true random numbers (e.g., to use as keys), store small amounts of information (e.g., keys) in non-volatile memory, and resist physical tampering that would otherwise interfere with the first two tasks. Host-level software only exchanges encrypted data with the black-box storage device, keeping the relevant keys in trusted storage, and achieving secure file deletion by discarding a deleted file's key in the trusted storage. Unfortunately, trusted devices like a TPM chip or a smart card have limited storage space, requiring host-level software to carefully manage that space to store key material for a large number of files [6], [20], [23]. For example, in ERASER [20], host software keeps an encrypted file-key tree in the untrusted storage device, with trusted hardware only storing the master key which decrypts the tree. This strategy 2705 DOI 10.1109/SP54263.2024.00182 requires E RASER to issue IOs that scale with the logarithm of the file system size; in practice, this overhead significantly degrades performance for IO-intensive workloads, particu- larly for non-SSD storage like hard drives that suffer from mechanical access penalties. To reduce IO amplification, ERASER stores the upper layers of the file-key tree (FKT) in memory, but the result is non-trivial memory requirements (roughly 65 MB per 1 TB of file system data). A second problem with the traditional FKT approach involves crash consistency. During a file creation or file deletion, host-level software must update the FKT on the untrusted storage device. During rotation of the master key, software must update both the trusted hardware and the untrusted storage. If a machine crashes or suffers a power outage during these critical operations, keys may become inconsistent with file system state in the untrusted device, causing some files to become irrevocably lost. In this paper, we introduce H OLEPUNCH , a block device driver1 that provides memory-efficient, crash-consistent se- cure deletion. H OLEPUNCH treats the untrusted storage de- vice as a black box. To access a file, H OLEPUNCH evaluates a puncturable pseudorandom function (PPRF) at a specific point, and then performs a single extra disk I/O to retrieve an encrypted per-file key that is decrypted using the output of the PPRF. To delete a file, HOLEPUNCH performs a puncture operation on the PPRF key, causing the PPRF to “forget” how to generate the associated per-file key. The PPRF state grows in size after a puncture, and the new state must be written to untrusted storage to reflect the file deletion. A naive implementation of H OLEPUNCH would require per-puncture IO costs that grow linearly with each file deletion. To avoid this problem, H OLEPUNCH (1) periodically rotates the PPRF state to reset its size, and (2) leverages a tree-like structure to make the on-disk PPRF state efficiently updateable. H OLEPUNCH uses a TPM to store the encryption key for the root of the tree, with each leaf containing an encrypted chunk of the PPRF key. However, HOLEPUNCH 's in-memory overheads are less than those of E RASER because H OLEPUNCH 's PPRF allows it to efficiently generate many keys on-the-fly, unlike E RASER (which often must explictly store keys in memory to avoid the IO costs of fetching them from disk). The lower memory footprint is especially beneficial for machines with large disks, e.g., datacenter servers whose individual drives store tens of TBs (§6.2). Unlike E RASER , H OLEPUNCH also pro- vides crash consistency by carefully updating TPM state and on-disk structures using a journaling scheme. H OLEPUNCH leverages deletion batching (§5.5) to reduce the IO cost of secure deletion without sacrificing the crash consistency provided by journaling. In summary, H OLEPUNCH is a software-level approach for secure deletion that simultaneously: • makes no assumptions about how storage devices in- ternally manage physical regions, 1. A file system like EXT 4 or NTFS sits atop a block driver that directly interacts with a storage device. The file system implements higher-level abstractions like files and directories atop the block interface. • reduces both the memory space and storage IOs needed to manage file keys, and • provides crash consistency, ensuring that the file system is usable after a crash or power outage occurs. Given these properties, we believe that H OLEPUNCH is the first practical system for secure deletion of file system data. 2. Background Secure deletion frameworks are increasingly relevant for several reasons. First, in recent years, governments have begun to issue laws that restrict how businesses may collect and retain user data. For example, the European Union's General Data Protection Regulation (GDPR) [8] and the California Consumer Privacy Act (CCPA) [26] both confer users with a “right to be forgotten.” This right allows a user to demand that a business delete all information that the business stores about the user. The right to be forgotten is a boon for privacy advocates, but strong technical mechanisms for implementing this right are crucial for the practical enforcement of GDPR-style regulations. Secure deletion via cryptographic erasure would be a promising solution if challenges involving key management, performance, and crash consistency could be solved. Secure deletion is attractive for non-regulatory reasons as well, because improper sanitization of storage media intrinsically poses a security risk to both individuals and organizations. For example, the Pennsylvania Department of Labor and Industry accidentally resold unsanitized comput- ers that contained thousands of state employee records [30]. The United States Veterans Administration also gave away improperly-sanitized hard disks that contained sensitive pa- tient information like credit card numbers [12]. If a com- puter does not enable secure deletion technology by default, many individuals and organizations will not bother to sani- tize storage devices. 2.1. Prior Work on Encrypted Storage Encrypted storage systems like B ITLOCKER [16] and DM-CRYPT [19] aspire to guarantee that storage data at rest is encrypted. However, as we explained in Section 1, host- level software lacks insight into how storage controllers work, meaning that host-level software (whether residing in the OS or in user-space tools) cannot provide strong guarantees about secure deletion. Some storage devices natively implement encryption. In these “self-encrypting drives” (SEDs), all cleartext writes from the host are automatically encrypted by the device before they become persistent on the device; all data re- trieved from the device is automatically decrypted by the device before being returned to the host. SEDs implement the ATA security feature specification [27] or the newer TCG Opal specification [28]. However, SEDs are beset by a variety of problems arising from inherent weaknesses in the specs and poor implementation choices made by SED vendors [17]. For example, Meijer and van Gastel [17] 2706"
+      },
+      {
+        "source": "selected",
+        "value": "A file system provides secure deletion if, after a file is deleted, an attacker with physical possession of the storage device cannot recover any data from the deleted file. Unfortunately, secure deletion is not provided by commodity file systems. Even file systems which explicitly desire to provide secure deletion are challenged by the subtleties of hardware controllers on modern storage devices; those controllers obscure the mappings between logical blocks and physical blocks, silently duplicate physical blocks, and generally make it hard for host-level software to make reliable assumptions about how file data is kept on the device. State-of-the-art frameworks for secure deletion also have no crash consistency, meaning that an ill-timed power outage or software fault will desynchronize keys and the associated encrypted file data, corrupting the file system. In this paper, we present HOLEPUNCH, a new software-level approach for implementing secure deletion. HOLEPUNCH treats the storage device as a black box, providing secure deletion via cryptographic erasure. HOLEPUNCH uses per-file keys to transparently encrypt outgoing file writes and decrypt incoming file reads, ensuring that all physical data in the storage device is always encrypted. HOLEPUNCH uses puncturable pseudorandom functions (PPRFs) to quickly access file keys; upon the deletion of file f , HOLEPUNCH updates the PPRF so that, even if the PPRF is recovered, the PPRF cannot be used to generate f 's key. By using PPRFs instead of the key trees leveraged by prior work, HOLEPUNCH reduces both the memory pressure caused by key management and the number of disk IOs needed to access files. HOLEPUNCH stores its master key in secure TPM storage, and uses a novel journaling scheme to provide crash consistency between TPM state and on-disk state. 2705 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zachary Ratliff",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University, Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Wittmann Goh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University, Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Abe Wieland",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University, Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "James Mickens",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University, Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Ryan Williams",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University, Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zachary Ratliff",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Wittmann Goh",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Abe Wieland",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "James Mickens",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harvard University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Ryan Williams",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Northeastern University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 11,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Zachary Ratliff",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Wittmann Goh",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Abe Wieland",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "James Mickens",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Ryan Williams",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Zachary Ratliff",
+          "affiliation_raw": "Harvard University Harvard University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 44.004,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Wittmann Goh",
+          "affiliation_raw": "Harvard University Harvard University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 45.279,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Abe Wieland",
+          "affiliation_raw": "Harvard University Harvard University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 49.24,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "James Mickens",
+          "affiliation_raw": "Harvard University Harvard University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 46.677,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Ryan Williams",
+          "affiliation_raw": "Northeastern University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 2.497,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Holepunch: Fast, Secure File Deletion with Crash Consistency",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zachary Ratliff",
+          "affiliations": [
+            "Harvard"
+          ]
+        },
+        {
+          "name": "Wittmann Goh",
+          "affiliations": [
+            "Harvard"
+          ]
+        },
+        {
+          "name": "Abe Wieland",
+          "affiliations": [
+            "Harvard"
+          ]
+        },
+        {
+          "name": "James Mickens",
+          "affiliations": [
+            "Harvard"
+          ]
+        },
+        {
+          "name": "Ryan Williams",
+          "affiliations": [
+            "Northeastern University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

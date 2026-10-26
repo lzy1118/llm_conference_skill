@@ -1,0 +1,383 @@
+{
+  "paper_id": "023_firmwire_transparent_dynamic_analysis_for_cellular_baseband_firmware",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "FIRMWIRE: Transparent Dynamic Analysis for Cellular Baseband Firmware"
+      },
+      {
+        "source": "selected",
+        "value": "FIRMWIRE: Transparent Dynamic Analysis for Cellular Baseband Firmware"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Smartphones today leverage baseband processors to implement the multitude of cellular protocols. Basebands execute firmware, which is responsible for decoding hundreds of message types developed from three decades of cellular standards. Despite its large over-the-air attack surface, baseband firmware has received little security analysis. Previous work mostly analyzed only a handful of firmware images from a few device models, but often relied heavily on time-consuming manual static analysis or single-function fuzzing. To fill this gap, we present FIRMWIRE, the first full-system emulation platform for baseband processors that executes unmodified baseband binary firmware. FIRMWIRE provides basebandspecific APIs to easily add support for new vendors, firmware images, and security analyses. To demonstrate FIRMWIRE's scalability, we support 213 firmware images across 2 vendors and 9 phone models, allowing them to be executed and tested. With these images, FIRMWIRE automatically discovers and bridges internal baseband APIs, allowing protocol messages to be injected with ease. Using these entry points, we selected the LTE and GSM protocols for fuzzing and discovered 7 pre-authentication memory corruptions that could lead to remote code execution-4 of which were previously unknown. We reproduced these crashes over-theair on real devices, proving FIRMWIRE's emulation accuracy. FIRMWIRE is a scalable platform for baseband security testing and we release it as open-source to the community for future research."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Smartphones today leverage baseband processors to implement the multitude of cellular protocols. Basebands execute firmware, which is responsible for decoding hundreds of message types developed from three decades of cellular standards. Despite its large over-the-air attack surface, baseband firmware has received little security analysis. Previous work mostly analyzed only a handful of firmware images from a few device models, but often relied heavily on time-consuming manual static analysis or single-function fuzzing. To fill this gap, we present F IRM WIRE, the first full-system emulation platform for baseband processors that executes unmod- ified baseband binary firmware. F IRM WIRE provides baseband- specific APIs to easily add support for new vendors, firmware images, and security analyses. To demonstrate F IRM WIRE's scalability, we support 213 firmware images across 2 vendors and 9 phone models, allowing them to be executed and tested. With these images, F IRM WIRE automatically discovers and bridges internal baseband APIs, allowing protocol messages to be injected with ease. Using these entry points, we selected the LTE and GSM protocols for fuzzing and discovered 7 pre-authentication memory corruptions that could lead to remote code execution - 4 of which were previously unknown. We reproduced these crashes over-the- air on real devices, proving F IRM WIRE's emulation accuracy. FIRM WIRE is a scalable platform for baseband security testing and we release it as open-source to the community for future research. I. I NTRODUCTION Cellular protocols, and the billions of devices that use them, have ushered widespread connectivity and mobility to the world. Modern-day smartphones use a dedicated Baseband Processor (BP), which is responsible for processing the com- plex cellular protocol message formats, state machines, timers, and more. These basebands run high-performance firmware, usually driven by a Real-Time Operating System (RTOS). Unfortunately, analyzing and testing the security of BPs is extremely difficult for outside researchers, as their firmware is typically not only proprietary but also tremendously complex ¶These two authors contributed equally. and executed in unfavorable environments (e.g. secure mobile devices) for debugging and introspection. Initial industry- driven security research [6], [21], [54], [67] has demonstrated that over-the-air exploitation of basebands is not only possible but also practical - even remotely - due to the lack of hardening compared to mobile operating systems like Android or iOS. Recent academic work attempts to automate the processes of baseband security analysis with varying degrees of success. A first approach [40] treated User Equipment (UE) and base- bands themselves as black boxes while carrying out automated over-the-air testing. While automated, this approach does not scale as physical radio equipment and many mobile phones are required. Lack of visibility into the baseband's internal state means that crashes, which can indicate a security vulnerability, are at best diagnosed as a “denial of service”. In an attempt to address this problem, a new line of re- search about automated analysis of binary firmware images for BPs emerged. These new approaches either emulate and fuzz test individual parsers embedded in baseband firmware (e.g., [45], [22]) or statically analyze specific components of the firmware, such as control plane layer-3 protocols [38]. The first approach fails to capture interactions with other portions of the firmware and thus does not scale to the hundreds of thousands of functions present in modern baseband firmware. The second suffers from many false positives. Although both approaches found vulnerabilities, they cannot identify more complex issues arising from the interaction of the different components and stacks embedded in modern BPs. This is because neither considers the execution environment of a baseband, ignoring most of the firmware, including the underlying RTOS. In this paper, we present FIRM WIRE, a baseband emulation platform that addresses the complex and highly stateful nature of baseband firmware. F IRM WIRE demonstrates that full- system emulation of baseband firmware is not only possible but also scalable. It overcomes the limitations of current automated baseband security testing. In summary, our contributions are as follows: • We design and implement F IRM WIRE, a base- band analysis platform, enabling extensible, scal- able, and automated dynamic analysis for 213 base- band firmware images across 2 vendors spanning 2 Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.23136 www.ndss-symposium.org Vendor Configuration Reconfigurable Emulation Core CPU Core Memory Regions Peripheral Slots FIRMWIRE Interface 1011011 10000111 11101001 00101000 01001111 push {r1, lr} ldr r1, [sp] blx r1 Baseband Firmware Snapshots Vendor A Firmware Loader Pattern DB SoC Pattern Offsets Vendor Selector Save & Restore Vendor B Vendor C Vendor Specific Plugins (One-time Manual Effort) 1011011 10000111 11101001 00101000 01001111 push {r1, lr} ldr r1, [sp] blx r1 Root Cause Analysis & Exploration (Manual) OTA Reproduction Automated Baseband Analysis ModKit Memory Hooks Debugger SDR Crash Cases GSM LTE Injected Analysis RTOS Boundary CRASH Base Station Fig. 1: An overview of the F IRM WIRE baseband analysis platform. Starting from left to right: F IRM WIRE loads the baseband firmware. The vendor plugin abstracts away image-specific details using the vendor firmware loader and PatternDB. Next, the extracted information is used to configure the emulation core. During emulation F IRM WIRE uses a built-in interface to interact with the running firmware, enabling automated dynamic analysis and manual inspection. Finally, discovered crashes can be interactively root caused and verified over-the-air using a base station. different Instruction Set Architectures (ISAs) and 9 device models. To support additional baseband re- search and enable extension to other platforms, we release F IRM WIRE's source code and artifacts at: https://www.github.com/FirmWire/FirmWire. • Using F IRM WIRE we are the first to emulate Samsung's and MediaTek's closed source propri- etary basebands from boot while providing accurate RTOS execution, fuzzing, and interactive and auto- matic dynamic analyses. Moreover, we are the first to assess modern MediaTek basebands running on MIPS processors. • We discover 7 vulnerabilities, 4 of which are previ- ously unknown and reachable pre-authentication , while using F IRM WIRE to test the LTE RRC, GSM CC, and GSM SM protocols. We verify that these vulnerabilities are real and affect physical devices, demonstrating F IRM WIRE's accuracy and strength as a baseband analysis platform. Outline. The rest of this work is structured as follows: in Section II we briefly describe baseband firmware and motivate why we created F IRM WIRE, Section III describes the design of F IRM WIRE, Section IV provides implementation details of supporting the Samsung and MediaTek basebands, Section V evaluates FIRM WIRE as a platform and its ability to find bugs, Section VI discusses additional research questions, Section VII highlights related work, and Section VIII concludes. II. M OTIVATION Modern smartphones deploy a complex combination of hardware and software from many manufacturers. It is com- mon to split the phone's functionality into an Application Processor (AP) and a BP. The AP is the user-facing processor. It runs the OS, such as Android or iOS, and all applications. The BP, which is not directly exposed to users, is responsible for all cellular network functionality. 1 This includes attaching 1Cellular basebands are not limited to smartphones. F IRM WIRE's approach is applicable to other, more embedded targets, but for the purposes of this paper we only consider smartphone basebands. and detaching from base stations and handling calls, Short Message Service (SMS) messages, and IP packets. Due to the real-time demands of cellular protocols, BPs leverage an RTOS that is responsible for managing state ma- chines, maintaining network timers, and processing complex message formats, such as ASN.1, CSN.1, and many other encapsulated protocols. Vendors commonly split processing of the complex cellular stack into independent tasks inside the RTOS, most often with a direct mapping between tasks and individual cellular protocols [46], [45], [64]. These tasks interact with each other using messages, which are sent and received via well-defined APIs [64], [21]. Understanding and auditing BP security is prohibitively difficult due to the tremendous complexity of modern cellular protocol stack implementations and a lack of baseband-specific testing platforms. We observe that recent attempts to tackle the challenges of automated baseband analysis suffer from limitations and do not offer the advantages of a full-scale dynamic baseband testbed. Such work typically falls into one of the following three categories: 1) Dynamic on-device testing tests physical UEs by sending cellular messages over-the-air and observing their behavior through oracles [40], [55], [17]. Such approaches offer only coarse-grained insight into the baseband's inner state. Even approaches for monitor- ing baseband diagnostics, such as SCAT [30], require a rooted device, which may be prevented by vendors. 2) Emulation-based parser testing extracts, rehosts, and tests individual parsers embedded in the cellular baseband [45], [22]. This approach not only requires extensive manual effort to support testing of new targets but also falls short in finding bugs beyond the initial function [45]. 3) Specification-driven static approaches try to infer erroneous operations in the cellular specification [10] or uncover mismatches between baseband implemen- tations and specifications [38]. Static approaches may be tailored towards specific protocols and operate unaware of the operating system context or state, yielding bugs not reproducible on real devices. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Smartphones today leverage baseband processors to implement the multitude of cellular protocols. Basebands execute firmware, which is responsible for decoding hundreds of message types developed from three decades of cellular standards. Despite its large over-the-air attack surface, baseband firmware has received little security analysis. Previous work mostly analyzed only a handful of firmware images from a few device models, but often relied heavily on time-consuming manual static analysis or single-function fuzzing. To fill this gap, we present FIRMWIRE, the first full-system emulation platform for baseband processors that executes unmodified baseband binary firmware. FIRMWIRE provides basebandspecific APIs to easily add support for new vendors, firmware images, and security analyses. To demonstrate FIRMWIRE's scalability, we support 213 firmware images across 2 vendors and 9 phone models, allowing them to be executed and tested. With these images, FIRMWIRE automatically discovers and bridges internal baseband APIs, allowing protocol messages to be injected with ease. Using these entry points, we selected the LTE and GSM protocols for fuzzing and discovered 7 pre-authentication memory corruptions that could lead to remote code execution-4 of which were previously unknown. We reproduced these crashes over-theair on real devices, proving FIRMWIRE's emulation accuracy. FIRMWIRE is a scalable platform for baseband security testing and we release it as open-source to the community for future research."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Grant Hernandez",
+          "email": "grant.hernandez@ufl.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Marius Muench",
+          "email": "m.muench@vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam, TU Berlin"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Dominik Maier",
+          "email": "dmaier@sect.tu-berlin.de",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Alyssa Milburn",
+          "email": "a.a.milburn@vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam, TU Berlin"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Shinjo Park",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Tobias Scharnowski",
+          "email": "tobias.scharnowski@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Tyler Tucker",
+          "email": "tylertucker1@ufl.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Patrick Traynor",
+          "email": "traynor@ufl.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Kevin R BButler",
+          "email": "butler@ufl.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Grant Hernandez",
+          "email": "grant.hernandez@ufl.edu",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Marius Muench",
+          "email": "m.muench@vu.nl",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Dominik Maier",
+          "email": "dmaier@sect.tu-berlin.de",
+          "affiliations": [
+            "TU Berlin"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Alyssa Milburn",
+          "email": "a.a.milburn@vu.nl",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Shinjo Park",
+          "email": "",
+          "affiliations": [
+            "TU Berlin"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Tobias Scharnowski",
+          "email": "tobias.scharnowski@rub.de",
+          "affiliations": [
+            "Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Tyler Tucker",
+          "email": "tylertucker1@ufl.edu",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Patrick Traynor",
+          "email": "traynor@ufl.edu",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Kevin R. B. Butler",
+          "email": "butler@ufl.edu",
+          "affiliations": [
+            "University of Florida"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 136,
+      "author_count": 9,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Alyssa Milburn",
+          "block_id": "pdf:p1:b9",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 8,
+          "author": "Kevin R. B. Butler",
+          "block_id": "pdf:p1:b16",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "FirmWire: Transparent Dynamic Analysis for Cellular Baseband Firmware",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-200/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Grant Hernandez",
+          "affiliations": [
+            "University of Florida"
+          ]
+        },
+        {
+          "name": "Marius Muench",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Dominik Maier",
+          "affiliations": [
+            "TU Berlin"
+          ]
+        },
+        {
+          "name": "Alyssa Milburn",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Shinjo Park",
+          "affiliations": [
+            "TU Berlin"
+          ]
+        },
+        {
+          "name": "Tobias Scharnowski",
+          "affiliations": [
+            "Ruhr-University Bochum"
+          ]
+        },
+        {
+          "name": "Tyler Tucker",
+          "affiliations": [
+            "University of Florida"
+          ]
+        },
+        {
+          "name": "Patrick Traynor",
+          "affiliations": [
+            "University of Florida"
+          ]
+        },
+        {
+          "name": "Kevin Butler",
+          "affiliations": [
+            "University of Florida"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Alyssa Milburn",
+      "field": "email",
+      "restored_value": "a.a.milburn@vu.nl",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Patrick Traynor",
+      "field": "email",
+      "restored_value": "traynor@ufl.edu",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Kevin R. B. Butler",
+      "field": "email",
+      "restored_value": "butler@ufl.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

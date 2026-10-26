@@ -1,0 +1,268 @@
+{
+  "paper_id": "147_iubik_isolating_user_bytes_in_commodity_operating_system_kernels_via_memory_tagging_extensions",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "IUBIK: Isolating User Bytes in Commodity Operating System Kernels via Memory Tagging Extensions"
+      },
+      {
+        "source": "selected",
+        "value": "IUBIK: Isolating User Bytes in Commodity Operating System Kernels via Memory Tagging Extensions"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Hardening OS kernels against memory errors is generally addressed by protecting security-critical data against corruption and disclosure. However, establishing a sound model for identifying sensitive memory objects in need of protection is hard, leading to emergent attack vectors that can be abused by attackers. In this paper, we propose rethinking how OS kernels are hardened by introducing IUBIK for compartmentalizing kernel memory. IUBIK prevents kernel exploitation by segregating attacker-controlled data-frequently used to manipulate security-critical data-in shadow memory, preventing it from interacting with sensitive kernel objects. To achieve this, IUBIK uses MTE: a recent hardware feature, available in ARM CPUs, which allows mitigating exploits based on both spatial and temporal memory-errors, efficiently. We ensure that segregated objects do not contain sensitive fields, such as pointers, by rewriting their struct definitions. Moreover, we develop a profiling framework that explores the kernel codebase in-depth and records code sites where attacker-controlled objects are allocated, allowing IUBIK to isolate them; our profiler recorded 292 privileged and 212 non-privileged allocation sites for a diverse set of workloads. Finally, we evaluate an implementation of IUBIK for the Linux kernel, across a suite of micro-and macro-benchmarks, demonstrating that our prototype incurs no runtime overhead in most tests and negligible additional memory consumption. 867 2025 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Hardening OS kernels against memory errors is generally addressed by protecting security-critical data against corruption and disclosure. However, establishing a sound model for identifying sensitive memory objects in need of protection is hard, leading to emergent attack vectors that can be abused by attackers. In this paper, we propose rethinking how OS kernels are hardened by introducingIUBIKfor com- partmentalizing kernel memory.IUBIKprevents kernel ex- ploitation by segregating attacker-controlled data-frequently used to manipulate security-critical data-in shadow memory, preventing it from interacting with sensitive kernel objects. To achieve this,IUBIKuses MTE: a recent hardware feature, available in ARM CPUs, which allows mitigating exploits based on both spatial and temporal memory-errors, efficiently. We ensure that segregated objects do not contain sensitive fields, such as pointers, by rewriting theirstructdefinitions. Moreover, we develop a profiling framework that explores the kernel codebase in-depth and records code sites where attacker-controlled objects are allocated, allowingIUBIKto isolate them; our profiler recorded292privileged and212 non-privileged allocation sites for a diverse set of workloads. Finally, we evaluate an implementation ofIUBIKfor the Linux kernel, across a suite of micro- and macro-benchmarks, demonstrating that our prototype incurs no runtime overhead in most tests and negligible additional memory consumption. 1. Introduction The past few years have witnessed a surge in publicly- released exploits that demonstrate how memory errors in OS-kernel code allow attackers to take complete control of a system (see Table 7 in Appendix A). These are also complemented by offensive-security research that im- proves exploit reliability [1], [2], proposes novel exploitation techniques [3], [4], and automates identifying exploitation primitives [5], [6]. In response, researchers have developed hardware-assisted, memory-isolation frameworks to protect sensitivekernel memory against corruption, neutralizing ker- nel exploits [7], [8], [9], [10]. However, identifying data that issecurity-sensitiveand should be protected in monolithic OS kernels remains an open problem, with recent work continuing to uncover new objects that attackers may target to circumvent existing defenses [11], [12]. In this work, we propose rethinking how to tackle kernel security by ensuring its integrity without having to identify individual, sensitive objects. Instead, our approach focuses on neutralizing theprimitivesabused in exploits to corrupt security-critical data. This insight is drawn after our sys- tematic analysis of kernel exploits published during 2020- 2024, which reveals that most of them abuse a memory error with limited capabilities -i.e.,use-after-free (UAF)or object-out-of-bounds (OOB)-to manipulate a kernel object by overlapping it with auser-controlled objectcontaining data supplied by a malicious program (see Table 7 in Ap- pendix A). As such, we call these user-controlled objects usercopy primitives. Notably, usercopy primitives are the standard way ofleakingcode pointers to defeatKASLR andoverwritingthem to build code-reuse chains in Linux (usually in that order) [13]. They are also the main method leveraged by SLUBStick [1] to manipulate page tables and takeover the OS kernel. The Linux kernel tries to limit the use of such primitives by allocating user-controlled objects in dedicated memory pools, known asobject caches, which are separated from other kernel data that may be targeted by attacks. Neverthe- less, our exploit analysis reveals that many of them are still allocated from caches containing kernel objects targeted by existing attacks, facilitatingsame-cacheattacks [13]. Even if all user-controlled objects were allocated from dedicated caches, the lack of strong memory isolation to enforce their separation from sensitive kernel data still allows attackers to overlap them and mountcross-cacheattacks [1], [14]. To tackle these problems we introduceIUBIK: a novel solution for compartmentalizing memory within mono- lithic OS kernels.IUBIKisolates user-controlled objects inshadow memoryand prevents them from ever accessing security-critical data. In doing so,IUBIKis able to break existing and future kernel exploits that hinge on abusing user-controlled objects to corrupt sensitive data, regardless of their type (e.g., process credentials or page tables) or targeted vulnerability (i.e., UAF or OOB). Achieving this level of isolation requires overcoming several challenges. Challenge #1: Isolating Memory.First, we require a mem- ory isolation primitive capable of confining user-controlled objects in both spatial and temporal memory-safety sce- narios. However, existing solutions focus solely on either spatial [7], [8], [10] or temporal [15] violations, or provide 867 DOI 10.1109/SP61157.2025.00135 only probabilistic integrity [9]. In contrast to existing solu- tions,IUBIKrelies on ARM's recently introducedMemory Tagging Extension (MTE)feature [16] that provides both spatial and temporal safety guarantees with low overhead. We equipIUBIKwith MTE and introduce a novel memory- isolation framework for OS kernels that breaks exploits by enforcing strong isolation between user-controlled objects and the rest of kernel memory.IUBIKonly requires two MTE tags to maintain its twoisolation domains: one for user-controlled objects and the other for everything else. This way,IUBIKdoes not inherit the limitations that stem from the small number of available MTE tags, which have raised concerns in prior work [17], [18], [19]. Challenge #2: Structure Layout.Second, we identify sev- eral exploits that abuseflexible arraysstored at the end of Cstructs [20] to transfer data to and from user space and to place a target object closer to a victim object (`a laheap feng shui[21]). Two of the most widely used object types in kernel exploitation,struct msg_msgand struct user_key_payload, follow exactly this pat- tern. Many of these objects mingle sensitive kernel fields (e.g., function pointers) with user-controlled bytes in a single Cstruct, allowing attackers to abuse memory errors to corrupt them even when they are isolated in an MTE do- main. To combat this, we rewrite suchstructdefinitions to extract user-controlled fields into shadow memory where IUBIKcan isolate them securely. In case the extracted fields need to refer back the host object (e.g., in idioms like container_of), we maintain a backward pointer in the extracted field that references the original object. To prevent user-controlled objects from corrupting this reference, we encrypt it using ARM'sPointer Authentication[22] feature. Challenge #3: Identifying Allocation Sites.Finally, in order to allocate select heap objects in shadow memory, we need to instrument theirallocation sites(calledallocsites henceforth). To achieve this, we first instrument allocsites of user-controlled objects derived from public exploits and prior work. However, we also aim to reveal other potentially dangerous objects that may be user-controlled and instru- ment them before they become abused in future exploits. Yet doing so through manual code analysis would be a herculean task given the size of an OS kernel. Additionally, existing tools based on static analysis [5] exhibit a large number of false positives, making it hard for security analysts to triage them and identify suitable candidates. Consequently, to address the third challenge, we develop amemory profil- ing frameworkfor OS kernels that is able torecordobjects accessed from user space and recover their allocsites-we call this tool theusercopy profiler. We execute a series of comprehensive payloads to explore the kernel's codebase in-depth, which reveals a large number of candidates that require instrumentation to reduce the kernel's attack surface. Evaluation.We first evaluate the effectiveness of the user- copy profiler, where we record292privileged (i.e., they can be triggered byroot) and212non-privileged (i.e., they can be triggered by regular users) allocation sites, respectively, on a diverse set of workloads. Subsequently, we evaluate IUBIK's performance and effectiveness. For performance, we measure the runtime overhead IUBIKincurs in micro-benchmarks and real-world applica- tions. In micro-benchmarks,IUBIKincurs worst-case slow- downs of7%-8%in two benchmarks, while the remaining exhibit negligible (<5%) slowdown or none at all. In macro-benchmarks,IUBIKincurs a negligible slowdown of <3%in all scenarios. We also measure the memory over- head ofIUBIKat boot time (where a large number of user- controlled allocsites are exercised) and findIUBIKrequires 2.17%more memory thanSLUBduring boot (≈7MB). Lastly, we evaluateIUBIK's effectiveness via a suite of security tests and by demonstrating its ability to mitigate real-world exploits. Contributions.We make the following contributions: •We proposeIUBIK: a novel memory-isolation solution that prevents kernel exploitation by isolating attacker- controlled objects in shadow memory using ARM MTE. •We develop a set of patches that contain rewritten C structs, which allocate their user-controlled fields in shadow memory and use ARM PA to protect the few backward references that they need to store. •We develop a dynamic profiling framework that identi- fies allocation sites of user-controlled objects requiring instrumentation, and share a dataset of our findings. •We evaluateIUBIKon the Linux kernel in terms of performance and security effectiveness. 2. Background 2.1. Memory Errors Software written in memory- and/or type-unsafe languages-e.g., C, C++, and ASM-is susceptible to mem- ory errors in heap-allocated objects [2]. These errors can be broadly classified into two categories:spatial memory errorsandtemporal memory errors. Spatial memory errors occur when a pointer in a victim object is made to reference memory in a target object outside of its intended boundary. Suchout-of-bounds(OOB) errors allow attackers to corrupt and/or leak data from a target object via a neighboring (i.e., linear OOB) or arbitrary (i.e., non-linear OOB) victim object. Attackers typically (ab)use OOB errors to stretch the bounds of a victim object to corrupt a target object. In contrast, temporal memory errors occur when(dan- gling) pointersreferencing a freed object arereusedand can be accessed simultaneously in different execution contexts. Examples of such errors include: (i)use-after-free(UAF), where a dangling pointer can still be accessed even after its underlying memory object is freed; (ii)double-free(DF), where the same pointer is freed multiple times; and (iii)in- valid free(IF), where an incorrect (potentially attacker- controlled) pointer is freed. Attackers typically (ab)use such temporal memory errors to createtype confusionconditions, whereby theyoverlapa victim and a target object and leverage the former's dangling pointer to corrupt the latter. 868"
+      },
+      {
+        "source": "selected",
+        "value": "Hardening OS kernels against memory errors is generally addressed by protecting security-critical data against corruption and disclosure. However, establishing a sound model for identifying sensitive memory objects in need of protection is hard, leading to emergent attack vectors that can be abused by attackers. In this paper, we propose rethinking how OS kernels are hardened by introducing IUBIK for compartmentalizing kernel memory. IUBIK prevents kernel exploitation by segregating attacker-controlled data-frequently used to manipulate security-critical data-in shadow memory, preventing it from interacting with sensitive kernel objects. To achieve this, IUBIK uses MTE: a recent hardware feature, available in ARM CPUs, which allows mitigating exploits based on both spatial and temporal memory-errors, efficiently. We ensure that segregated objects do not contain sensitive fields, such as pointers, by rewriting their struct definitions. Moreover, we develop a profiling framework that explores the kernel codebase in-depth and records code sites where attacker-controlled objects are allocated, allowing IUBIK to isolate them; our profiler recorded 292 privileged and 212 non-privileged allocation sites for a diverse set of workloads. Finally, we evaluate an implementation of IUBIK for the Linux kernel, across a suite of micro-and macro-benchmarks, demonstrating that our prototype incurs no runtime overhead in most tests and negligible additional memory consumption. 867 2025 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Marius Momeu",
+          "email": "marius.momeu@tum.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich, Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Alexander JGaidis",
+          "email": "agaidis@cs.brown.edu",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich, Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jasper V DHeidt",
+          "email": "jasper.von-der-heidt@tum.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich, Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Vasileios PKemerlis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Munich, Brown University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Marius Momeu",
+          "email": "marius.momeu@tum.de",
+          "affiliations": [
+            "Technical University of Munich"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Alexander J. Gaidis",
+          "email": "agaidis@cs.brown.edu",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Vasileios P. Kemerlis",
+          "email": "",
+          "affiliations": [
+            "Brown University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 102,
+      "author_count": 3,
+      "matched_author_count": 3,
+      "exact_author_match_count": 3,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Marius Momeu",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Alexander J. Gaidis",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Vasileios P. Kemerlis",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Marius Momeu",
+          "affiliation_raw": "Technical University of Munich Brown University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 51.978,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Alexander J. Gaidis",
+          "affiliation_raw": "Technical University of Munich Brown University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 77.481,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Vasileios P. Kemerlis",
+          "affiliation_raw": "Technical University of Munich Brown University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 80.344,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "IUBIK: Isolating User Bytes in Commodity Operating System Kernels via Memory Tagging Extensions",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Marius Momeu",
+          "affiliations": [
+            "Technical University of Munich"
+          ]
+        },
+        {
+          "name": "Alexander J. Gaidis",
+          "affiliations": [
+            "Brown University"
+          ]
+        },
+        {
+          "name": "Jasper von der Heidt",
+          "affiliations": [
+            "Technical University of Munich"
+          ]
+        },
+        {
+          "name": "Vasileios P. Kemerlis",
+          "affiliations": [
+            "Brown University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Marius Momeu",
+      "field": "email",
+      "restored_value": "marius.momeu@tum.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Alexander J. Gaidis",
+      "field": "email",
+      "restored_value": "agaidis@cs.brown.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

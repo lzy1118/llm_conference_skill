@@ -1,0 +1,2427 @@
+{
+  "title": "ZHE: Efficient Zero-Knowledge Proofs for HE Evaluations",
+  "year": "2025",
+  "abstract": "Homomorphic Encryption (HE) allows computations on encrypted data without decryption. It can be used where the users' information are to be processed by an untrustful server, and has been a popular choice in privacy-preserving applica- tions. However, in order to obtain meaningful results, we have to assume an honest-but-curious server, i.e., it will faithfully follow what was asked to do. If the server is malicious, there is no guarantee that the computed result is correct. The notion of verifiable HE (vHE) is introduced to detect malicious server's behaviors, but current vHE schemes are either more than four orders of magnitude slower than the underlying HE operations (Atapoor et. al, CIC 2024) or fast but incompatible with server- side private inputs (Chatel et. al, CCS 2024). In this work, we propose a vHE framework ZHE: effi- cient Zero-Knowledge Proofs (ZKPs) that prove the correct execution of HE evaluations while protecting the server's private inputs. More precisely, we first design two new highly- efficient ZKPs for modulo operations and (Inverse) Number Theoretic Transforms (NTTs), two of the basic operations of HE evaluations. Then we build a customized ZKP for HE evaluations, which is scalable, enjoys a fast prover time and has a non-interactive online phase. Our ZKP is applicable to all Ring-LWE based HE schemes, such as BGV and CKKS. Finally, we implement our protocols for both BGV and CKKS and conduct extensive experiments on various HE workloads. Compared to the state-of-the-art works, both of our prover time and verifier time are improved; especially, our prover cost is only roughly 27-36× more expensive than the underlying HE operations, this is two to three orders of magnitude cheaper than state-of-the-arts. 1. Introduction Homomorphic Encryption (HE) enables computations on encrypted data without decryption, and has been ex- tensively studied since Gentry's breakthrough work [41]. Among the various HE schemes, Ring-LWE (RLWE) based HE schemes such as BFV [32], BGV [14] and CKKS [23] support Single Instruction Multiple Data (SIMD) [65], thus they are suitable for larger workloads and have been widely Zhelei Zhou's work was done during his internship at Ant Group. Zhelei Zhou and Bingsheng Zhang are with the State Key Laboratory of Blockchain and Data Security & Hangzhou High-Tech Zone (Binjiang) Institute of Blockchain and Data Security, Hangzhou, China. adopted in many popular application scenarios, examples include privacy-preserving machine learning [15], [53], pri- vate set intersection [26], [56] and private genome-wide association studies [52]. In most of the works using HE, there are two partic- ipants, whom we refer to as client and server. The server is asked to perform evaluations on client's encrypted data. Usually, the authors assume a threat model that only consid- ers semi-honest (a.k.a, passive, or honest-but-curious) secu- rity, where the server will honestly follow what was asked to do. However, if the server is malicious, it might evaluate arbitrary functions instead of the designated functions on client's input. Indeed, the client has few countermeasures if he doubts the correctness of the HE computation. What's worse, such correctness issues may further lead to privacy violations. Take symmetric private set intersection for ex- ample, where client and server jointly compute a set inter- section using their private sets, and both of them will obtain the result without knowing the other party's input. Without verification, a malicious server might homomorphically add some client's input to some less significant bits of the output in advance, allowing it to learn extra information. Verifiable HE. To address above problem, verifiable HE (vHE) is proposed, which allows the client to verify if the server has correctly executed the given computation task. Some research works on vHEs (e.g. [12], [35], [36], [38], [39], [44], [49]) focus on the theoretical side and offer no implementations. For the recent works focusing on building practical vHEs, we have identified the following issues. Issue I: Unaffordable server's overhead. A line of works employ Zero-Knowledge Proof (ZKP) [45] to build vHE schemes. More precisely, once the server receives the ci- phertext sent by the client, the server can use the received ciphertext (and possibly its private inputs) as the witness to prove that he has performed the correct computation using ZKPs. Since the server's input are protected via ZKPs, it is easy to see that this type of vHEs can be used to construct secure two-party computation protocols. However, the current state-of-the-art (SOTA) vHE works in this line ( [4], [66]) express the HE evaluations as circuits, and prove these circuits using the existing ZK succinct non-interactive argument of knowledge (zkSNARK) schemes, which places a huge burden on server. We evaluate their open-sourced codes, and it turns out that their prover cost is more than 3328 DOI 10.1109/SP61157.2025.00199 four orders of magnitude higher than the HE computation cost. Given that the HE computation is already orders of magnitude more expensive than plaintext computation, such vHE schemes would not be affordable for practical usage. Issue II: Lack of server's privacy. Some other works focus on the verifiable computation scenario where all the inputs are belong to the client, so that the “zero-knowledge” property is not required. In [19], Chatel et al. designed new error-detecting plaintext encoding schemes to construct vHE. By their new encoding schemes, the client can check if the server has correctly executed the computation by checking the encoding of the decrypted results. This method is very fast: it only introduces about 3-11 × overhead to the server's computation time when used for genomic-data analysis. However, in practice it is quite common that the server also has some private inputs, such as private neural network inference [53] (the server holds the model, and the client holds the data), or private set intersection [26] (each party holds a part of dataset). Verifiable computation does not help in those use cases. Research question. The above discussions motivate our main research question: Can we construct a ZKP with (relatively) fast prover time for HE evaluations? We believe that if above research question could be answered, it would be a significant advancement towards truly practical and useful vHE schemes. 1.1. Our Contributions We provide an affirmative answer to our research ques- tion. We have thoroughly analyzed the evaluation operations of modern RLWE-based HE schemes, and find that there are four basic operations being widely used: (i) additions, (ii) multiplications, (iii) modulo operation and (iv) (Inverse) Number-Theoretic Transforms (NTTs) (to be defined in Section 2.4). Previous works first express these operations as circuits, then prove these circuits using the existing zk- SNARKs, introducing unaffordable overhead. In this work, we choose to follow the paradigm of ZKP that is based on Vector Oblivious Linear Evaluations (VOLE) [13] (hereafter, we call it VOLE-ZKP). Additions can be processed for free in VOLE-ZKP, and multiplications can be proved by a prior work called QuickSilver [73]. For modulo and (I)NTT operations, we provide two novel highly efficient VOLE- ZKPs; we prove these operations by checking the consis- tency of the inputs/outputs directly, avoiding the expensive circuit expressions. Given these two VOLE-ZKPs as main building blocks, we are able to build a customized VOLE- ZKP for HE evaluations, including modulus-switching, key- switching, etc. See the overview in Figure 1. The first VOLE-ZKP for modulo operation. We build the first VOLE-ZKP for modulo operation; for example, given committed x1 ∈ Fp1 and x2 ∈ Fp2 where p1, p2 are primes, a prover wishes to prove that x2 = x1 mod p2. This new VOLE-ZKP not only serves as one main building block Cipher.-Cipher.MultiplicationRotationKey-Switching HE Evaluations …… Multiplication Basic OperationsAddition Modulo Operation Basic VOLE-ZKPs QuickSilverThis Work (§4)This Work (§5) FreeProve Decompose Modulus-Switching(I)NTT Operation Figure 1: Overview of our VOLE-ZKP for HE evaluations. of the VOLE-ZKP for HE evaluations, but also has other applications where modulo operations are needed. VOLE-ZKP for (I)NTT operation with O(N) time. Both NTT operation and its inverse (i.e., INTT operation) require O(N log N) time, and they can be viewed as linear trans- formations. Since VOLE-ZKP are friendly to prove linear transformation, one can directly obtain a VOLE-ZKP for (I)NTT with O(N log N) time. In this work, we provide a novel VOLE-ZKP for (I)NTT operation with only O(N) time, which is crucial for proving HE evaluations. Customized VOLE-ZKP for HE evaluations. Given our VOLE-ZKPs for modulo and (I)NTT operations as the main building blocks, we present ZHE: a customized VOLE-ZKP for HE evaluations, whose online phase can be made non- interactive. In this work, we take BGV [14] and CKKS scheme [23] as examples but ZHE is also applicable to other RLWE-based HEs, such as BFV [32]. Implementation and benchmark. We implement our VOLE-ZKPs for two HE schemes (i.e., CKKS and BGV) based on Microsoft SEAL library [1]. To illustrate the practical efficiency and the scalability of our protocols, we conduct experiments under 4 scenarios of different scales: (i) ciphertext-ciphertext multiplication, (ii) matrix-vector mul- tiplication, (iii) logistic regression training approximation and (4) comparison approximation (in the latter 2 scenarios, we only consider our protocols for CKKS). It turns out that under all of above scenarios, our prover's overhead 1 is around 30× for CKKS and is around 32× for BGV . We compare our protocols with two SOTA works: the work by Atapoor et al. [4] (hereafter, we call it ABPS protocol) which implements a ZKP for BGV , and the work by Thibault and Walter [66] (hereafter, we call it TW protocol) which implements a ZKP for TFHE [25]. Since these ZKPs are designed for different HE schemes, we use prover's/verifier's overhead as the performance metrics for comparison, and we put the comparison results in Figure 2. The numbers of our work are obtained under the scenario of matrix-vector multiplication; whereas the scenarios of ABPS and TW are described in Section 7.2. As shown in Figure 2, we make improvements in both prover's and verifier's overhead; particularly, we can reduce prover's overhead by roughly 2-3 orders of magnitude. 1. Prover's overhead = Prover time HE computation time − 1, so as verifier's overhead. 3329",
+  "authors": [
+    {
+      "name": "Zhelei Zhou",
+      "email": "",
+      "affiliations": [
+        "Zhejiang University"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 0,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": true
+    },
+    {
+      "name": "Yun Li",
+      "email": "",
+      "affiliations": [
+        "Ant Group"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 1,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    },
+    {
+      "name": "Yuchen Wang",
+      "email": "",
+      "affiliations": [
+        "Ant Group"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 2,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    },
+    {
+      "name": "Zhaomin Yang",
+      "email": "",
+      "affiliations": [
+        "Ant Group"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 3,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    },
+    {
+      "name": "Bingsheng Zhang",
+      "email": "",
+      "affiliations": [
+        "Zhejiang University"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 4,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    },
+    {
+      "name": "Cheng Hong",
+      "email": "",
+      "affiliations": [
+        "Ant Group"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 5,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    },
+    {
+      "order": 6,
+      "name": "Tao Wei",
+      "email": "",
+      "affiliations": [
+        "Ant Group"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 7,
+      "name": "Wenguang Chen",
+      "email": "",
+      "affiliations": [
+        "Ant Group"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Zhelei Zhou"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "Zhejiang University"
+  ],
+  "first_affiliation": "Zhejiang University",
+  "participating_affiliations": [
+    "Zhejiang University",
+    "Ant Group"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Zhelei Zhou",
+      "affiliation": "Zhejiang University",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Yun Li",
+      "affiliation": "Ant Group",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Yuchen Wang",
+      "affiliation": "Ant Group",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Zhaomin Yang",
+      "affiliation": "Ant Group",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Bingsheng Zhang",
+      "affiliation": "Zhejiang University",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Cheng Hong",
+      "affiliation": "Ant Group",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Tao Wei",
+      "affiliation": "Ant Group",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Wenguang Chen",
+      "affiliation": "Ant Group",
+      "source": "conference_official_web"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "ZHE: Efficient Zero-Knowledge Proofs for HE Evaluations"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2025"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Zhelei Zhou",
+        "order": 0,
+        "email": "",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Yun Li",
+        "order": 1,
+        "email": "",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Yuchen Wang",
+        "order": 2,
+        "email": "",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Zhaomin Yang",
+        "order": 3,
+        "email": "",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:4",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Bingsheng Zhang",
+        "order": 4,
+        "email": "bingsheng@zju.edu.cn",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:5",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Cheng Hong",
+        "order": 5,
+        "email": "",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:6",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Tao Wei",
+        "order": 6,
+        "email": "",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:7",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Wenguang Chen",
+        "order": 7,
+        "email": "",
+        "affiliations": [
+          "Ant Group, Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "ZHE: Efficient Zero-Knowledge Proofs for HE Evaluations"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Zhelei Zhou †,‡, Yun Li ‡, Yuchen Wang‡, Zhaomin Yang ‡, Bingsheng Zhang †,"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": ", Cheng Hong ‡,"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": ","
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Tao Wei‡, Wenguang Chen ‡"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "†Zhejiang University, ‡Ant Group"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:6",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "bingsheng@zju.edu.cn, vince.hc@antgroup.com"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          199.48,
+          762.0,
+          415.48,
+          772.0
+        ],
+        "font_size": 10.0,
+        "raw_text": "2025 IEEE Symposium on Security and Privacy (SP)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          128.523,
+          684.339,
+          401.943,
+          698.685
+        ],
+        "font_size": 14.346,
+        "raw_text": "Z HE: Efficient Z ero-Knowledge Proofs for HE",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          145.631,
+          647.039,
+          155.953,
+          655.009
+        ],
+        "font_size": 7.97,
+        "raw_text": ", ‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          263.284,
+          647.039,
+          271.254,
+          655.009
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          434.08,
+          647.039,
+          442.05,
+          655.009
+        ],
+        "font_size": 7.97,
+        "raw_text": ",",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          510.083,
+          647.039,
+          518.053,
+          655.009
+        ],
+        "font_size": 7.97,
+        "raw_text": ",",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          86.692,
+          643.08,
+          258.807,
+          654.08
+        ],
+        "font_size": 11.0,
+        "raw_text": "Zhelei Zhou , Yun Li , Yuchen Wang",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          86.692,
+          643.08,
+          94.662,
+          651.05
+        ],
+        "font_size": 7.97,
+        "raw_text": "†",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          152.245,
+          643.08,
+          160.215,
+          651.05
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          267.546,
+          643.08,
+          502.106,
+          654.08
+        ],
+        "font_size": 11.0,
+        "raw_text": ", Zhaomin Yang , Bingsheng Zhang , Cheng Hong",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          267.546,
+          643.08,
+          275.516,
+          651.05
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          344.704,
+          643.08,
+          352.674,
+          651.05
+        ],
+        "font_size": 7.97,
+        "raw_text": "†",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          442.706,
+          643.08,
+          450.676,
+          651.05
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          518.708,
+          643.08,
+          529.708,
+          654.08
+        ],
+        "font_size": 11.0,
+        "raw_text": ",",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          280.277,
+          633.684,
+          288.247,
+          641.654
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          242.756,
+          629.725,
+          358.789,
+          640.725
+        ],
+        "font_size": 11.0,
+        "raw_text": "Tao Wei , Wenguang Chen",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          284.539,
+          629.725,
+          292.509,
+          637.695
+        ],
+        "font_size": 7.97,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          237.29,
+          620.991,
+          244.264,
+          627.965
+        ],
+        "font_size": 6.974,
+        "raw_text": "†",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          241.441,
+          617.375,
+          372.161,
+          627.375
+        ],
+        "font_size": 10.0,
+        "raw_text": "Zhejiang University, Ant Group",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          241.441,
+          617.375,
+          248.415,
+          624.349
+        ],
+        "font_size": 6.974,
+        "raw_text": "‡",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          208.836,
+          605.248,
+          402.336,
+          615.248
+        ],
+        "font_size": 10.0,
+        "raw_text": "bingsheng@zju.edu.cn, vince.hc@antgroup.com",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          567.342,
+          279.431,
+          576.342
+        ],
+        "font_size": 9.0,
+        "raw_text": "Abstract -Homomorphic Encryption (HE) allows computations",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          567.342,
+          562.5,
+          577.342
+        ],
+        "font_size": 10.0,
+        "raw_text": "adopted in many popular application scenarios, examples",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          556.142,
+          585.0,
+          566.142
+        ],
+        "font_size": 10.0,
+        "raw_text": "include privacy-preserving machine learning [15], [53], pri-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          555.842,
+          305.1,
+          564.842
+        ],
+        "font_size": 9.0,
+        "raw_text": "on encrypted data without decryption. It can be used where the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          544.942,
+          567.0,
+          554.942
+        ],
+        "font_size": 10.0,
+        "raw_text": "vate set intersection [26], [56] and private genome-wide",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          544.343,
+          309.15,
+          553.343
+        ],
+        "font_size": 9.0,
+        "raw_text": "users' information are to be processed by an untrustful server,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          533.742,
+          427.5,
+          543.742
+        ],
+        "font_size": 10.0,
+        "raw_text": "association studies [52].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          532.843,
+          297.0,
+          541.843
+        ],
+        "font_size": 9.0,
+        "raw_text": "and has been a popular choice in privacy-preserving applica-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          330.0,
+          521.541,
+          564.0,
+          531.541
+        ],
+        "font_size": 10.0,
+        "raw_text": "In most of the works using HE, there are two partic-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          521.343,
+          305.1,
+          530.343
+        ],
+        "font_size": 9.0,
+        "raw_text": "tions. However, in order to obtain meaningful results, we have",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          510.341,
+          571.5,
+          520.341
+        ],
+        "font_size": 10.0,
+        "raw_text": "ipants, whom we refer to as client and server. The server",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          509.843,
+          313.2,
+          518.843
+        ],
+        "font_size": 9.0,
+        "raw_text": "to assume an honest-but-curious server, i.e., it will faithfully",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          499.141,
+          580.5,
+          509.141
+        ],
+        "font_size": 10.0,
+        "raw_text": "is asked to perform evaluations on client's encrypted data.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          498.343,
+          317.25,
+          507.343
+        ],
+        "font_size": 9.0,
+        "raw_text": "follow what was asked to do. If the server is malicious, there is",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          487.941,
+          585.0,
+          497.941
+        ],
+        "font_size": 10.0,
+        "raw_text": "Usually, the authors assume a threat model that only consid-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          486.843,
+          309.15,
+          495.843
+        ],
+        "font_size": 9.0,
+        "raw_text": "no guarantee that the computed result is correct. The notion of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          476.741,
+          589.5,
+          486.741
+        ],
+        "font_size": 10.0,
+        "raw_text": "ers semi-honest (a.k.a, passive, or honest-but-curious) secu-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          475.343,
+          305.1,
+          484.343
+        ],
+        "font_size": 9.0,
+        "raw_text": "verifiable HE (vHE) is introduced to detect malicious server's",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          465.541,
+          576.0,
+          475.541
+        ],
+        "font_size": 10.0,
+        "raw_text": "rity, where the server will honestly follow what was asked",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          463.843,
+          297.0,
+          472.843
+        ],
+        "font_size": 9.0,
+        "raw_text": "behaviors, but current vHE schemes are either more than four",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          454.341,
+          459.0,
+          464.341
+        ],
+        "font_size": 10.0,
+        "raw_text": "to do. However, if the server is malicious",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          484.111,
+          454.341,
+          569.611,
+          464.341
+        ],
+        "font_size": 10.0,
+        "raw_text": ", it might evaluate",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          452.343,
+          297.0,
+          461.343
+        ],
+        "font_size": 9.0,
+        "raw_text": "orders of magnitude slower than the underlying HE operations",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          443.141,
+          576.0,
+          453.141
+        ],
+        "font_size": 10.0,
+        "raw_text": "arbitrary functions instead of the designated functions on",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          440.843,
+          313.2,
+          449.843
+        ],
+        "font_size": 9.0,
+        "raw_text": "(Atapoor et. al, CIC 2024) or fast but incompatible with server-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          431.941,
+          589.5,
+          441.941
+        ],
+        "font_size": 10.0,
+        "raw_text": "client's input. Indeed, the client has few countermeasures if",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          429.343,
+          240.3,
+          438.343
+        ],
+        "font_size": 9.0,
+        "raw_text": "side private inputs (Chatel et. al, CCS 2024).",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          420.741,
+          562.5,
+          430.741
+        ],
+        "font_size": 10.0,
+        "raw_text": "he doubts the correctness of the HE computation. What's",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          69.0,
+          417.895,
+          231.0,
+          426.895
+        ],
+        "font_size": 9.0,
+        "raw_text": "In this work, we propose a vHE framework Z",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          261.644,
+          417.895,
+          298.094,
+          426.895
+        ],
+        "font_size": 9.0,
+        "raw_text": "HE: effi-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          409.541,
+          576.0,
+          419.541
+        ],
+        "font_size": 10.0,
+        "raw_text": "worse, such correctness issues may further lead to privacy",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          406.395,
+          284.85,
+          415.395
+        ],
+        "font_size": 9.0,
+        "raw_text": "cient Zero-Knowledge Proofs (ZKPs) that prove the correct",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          398.341,
+          580.5,
+          408.341
+        ],
+        "font_size": 10.0,
+        "raw_text": "violations. Take symmetric private set intersection for ex-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          394.895,
+          284.85,
+          403.895
+        ],
+        "font_size": 9.0,
+        "raw_text": "execution of HE evaluations while protecting the server's",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          387.141,
+          580.5,
+          397.141
+        ],
+        "font_size": 10.0,
+        "raw_text": "ample, where client and server jointly compute a set inter-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          383.395,
+          309.15,
+          392.395
+        ],
+        "font_size": 9.0,
+        "raw_text": "private inputs. More precisely, we first design two new highly-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          375.941,
+          594.0,
+          385.941
+        ],
+        "font_size": 10.0,
+        "raw_text": "section using their private sets, and both of them will obtain",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          371.895,
+          284.85,
+          380.895
+        ],
+        "font_size": 9.0,
+        "raw_text": "efficient ZKPs for modulo operations and (Inverse) Number",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          364.741,
+          580.5,
+          374.741
+        ],
+        "font_size": 10.0,
+        "raw_text": "the result without knowing the other party's input. Without",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          360.395,
+          292.95,
+          369.395
+        ],
+        "font_size": 9.0,
+        "raw_text": "Theoretic Transforms (NTTs), two of the basic operations of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          353.541,
+          576.0,
+          363.541
+        ],
+        "font_size": 10.0,
+        "raw_text": "verification, a malicious server might homomorphically add",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          348.895,
+          268.65,
+          357.895
+        ],
+        "font_size": 9.0,
+        "raw_text": "HE evaluations. Then we build a customized ZKP for HE",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          342.341,
+          598.5,
+          352.341
+        ],
+        "font_size": 10.0,
+        "raw_text": "some client's input to some less significant bits of the output",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          337.395,
+          301.05,
+          346.395
+        ],
+        "font_size": 9.0,
+        "raw_text": "evaluations, which is scalable, enjoys a fast prover time and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          331.141,
+          544.5,
+          341.141
+        ],
+        "font_size": 10.0,
+        "raw_text": "in advance, allowing it to learn extra information.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          325.895,
+          297.0,
+          334.895
+        ],
+        "font_size": 9.0,
+        "raw_text": "has a non-interactive online phase. Our ZKP is applicable to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          314.842,
+          428.222,
+          324.842
+        ],
+        "font_size": 10.0,
+        "raw_text": "Verifiable HE. To address above problem, verifiable",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          502.107,
+          314.842,
+          512.107,
+          324.842
+        ],
+        "font_size": 10.0,
+        "raw_text": "HE",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          314.395,
+          264.6,
+          323.395
+        ],
+        "font_size": 9.0,
+        "raw_text": "all Ring-LWE based HE schemes, such as BGV and CKKS.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          303.642,
+          580.5,
+          313.642
+        ],
+        "font_size": 10.0,
+        "raw_text": "(vHE) is proposed, which allows the client to verify if the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          302.895,
+          284.85,
+          311.895
+        ],
+        "font_size": 9.0,
+        "raw_text": "Finally, we implement our protocols for both BGV and CKKS",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          292.442,
+          571.5,
+          302.442
+        ],
+        "font_size": 10.0,
+        "raw_text": "server has correctly executed the given computation task.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          291.395,
+          288.9,
+          300.395
+        ],
+        "font_size": 9.0,
+        "raw_text": "and conduct extensive experiments on various HE workloads.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          281.242,
+          571.5,
+          291.242
+        ],
+        "font_size": 10.0,
+        "raw_text": "Some research works on vHEs (e.g. [12], [35], [36], [38],",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          279.896,
+          288.9,
+          288.896
+        ],
+        "font_size": 9.0,
+        "raw_text": "Compared to the state-of-the-art works, both of our prover",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          270.042,
+          585.0,
+          280.042
+        ],
+        "font_size": 10.0,
+        "raw_text": "[39], [44], [49]) focus on the theoretical side and offer no",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          268.396,
+          313.2,
+          277.396
+        ],
+        "font_size": 9.0,
+        "raw_text": "time and verifier time are improved; especially, our prover cost",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          258.842,
+          576.0,
+          268.842
+        ],
+        "font_size": 10.0,
+        "raw_text": "implementations. For the recent works focusing on building",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          256.896,
+          284.306,
+          265.896
+        ],
+        "font_size": 9.0,
+        "raw_text": "is only roughly 27-36 × more expensive than the underlying HE",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          247.642,
+          567.0,
+          257.642
+        ],
+        "font_size": 10.0,
+        "raw_text": "practical vHEs, we have identified the following issues.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          245.396,
+          297.0,
+          254.396
+        ],
+        "font_size": 9.0,
+        "raw_text": "operations, this is two to three orders of magnitude cheaper",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          233.896,
+          147.15,
+          242.896
+        ],
+        "font_size": 9.0,
+        "raw_text": "than state-of-the-arts.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          319.016,
+          231.343,
+          499.016,
+          241.343
+        ],
+        "font_size": 10.0,
+        "raw_text": "Issue I: Unaffordable server's overhead. A line of works",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          220.143,
+          544.5,
+          230.143
+        ],
+        "font_size": 10.0,
+        "raw_text": "employ Zero-Knowledge Proof (ZKP) [45] to build vHE",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          209.065,
+          135.0,
+          221.065
+        ],
+        "font_size": 12.0,
+        "raw_text": "1. Introduction",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          208.943,
+          571.5,
+          218.943
+        ],
+        "font_size": 10.0,
+        "raw_text": "schemes. More precisely, once the server receives the ci-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          197.743,
+          585.0,
+          207.743
+        ],
+        "font_size": 10.0,
+        "raw_text": "phertext sent by the client, the server can use the received",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          69.0,
+          187.033,
+          285.0,
+          197.033
+        ],
+        "font_size": 10.0,
+        "raw_text": "Homomorphic Encryption (HE) enables computations",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          186.543,
+          580.5,
+          196.543
+        ],
+        "font_size": 10.0,
+        "raw_text": "ciphertext (and possibly its private inputs) as the witness",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          175.833,
+          297.0,
+          185.833
+        ],
+        "font_size": 10.0,
+        "raw_text": "on encrypted data without decryption, and has been ex-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          175.343,
+          558.0,
+          185.343
+        ],
+        "font_size": 10.0,
+        "raw_text": "to prove that he has performed the correct computation",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          164.633,
+          306.0,
+          174.633
+        ],
+        "font_size": 10.0,
+        "raw_text": "tensively studied since Gentry's breakthrough work [41].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          164.143,
+          585.0,
+          174.143
+        ],
+        "font_size": 10.0,
+        "raw_text": "using ZKPs. Since the server's input are protected via ZKPs,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          153.433,
+          283.5,
+          163.433
+        ],
+        "font_size": 10.0,
+        "raw_text": "Among the various HE schemes, Ring-LWE (RLWE) based",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          152.943,
+          562.5,
+          162.943
+        ],
+        "font_size": 10.0,
+        "raw_text": "it is easy to see that this type of vHEs can be used to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          142.233,
+          283.5,
+          152.233
+        ],
+        "font_size": 10.0,
+        "raw_text": "HE schemes such as BFV [32], BGV [14] and CKKS [23]",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          141.743,
+          576.0,
+          151.743
+        ],
+        "font_size": 10.0,
+        "raw_text": "construct secure two-party computation protocols. However,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          131.033,
+          315.0,
+          141.033
+        ],
+        "font_size": 10.0,
+        "raw_text": "support Single Instruction Multiple Data (SIMD) [65], thus",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          130.543,
+          585.0,
+          140.543
+        ],
+        "font_size": 10.0,
+        "raw_text": "the current state-of-the-art (SOTA) vHE works in this line (",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          119.833,
+          319.5,
+          129.833
+        ],
+        "font_size": 10.0,
+        "raw_text": "they are suitable for larger workloads and have been widely",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          119.343,
+          585.0,
+          129.343
+        ],
+        "font_size": 10.0,
+        "raw_text": "[4], [66]) express the HE evaluations as circuits, and prove",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b102",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          108.143,
+          589.5,
+          118.143
+        ],
+        "font_size": 10.0,
+        "raw_text": "these circuits using the existing ZK succinct non-interactive",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b103",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          101.543,
+          280.8,
+          109.543
+        ],
+        "font_size": 8.0,
+        "raw_text": "Zhelei Zhou's work was done during his internship at Ant Group.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b104",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          96.943,
+          553.5,
+          106.943
+        ],
+        "font_size": 10.0,
+        "raw_text": "argument of knowledge (zkSNARK) schemes, which places",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b105",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          92.543,
+          298.8,
+          100.543
+        ],
+        "font_size": 8.0,
+        "raw_text": "Zhelei Zhou and Bingsheng Zhang are with the State Key Laboratory of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b106",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          85.743,
+          562.5,
+          95.743
+        ],
+        "font_size": 10.0,
+        "raw_text": "a huge burden on server. We evaluate their open-sourced",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b107",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          83.543,
+          288.0,
+          91.543
+        ],
+        "font_size": 8.0,
+        "raw_text": "Blockchain and Data Security & Hangzhou High-Tech Zone (Binjiang)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b108",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          54.0,
+          74.543,
+          266.4,
+          82.543
+        ],
+        "font_size": 8.0,
+        "raw_text": "Institute of Blockchain and Data Security, Hangzhou, China.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b109",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          315.0,
+          74.543,
+          580.5,
+          84.543
+        ],
+        "font_size": 10.0,
+        "raw_text": "codes, and it turns out that their prover cost is more than",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b110",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          17.0,
+          60.0,
+          459.8,
+          68.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "2025 IEEE Symposium on Security and Privacy (SP) | 979-8-3315-2236-0/25/$31.00 ©2025 IEEE | DOI: 10.1109/SP61157.2025.00199",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b111",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          38.0,
+          200.8,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "© 2025, Zhelei Zhou. Under license to IEEE.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b112",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          298.0,
+          38.0,
+          312.4,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "3328",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b113",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          30.0,
+          154.0,
+          38.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "DOI 10.1109/SP61157.2025.00199",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b114",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          87.544,
+          21.908,
+          515.944,
+          28.908
+        ],
+        "font_size": 7.0,
+        "raw_text": "Authorized licensed use limited to: Yanshan University. Downloaded on July 13,2026 at 14:44:55 UTC from IEEE Xplore. Restrictions apply.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b115",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          0.0,
+          0.0,
+          69.3,
+          14.0
+        ],
+        "font_size": 14.0,
+        "raw_text": "Evaluations",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Homomorphic Encryption (HE) allows computations on encrypted data without decryption. It can be used where the users' information are to be processed by an untrustful server, and has been a popular choice in privacy-preserving applica- tions. However, in order to obtain meaningful results, we have to assume an honest-but-curious server, i.e., it will faithfully follow what was asked to do. If the server is malicious, there is no guarantee that the computed result is correct. The notion of verifiable HE (vHE) is introduced to detect malicious server's behaviors, but current vHE schemes are either more than four orders of magnitude slower than the underlying HE operations (Atapoor et. al, CIC 2024) or fast but incompatible with server- side private inputs (Chatel et. al, CCS 2024). In this work, we propose a vHE framework ZHE: effi- cient Zero-Knowledge Proofs (ZKPs) that prove the correct execution of HE evaluations while protecting the server's private inputs. More precisely, we first design two new highly- efficient ZKPs for modulo operations and (Inverse) Number Theoretic Transforms (NTTs), two of the basic operations of HE evaluations. Then we build a customized ZKP for HE evaluations, which is scalable, enjoys a fast prover time and has a non-interactive online phase. Our ZKP is applicable to all Ring-LWE based HE schemes, such as BGV and CKKS. Finally, we implement our protocols for both BGV and CKKS and conduct extensive experiments on various HE workloads. Compared to the state-of-the-art works, both of our prover time and verifier time are improved; especially, our prover cost is only roughly 27-36× more expensive than the underlying HE operations, this is two to three orders of magnitude cheaper than state-of-the-arts. 1. Introduction Homomorphic Encryption (HE) enables computations on encrypted data without decryption, and has been ex- tensively studied since Gentry's breakthrough work [41]. Among the various HE schemes, Ring-LWE (RLWE) based HE schemes such as BFV [32], BGV [14] and CKKS [23] support Single Instruction Multiple Data (SIMD) [65], thus they are suitable for larger workloads and have been widely Zhelei Zhou's work was done during his internship at Ant Group. Zhelei Zhou and Bingsheng Zhang are with the State Key Laboratory of Blockchain and Data Security & Hangzhou High-Tech Zone (Binjiang) Institute of Blockchain and Data Security, Hangzhou, China. adopted in many popular application scenarios, examples include privacy-preserving machine learning [15], [53], pri- vate set intersection [26], [56] and private genome-wide association studies [52]. In most of the works using HE, there are two partic- ipants, whom we refer to as client and server. The server is asked to perform evaluations on client's encrypted data. Usually, the authors assume a threat model that only consid- ers semi-honest (a.k.a, passive, or honest-but-curious) secu- rity, where the server will honestly follow what was asked to do. However, if the server is malicious, it might evaluate arbitrary functions instead of the designated functions on client's input. Indeed, the client has few countermeasures if he doubts the correctness of the HE computation. What's worse, such correctness issues may further lead to privacy violations. Take symmetric private set intersection for ex- ample, where client and server jointly compute a set inter- section using their private sets, and both of them will obtain the result without knowing the other party's input. Without verification, a malicious server might homomorphically add some client's input to some less significant bits of the output in advance, allowing it to learn extra information. Verifiable HE. To address above problem, verifiable HE (vHE) is proposed, which allows the client to verify if the server has correctly executed the given computation task. Some research works on vHEs (e.g. [12], [35], [36], [38], [39], [44], [49]) focus on the theoretical side and offer no implementations. For the recent works focusing on building practical vHEs, we have identified the following issues. Issue I: Unaffordable server's overhead. A line of works employ Zero-Knowledge Proof (ZKP) [45] to build vHE schemes. More precisely, once the server receives the ci- phertext sent by the client, the server can use the received ciphertext (and possibly its private inputs) as the witness to prove that he has performed the correct computation using ZKPs. Since the server's input are protected via ZKPs, it is easy to see that this type of vHEs can be used to construct secure two-party computation protocols. However, the current state-of-the-art (SOTA) vHE works in this line ( [4], [66]) express the HE evaluations as circuits, and prove these circuits using the existing ZK succinct non-interactive argument of knowledge (zkSNARK) schemes, which places a huge burden on server. We evaluate their open-sourced codes, and it turns out that their prover cost is more than 3328 DOI 10.1109/SP61157.2025.00199 four orders of magnitude higher than the HE computation cost. Given that the HE computation is already orders of magnitude more expensive than plaintext computation, such vHE schemes would not be affordable for practical usage. Issue II: Lack of server's privacy. Some other works focus on the verifiable computation scenario where all the inputs are belong to the client, so that the “zero-knowledge” property is not required. In [19], Chatel et al. designed new error-detecting plaintext encoding schemes to construct vHE. By their new encoding schemes, the client can check if the server has correctly executed the computation by checking the encoding of the decrypted results. This method is very fast: it only introduces about 3-11 × overhead to the server's computation time when used for genomic-data analysis. However, in practice it is quite common that the server also has some private inputs, such as private neural network inference [53] (the server holds the model, and the client holds the data), or private set intersection [26] (each party holds a part of dataset). Verifiable computation does not help in those use cases. Research question. The above discussions motivate our main research question: Can we construct a ZKP with (relatively) fast prover time for HE evaluations? We believe that if above research question could be answered, it would be a significant advancement towards truly practical and useful vHE schemes. 1.1. Our Contributions We provide an affirmative answer to our research ques- tion. We have thoroughly analyzed the evaluation operations of modern RLWE-based HE schemes, and find that there are four basic operations being widely used: (i) additions, (ii) multiplications, (iii) modulo operation and (iv) (Inverse) Number-Theoretic Transforms (NTTs) (to be defined in Section 2.4). Previous works first express these operations as circuits, then prove these circuits using the existing zk- SNARKs, introducing unaffordable overhead. In this work, we choose to follow the paradigm of ZKP that is based on Vector Oblivious Linear Evaluations (VOLE) [13] (hereafter, we call it VOLE-ZKP). Additions can be processed for free in VOLE-ZKP, and multiplications can be proved by a prior work called QuickSilver [73]. For modulo and (I)NTT operations, we provide two novel highly efficient VOLE- ZKPs; we prove these operations by checking the consis- tency of the inputs/outputs directly, avoiding the expensive circuit expressions. Given these two VOLE-ZKPs as main building blocks, we are able to build a customized VOLE- ZKP for HE evaluations, including modulus-switching, key- switching, etc. See the overview in Figure 1. The first VOLE-ZKP for modulo operation. We build the first VOLE-ZKP for modulo operation; for example, given committed x1 ∈ Fp1 and x2 ∈ Fp2 where p1, p2 are primes, a prover wishes to prove that x2 = x1 mod p2. This new VOLE-ZKP not only serves as one main building block Cipher.-Cipher.MultiplicationRotationKey-Switching HE Evaluations …… Multiplication Basic OperationsAddition Modulo Operation Basic VOLE-ZKPs QuickSilverThis Work (§4)This Work (§5) FreeProve Decompose Modulus-Switching(I)NTT Operation Figure 1: Overview of our VOLE-ZKP for HE evaluations. of the VOLE-ZKP for HE evaluations, but also has other applications where modulo operations are needed. VOLE-ZKP for (I)NTT operation with O(N) time. Both NTT operation and its inverse (i.e., INTT operation) require O(N log N) time, and they can be viewed as linear trans- formations. Since VOLE-ZKP are friendly to prove linear transformation, one can directly obtain a VOLE-ZKP for (I)NTT with O(N log N) time. In this work, we provide a novel VOLE-ZKP for (I)NTT operation with only O(N) time, which is crucial for proving HE evaluations. Customized VOLE-ZKP for HE evaluations. Given our VOLE-ZKPs for modulo and (I)NTT operations as the main building blocks, we present ZHE: a customized VOLE-ZKP for HE evaluations, whose online phase can be made non- interactive. In this work, we take BGV [14] and CKKS scheme [23] as examples but ZHE is also applicable to other RLWE-based HEs, such as BFV [32]. Implementation and benchmark. We implement our VOLE-ZKPs for two HE schemes (i.e., CKKS and BGV) based on Microsoft SEAL library [1]. To illustrate the practical efficiency and the scalability of our protocols, we conduct experiments under 4 scenarios of different scales: (i) ciphertext-ciphertext multiplication, (ii) matrix-vector mul- tiplication, (iii) logistic regression training approximation and (4) comparison approximation (in the latter 2 scenarios, we only consider our protocols for CKKS). It turns out that under all of above scenarios, our prover's overhead 1 is around 30× for CKKS and is around 32× for BGV . We compare our protocols with two SOTA works: the work by Atapoor et al. [4] (hereafter, we call it ABPS protocol) which implements a ZKP for BGV , and the work by Thibault and Walter [66] (hereafter, we call it TW protocol) which implements a ZKP for TFHE [25]. Since these ZKPs are designed for different HE schemes, we use prover's/verifier's overhead as the performance metrics for comparison, and we put the comparison results in Figure 2. The numbers of our work are obtained under the scenario of matrix-vector multiplication; whereas the scenarios of ABPS and TW are described in Section 7.2. As shown in Figure 2, we make improvements in both prover's and verifier's overhead; particularly, we can reduce prover's overhead by roughly 2-3 orders of magnitude. 1. Prover's overhead = Prover time HE computation time − 1, so as verifier's overhead. 3329",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "Meeting Starting Date": "12 May 2025",
+          "ModDate": "D:20250608032703-04'00'",
+          "IEEE Article ID": "11023336",
+          "CreationDate": "D:20250512161253Z",
+          "IEEE Issue ID": "11023253",
+          "Producer": "OpenPDF 1.0.0-SNAPSHOT; modified using iTextSharp 5.4.1 ©2000-2012 1T3XT BVBA (AGPL-version); modified using iText® Core 7.2.4 (AGPL version) ©2000-2022 iText Group NV",
+          "Subject": "2025 IEEE Symposium on Security and Privacy (SP);2025; ; ;10.1109/SP61157.2025.00199",
+          "IEEE Publication ID": "11023178",
+          "Title": "ZHE: Efficient Zero-Knowledge Proofs for HE Evaluations",
+          "Meeting Ending Date": "15 May 2025"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Zhelei Zhou",
+        "affiliations": [
+          "Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Yun Li",
+        "affiliations": [
+          "Ant Group"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Yuchen Wang",
+        "affiliations": [
+          "Ant Group"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Zhaomin Yang",
+        "affiliations": [
+          "Ant Group"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:4",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Bingsheng Zhang",
+        "affiliations": [
+          "Zhejiang University"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:5",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Cheng Hong",
+        "affiliations": [
+          "Ant Group"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:6",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Tao Wei",
+        "affiliations": [
+          "Ant Group"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:7",
+        "source": "conference_official_web",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Wenguang Chen",
+        "affiliations": [
+          "Ant Group"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "ZHE: Efficient Zero-Knowledge Proofs for HE Evaluations"
+        },
+        {
+          "source": "selected",
+          "value": "ZHE: Efficient Zero-Knowledge Proofs for HE Evaluations"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2025"
+        },
+        {
+          "source": "selected",
+          "value": "2025"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Homomorphic Encryption (HE) allows computations on encrypted data without decryption. It can be used where the users' information are to be processed by an untrustful server, and has been a popular choice in privacy-preserving applica- tions. However, in order to obtain meaningful results, we have to assume an honest-but-curious server, i.e., it will faithfully follow what was asked to do. If the server is malicious, there is no guarantee that the computed result is correct. The notion of verifiable HE (vHE) is introduced to detect malicious server's behaviors, but current vHE schemes are either more than four orders of magnitude slower than the underlying HE operations (Atapoor et. al, CIC 2024) or fast but incompatible with server- side private inputs (Chatel et. al, CCS 2024). In this work, we propose a vHE framework ZHE: effi- cient Zero-Knowledge Proofs (ZKPs) that prove the correct execution of HE evaluations while protecting the server's private inputs. More precisely, we first design two new highly- efficient ZKPs for modulo operations and (Inverse) Number Theoretic Transforms (NTTs), two of the basic operations of HE evaluations. Then we build a customized ZKP for HE evaluations, which is scalable, enjoys a fast prover time and has a non-interactive online phase. Our ZKP is applicable to all Ring-LWE based HE schemes, such as BGV and CKKS. Finally, we implement our protocols for both BGV and CKKS and conduct extensive experiments on various HE workloads. Compared to the state-of-the-art works, both of our prover time and verifier time are improved; especially, our prover cost is only roughly 27-36× more expensive than the underlying HE operations, this is two to three orders of magnitude cheaper than state-of-the-arts. 1. Introduction Homomorphic Encryption (HE) enables computations on encrypted data without decryption, and has been ex- tensively studied since Gentry's breakthrough work [41]. Among the various HE schemes, Ring-LWE (RLWE) based HE schemes such as BFV [32], BGV [14] and CKKS [23] support Single Instruction Multiple Data (SIMD) [65], thus they are suitable for larger workloads and have been widely Zhelei Zhou's work was done during his internship at Ant Group. Zhelei Zhou and Bingsheng Zhang are with the State Key Laboratory of Blockchain and Data Security & Hangzhou High-Tech Zone (Binjiang) Institute of Blockchain and Data Security, Hangzhou, China. adopted in many popular application scenarios, examples include privacy-preserving machine learning [15], [53], pri- vate set intersection [26], [56] and private genome-wide association studies [52]. In most of the works using HE, there are two partic- ipants, whom we refer to as client and server. The server is asked to perform evaluations on client's encrypted data. Usually, the authors assume a threat model that only consid- ers semi-honest (a.k.a, passive, or honest-but-curious) secu- rity, where the server will honestly follow what was asked to do. However, if the server is malicious, it might evaluate arbitrary functions instead of the designated functions on client's input. Indeed, the client has few countermeasures if he doubts the correctness of the HE computation. What's worse, such correctness issues may further lead to privacy violations. Take symmetric private set intersection for ex- ample, where client and server jointly compute a set inter- section using their private sets, and both of them will obtain the result without knowing the other party's input. Without verification, a malicious server might homomorphically add some client's input to some less significant bits of the output in advance, allowing it to learn extra information. Verifiable HE. To address above problem, verifiable HE (vHE) is proposed, which allows the client to verify if the server has correctly executed the given computation task. Some research works on vHEs (e.g. [12], [35], [36], [38], [39], [44], [49]) focus on the theoretical side and offer no implementations. For the recent works focusing on building practical vHEs, we have identified the following issues. Issue I: Unaffordable server's overhead. A line of works employ Zero-Knowledge Proof (ZKP) [45] to build vHE schemes. More precisely, once the server receives the ci- phertext sent by the client, the server can use the received ciphertext (and possibly its private inputs) as the witness to prove that he has performed the correct computation using ZKPs. Since the server's input are protected via ZKPs, it is easy to see that this type of vHEs can be used to construct secure two-party computation protocols. However, the current state-of-the-art (SOTA) vHE works in this line ( [4], [66]) express the HE evaluations as circuits, and prove these circuits using the existing ZK succinct non-interactive argument of knowledge (zkSNARK) schemes, which places a huge burden on server. We evaluate their open-sourced codes, and it turns out that their prover cost is more than 3328 DOI 10.1109/SP61157.2025.00199 four orders of magnitude higher than the HE computation cost. Given that the HE computation is already orders of magnitude more expensive than plaintext computation, such vHE schemes would not be affordable for practical usage. Issue II: Lack of server's privacy. Some other works focus on the verifiable computation scenario where all the inputs are belong to the client, so that the “zero-knowledge” property is not required. In [19], Chatel et al. designed new error-detecting plaintext encoding schemes to construct vHE. By their new encoding schemes, the client can check if the server has correctly executed the computation by checking the encoding of the decrypted results. This method is very fast: it only introduces about 3-11 × overhead to the server's computation time when used for genomic-data analysis. However, in practice it is quite common that the server also has some private inputs, such as private neural network inference [53] (the server holds the model, and the client holds the data), or private set intersection [26] (each party holds a part of dataset). Verifiable computation does not help in those use cases. Research question. The above discussions motivate our main research question: Can we construct a ZKP with (relatively) fast prover time for HE evaluations? We believe that if above research question could be answered, it would be a significant advancement towards truly practical and useful vHE schemes. 1.1. Our Contributions We provide an affirmative answer to our research ques- tion. We have thoroughly analyzed the evaluation operations of modern RLWE-based HE schemes, and find that there are four basic operations being widely used: (i) additions, (ii) multiplications, (iii) modulo operation and (iv) (Inverse) Number-Theoretic Transforms (NTTs) (to be defined in Section 2.4). Previous works first express these operations as circuits, then prove these circuits using the existing zk- SNARKs, introducing unaffordable overhead. In this work, we choose to follow the paradigm of ZKP that is based on Vector Oblivious Linear Evaluations (VOLE) [13] (hereafter, we call it VOLE-ZKP). Additions can be processed for free in VOLE-ZKP, and multiplications can be proved by a prior work called QuickSilver [73]. For modulo and (I)NTT operations, we provide two novel highly efficient VOLE- ZKPs; we prove these operations by checking the consis- tency of the inputs/outputs directly, avoiding the expensive circuit expressions. Given these two VOLE-ZKPs as main building blocks, we are able to build a customized VOLE- ZKP for HE evaluations, including modulus-switching, key- switching, etc. See the overview in Figure 1. The first VOLE-ZKP for modulo operation. We build the first VOLE-ZKP for modulo operation; for example, given committed x1 ∈ Fp1 and x2 ∈ Fp2 where p1, p2 are primes, a prover wishes to prove that x2 = x1 mod p2. This new VOLE-ZKP not only serves as one main building block Cipher.-Cipher.MultiplicationRotationKey-Switching HE Evaluations …… Multiplication Basic OperationsAddition Modulo Operation Basic VOLE-ZKPs QuickSilverThis Work (§4)This Work (§5) FreeProve Decompose Modulus-Switching(I)NTT Operation Figure 1: Overview of our VOLE-ZKP for HE evaluations. of the VOLE-ZKP for HE evaluations, but also has other applications where modulo operations are needed. VOLE-ZKP for (I)NTT operation with O(N) time. Both NTT operation and its inverse (i.e., INTT operation) require O(N log N) time, and they can be viewed as linear trans- formations. Since VOLE-ZKP are friendly to prove linear transformation, one can directly obtain a VOLE-ZKP for (I)NTT with O(N log N) time. In this work, we provide a novel VOLE-ZKP for (I)NTT operation with only O(N) time, which is crucial for proving HE evaluations. Customized VOLE-ZKP for HE evaluations. Given our VOLE-ZKPs for modulo and (I)NTT operations as the main building blocks, we present ZHE: a customized VOLE-ZKP for HE evaluations, whose online phase can be made non- interactive. In this work, we take BGV [14] and CKKS scheme [23] as examples but ZHE is also applicable to other RLWE-based HEs, such as BFV [32]. Implementation and benchmark. We implement our VOLE-ZKPs for two HE schemes (i.e., CKKS and BGV) based on Microsoft SEAL library [1]. To illustrate the practical efficiency and the scalability of our protocols, we conduct experiments under 4 scenarios of different scales: (i) ciphertext-ciphertext multiplication, (ii) matrix-vector mul- tiplication, (iii) logistic regression training approximation and (4) comparison approximation (in the latter 2 scenarios, we only consider our protocols for CKKS). It turns out that under all of above scenarios, our prover's overhead 1 is around 30× for CKKS and is around 32× for BGV . We compare our protocols with two SOTA works: the work by Atapoor et al. [4] (hereafter, we call it ABPS protocol) which implements a ZKP for BGV , and the work by Thibault and Walter [66] (hereafter, we call it TW protocol) which implements a ZKP for TFHE [25]. Since these ZKPs are designed for different HE schemes, we use prover's/verifier's overhead as the performance metrics for comparison, and we put the comparison results in Figure 2. The numbers of our work are obtained under the scenario of matrix-vector multiplication; whereas the scenarios of ABPS and TW are described in Section 7.2. As shown in Figure 2, we make improvements in both prover's and verifier's overhead; particularly, we can reduce prover's overhead by roughly 2-3 orders of magnitude. 1. Prover's overhead = Prover time HE computation time − 1, so as verifier's overhead. 3329"
+        },
+        {
+          "source": "selected",
+          "value": "Homomorphic Encryption (HE) allows computations on encrypted data without decryption. It can be used where the users' information are to be processed by an untrustful server, and has been a popular choice in privacy-preserving applica- tions. However, in order to obtain meaningful results, we have to assume an honest-but-curious server, i.e., it will faithfully follow what was asked to do. If the server is malicious, there is no guarantee that the computed result is correct. The notion of verifiable HE (vHE) is introduced to detect malicious server's behaviors, but current vHE schemes are either more than four orders of magnitude slower than the underlying HE operations (Atapoor et. al, CIC 2024) or fast but incompatible with server- side private inputs (Chatel et. al, CCS 2024). In this work, we propose a vHE framework ZHE: effi- cient Zero-Knowledge Proofs (ZKPs) that prove the correct execution of HE evaluations while protecting the server's private inputs. More precisely, we first design two new highly- efficient ZKPs for modulo operations and (Inverse) Number Theoretic Transforms (NTTs), two of the basic operations of HE evaluations. Then we build a customized ZKP for HE evaluations, which is scalable, enjoys a fast prover time and has a non-interactive online phase. Our ZKP is applicable to all Ring-LWE based HE schemes, such as BGV and CKKS. Finally, we implement our protocols for both BGV and CKKS and conduct extensive experiments on various HE workloads. Compared to the state-of-the-art works, both of our prover time and verifier time are improved; especially, our prover cost is only roughly 27-36× more expensive than the underlying HE operations, this is two to three orders of magnitude cheaper than state-of-the-arts. 1. Introduction Homomorphic Encryption (HE) enables computations on encrypted data without decryption, and has been ex- tensively studied since Gentry's breakthrough work [41]. Among the various HE schemes, Ring-LWE (RLWE) based HE schemes such as BFV [32], BGV [14] and CKKS [23] support Single Instruction Multiple Data (SIMD) [65], thus they are suitable for larger workloads and have been widely Zhelei Zhou's work was done during his internship at Ant Group. Zhelei Zhou and Bingsheng Zhang are with the State Key Laboratory of Blockchain and Data Security & Hangzhou High-Tech Zone (Binjiang) Institute of Blockchain and Data Security, Hangzhou, China. adopted in many popular application scenarios, examples include privacy-preserving machine learning [15], [53], pri- vate set intersection [26], [56] and private genome-wide association studies [52]. In most of the works using HE, there are two partic- ipants, whom we refer to as client and server. The server is asked to perform evaluations on client's encrypted data. Usually, the authors assume a threat model that only consid- ers semi-honest (a.k.a, passive, or honest-but-curious) secu- rity, where the server will honestly follow what was asked to do. However, if the server is malicious, it might evaluate arbitrary functions instead of the designated functions on client's input. Indeed, the client has few countermeasures if he doubts the correctness of the HE computation. What's worse, such correctness issues may further lead to privacy violations. Take symmetric private set intersection for ex- ample, where client and server jointly compute a set inter- section using their private sets, and both of them will obtain the result without knowing the other party's input. Without verification, a malicious server might homomorphically add some client's input to some less significant bits of the output in advance, allowing it to learn extra information. Verifiable HE. To address above problem, verifiable HE (vHE) is proposed, which allows the client to verify if the server has correctly executed the given computation task. Some research works on vHEs (e.g. [12], [35], [36], [38], [39], [44], [49]) focus on the theoretical side and offer no implementations. For the recent works focusing on building practical vHEs, we have identified the following issues. Issue I: Unaffordable server's overhead. A line of works employ Zero-Knowledge Proof (ZKP) [45] to build vHE schemes. More precisely, once the server receives the ci- phertext sent by the client, the server can use the received ciphertext (and possibly its private inputs) as the witness to prove that he has performed the correct computation using ZKPs. Since the server's input are protected via ZKPs, it is easy to see that this type of vHEs can be used to construct secure two-party computation protocols. However, the current state-of-the-art (SOTA) vHE works in this line ( [4], [66]) express the HE evaluations as circuits, and prove these circuits using the existing ZK succinct non-interactive argument of knowledge (zkSNARK) schemes, which places a huge burden on server. We evaluate their open-sourced codes, and it turns out that their prover cost is more than 3328 DOI 10.1109/SP61157.2025.00199 four orders of magnitude higher than the HE computation cost. Given that the HE computation is already orders of magnitude more expensive than plaintext computation, such vHE schemes would not be affordable for practical usage. Issue II: Lack of server's privacy. Some other works focus on the verifiable computation scenario where all the inputs are belong to the client, so that the “zero-knowledge” property is not required. In [19], Chatel et al. designed new error-detecting plaintext encoding schemes to construct vHE. By their new encoding schemes, the client can check if the server has correctly executed the computation by checking the encoding of the decrypted results. This method is very fast: it only introduces about 3-11 × overhead to the server's computation time when used for genomic-data analysis. However, in practice it is quite common that the server also has some private inputs, such as private neural network inference [53] (the server holds the model, and the client holds the data), or private set intersection [26] (each party holds a part of dataset). Verifiable computation does not help in those use cases. Research question. The above discussions motivate our main research question: Can we construct a ZKP with (relatively) fast prover time for HE evaluations? We believe that if above research question could be answered, it would be a significant advancement towards truly practical and useful vHE schemes. 1.1. Our Contributions We provide an affirmative answer to our research ques- tion. We have thoroughly analyzed the evaluation operations of modern RLWE-based HE schemes, and find that there are four basic operations being widely used: (i) additions, (ii) multiplications, (iii) modulo operation and (iv) (Inverse) Number-Theoretic Transforms (NTTs) (to be defined in Section 2.4). Previous works first express these operations as circuits, then prove these circuits using the existing zk- SNARKs, introducing unaffordable overhead. In this work, we choose to follow the paradigm of ZKP that is based on Vector Oblivious Linear Evaluations (VOLE) [13] (hereafter, we call it VOLE-ZKP). Additions can be processed for free in VOLE-ZKP, and multiplications can be proved by a prior work called QuickSilver [73]. For modulo and (I)NTT operations, we provide two novel highly efficient VOLE- ZKPs; we prove these operations by checking the consis- tency of the inputs/outputs directly, avoiding the expensive circuit expressions. Given these two VOLE-ZKPs as main building blocks, we are able to build a customized VOLE- ZKP for HE evaluations, including modulus-switching, key- switching, etc. See the overview in Figure 1. The first VOLE-ZKP for modulo operation. We build the first VOLE-ZKP for modulo operation; for example, given committed x1 ∈ Fp1 and x2 ∈ Fp2 where p1, p2 are primes, a prover wishes to prove that x2 = x1 mod p2. This new VOLE-ZKP not only serves as one main building block Cipher.-Cipher.MultiplicationRotationKey-Switching HE Evaluations …… Multiplication Basic OperationsAddition Modulo Operation Basic VOLE-ZKPs QuickSilverThis Work (§4)This Work (§5) FreeProve Decompose Modulus-Switching(I)NTT Operation Figure 1: Overview of our VOLE-ZKP for HE evaluations. of the VOLE-ZKP for HE evaluations, but also has other applications where modulo operations are needed. VOLE-ZKP for (I)NTT operation with O(N) time. Both NTT operation and its inverse (i.e., INTT operation) require O(N log N) time, and they can be viewed as linear trans- formations. Since VOLE-ZKP are friendly to prove linear transformation, one can directly obtain a VOLE-ZKP for (I)NTT with O(N log N) time. In this work, we provide a novel VOLE-ZKP for (I)NTT operation with only O(N) time, which is crucial for proving HE evaluations. Customized VOLE-ZKP for HE evaluations. Given our VOLE-ZKPs for modulo and (I)NTT operations as the main building blocks, we present ZHE: a customized VOLE-ZKP for HE evaluations, whose online phase can be made non- interactive. In this work, we take BGV [14] and CKKS scheme [23] as examples but ZHE is also applicable to other RLWE-based HEs, such as BFV [32]. Implementation and benchmark. We implement our VOLE-ZKPs for two HE schemes (i.e., CKKS and BGV) based on Microsoft SEAL library [1]. To illustrate the practical efficiency and the scalability of our protocols, we conduct experiments under 4 scenarios of different scales: (i) ciphertext-ciphertext multiplication, (ii) matrix-vector mul- tiplication, (iii) logistic regression training approximation and (4) comparison approximation (in the latter 2 scenarios, we only consider our protocols for CKKS). It turns out that under all of above scenarios, our prover's overhead 1 is around 30× for CKKS and is around 32× for BGV . We compare our protocols with two SOTA works: the work by Atapoor et al. [4] (hereafter, we call it ABPS protocol) which implements a ZKP for BGV , and the work by Thibault and Walter [66] (hereafter, we call it TW protocol) which implements a ZKP for TFHE [25]. Since these ZKPs are designed for different HE schemes, we use prover's/verifier's overhead as the performance metrics for comparison, and we put the comparison results in Figure 2. The numbers of our work are obtained under the scenario of matrix-vector multiplication; whereas the scenarios of ABPS and TW are described in Section 7.2. As shown in Figure 2, we make improvements in both prover's and verifier's overhead; particularly, we can reduce prover's overhead by roughly 2-3 orders of magnitude. 1. Prover's overhead = Prover time HE computation time − 1, so as verifier's overhead. 3329"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Zhelei Zhou",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Yun Li",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Yuchen Wang",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Zhaomin Yang",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 3
+          },
+          {
+            "order": 4,
+            "name": "Bingsheng Zhang",
+            "email": "bingsheng@zju.edu.cn",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 4
+          },
+          {
+            "order": 5,
+            "name": "Cheng Hong",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 5
+          },
+          {
+            "order": 6,
+            "name": "Tao Wei",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 6
+          },
+          {
+            "order": 7,
+            "name": "Wenguang Chen",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "Ant Group, Zhejiang University"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 7
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Tao Wei",
+            "email": "",
+            "affiliations": [
+              "Zhejiang University"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Wenguang Chen",
+            "email": "",
+            "affiliations": [
+              "Zhejiang University"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 116,
+        "author_count": 2,
+        "matched_author_count": 0,
+        "exact_author_match_count": 0,
+        "dominant_author_font_size": 0.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 8,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "ZHE: Efficient Zero-Knowledge Proofs for HE Evaluations",
+        "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Zhelei Zhou",
+            "affiliations": [
+              "Zhejiang University"
+            ]
+          },
+          {
+            "name": "Yun Li",
+            "affiliations": [
+              "Ant Group"
+            ]
+          },
+          {
+            "name": "Yuchen Wang",
+            "affiliations": [
+              "Ant Group"
+            ]
+          },
+          {
+            "name": "Zhaomin Yang",
+            "affiliations": [
+              "Ant Group"
+            ]
+          },
+          {
+            "name": "Bingsheng Zhang",
+            "affiliations": [
+              "Zhejiang University"
+            ]
+          },
+          {
+            "name": "Cheng Hong",
+            "affiliations": [
+              "Ant Group"
+            ]
+          },
+          {
+            "name": "Tao Wei",
+            "affiliations": [
+              "Ant Group"
+            ]
+          },
+          {
+            "name": "Wenguang Chen",
+            "affiliations": [
+              "Ant Group"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      }
+    ]
+  }
+}

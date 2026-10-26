@@ -1,0 +1,436 @@
+{
+  "paper_id": "040_partitioning_ethereum_without_eclipsing_it",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Partitioning Ethereum without Eclipsing It"
+      },
+      {
+        "source": "selected",
+        "value": "Partitioning Ethereum without Eclipsing It"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "We present a practical partitioning attack, which we call Gethlighting, that isolates an Ethereum full node from the rest of the network for hours without having to occupy (or eclipse) all of the target's peer connections. In Gethlighting, an adversary controls only about a half (e.g., 25 out of total 50) of all peer connections of a target node, achieving powerful partitioning with a small attack budget of operating several inexpensive virtual machines. At the core of Gethlighting, its lowrate denial-of-service (DoS) strategy effectively stops the growth of local blockchain for hours while leaving other Ethereum node operations undisturbed. We analyze how subtle and insignificant delays incurred by a low-rate DoS can lead to a powerful blockchain partitioning attack. The practical impact of Gethlighting is discussed-i.e., the attack is scalable and lowcost (only about $5,714 for targeting all Ethereum full nodes concurrently for 24 hours), and extremely simple to launch. We demonstrate the feasibility of Gethlighting with full nodes in the Ethereum mainnet and testnet in both controlled and realworld experiments. We identify a number of fundamental system characteristics in Ethereum that enable Gethlighting attacks and propose countermeasures that require some protocol and client implementation enhancements. Ethereum Foundation has acknowledged this vulnerability in September 2022 and one of our countermeasures has been accepted as a hotfix for Geth 1.11.0."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "We present a practical partitioning attack, which we call Gethlighting, that isolates an Ethereum full node from the rest of the network for hours without having to occupy (or eclipse) all of the target's peer connections. In Gethlighting, an adversary controls only about a half (e.g., 25 out of total 50) of all peer connections of a target node, achieving powerful partitioning with a small attack budget of operating several inexpensive virtual machines. At the core of Gethlighting, its low- rate denial-of-service (DoS) strategy effectively stops the growth of local blockchain for hours while leaving other Ethereum node operations undisturbed. We analyze how subtle and in- significant delays incurred by a low-rate DoS can lead to a powerful blockchain partitioning attack. The practical impact of Gethlighting is discussed - i.e., the attack is scalable and low- cost (only about $5,714 for targeting all Ethereum full nodes concurrently for 24 hours), and extremely simple to launch. We demonstrate the feasibility of Gethlighting with full nodes in the Ethereum mainnet and testnet in both controlled and real- world experiments. We identify a number of fundamental system characteristics in Ethereum that enable Gethlighting attacks and propose countermeasures that require some protocol and client implementation enhancements. Ethereum Foundation has acknowledged this vulnerability in September 2022 and one of our countermeasures has been accepted as a hotfix for Geth 1.11.0. I. I NTRODUCTION Highly reliable network connectivity across distributed nodes is a critical system property for blockchain implementa- tions that must persist even in the face of catastrophic network failures or attacks. Thus, public, permissionless blockchains are designed and operated with the goal of achieving reliable peer-to-peer connectivity. For example, a Bitcoin node by default establishes up to 125 peer connections to achieve its network reliability, while an Ethereum node typically makes up to 50 connections. The security community nevertheless continuously discov- ers new attack vectors that partition one or more peer nodes in these densely connected blockchain networks, demonstrating that network-layer attacks on blockchains can result in the violation of safety properties [3], [22], [33], [37]. At a high level, these partitioning attacks need an airtight control of a target node's peer connections (a.k.a.eclipsing). With complete control over the consensus information to a target node, an *Corresponding author adversary can delay (either temporarily or indefinitely) the blockchain's canonical chain information and also feed any arbitrary transactions/blocks tailored for consensus violations, such as double spending attacks. For example, the Bitcoin eclipse attack [22] demonstrates that a botnet master with a small size (e.g., roughly 4.6K) botnet can easily control all peer connections to a target node. The Bitcoin hijacking [3] and Erebus [37] attacks demonstrate that a network adversary (e.g., a malicious ISP) can also take complete control over a target's peer connections. SyncAttack [33] shows that even partitioning an entire blockchain network is possible. We introduce an Ethereum partitioning attack, dubbed Gethlighting, that, unlike these previous partitioning attacks, does not require an adversary to have complete control over all peer connections of a target node. Our attack only requires to control approximately half of a target Ethereum node's 50 peer connections, much less than what previous attacks demand, to successfully demonstrate a practical partitioning attack in the Ethereum mainnet. This essentially means that the other half of peer connections remain freely available for block delivery while the target node is partitioned by Gethlighting. Controlling only about half of a target node's peer con- nections, a Gethlighting adversary causes an effective low- rate denial-of-service (DoS) disruption to significantly slow down the growth of the blockchain at the target for up to a couple of hours. We present a highly surgical DoS attack that disturbs the chain growth of the target but leaves other operations undisrupted. The target still receives every message (including new blocks and transactions) from its other benign peers without any major disruption (unlike a recent Ethereum DoS attack [27]). Our attack gently disturbs the target's multi- peer message handling logic so that it fails to process a new block within a pre-defined timeout once in a while but not frequently. Such a rare timed-out reception of a new block, however, is sufficient to stop the growth of the local blockchain since the block-level state transition is not commutative in the blockchain model [41]. Our in-depth study explains why Geth- lighting's low-rate DoS strategy of utilizing invalid transactions effectively partitions a target node while many other types of low-cost DoS attacks are futile. Figure 1 shows an example of what happens to a real target Ethereum node in the mainnet during a Gethlighting attack that controls 32 of the target's 50 connections. The primary effect of this attack shown in this example is that the target's chain stops growing for 521 blocks (about 1 hour 22 min) in the worst case; see that one new block is generated at around T = 2, 800 sec, learned by the target instantly, but inserted to the target's chain at around T = 7, 800 sec! Note that the Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24465 www.ndss-symposium.org (Relative) Block insertion/learning time (sec) (Relative) Block generation time (sec) Event: new block inserted Event: new block learned 0 2000 4000 6000 8000 10000 12000 Fig. 1: An example snapshot of two types of events experi- enced by a mainnet target node during a Gethlighting attack: learning a new block (blue stars) and inserting the new block into its chain (red dots). The relative time of these events is presented on the Y-axis while the relative time of their initial block generation is on the X-axis. Gethlighting barely delays block learning (i.e., most blue stars are on the unit- slope straight line) but significantly delays block insertion up to 4,842 sec (1h22m), implying that the target is seriously partitioned. delays experienced for learning new blocks rarely exceeds 10 seconds even when the target is under attack as it still receives timely block information from its 18 other benign peers. The main contribution of this paper can be summarized as follows: 1) We introduce the Ethereum Gethlighting attack (§III), a new partitioning attack that does not require complete control of a target node's peer connections. This relaxation lowers the bar for partitioning attacks significantly. This is the first partitioning attack that does not require a total eclipse of peer connections since an earlier attack by W ¨ust and Gervais [42] in 2016 - i.e., a powerful attack that was once effective but has been prevented after a quick hotfix [35]. In Section V, we demonstrate the feasibility of the Gethlighting attack through extensive experiments in the Ethereum testnet and mainnet. We launch and confirm full-scale Gethlighting attacks against some critical nodes in the testnet and our own nodes in the mainnet. We also carefully select a few critical nodes actively operated in the mainnet and run a basic attack feasibility test without causing any damage to them. Since Gethlighting never eclipses any nodes, it renders existing eclipse mitigation techniques, such as manually configuring static peer connections to reliable peers or net- works (e.g., routing-aware peering [38], trusted static peer connections [23], a hijacking-resistant relay SABRE [2], or traditional relay networks [16], [18]) completely ineffective. 2) We conduct an in-depth examination of the low-rate denial-of-service strategy of the Gethlighting attack. In particular, we investigate the per-peer isolation design in the up-to-date Ethereum clients and identify a subtle scheduling condition that fails a block insertion, which is exploited in the Gethlighting attack. In addition, we identify and analyze four more characteristics of the current Ethereum client implementation that contribute to the effective Gethlighting attack (§IV). 3) We assess the proposed attack's high-risk impact on the existing Ethereum network. First, Gethlighting is a low-cost attack. Since not having to eclipse a target greatly reduces attack costs, it can be carried out by anyone with several inexpensive virtual machines. Second, Gethlighting can simultaneously target multiple Ethereum nodes using the same set of virtual machines, making the attack easily scal- able. Our simple calculation estimates that it would require only about $5,714 for targeting all Ethereum full nodes concurrently for a full day! Third, Gethlighting is simple to prepare and execute (e.g., no knowledge of network topology or routing information is required), making it an attractive attack vector for unskilled adversaries (§VI). Last, if an adversary has some mining capacity, she can easily feed her own blocks to the target and establish a temporary fork (§V-B), making Gethlighting a good launching pad for attacks like double spending [33] or stubborn mining [31]. 4) We propose a number of countermeasures that would be necessary to mitigate the Gethlighting attack (§VII). Since the five characteristics of Ethereum we analyze are fundamental system features, not bugs, no simple, complete solution appears to be available. We instead present several minor tweaks to the Ethereum protocol and client implementation parameters to reduce the effectiveness of the attack. Our analysis suggests that all of these tweaks come with some caveats; e.g., potentially opening up new attack surfaces. Thus, careful, large-scale testing of these potential countermeasures must be followed up to determine their optimal combination for the Ethereum network. Ethereum Foundation has acknowledged the Gethlighting vulnerability in September 2022. In response to our suggestion in Section VII-B (see the corresponding pull request [34]), the Geth team has included a hotfix for Geth 1.11.0 [20]. For the demonstration of Gethlighting in this paper, we mainly focus on the Go Ethereum client implementation (com- monly known as Geth), as this implementation is used by the vast majority (80.7%-91.9% 1 during the first half of 2022) of Ethereum nodes. Because Gethlighting does not entirely rely on the Geth's specific implementation flaws but also on the Ethereum protocol design tradeoffs, other Ethereum client implementations could be vulnerable to Gethlighting as well. We conduct a small proof-of-concept experiment on OpenEthereum, the second most popular Ethereum client (6.5% of Ethereum nodes), and demonstrate the attack's fea- sibility in Appendix A. II. B ACKGROUND In this section, we provide some necessary context for understanding our Gethlighting attack: Ethereum's peer-to-peer network structure (§II-A), peer message handling logic (§II-B), and gossiping strategies (§II-C). A. Ethereum Peer-to-peer Network Ethereum mainnet consists of thousands of fully-validating nodes. By default, each network node makes up to 50 peer 1https://etherscan.io/nodetracker 2"
+      },
+      {
+        "source": "selected",
+        "value": "We present a practical partitioning attack, which we call Gethlighting, that isolates an Ethereum full node from the rest of the network for hours without having to occupy (or eclipse) all of the target's peer connections. In Gethlighting, an adversary controls only about a half (e.g., 25 out of total 50) of all peer connections of a target node, achieving powerful partitioning with a small attack budget of operating several inexpensive virtual machines. At the core of Gethlighting, its lowrate denial-of-service (DoS) strategy effectively stops the growth of local blockchain for hours while leaving other Ethereum node operations undisturbed. We analyze how subtle and insignificant delays incurred by a low-rate DoS can lead to a powerful blockchain partitioning attack. The practical impact of Gethlighting is discussed-i.e., the attack is scalable and lowcost (only about $5,714 for targeting all Ethereum full nodes concurrently for 24 hours), and extremely simple to launch. We demonstrate the feasibility of Gethlighting with full nodes in the Ethereum mainnet and testnet in both controlled and realworld experiments. We identify a number of fundamental system characteristics in Ethereum that enable Gethlighting attacks and propose countermeasures that require some protocol and client implementation enhancements. Ethereum Foundation has acknowledged this vulnerability in September 2022 and one of our countermeasures has been accepted as a hotfix for Geth 1.11.0."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hwanjo Heo",
+          "email": "hwanjo@etri.re.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Etri Daejeon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "South Korea",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Seungwon Woo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Taeung Yoon",
+          "email": "yoontaeung@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Min Suk Kang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Seungwon Shin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "ETRI/KAIST Daejeon, KAIST, Daejeon, South Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KAIST, Daejeon, South Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KAIST, Daejeon, South Korea"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hwanjo Heo",
+          "email": "hwanjo@etri.re.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Etri Daejeon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "South Korea",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Seungwon Woo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Taeung Yoon",
+          "email": "yoontaeung@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Min Suk Kang",
+          "email": "minsukk@kaist.ac.kr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 6,
+          "name": "Seungwon Shin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 122,
+      "author_count": 7,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Hwanjo Heo",
+          "block_id": "pdf:p1:b1",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Seungwon Woo",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Taeung Yoon",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Min Suk Kang",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Seungwon Shin",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Hwanjo Heo",
+          "affiliation_raw": "ETRI Daejeon, South Korea Daejeon, South Korea",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b1",
+          "affiliation_block_ids": [
+            "pdf:p1:b6",
+            "pdf:p1:b11"
+          ],
+          "email_raw": "hwanjo@etri.re.kr",
+          "email_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b14"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.581,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Seungwon Woo",
+          "affiliation_raw": "ETRI/KAIST Daejeon, South Korea Daejeon, South Korea",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b11"
+          ],
+          "email_raw": "seungww@etri.re.kr",
+          "email_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b14"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 0.92,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Taeung Yoon",
+          "affiliation_raw": "KAIST Daejeon, South Korea Daejeon, South Korea",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b12"
+          ],
+          "email_raw": "seungww@etri.re.kr",
+          "email_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b12",
+            "pdf:p1:b15"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.096,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Min Suk Kang",
+          "affiliation_raw": "KAIST Daejeon, South Korea Daejeon, South Korea",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b9",
+            "pdf:p1:b12"
+          ],
+          "email_raw": "minsukk@kaist.ac.kr",
+          "email_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b12",
+            "pdf:p1:b16"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 0.592,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 6,
+          "author": "Seungwon Shin",
+          "affiliation_raw": "KAIST Daejeon, South Korea",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b10",
+            "pdf:p1:b13"
+          ],
+          "email_raw": "claude@kaist.ac.kr",
+          "email_block_ids": [
+            "pdf:p1:b17"
+          ],
+          "validation_block_ids": [
+            "pdf:p1:b13",
+            "pdf:p1:b16"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 0.465,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Partitioning Ethereum without Eclipsing It",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/partitioning-ethereum-without-eclipsing-it/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hwanjo Heo",
+          "affiliations": [
+            "ETRI"
+          ]
+        },
+        {
+          "name": "Seungwon Woo",
+          "affiliations": [
+            "ETRI/KAIST"
+          ]
+        },
+        {
+          "name": "Taeung Yoon",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Min Suk Kang",
+          "affiliations": [
+            "KAIST"
+          ]
+        },
+        {
+          "name": "Seungwon Shin",
+          "affiliations": [
+            "KAIST"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

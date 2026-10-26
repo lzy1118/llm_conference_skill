@@ -1,0 +1,374 @@
+{
+  "paper_id": "018_eagleye_exposing_hidden_web_interfaces_in_iot_devices_via_routing_analysis",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "EAGLEYE: Exposing Hidden Web Interfaces in IoT Devices via Routing Analysis"
+      },
+      {
+        "source": "selected",
+        "value": "EAGLEYE: Exposing Hidden Web Interfaces in IoT Devices via Routing Analysis"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Hidden web interfaces, i.e., undisclosed access channels in IoT devices, introduce great security risks and have resulted in severe attacks in recent years. However, the definition of such threats is vague, and few solutions are able to discover them. Due to their hidden nature, traditional bug detection solutions (e.g., taint analysis, fuzzing) are hard to detect them. In this paper, we present a novel solution EAGLEYE to automatically expose hidden web interfaces in IoT devices. By analyzing input requests to public interfaces, we first identify routing tokens within the requests, i.e., those values (e.g., actions or file names) that are referenced and used as index by the firmware code (routing mechanism) to find associated handler functions. Then, we utilize modern large language models to analyze the contexts of such routing tokens and deduce their common pattern, and then infer other candidate values (e.g., other actions or file names) of these tokens. Lastly, we perform a hidden-interface directed black-box fuzzing, which mutates the routing tokens in input requests with these candidate values as the high-quality dictionary. We have implemented a prototype of EAGLEYE and evaluated it on 13 different commercial IoT devices. EAGLEYE successfully found 79 hidden interfaces, 25X more than the state-of-the-art (SOTA) solution IoTScope. Among them, we further discovered 29 unknown vulnerabilities including backdoor, XSS (cross-site scripting), command injection, and information leakage, and have received 7 CVEs."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Hidden web interfaces, i.e., undisclosed access chan- nels in IoT devices, introduce great security risks and have resulted in severe attacks in recent years. However, the definition of such threats is vague, and few solutions are able to discover them. Due to their hidden nature, traditional bug detection solutions (e.g., taint analysis, fuzzing) are hard to detect them. In this paper, we present a novel solution EAGLEYE to automatically expose hidden web interfaces in IoT devices. By analyzing input requests to public interfaces, we first identify routing tokens within the requests, i.e., those values (e.g., actions or file names) that are referenced and used as index by the firmware code (routing mechanism) to find associated handler functions. Then, we utilize modern large language models to analyze the contexts of such routing tokens and deduce their common pattern, and then infer other candidate values (e.g., other actions or file names) of these tokens. Lastly, we perform a hidden-interface directed black-box fuzzing, which mutates the routing tokens in input requests with these candidate values as the high-quality dictionary. We have implemented a prototype of E AGLEYE and evaluated it on 13 different commercial IoT devices. E AGLEYE successfully found 79 hidden interfaces, 25X more than the state-of-the-art (SOTA) solution IoTScope. Among them, we further discovered 29 unknown vulnerabilities including backdoor, XSS (cross-site scripting), command injection, and information leakage, and have received 7 CVEs. I. I NTRODUCTION IoT (Internet of Things) devices have been widely used in modern society. As reported [ 21], the number of IoT devices has reached 16.7 billion until 2023 and has been continuously growing. The explosive growth of IoT has been accompanied by increasingly serious security incidents [ 3]. Among various security issues of IoT devices, the hidden web interface issue is often overlooked due to its hidden nature. But it leaves undisclosed access channels to attackers and is very likely to cause serious incidents. For instance, the vulnerability CVE-2023-3519 in Citrix products [ 11] was BCorresponding authors: ganshuitao@gmail.com, jzy@nudt.edu.cn confirmed as critical (with a CVSS score of 9.8), which comes with a typical stack overflow in a hidden interface, and could lead to unauthorized remote code execution in the device. In recent years, vulnerabilities and security incidents introduced by hidden web interfaces quickly grew, including but not limited to many serious vulnerabilities of network devices 1. Thus, the security risks of hidden web interfaces in IoT devices demand special attention. However, few solutions address the hidden web interface threat, due to the following reasons. First of all, the definition of such threats is vague. The recent solution IoTScope [ 39] argues that the hidden interface can lead to unauthenticated access but gives no clear definition. However, authenticated accesses could also have the hidden interface issue, i.e., hidden web interfaces after authentication can introduce significant security risks too. Instead, we define hidden web interfaces as interfaces that are accessible but not disclosed to users in the devices' documentation . Such hidden interfaces could be intentionally or unintentionally introduced by developers, and even inadvertently introduced without developers' awareness [35]. Second, it is difficult to discover hidden web interfaces, e.g., via traditional bug finding solutions. On one hand, there is no obvious pattern of hidden interfaces, making it hard to statically search such interfaces. On the other hand, there are no obvious consequences or feedback when the hidden interfaces are triggered, making it hard to dynamically test such interfaces (e.g., via fuzzing). For instance, fuzzing solu- tions [33], [45], [22], [16], [46], [25] are effective at finding bugs in software. Since the hidden interfaces are unknown, fuzzers cannot set such interfaces as targets to explore. But, fuzzers could mutate test cases and trigger hidden interfaces with a small probability. However, without an appropriate mu- tation strategy or runtime feedback mechanism, the probability of triggering such hidden interfaces is extremely low. Taint analysis is another type of popular solution to finding bugs in IoT [8], [31], [19], [10], [9], [43], [17]. But it can neither find hidden interfaces, since we can hardly define the taint source or taint sink related to hidden interfaces. 1CVE-2024-3273 (D-link), CVE-2023-46805 (IVanti PCS), CVE-2022- 0342 (Zyxel), CVE-2021-22893 (Pulse Secure), and CVE-2019-1653 (Cisco). Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240399 www.ndss-symposium.org Lastly, since the hidden interfaces are not exposed, they are rarely explored or tested by regular bug finding solutions, making them more likely to be vulnerable to potential bugs and vulnerabilities. To address this problem, we present a novel solution EAGLEYE to expose hidden web interfaces in IoT devices automatically. After conducting an extensive study of firmware from a variety of IoT devices (cf., Section II-B), we find that, an IoT device has multiple interfaces including public ones and hidden ones, which often share a similar pattern in the input requests, except the actions to perform or files to operate, which are denoted as routing tokens in the input requests. The root cause of this phenomenon is that, the underlying firmware code often has a specific routing mechanism to dispatch the input requests to different handler functions or services. For simplicity, these routing mechanisms often take certain values (i.e., the routing tokens) from the input requests and use them as the key or index to find associated handlers. As a result, we could analyze public interfaces to infer their routing tokens, then infer other candidate values from firmware, and finally generate new input requests by replacing these routing tokens with candidate values to explore other interfaces (including hidden ones). In this paper, we denote such a process as the routing analysis. Specifically, routing tokens link input requests with the routing mechanism implemented in the firmware. Therefore, we first analyze input requests to public interfaces, and per- form a token-based comparison to locate variable fields in the requests and identify routing tokens. Then, we analyze the contexts (including reference code and data) of these routing tokens and try to learn their common pattern, which is an intellectual task usually depending on expert experience and requiring much manual effort. To automate and streamline this process, we utilize the modern large language models (LLMs) to comprehend and analyze firmware code [38], [14] like hu- mans. With the discovered pattern, we search for other similar token values within the firmware and mark them as candidate values for the routing tokens. These candidate values serve as a high-quality dictionary and can be used to replace the routing tokens and generate new input requests, able to explore new interfaces including hidden ones. Finally, we perform a hidden-interface directed black-box fuzzing, which explores hidden interfaces with these found routing tokens and tests the device to verify whether the explored interfaces are accessible and documented by the vendor. If an explored interface is accessible and undocumented, a hidden web interface will be reported. During the black-box fuzzing, we leverage responses from devices to assist our fuzzer in mutating seeds (i.e., requests) and catching exceptions during testing, promoting the fuzzing efficiency and finding vulnerabilities faster. We have implemented a prototype of E AGLEYE and eval- uated it on 13 different commercial IoT devices. E AGLEYE discovered 79 hidden interfaces on these devices, 25X more than the state-of-the-art (SOTA) solution IoTScope. Among these interfaces, we further found 29 unknown vulnerabilities including backdoor 2, XSS, command injection, and informa- tion leakage, and have received 7 CVEs. In summary, this paper makes the following contributions: • We present a novel solution E AGLEYE to automatically expose hidden web interfaces in IoT devices, which mod- els the problem as a routing token searching problem and conducts a hidden-interface directed black-box fuzzing for efficient exploration. • We present a novel routing analysis solution that inte- grates both traditional program analysis and large lan- guage models, to identify routing tokens, and infer their pattern and candidate values, which serves as a high- quality dictionary for the fuzzing campaign. • We evaluated E AGLEYE on 13 different commercial IoT devices and discovered 79 hidden interfaces, among which 29 unknown vulnerabilities were found. Results showed that E AGLEYE significantly outperformed the SOTA baseline. II. B ACKGROUND AND MOTIVATION A. Problem Explanation Interface in the paper refers to the gateway for clients to access specific functionalities or services of a device. It establishes the rules for client-device interaction, effectively serving as a mutual agreement on how to request particular functionalities or services. For optimal user experience, all device interfaces should be accessible to clients (e.g., browsers), through a centralized access portal. This portal acts as a unified gateway, offering a clear navigation structure that guides users to the various interfaces of the device, thereby defining what they can interact with and control. These interfaces are intended to be publicly accessible from the portal and are also documented in the de- vice's user manual. This documentation ensures transparency and user familiarity with the device's capabilities. However, interfaces that are not included in the device's manual present a different scenario. These are the interfaces that remain invis- ible to the client, as they are neither documented nor traceable through standard web navigation. This lack of documentation and visibility renders them stealthy and elusive, which is the central focus of this paper. These are known as hidden interfaces, being undocumented and untraceable through web navigation, and thus offer no visual cues. Sometimes, hidden interfaces may be inadvertently exposed due to inadequate access controls, allowing access to internal functionalities or services. In other scenarios, functionalities or services may be outdated and concealed from the client by removing their references in the entry portal, yet they persist within the device. To formalize the discussion, we define interfaces documented in the device manual aspublic interfaces. 3 These are typically accessible through the entry portal. Conversely, 2Backdoor here refers to a hidden interface embedded within the firmware that allows unauthenticated access to control over the device. 3The device documentation may only reveal accessible functionalities or services, with corresponding interfaces classified as public. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Hidden web interfaces, i.e., undisclosed access channels in IoT devices, introduce great security risks and have resulted in severe attacks in recent years. However, the definition of such threats is vague, and few solutions are able to discover them. Due to their hidden nature, traditional bug detection solutions (e.g., taint analysis, fuzzing) are hard to detect them. In this paper, we present a novel solution EAGLEYE to automatically expose hidden web interfaces in IoT devices. By analyzing input requests to public interfaces, we first identify routing tokens within the requests, i.e., those values (e.g., actions or file names) that are referenced and used as index by the firmware code (routing mechanism) to find associated handler functions. Then, we utilize modern large language models to analyze the contexts of such routing tokens and deduce their common pattern, and then infer other candidate values (e.g., other actions or file names) of these tokens. Lastly, we perform a hidden-interface directed black-box fuzzing, which mutates the routing tokens in input requests with these candidate values as the high-quality dictionary. We have implemented a prototype of EAGLEYE and evaluated it on 13 different commercial IoT devices. EAGLEYE successfully found 79 hidden interfaces, 25X more than the state-of-the-art (SOTA) solution IoTScope. Among them, we further discovered 29 unknown vulnerabilities including backdoor, XSS (cross-site scripting), command injection, and information leakage, and have received 7 CVEs."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Hangtian Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Lei Zheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Shuitao Gan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "Zhongguancun Laboratory Laboratory for Advanced Computing and Intelligence Engineering Henan Key Laboratory of Information Security, National University of Defense Technology",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Zicong Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Hongqi Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Yishun Zeng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Zhiyuan Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Jiahai Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Hangtian Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Lei Zheng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Shuitao Gan",
+          "email": "ganshuitao@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Chao Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "Zhongguancun Laboratory Laboratory for Advanced Computing and Intelligence Engineering Henan Key Laboratory of Information Security, National University of Defense Technology",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Zicong Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Hongqi Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Yishun Zeng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Information Engineering University",
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University",
+            "JCSS, Digital Technology Group Co, Tsinghua University (INSC) -Science City (Guangzhou), Ltd"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Zhiyuan Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Jiahai Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 109,
+      "author_count": 9,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "EAGLEYE: Exposing Hidden Web Interfaces in IoT Devices via Routing Analysis",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/eagleye-exposing-hidden-web-interfaces-in-iot-devices-via-routing-analysis/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Hangtian Liu",
+          "affiliations": [
+            "Information Engineering University"
+          ]
+        },
+        {
+          "name": "Lei Zheng",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ]
+        },
+        {
+          "name": "Shuitao Gan",
+          "affiliations": [
+            "Laboratory for Advanced Computing and Intelligence Engineering"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ]
+        },
+        {
+          "name": "Zicong Gao",
+          "affiliations": [
+            "Information Engineering University"
+          ]
+        },
+        {
+          "name": "Hongqi Zhang",
+          "affiliations": [
+            "Henan Key Laboratory of Information Security"
+          ]
+        },
+        {
+          "name": "Yishun Zeng",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ]
+        },
+        {
+          "name": "Zhiyuan Jiang",
+          "affiliations": [
+            "National University of Defense Technology"
+          ]
+        },
+        {
+          "name": "Jiahai Yang",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace (INSC), Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

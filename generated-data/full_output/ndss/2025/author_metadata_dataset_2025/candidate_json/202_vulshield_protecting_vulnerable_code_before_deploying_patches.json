@@ -1,0 +1,548 @@
+{
+  "paper_id": "202_vulshield_protecting_vulnerable_code_before_deploying_patches",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "VulShield: Protecting Vulnerable Code Before Deploying Patches"
+      },
+      {
+        "source": "selected",
+        "value": "VulShield: Protecting Vulnerable Code Before Deploying Patches"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Despite the high frequency of vulnerabilities exposed in software, patching these vulnerabilities remains slow and challenging, which leaves a potential attack window. To mitigate this threat, researchers seek temporary solutions to prevent vulnerabilities from being exploited or triggered before they are officially patched. However, prior approaches have limited protection scope, often require code modification of the target vulnerable programs, and rely on recent system features. These limitations significantly reduce their usability and practicality. In this work, we introduce VulShield, an automated temporary protection system that addresses these limitations. VulShield leverages sanitizer reports, and automatically generates security policies that describe the vulnerability triggering conditions. The policies are then enforced through a Linux kernel module that can efficiently detect and prevent vulnerability from being triggered or exploited at runtime. By carefully designing the kernel module, VulShield is capable of protecting both vulnerable kernels, and user-space programs running on them. It does not rely on recent system features like eBPF and Linux security modules. VulShield is also pluggable and non-invasive as it does not need to modify the code of target vulnerable software. We evaluated VulShield's capability in a comprehensive set of vulnerabilities in 9 different types and found that VulShield mitigated all cases in an automated and effective manner. For Nginx, the latency introduced per request does not exceed 0.001 ms, while the peak performance overhead observed in UnixBench is 1.047%."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Despite the high frequency of vulnerabilities exposed in software, patching these vulnerabilities remains slow and challenging, which leaves a potential attack window. To mitigate this threat, researchers seek temporary solutions to prevent vulnerabilities from being exploited or triggered before they are officially patched. However, prior approaches have limited protection scope, often require code modification of the target vulnerable programs, and rely on recent system features. These limitations significantly reduce their usability and practicality. In this work, we introduce VulShield, an automated temporary protection system that addresses these limitations. VulShield leverages sanitizer reports, and automatically generates security policies that describe the vulnerability triggering conditions. The policies are then enforced through a Linux kernel module that can efficiently detect and prevent vulnerability from being triggered or exploited at runtime. By carefully designing the kernel module, VulShield is capable of protecting both vulnerable kernels, and user-space programs running on them. It does not rely on recent system features like eBPF and Linux security modules. VulShield is also pluggable and non-invasive as it does not need to modify the code of target vulnerable software. We evaluated VulShield's capability in a comprehensive set of vulnerabilities in 9 different types and found that VulShield mitigated all cases in an automated and effective manner. For Nginx, the latency introduced per request does not exceed 0.001 ms, while the peak performance overhead observed in UnixBench is 1.047%. I. I NTRODUCTION Security vulnerabilities are a significant threat to software systems. Every year, automated vulnerability detection meth- ods like fuzzing [7], [8], [43] find a large number of memory corruption vulnerabilities in real-world software systems like Linux kernels and PHP interpreters. For example, in 2023, over †Chao Zhang is the corresponding author. He is also affiliated with Joint Research Center for System Security, Tsinghua University (INSC) - Science City (Guangzhou) Digital Technology Group Co., Ltd. 28,000 new vulnerabilities were identified and assigned CVE numbers, highlighting the ongoing and increasing challenges in maintaining software security [1]. Attackers can exploit these vulnerabilities to compromise the software systems, po- tentially leading to severe consequences such as data breaches, financial loss, etc. However, a significant number of vulnerable software remains deployed and running in the wild even after vulnerabilities have been discovered and reported [6]. This creates an attack window for malicious attackers to exploit them. While hot-patching schemes [12], [16], [26], [31], [40], [57] have been proposed to reduce the repair time, studies show that about 25% of vulnerabilities remain unresolved even 30 days after disclosure [34]. This delay is mainly due to the need for developers to analyze vulnerable programs, identify root causes, and create patches, a time-consuming process. Alternatively, implementing a 'quick and dirty patch' can result in unintended program behavior [52]. Therefore, there is an urgent need to develop solutions to mitigate the threats in unpatched programs. To protect vulnerable software before vulnerability patches are available, researchers have been seeking temporary protec- tion mechanisms. Temporary protection solutions aim to miti- gate the risks associated with vulnerabilities while permanent (official) patches are being developed. These solutions provide a stopgap measure to secure systems against potential exploits during the interim period and have shown great promise in the past [15], [27], [29], [55]. Prior solutions often monitor the execution of vulnerable programs and take a series of actions to remediate software vulnerabilities when they are triggered at runtime. However, existing temporary protection mechanisms fall short in three aspects: • C1: Limited protection scope. They support a very lim- ited range of vulnerabilities and programs. For instance, PET [55] can support five classes of vulnerabilities in Linux kernels, leaving many other prevalent vulnerabilities and user-space programs unprotected. • C2: Demand for code modification of vulnerable pro- grams. Most of these approaches [27], [29], [52], [55] Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240298 www.ndss-symposium.org require inserting and compiling helper code or patches into the target vulnerable programs to achieve temporary protection. This makes it challenging to automatically scale these solutions across different software versions due to their inherent differences. • C3: Reliance of advanced features. Some prior solu- tions [3], [56] rely on advanced features introduced recently, such as the combination of eBPF and Linux Security Mod- ules (LSM) introduced after Linux 5.7 [22]. This reliance on advanced features makes them hardly compatible with legacy software, which remains widely used in practice [46], [47], [59]. Therefore, there is an urgent need to develop more versatile, non-invasive, and backward-compatible temporary protection mechanisms that can address a broader spectrum of vulnera- bilities without requiring significant modifications to existing software. In this work, we present VulShield, a novel, fully automated approach that addresses the aforementioned limita- tions and offers temporary mitigation for vulnerabilities before patch releases. VulShield takes as input a sanitizer report, generates a policy that describes the vulnerability triggering conditions, and then takes a series of mitigation actions. To resolve C1, VulShield leverages constraint expressions to define the triggering conditions, which could cover a wider range of vulnerability classes. This is based on the observation that security patches mostly implement security measures through the use of constraint expressions in conditional state- ments, as outlined in various studies [16], [39], [57], [60]. Ad- ditionally, we develop a standalone kernel module that probes the executions of both the kernel and user-space programs running on it, providing protection for both of them. This also avoids customized modification of the target vulnerable program ( C2) and does not require any advanced system features, making VulShield completely backward compatible (C3). It is worth noting that VulShield can protect already run- ning programs on the fly without the need for recompiling or reloading. This is particularly crucial for programs with high service availability requirements, such as web servers and kernels. In summary, VulShield overcomes the limita- tions of previous work by providing proactive, scalable, and non-intrusive protection without hardware or other advanced dependencies. It mitigates a wide range of vulnerabilities before they are exploited without the need for additional instrumentation or manual preprocessing. VulShield's design ensures compatibility across different applications and kernel versions, offering effective and practical security for both running kernels and applications on the fly. VulShield generates source-level policies based on source- level vulnerability information derived from sanitizer reports. The policies are then mapped to the binary level using the DW ARF [19] debug information of the target binary, so that VulShield can generate the policy for vulnerable binaries without sanitizer implementation. Then VulShield enforces them using Policy Enforcer to provide protection. The policy is flexible with modularization, expressive, and extensible, well adapting to different vulnerability mitigation scenarios. The Policy Enforcer consists of three components tailored to address various vulnerabilities. 1) The perception component collects various program runtime information for subsequent decision and execution stages. It collects key data at specific code addresses, including memory access parameters to mon- itor for buffer overflows. 2) The decision component performs security checks at particular locations following the policy specification, and commands the subsequent stage to execute mitigation measures accordingly. Based on the information gathered from the perception component, it can make a va- riety of logical judgments and a comprehensive decision on the triggering condition of vulnerabilities. 3) The execution component takes the mitigation actions specified in the policy. For instance, this component may terminate the target user- space process when a vulnerability is triggered. Note that the mitigation actions are predefined and have limited capabilities, and thus would not introduce unexpected security risks. We conducted a comprehensive assessment of VulShield in various aspects. We applied VulShield to a wide vari- ety of vulnerabilities in real-world software, including user- space programs, servers, and kernels. The results showed that VulShield could effectively generate policies to protect the software from nine types of vulnerabilities. Furthermore, we performed an analysis on a large patch dataset from SecretPatch [53], showing that VulShield has high usability for temporary protection across a range of vulnerability types in principle. To evaluate the performance overhead of VulShield policies under high-frequency triggers, we used Nginx for stress testing. The results indicate that, on average, each request introduces up to 0.001 ms of latency due to the use of the policies. We further used the UnixBench benchmark suite to measure the impact of VulShield on overall system perfor- mance and tested the performance cost of combining different policies. The results show that the total performance overhead introduced by VulShield is no more than 1.047%. We also quantified the time required to generate VulShield policies. The results show that policies for kernel vulnerabilities can be generated within minutes, allowing VulShield to provide fast and effective temporary protection. We will open-source VulShield.* In summary, we make the following contributions: • We propose to leverage constraint expressions to describe vulnerability-triggering conditions to cover a wider range of vulnerabilities. • We design and develop VulShield, an automated temporary vulnerability mitigation framework that can prevent vulner- abilities from being exploited or triggered. It can provide protection on the fly, without code modification or restart of the target program. • Our evaluation demonstrated VulShield could protect more types of vulnerabilities in both kernels and user-space pro- grams. *https://github.com/vul337/VulShield 2"
+      },
+      {
+        "source": "selected",
+        "value": "Despite the high frequency of vulnerabilities exposed in software, patching these vulnerabilities remains slow and challenging, which leaves a potential attack window. To mitigate this threat, researchers seek temporary solutions to prevent vulnerabilities from being exploited or triggered before they are officially patched. However, prior approaches have limited protection scope, often require code modification of the target vulnerable programs, and rely on recent system features. These limitations significantly reduce their usability and practicality. In this work, we introduce VulShield, an automated temporary protection system that addresses these limitations. VulShield leverages sanitizer reports, and automatically generates security policies that describe the vulnerability triggering conditions. The policies are then enforced through a Linux kernel module that can efficiently detect and prevent vulnerability from being triggered or exploited at runtime. By carefully designing the kernel module, VulShield is capable of protecting both vulnerable kernels, and user-space programs running on them. It does not rely on recent system features like eBPF and Linux security modules. VulShield is also pluggable and non-invasive as it does not need to modify the code of target vulnerable software. We evaluated VulShield's capability in a comprehensive set of vulnerabilities in 9 different types and found that VulShield mitigated all cases in an automated and effective manner. For Nginx, the latency introduced per request does not exceed 0.001 ms, while the peak performance overhead observed in UnixBench is 1.047%."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yuan Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Chao Zhang",
+          "email": "chaoz@tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jinhao Zhu",
+          "email": "jinhao.zhu@berkeley.edu",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Penghui Li",
+          "email": "lipenghui315@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Chenyang Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Songtao Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Wende Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yuan Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Chao Zhang",
+          "email": "chaoz@tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 2,
+          "name": "Jinhao Zhu",
+          "email": "jinhao.zhu@berkeley.edu",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Penghui Li",
+          "email": "lipenghui315@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Chenyang Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Songtao Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Wende Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Zhongguancun Laboratory, JCSS, Zhongguancun Laboratory, Tsinghua University, UC Berkeley, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 99,
+      "author_count": 7,
+      "matched_author_count": 7,
+      "exact_author_match_count": 7,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.0,
+        "candidates": [
+          {
+            "name": "Yuan Li",
+            "block_id": "pdfplumber:p1:b3",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b6",
+              "pdfplumber:p1:b9"
+            ]
+          },
+          {
+            "name": "Chao Zhang",
+            "block_id": "pdfplumber:p1:b4",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b7",
+              "pdfplumber:p1:b10"
+            ]
+          },
+          {
+            "name": "Jinhao Zhu",
+            "block_id": "pdfplumber:p1:b5",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b8",
+              "pdfplumber:p1:b11"
+            ]
+          },
+          {
+            "name": "Penghui Li",
+            "block_id": "pdfplumber:p1:b14",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b18",
+              "pdfplumber:p1:b22"
+            ]
+          },
+          {
+            "name": "Chenyang Li",
+            "block_id": "pdfplumber:p1:b15",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b19",
+              "pdfplumber:p1:b23"
+            ]
+          },
+          {
+            "name": "Songtao Yang",
+            "block_id": "pdfplumber:p1:b16",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b20",
+              "pdfplumber:p1:b24"
+            ]
+          },
+          {
+            "name": "Wende Tan",
+            "block_id": "pdfplumber:p1:b17",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b21",
+              "pdfplumber:p1:b25"
+            ]
+          }
+        ],
+        "fully_supported": true,
+        "anchored_existing_count": 7
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Yuan Li",
+          "block_id": "pdfplumber:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Chao Zhang",
+          "block_id": "pdfplumber:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Jinhao Zhu",
+          "block_id": "pdfplumber:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Penghui Li",
+          "block_id": "pdfplumber:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Chenyang Li",
+          "block_id": "pdfplumber:p1:b15",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Songtao Yang",
+          "block_id": "pdfplumber:p1:b16",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Wende Tan",
+          "block_id": "pdfplumber:p1:b17",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Yuan Li",
+          "affiliation_raw": "Zhongguancun Laboratory, Tsinghua University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b3",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b6",
+            "pdfplumber:p1:b9"
+          ],
+          "email_raw": "lydorazoe@gmail.com",
+          "email_block_ids": [
+            "pdfplumber:p1:b12"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 1.744,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 1,
+          "author": "Chao Zhang",
+          "affiliation_raw": "Tsinghua University, JCSS, Zhongguancun Laboratory",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b4",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b7",
+            "pdfplumber:p1:b10"
+          ],
+          "email_raw": "chaoz@tsinghua.edu.cn",
+          "email_block_ids": [
+            "pdfplumber:p1:b13"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.388,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 2,
+          "author": "Jinhao Zhu",
+          "affiliation_raw": "UC Berkeley",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b5",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b8"
+          ],
+          "email_raw": "jinhao.zhu@berkeley.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.258,
+          "center_distance": 0.001,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 3,
+          "author": "Penghui Li",
+          "affiliation_raw": "Zhongguancun Laboratory",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b14",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b18"
+          ],
+          "email_raw": "lipenghui315@gmail.com",
+          "email_block_ids": [
+            "pdfplumber:p1:b22"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.001,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 4,
+          "author": "Chenyang Li",
+          "affiliation_raw": "Peking University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b15",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b19"
+          ],
+          "email_raw": "lcy2000@stu.pku.edu.cn",
+          "email_block_ids": [
+            "pdfplumber:p1:b23"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 5,
+          "author": "Songtao Yang",
+          "affiliation_raw": "Zhongguancun Laboratory",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b16",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b20"
+          ],
+          "email_raw": "onionyst@gmail.com",
+          "email_block_ids": [
+            "pdfplumber:p1:b24"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 6,
+          "author": "Wende Tan",
+          "affiliation_raw": "Tsinghua University",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b17",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b21"
+          ],
+          "email_raw": "twd2.me@gmail.com",
+          "email_block_ids": [
+            "pdfplumber:p1:b25"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.257,
+          "center_distance": 0.0,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "VulShield: Protecting Vulnerable Code Before Deploying Patches",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/vulshield-protecting-vulnerable-code-before-deploying-patches/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yuan Li",
+          "affiliations": [
+            "Zhongguancun Laboratory & Tsinghua University"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Tsinghua University & JCSS & Zhongguancun Laboratory"
+          ]
+        },
+        {
+          "name": "Jinhao Zhu",
+          "affiliations": [
+            "UC Berkeley"
+          ]
+        },
+        {
+          "name": "Penghui Li",
+          "affiliations": [
+            "Zhongguancun Laboratory"
+          ]
+        },
+        {
+          "name": "Chenyang Li",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Songtao Yang",
+          "affiliations": [
+            "Zhongguancun Laboratory"
+          ]
+        },
+        {
+          "name": "Wende Tan",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

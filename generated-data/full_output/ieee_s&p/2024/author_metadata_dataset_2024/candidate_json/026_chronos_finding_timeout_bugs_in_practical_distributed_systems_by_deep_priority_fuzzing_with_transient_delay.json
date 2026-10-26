@@ -1,0 +1,283 @@
+{
+  "paper_id": "026_chronos_finding_timeout_bugs_in_practical_distributed_systems_by_deep_priority_fuzzing_with_transient_delay",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Chronos: Finding Timeout Bugs in Practical Distributed Systems by Deep-Priority Fuzzing with Transient Delay"
+      },
+      {
+        "source": "selected",
+        "value": "Chronos: Finding Timeout Bugs in Practical Distributed Systems by Deep-Priority Fuzzing with Transient Delay"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Delays are inevitable in complex distributed environments. Timeout mechanisms are commonly used to handle unexpected failures in distributed systems. However, incorrect timeout handling or implementation errors in timeout mechanisms can lead to system hang-ups or crashes. Such timeout bugs may be crucial and pose a significant threat to the availability and security of distributed systems. In this work, we introduce Chronos, a general testing framework for automatically detecting timeout bugs in distributed systems with deep-priority transient delays. First, we propose general runtime delayed libraries that dynamically inject fine-grained delays in a Distributed System Under Test (DSUT). To effectively trigger delays and constantly explore timeout bugs in deep paths, Chronos harnesses a deep-priority guided fuzzing that dynamically generates high-quality delay sequences in the runtime. Then, Chronos utilizes transient delays to eliminate the time overhead caused by actual delays and accelerate the test process. We implemented and evaluated Chronos on four widely used distributed systems, including ZooKeeper, MySQL-Cluster, HDFS, and Go-Ethereum. Compared with the state-of-the-art techniques, Random, Brute-Force, and Coverage-Guided fault injection, Chronos covers 26.40%, 21.69%, and 15.14% more timeout mechanism logic, respectively. Furthermore, Chronos has detected 27 timeout bugs in these real-world applications, which have been repaired by the corresponding maintainers."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Delays are inevitable in complex distributed envi- ronments. Timeout mechanisms are commonly used to handle unexpected failures in distributed systems. However, incor- rect timeout handling or implementation errors in timeout mechanisms can lead to system hang-ups or crashes. Such timeout bugs may be crucial and pose a significant threat to the availability and security of distributed systems. In this work, we introduce Chronos, a general testing framework for automatically detecting timeout bugs in dis- tributed systems with deep-priority transient delays. First, we propose general runtime delayed libraries that dynamically inject fine-grained delays in a Distributed System Under Test (DSUT). To effectively trigger delays and constantly explore timeout bugs in deep paths, Chronos harnesses a deep-priority guided fuzzing that dynamically generates high-quality delay sequences in the runtime. Then, Chronos utilizes transient delays to eliminate the time overhead caused by actual delays and accelerate the test process. We implemented and evaluated Chronos on four widely used distributed systems, including ZooKeeper, MySQL-Cluster, HDFS, and Go-Ethereum. Com- pared with the state-of-the-art techniques, Random, Brute- Force, and Coverage-Guided fault injection, Chronos covers 26.40%, 21.69%, and 15.14% more timeout mechanism logic, respectively. Furthermore, Chronos has detected 27 timeout bugs in these real-world applications, which have been repaired by the corresponding maintainers. 1. Introduction Distributed systems are prone to various faults that may occur at runtime. One of the most common faults is delays, which can be caused by uncontrollable factors (e.g., net- work traffic, resource monopolization, software bugs, etc.) in complex distributed systems [1], [2]. To mitigate these unexpected failures, various timeout mechanisms have been proposed, ensuring the stability and reliability of distributed systems. For instance, when a distributed node n1 sends a request to another node n2, n1 can use the timeout mech- anism to avoid infinite waiting in case n2 fails to respond. In practice, most timeout mechanisms guarantee one of the ∗Fuchen Ma has contributed equally to this work. BYu Jiang is the corresponding author. most fundamental properties called availability [3], which ensures that distributed systems can consistently provide functional services uninterrupted. Distributed systems are inherently complex, involving numerous resources and nodes that communicate with each other. To handle unexpected delays and maintain uninter- rupted service provision, these systems require a significant number of timeout mechanisms. However, due to this com- plexity, it can be challenging to avoid incorrect handling or implementation bugs in these timeout logics. Since timeouts play a critical role in the operation of distributed systems, any bugs can have severe consequences. They can result in service unavailability, data loss, and even compromising system security. As an example of real-world distributed system failure, a bug [4] in Facebook's platform is caused by missing timeout checking. As a result, a widespread outage affected the company's own services as well as many third-party sites that used Facebook's authentication services. Another example is ZOOKEEPER-3189 [5], which caused ZooKeeper to stop responding to client requests, leading to a massive outage of service disruption for several hours. Attackers can easily exploit such bugs to conduct distributed denial-of-service (DDoS) attacks, leading to sig- nificant financial loss. Such bugs that break the availability of distributed systems by errors in timeout mechanisms are called Timeout Bugs. The timeout mechanisms are challenging to test in reality because such code is infrequently executed. To effectively test these mechanisms, it is necessary to trigger more abnor- mal delays than those occurring naturally during regular use. Distributed system model checkers [6], [7], [8], [9] enumer- ate the orders of non-deterministic events (including delays) and suffer from the state space explosion problem. Software fault injection (SFI) is a promising technique to test the resilience and dependability of distributed systems [10], [11]. Chaos engineering [12], [13], [14], [15], [16], such as ChaosBlade [15], is a run-time injection technique that randomly injects various faults into a running software system at the OS level. However, the effectiveness of such coarse-grained delay injection is limited, as it ignores lots of context information, resulting in ineffective testing. Existing compile-time fault injection approaches [17], [18], [19], [20], [21] have shown promising results by injecting faults at the source code level, effectively detecting hard-to-find 1939 DOI 10.1109/SP54263.2024.00109 bugs. Tools [22], [23], [24] utilize bruteforce search to explore the combinations of multiple fault blocks. How- ever, they struggle to effectively explore the vast space of a practical distributed system. To effectively explore the huge state space, FIFUZZ [18] and CrashFuzz [25] employ fuzzing technology to mutate the fault sequence according to the runtime code coverage feedback, successfully detecting numerous bugs in real-world programs. Nonetheless, code coverage-guided algorithms may lead to the exploration of many fault-irrelevant codes, causing inefficiency in explor- ing fault-handling logic. Additionally, compile-time injec- tion techniques often require manual efforts to identify fault points, limiting their scalability and generality. To effectively detect timeout bugs in distributed systems, there are three main challenges: (1) The first challenge is to provide a general method for precisely injecting fine-grained delays in DSUTs. This can be difficult due to the complex and varied timeout mechanism implementation among nodes in distributed systems. Identifying the appropriate locations to inject delays is crucial for effectively testing these timeout mechanisms. (2) The second challenge lies in effectively triggering instrumented delays in deep paths, where timeout bugs tend to remain hidden. In distributed systems, the busi- ness logic is usually divided into multiple phases, each with its corresponding timeout mechanism. Frequently executing delays at the shallow execution paths prevents exploring timeout mechanisms in deep paths, resulting in ineffective testing. (3) The third challenge is that executing delays will introduce significant overhead to the testing process. Since actual timeouts are usually time-consuming, directly inserting delays reduces testing speed and, consequently, testing performance. To tackle these challenges, we introduce Chronos, a general testing framework designed to detect timeout bugs in distributed systems. First, Chronos injects the delay logic into the common runtime libraries that are used by the DSUTs. By replacing their original dependent libraries with our delayed libraries in the runtime environment, DSUTs are automatically injected with fine-grained delays. Secondly, to effectively trigger the injected delays and explore timeout bugs hidden in deep paths within DSUTs, Chronos proposes a deep-priority guided fuzzing algorithm. It dynamically mutates the combinations of possible delays, calculates the execution depth of each triggered delay, and prioritizes the delay sequences that can cover deep delay blocks. Finally, to expedite the testing process and eliminate the time overhead caused by actual delays, Chronos introduces the transient delay. It resets the timeout value to zero, immediately trig- gering the timeout mechanisms in DSUTs without the need to wait for an extended actual time. In this way, Chronos continuously generates plenty of abnormal delays to exercise as many timeout mechanisms as possible and effectively detects timeout bugs in distributed systems. We implemented Chronos and evaluated its effectiveness on four widely-used distributed systems: ZooKeeper [26], MySQL-Cluster [27], Hadoop Distributed File System (HDFS) [28], and Go-Ethereum [29]. In comparison to other state-of-art fault injection approaches, e.g., Random, BruteForce, and Coverage-Guided, Chronos excelled in ex- posing more timeout bugs and covering 26.40%, 21.69%, and 15.14% more delay blocks, respectively. Additionally, Chronos identified 27 timeout bugs in total, with 5 in ZooKeeper, 14 in MySQL-Cluster, 6 in HDFS, and 2 in Go-Ethereum. In summary, we make three key contributions: • We design and implement the general runtime delayed libraries. Any systems linked to them are automatically injected with fine-grained delays. These common runtime libraries are open-sourced, 1 and can be used directly. • We introduce a deep-priority guided fuzzing with tran- sient delays to effectively explore timeout mechanisms in DSUTs and detect the timeout bugs in deep paths. • We implement and evaluate Chronos on four widely used distributed consensus systems. We will open-source Chronos1 for practical usage. For now, Chronos has suc- cessfully detected 27 timeout bugs. 2. Background of Timeout Mechanism Since a distributed system may encounter different kinds of faults, e.g., delays, the timeout mechanisms are proposed to handle these faults at runtime. Figure 1 shows the main distribution of timeout mechanisms in a typical distributed system. When object O1 sends a request to another object O2, O1 sets a timeout value and waits for the response from O2 until the time expires. In case O2 fails or a message loss occurs, O1 can break out of the waiting state triggered by the timeout event, execute timeout handling code, and take proper actions (e.g., retrying or skipping) accordingly. In general, the timeout mechanism in a distributed system mainly distributes on two parts: (1) Components interact locally through Local IO; (2) Nodes communicate remotely via Network IO [30], [31], [32], [33], [34]. 𝑁𝑜𝑑𝑒! 𝑁𝑜𝑑𝑒\" 1.sendarequest 2.setatimerandwaiting 3.timeout 4.timeouthandling ObjectO2ObjectO1 TimeoutMechanism XNetworkIO LocalIO𝑝𝑟𝑜𝑐𝑒𝑠𝑠!𝑝𝑟𝑜𝑐𝑒𝑠𝑠\" … localresources X 𝑁𝑜𝑑𝑒# TimeoutDistribution 𝑝𝑟𝑜𝑐𝑒𝑠𝑠# Figure 1. The timeout distribution and timeout mechanism example in a typical distributed system. Interactions via local IO include intra-process resource access and inter-process communication. Intra-process re- source access enables the program to access and manipu- late resources, including files, devices, etc., within its own address space [35], [36]. Inter-Process Communication (IPC) is commonly used in the operating system to allow 1. Chronos: https://github.com/SecTechTool/Chronos 1940"
+      },
+      {
+        "source": "selected",
+        "value": "Delays are inevitable in complex distributed environments. Timeout mechanisms are commonly used to handle unexpected failures in distributed systems. However, incorrect timeout handling or implementation errors in timeout mechanisms can lead to system hang-ups or crashes. Such timeout bugs may be crucial and pose a significant threat to the availability and security of distributed systems. In this work, we introduce Chronos, a general testing framework for automatically detecting timeout bugs in distributed systems with deep-priority transient delays. First, we propose general runtime delayed libraries that dynamically inject fine-grained delays in a Distributed System Under Test (DSUT). To effectively trigger delays and constantly explore timeout bugs in deep paths, Chronos harnesses a deep-priority guided fuzzing that dynamically generates high-quality delay sequences in the runtime. Then, Chronos utilizes transient delays to eliminate the time overhead caused by actual delays and accelerate the test process. We implemented and evaluated Chronos on four widely used distributed systems, including ZooKeeper, MySQL-Cluster, HDFS, and Go-Ethereum. Compared with the state-of-the-art techniques, Random, Brute-Force, and Coverage-Guided fault injection, Chronos covers 26.40%, 21.69%, and 15.14% more timeout mechanism logic, respectively. Furthermore, Chronos has detected 27 timeout bugs in these real-world applications, which have been repaired by the corresponding maintainers."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yuanliang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Fuchen Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yuanhang Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ming Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Qing Liao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harbin Institute of Technology, Harbin Heilongjiang, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yuanliang Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Fuchen Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yuanhang Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Ming Gu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Qing Liao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Harbin Institute of Technology, Harbin Heilongjiang, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 107,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Chronos: Finding Timeout Bugs in Practical Distributed Systems by Deep-Priority Fuzzing with Transient Delay",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yuanliang Chen",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Fuchen Ma",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yuanhang Zhou",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Ming Gu",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Qing Liao",
+          "affiliations": [
+            "Harbin Institute of Technology"
+          ]
+        },
+        {
+          "name": "Yu Jiang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 6,
+      "proposed_count": 6,
+      "retained_count": 5,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

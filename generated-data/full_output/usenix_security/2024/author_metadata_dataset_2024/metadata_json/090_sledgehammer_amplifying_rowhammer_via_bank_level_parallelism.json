@@ -1,0 +1,992 @@
+{
+  "title": "SledgeHammer: Amplifying Rowhammer via Bank-level Parallelism",
+  "year": "2024",
+  "abstract": "Rowhammer is a hardware vulnerability in DDR memory by which attackers can perform specific access patterns in their own memory to flip bits in adjacent, uncontrolled rows without accessing them. Since its discovery by Kim et. al. (ISCA 2014), Rowhammer attacks have emerged as an alarming threat to numerous security mechanisms. In this paper, we show that Rowhammer attacks can in fact be more effective when combined with bank-level parallelism, a technique in which the attacker hammers multiple memory banks simultaneously. This allows us to increase the amount of Rowhammer-induced flips 7-fold and significantly speed up prior Rowhammer attacks relying on native code execution. Furthermore, we tackle the task of mounting browser-based Rowhammer attacks. Here, we develop a self-evicting version of multi-bank hammering, allowing us to replace clflush instructions with cache evictions. We then develop a novel method for detecting contiguous physical addresses using memory access timings, thereby obviating the need for transparent huge pages. Finally, by combining both techniques, we are the first, to our knowledge, to obtain Rowhammer bit flips on DDR4 memory from the Chrome and Firefox browsers running on default Linux configurations, without enabling transparent huge pages. ing Rowhammer attacks on DDR4, causing up to seven-fold increase in the amount of flips compared to other hammering techniques. Moreover, using multi-bank hammering we are able to demonstrate the first Rowhammer bit flips on Intel's 12th generation (Alder Lake) architecture. Finally, we show that multi-bank hammering can be performed in browser contexts, demonstrating the first Rowhammer attack in both Chrome and Firefox under default configurations, without Transparent Huge Pages (THPs). Multi-Bank Hammering. The main observation behind multi-bank Rowhammer is that while memory accesses are often written sequentially, they are actually performed in parallel when accessing different memory banks. Thus, by accessing many banks simultaneously we are essentially able to parallelize Rowhammer, improving prior works by obtaining about a 7-fold increase in the amount of bitflips found within an hour of hammering in native-code environments. Avoiding clflush. Going beyond native contexts, we next consider browser-based Rowhammer attacks. To that aim, we must avoid any use of the clflush instruction, replacing it with cache eviction techniques. Here, we introduce a new hammering technique dubbed \"SledgeHammer\", that leverages multi-bank hammering to improve the result of [8], traversing a set of addresses that both hammers and fully self-evicts without the use of any dummy elements. This in turn allows us to create a self-evicting Rowhammer attack without using clflush, which is required for browser-based hammering. Avoiding Transparent Huge Pages (THPs). The next step for enabling browser-based Rowhammer attacks is the need to obtain 2 MB blocks of physically contiguous memory. Not wanting to assume a non-default configuration of transparent huge pages being enabled in the kernel, we develop a novel approach for detecting physically contiguous pages using memory access timing from within the browser. This allows us to obtain the first browser-based Rowhammer attack on DDR4 memory using a fully default configuration, taking 20 seconds on average to obtain the first bit flip. Improving End-to-End Rowhammer Attacks. As a final contribution, we show how our techniques can be used to significantly improve the performance of Rowhammer. First, in the native setting we demonstrate an opcode flipping attack against the sudo binary, allowing unprivileged code to obtain root permissions within minutes. We then extend the RAMBleed [41] attack to DDR4 memory, showing a leakage rate of 1.369 bits / second. Finally, we tackle browser-based Rowhammer, obtaining flips up to 169 bits / hour, as well as demonstrating a 64-bit write primitive on Firefox. Summary of Contributions. We contribute the following: • We use bank-level parallelism to construct multi-bank hammering, and show that it can flip bits that were hitherto unflippable using prior techniques (Section 4). • We analyze the root cause behind multi-bank hammering across different Intel architectures (Section 5). • We enable browser-based Rowhammer attacks on default Linux configurations by avoiding clflush instructions Section 6 and transparent huge pages (Section 7). • We improve End-to-End Rowhammer attacks (Section 8). 1.2 Vulnerability Disclosure Following the practice of vulnerability disclosure, we shared our findings with Intel, Mozilla, and Google.",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Ingab Kang",
+      "email": "igkang@umich.edu",
+      "affiliations": [
+        "University of Michigan"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 1,
+      "name": "Walter Wang",
+      "email": "walwan@gatech.edu",
+      "affiliations": [
+        "Georgia Tech"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 2,
+      "name": "Jason Kim",
+      "email": "nosajmik@gatech.edu",
+      "affiliations": [
+        "Georgia Tech"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 3,
+      "name": "Stephan van Schaik",
+      "email": "stephvs@umich.edu",
+      "affiliations": [
+        "University of Michigan"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 4,
+      "name": "Youssef Tobah",
+      "email": "ytobah@umich.edu",
+      "affiliations": [
+        "University of Michigan"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 5,
+      "name": "Daniel Genkin",
+      "email": "genkin@gatech.edu",
+      "affiliations": [
+        "Georgia Tech"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 6,
+      "name": "Andrew Kwong",
+      "email": "andrew@cs.unc.edu",
+      "affiliations": [
+        "UNC Chapel Hill"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 7,
+      "name": "Yuval Yarom",
+      "email": "yuval.yarom@rub.de",
+      "affiliations": [
+        "Ruhr University Bochum"
+      ],
+      "affiliation_source": "usenix_pdf",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Ingab Kang"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "University of Michigan"
+  ],
+  "first_affiliation": "University of Michigan",
+  "participating_affiliations": [
+    "University of Michigan",
+    "Georgia Tech",
+    "UNC Chapel Hill",
+    "Ruhr University Bochum"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Ingab Kang",
+      "affiliation": "University of Michigan",
+      "source": "usenix_pdf"
+    },
+    {
+      "author": "Walter Wang",
+      "affiliation": "Georgia Tech",
+      "source": "usenix_pdf"
+    },
+    {
+      "author": "Jason Kim",
+      "affiliation": "Georgia Tech",
+      "source": "usenix_pdf"
+    },
+    {
+      "author": "Stephan van Schaik",
+      "affiliation": "University of Michigan",
+      "source": "usenix_pdf"
+    },
+    {
+      "author": "Youssef Tobah",
+      "affiliation": "University of Michigan",
+      "source": "usenix_pdf"
+    },
+    {
+      "author": "Daniel Genkin",
+      "affiliation": "Georgia Tech",
+      "source": "usenix_pdf"
+    },
+    {
+      "author": "Andrew Kwong",
+      "affiliation": "UNC Chapel Hill",
+      "source": "usenix_pdf"
+    },
+    {
+      "author": "Yuval Yarom",
+      "affiliation": "Ruhr University Bochum",
+      "source": "usenix_pdf"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "SledgeHammer: Amplifying Rowhammer via Bank-level Parallelism"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2024"
+      },
+      {
+        "evidence_id": "tei:abstract",
+        "source": "grobid_tei",
+        "field": "abstract",
+        "raw_text": "Rowhammer is a hardware vulnerability in DDR memory by which attackers can perform specific access patterns in their own memory to flip bits in adjacent, uncontrolled rows without accessing them. Since its discovery by Kim et. al. (ISCA 2014), Rowhammer attacks have emerged as an alarming threat to numerous security mechanisms. In this paper, we show that Rowhammer attacks can in fact be more effective when combined with bank-level parallelism, a technique in which the attacker hammers multiple memory banks simultaneously. This allows us to increase the amount of Rowhammer-induced flips 7-fold and significantly speed up prior Rowhammer attacks relying on native code execution. Furthermore, we tackle the task of mounting browser-based Rowhammer attacks. Here, we develop a self-evicting version of multi-bank hammering, allowing us to replace clflush instructions with cache evictions. We then develop a novel method for detecting contiguous physical addresses using memory access timings, thereby obviating the need for transparent huge pages. Finally, by combining both techniques, we are the first, to our knowledge, to obtain Rowhammer bit flips on DDR4 memory from the Chrome and Firefox browsers running on default Linux configurations, without enabling transparent huge pages. ing Rowhammer attacks on DDR4, causing up to seven-fold increase in the amount of flips compared to other hammering techniques. Moreover, using multi-bank hammering we are able to demonstrate the first Rowhammer bit flips on Intel's 12th generation (Alder Lake) architecture. Finally, we show that multi-bank hammering can be performed in browser contexts, demonstrating the first Rowhammer attack in both Chrome and Firefox under default configurations, without Transparent Huge Pages (THPs). Multi-Bank Hammering. The main observation behind multi-bank Rowhammer is that while memory accesses are often written sequentially, they are actually performed in parallel when accessing different memory banks. Thus, by accessing many banks simultaneously we are essentially able to parallelize Rowhammer, improving prior works by obtaining about a 7-fold increase in the amount of bitflips found within an hour of hammering in native-code environments. Avoiding clflush. Going beyond native contexts, we next consider browser-based Rowhammer attacks. To that aim, we must avoid any use of the clflush instruction, replacing it with cache eviction techniques. Here, we introduce a new hammering technique dubbed \"SledgeHammer\", that leverages multi-bank hammering to improve the result of [8], traversing a set of addresses that both hammers and fully self-evicts without the use of any dummy elements. This in turn allows us to create a self-evicting Rowhammer attack without using clflush, which is required for browser-based hammering. Avoiding Transparent Huge Pages (THPs). The next step for enabling browser-based Rowhammer attacks is the need to obtain 2 MB blocks of physically contiguous memory. Not wanting to assume a non-default configuration of transparent huge pages being enabled in the kernel, we develop a novel approach for detecting physically contiguous pages using memory access timing from within the browser. This allows us to obtain the first browser-based Rowhammer attack on DDR4 memory using a fully default configuration, taking 20 seconds on average to obtain the first bit flip. Improving End-to-End Rowhammer Attacks. As a final contribution, we show how our techniques can be used to significantly improve the performance of Rowhammer. First, in the native setting we demonstrate an opcode flipping attack against the sudo binary, allowing unprivileged code to obtain root permissions within minutes. We then extend the RAMBleed [41] attack to DDR4 memory, showing a leakage rate of 1.369 bits / second. Finally, we tackle browser-based Rowhammer, obtaining flips up to 169 bits / hour, as well as demonstrating a 64-bit write primitive on Firefox. Summary of Contributions. We contribute the following: • We use bank-level parallelism to construct multi-bank hammering, and show that it can flip bits that were hitherto unflippable using prior techniques (Section 4). • We analyze the root cause behind multi-bank hammering across different Intel architectures (Section 5). • We enable browser-based Rowhammer attacks on default Linux configurations by avoiding clflush instructions Section 6 and transparent huge pages (Section 7). • We improve End-to-End Rowhammer attacks (Section 8). 1.2 Vulnerability Disclosure Following the practice of vulnerability disclosure, we shared our findings with Intel, Mozilla, and Google."
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Ingab Kang",
+        "order": 0,
+        "email": "igkang@umich.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Walter Wang",
+        "order": 1,
+        "email": "",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jason Kim",
+        "order": 2,
+        "email": "",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Stephan Van Schaik",
+        "order": 3,
+        "email": "",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:4",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Youssef Tobah",
+        "order": 4,
+        "email": "ytobah@umich.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:5",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Daniel Genkin",
+        "order": 5,
+        "email": "genkin@gatech.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:6",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Andrew Kwong",
+        "order": 6,
+        "email": "andrew@cs.unc.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:7",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Yuval Yarom",
+        "order": 7,
+        "email": "yuval.yarom@rub.de",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:8",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "",
+        "order": 8,
+        "email": "",
+        "affiliations": [
+          "University of Michigan, Georgia Tech"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:9",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "",
+        "order": 9,
+        "email": "",
+        "affiliations": [
+          "University of Michigan, Georgia Tech"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:10",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "",
+        "order": 10,
+        "email": "",
+        "affiliations": [
+          "UNC Chapel Hill, Ruhr University Bochum"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "SledgeHammer: Amplifying Rowhammer"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "via Bank-level Parallelism"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Ingab Kang, University of Michigan; Walter Wang and Jason Kim, Georgia Tech;"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Stephan van Schaik and Youssef Tobah, University of Michigan; Daniel Genkin,"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Georgia Tech; Andrew Kwong, UNC Chapel Hill; Yuval Yarom, Ruhr University Bochum"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          94.761,
+          541.932,
+          110.061,
+          542.932
+        ],
+        "font_size": 1.0,
+        "raw_text": "SledgeHammer: Amplifying Rowhammer",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          173.091,
+          517.929,
+          184.791,
+          518.929
+        ],
+        "font_size": 1.0,
+        "raw_text": "via Bank-level Parallelism",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          51.287,
+          493.932,
+          62.987,
+          494.932
+        ],
+        "font_size": 1.0,
+        "raw_text": "Ingab Kang, University of Michigan; Walter Wang and Jason Kim, Georgia Tech;",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.837,
+          475.928,
+          65.487,
+          476.928
+        ],
+        "font_size": 1.0,
+        "raw_text": "Stephan van Schaik and Youssef Tobah, University of Michigan; Daniel Genkin,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          36.475,
+          457.924,
+          46.375,
+          458.924
+        ],
+        "font_size": 1.0,
+        "raw_text": "Georgia Tech; Andrew Kwong, UNC Chapel Hill; Yuval Yarom, Ruhr University Bochum",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          104.405,
+          435.932,
+          135.005,
+          436.932
+        ],
+        "font_size": 1.0,
+        "raw_text": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          102.259,
+          346.228,
+          123.859,
+          347.228
+        ],
+        "font_size": 1.0,
+        "raw_text": "This paper is included in the Proceedings of the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          159.337,
+          325.221,
+          173.287,
+          326.221
+        ],
+        "font_size": 1.0,
+        "raw_text": "33rd USENIX Security Symposium.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          164.314,
+          301.228,
+          183.214,
+          302.228
+        ],
+        "font_size": 1.0,
+        "raw_text": "August 14-16, 2024 • Philadelphia, PA, USA",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          254.581,
+          279.228,
+          263.581,
+          280.228
+        ],
+        "font_size": 1.0,
+        "raw_text": "978-1-939133- 4 4 -1",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          298.487,
+          205.288,
+          315.137,
+          206.288
+        ],
+        "font_size": 1.0,
+        "raw_text": "Open access to the Proceedings of the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          314.251,
+          187.284,
+          327.751,
+          188.284
+        ],
+        "font_size": 1.0,
+        "raw_text": "33rd USENIX Security Symposium",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          345.233,
+          169.28,
+          355.583,
+          170.28
+        ],
+        "font_size": 1.0,
+        "raw_text": "is sponsored by USENIX.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          0.0,
+          0.0,
+          1279.8,
+          12.0
+        ],
+        "font_size": 12.0,
+        "raw_text": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium. August 14-16, 2024 • Philadelphia, PA, USA 978-1-939133- 4 4 -1 Open access to the Proceedings of the 33rd USENIX Security Symposium is sponsored by USENIX.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Rowhammer is a hardware vulnerability in DDR memory by which attackers can perform specific access patterns in their own memory to flip bits in adjacent, uncontrolled rows with- out accessing them. Since its discovery by Kim et. al. (ISCA 2014), Rowhammer attacks have emerged as an alarming threat to numerous security mechanisms. In this paper, we show that Rowhammer attacks can in fact be more effective when combined with bank-level parallelism, a technique in which the attacker hammers multiple memory banks simultaneously. This allows us to increase the amount of Rowhammer-induced flips 7-fold and significantly speed up prior Rowhammer attacks relying on native code execution. Furthermore, we tackle the task of mounting browser-based Rowhammer attacks. Here, we develop a self-evicting ver- sion of multi-bank hammering, allowing us to replace clflush instructions with cache evictions. We then develop a novel method for detecting contiguous physical addresses using memory access timings, thereby obviating the need for trans- parent huge pages. Finally, by combining both techniques, we are the first, to our knowledge, to obtain Rowhammer bit flips on DDR4 memory from the Chrome and Firefox browsers running on default Linux configurations, without enabling transparent huge pages.",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "CreationDate": "D:20231010171537-04'00'",
+          "Creator": "LaTeX with hyperref",
+          "ModDate": "D:20240716170113Z",
+          "PTEX.Fullbanner": "This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023) kpathsea version 6.3.5",
+          "Producer": "pdfTeX-1.40.25; modified using iText® Core 8.0.0 (AGPL version) ©2000-2023 Apryse Group NV",
+          "Trapped": "/False"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Ingab Kang",
+        "affiliations": [
+          "University of Michigan"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Walter Wang",
+        "affiliations": [
+          "Georgia Tech"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Jason Kim",
+        "affiliations": [
+          "Georgia Tech"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Stephan van Schaik",
+        "affiliations": [
+          "University of Michigan"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:4",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Youssef Tobah",
+        "affiliations": [
+          "University of Michigan"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:5",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Daniel Genkin",
+        "affiliations": [
+          "Georgia Tech"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:6",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Andrew Kwong",
+        "affiliations": [
+          "UNC Chapel Hill"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:7",
+        "source": "conference_official_web",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "field": "author_affiliation_relation",
+        "author": "Yuval Yarom",
+        "affiliations": [
+          "Ruhr University Bochum"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "SledgeHammer: Amplifying Rowhammer via Bank-level Parallelism"
+        },
+        {
+          "source": "selected",
+          "value": "SledgeHammer: Amplifying Rowhammer via Bank-level Parallelism"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2024"
+        },
+        {
+          "source": "selected",
+          "value": "2024"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": "Rowhammer is a hardware vulnerability in DDR memory by which attackers can perform specific access patterns in their own memory to flip bits in adjacent, uncontrolled rows without accessing them. Since its discovery by Kim et. al. (ISCA 2014), Rowhammer attacks have emerged as an alarming threat to numerous security mechanisms. In this paper, we show that Rowhammer attacks can in fact be more effective when combined with bank-level parallelism, a technique in which the attacker hammers multiple memory banks simultaneously. This allows us to increase the amount of Rowhammer-induced flips 7-fold and significantly speed up prior Rowhammer attacks relying on native code execution. Furthermore, we tackle the task of mounting browser-based Rowhammer attacks. Here, we develop a self-evicting version of multi-bank hammering, allowing us to replace clflush instructions with cache evictions. We then develop a novel method for detecting contiguous physical addresses using memory access timings, thereby obviating the need for transparent huge pages. Finally, by combining both techniques, we are the first, to our knowledge, to obtain Rowhammer bit flips on DDR4 memory from the Chrome and Firefox browsers running on default Linux configurations, without enabling transparent huge pages. ing Rowhammer attacks on DDR4, causing up to seven-fold increase in the amount of flips compared to other hammering techniques. Moreover, using multi-bank hammering we are able to demonstrate the first Rowhammer bit flips on Intel's 12th generation (Alder Lake) architecture. Finally, we show that multi-bank hammering can be performed in browser contexts, demonstrating the first Rowhammer attack in both Chrome and Firefox under default configurations, without Transparent Huge Pages (THPs). Multi-Bank Hammering. The main observation behind multi-bank Rowhammer is that while memory accesses are often written sequentially, they are actually performed in parallel when accessing different memory banks. Thus, by accessing many banks simultaneously we are essentially able to parallelize Rowhammer, improving prior works by obtaining about a 7-fold increase in the amount of bitflips found within an hour of hammering in native-code environments. Avoiding clflush. Going beyond native contexts, we next consider browser-based Rowhammer attacks. To that aim, we must avoid any use of the clflush instruction, replacing it with cache eviction techniques. Here, we introduce a new hammering technique dubbed \"SledgeHammer\", that leverages multi-bank hammering to improve the result of [8], traversing a set of addresses that both hammers and fully self-evicts without the use of any dummy elements. This in turn allows us to create a self-evicting Rowhammer attack without using clflush, which is required for browser-based hammering. Avoiding Transparent Huge Pages (THPs). The next step for enabling browser-based Rowhammer attacks is the need to obtain 2 MB blocks of physically contiguous memory. Not wanting to assume a non-default configuration of transparent huge pages being enabled in the kernel, we develop a novel approach for detecting physically contiguous pages using memory access timing from within the browser. This allows us to obtain the first browser-based Rowhammer attack on DDR4 memory using a fully default configuration, taking 20 seconds on average to obtain the first bit flip. Improving End-to-End Rowhammer Attacks. As a final contribution, we show how our techniques can be used to significantly improve the performance of Rowhammer. First, in the native setting we demonstrate an opcode flipping attack against the sudo binary, allowing unprivileged code to obtain root permissions within minutes. We then extend the RAMBleed [41] attack to DDR4 memory, showing a leakage rate of 1.369 bits / second. Finally, we tackle browser-based Rowhammer, obtaining flips up to 169 bits / hour, as well as demonstrating a 64-bit write primitive on Firefox. Summary of Contributions. We contribute the following: • We use bank-level parallelism to construct multi-bank hammering, and show that it can flip bits that were hitherto unflippable using prior techniques (Section 4). • We analyze the root cause behind multi-bank hammering across different Intel architectures (Section 5). • We enable browser-based Rowhammer attacks on default Linux configurations by avoiding clflush instructions Section 6 and transparent huge pages (Section 7). • We improve End-to-End Rowhammer attacks (Section 8). 1.2 Vulnerability Disclosure Following the practice of vulnerability disclosure, we shared our findings with Intel, Mozilla, and Google."
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Rowhammer is a hardware vulnerability in DDR memory by which attackers can perform specific access patterns in their own memory to flip bits in adjacent, uncontrolled rows with- out accessing them. Since its discovery by Kim et. al. (ISCA 2014), Rowhammer attacks have emerged as an alarming threat to numerous security mechanisms. In this paper, we show that Rowhammer attacks can in fact be more effective when combined with bank-level parallelism, a technique in which the attacker hammers multiple memory banks simultaneously. This allows us to increase the amount of Rowhammer-induced flips 7-fold and significantly speed up prior Rowhammer attacks relying on native code execution. Furthermore, we tackle the task of mounting browser-based Rowhammer attacks. Here, we develop a self-evicting ver- sion of multi-bank hammering, allowing us to replace clflush instructions with cache evictions. We then develop a novel method for detecting contiguous physical addresses using memory access timings, thereby obviating the need for trans- parent huge pages. Finally, by combining both techniques, we are the first, to our knowledge, to obtain Rowhammer bit flips on DDR4 memory from the Chrome and Firefox browsers running on default Linux configurations, without enabling transparent huge pages."
+        },
+        {
+          "source": "selected",
+          "value": "Rowhammer is a hardware vulnerability in DDR memory by which attackers can perform specific access patterns in their own memory to flip bits in adjacent, uncontrolled rows without accessing them. Since its discovery by Kim et. al. (ISCA 2014), Rowhammer attacks have emerged as an alarming threat to numerous security mechanisms. In this paper, we show that Rowhammer attacks can in fact be more effective when combined with bank-level parallelism, a technique in which the attacker hammers multiple memory banks simultaneously. This allows us to increase the amount of Rowhammer-induced flips 7-fold and significantly speed up prior Rowhammer attacks relying on native code execution. Furthermore, we tackle the task of mounting browser-based Rowhammer attacks. Here, we develop a self-evicting version of multi-bank hammering, allowing us to replace clflush instructions with cache evictions. We then develop a novel method for detecting contiguous physical addresses using memory access timings, thereby obviating the need for transparent huge pages. Finally, by combining both techniques, we are the first, to our knowledge, to obtain Rowhammer bit flips on DDR4 memory from the Chrome and Firefox browsers running on default Linux configurations, without enabling transparent huge pages. ing Rowhammer attacks on DDR4, causing up to seven-fold increase in the amount of flips compared to other hammering techniques. Moreover, using multi-bank hammering we are able to demonstrate the first Rowhammer bit flips on Intel's 12th generation (Alder Lake) architecture. Finally, we show that multi-bank hammering can be performed in browser contexts, demonstrating the first Rowhammer attack in both Chrome and Firefox under default configurations, without Transparent Huge Pages (THPs). Multi-Bank Hammering. The main observation behind multi-bank Rowhammer is that while memory accesses are often written sequentially, they are actually performed in parallel when accessing different memory banks. Thus, by accessing many banks simultaneously we are essentially able to parallelize Rowhammer, improving prior works by obtaining about a 7-fold increase in the amount of bitflips found within an hour of hammering in native-code environments. Avoiding clflush. Going beyond native contexts, we next consider browser-based Rowhammer attacks. To that aim, we must avoid any use of the clflush instruction, replacing it with cache eviction techniques. Here, we introduce a new hammering technique dubbed \"SledgeHammer\", that leverages multi-bank hammering to improve the result of [8], traversing a set of addresses that both hammers and fully self-evicts without the use of any dummy elements. This in turn allows us to create a self-evicting Rowhammer attack without using clflush, which is required for browser-based hammering. Avoiding Transparent Huge Pages (THPs). The next step for enabling browser-based Rowhammer attacks is the need to obtain 2 MB blocks of physically contiguous memory. Not wanting to assume a non-default configuration of transparent huge pages being enabled in the kernel, we develop a novel approach for detecting physically contiguous pages using memory access timing from within the browser. This allows us to obtain the first browser-based Rowhammer attack on DDR4 memory using a fully default configuration, taking 20 seconds on average to obtain the first bit flip. Improving End-to-End Rowhammer Attacks. As a final contribution, we show how our techniques can be used to significantly improve the performance of Rowhammer. First, in the native setting we demonstrate an opcode flipping attack against the sudo binary, allowing unprivileged code to obtain root permissions within minutes. We then extend the RAMBleed [41] attack to DDR4 memory, showing a leakage rate of 1.369 bits / second. Finally, we tackle browser-based Rowhammer, obtaining flips up to 169 bits / hour, as well as demonstrating a 64-bit write primitive on Firefox. Summary of Contributions. We contribute the following: • We use bank-level parallelism to construct multi-bank hammering, and show that it can flip bits that were hitherto unflippable using prior techniques (Section 4). • We analyze the root cause behind multi-bank hammering across different Intel architectures (Section 5). • We enable browser-based Rowhammer attacks on default Linux configurations by avoiding clflush instructions Section 6 and transparent huge pages (Section 7). • We improve End-to-End Rowhammer attacks (Section 8). 1.2 Vulnerability Disclosure Following the practice of vulnerability disclosure, we shared our findings with Intel, Mozilla, and Google."
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Ingab Kang",
+            "email": "igkang@umich.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Walter Wang",
+            "email": "",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Jason Kim",
+            "email": "",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Stephan Van Schaik",
+            "email": "",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 3
+          },
+          {
+            "order": 4,
+            "name": "Youssef Tobah",
+            "email": "ytobah@umich.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 4
+          },
+          {
+            "order": 5,
+            "name": "Daniel Genkin",
+            "email": "genkin@gatech.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 5
+          },
+          {
+            "order": 6,
+            "name": "Andrew Kwong",
+            "email": "andrew@cs.unc.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 6
+          },
+          {
+            "order": 7,
+            "name": "Yuval Yarom",
+            "email": "yuval.yarom@rub.de",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 7
+          },
+          {
+            "order": 8,
+            "name": "",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Michigan, Georgia Tech"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 8
+          },
+          {
+            "order": 9,
+            "name": "",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Michigan, Georgia Tech"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 9
+          },
+          {
+            "order": 10,
+            "name": "",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "UNC Chapel Hill, Ruhr University Bochum"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 10
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Ingab Kang",
+            "email": "igkang@umich.edu",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Walter Wang",
+            "email": "walwan@gatech.edu",
+            "affiliations": [
+              "Georgia Tech"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Jason Kim",
+            "email": "nosajmik@gatech.edu",
+            "affiliations": [
+              "Georgia Tech"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 3,
+            "name": "Stephan van Schaik",
+            "email": "stephvs@umich.edu",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 4,
+            "name": "Youssef Tobah",
+            "email": "ytobah@umich.edu",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 5,
+            "name": "Daniel Genkin",
+            "email": "genkin@gatech.edu",
+            "affiliations": [
+              "Georgia Tech"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 6,
+            "name": "Andrew Kwong",
+            "email": "andrew@cs.unc.edu",
+            "affiliations": [
+              "UNC Chapel Hill"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 7,
+            "name": "Yuval Yarom",
+            "email": "yuval.yarom@rub.de",
+            "affiliations": [
+              "Ruhr University Bochum"
+            ],
+            "affiliation_source": "usenix_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "unclassified",
+        "header_block_count": 14,
+        "author_count": 8,
+        "matched_author_count": 0,
+        "exact_author_match_count": 0,
+        "dominant_author_font_size": 0.0,
+        "auto_eligible": false,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [],
+        "relations": []
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 8,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "SledgeHammer: Amplifying Rowhammer via Bank-level Parallelism",
+        "source_url": "https://www.usenix.org/conference/usenixsecurity24/presentation/kang",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Ingab Kang",
+            "affiliations": [
+              "University of Michigan"
+            ]
+          },
+          {
+            "name": "Walter Wang",
+            "affiliations": [
+              "Georgia Tech"
+            ]
+          },
+          {
+            "name": "Jason Kim",
+            "affiliations": [
+              "Georgia Tech"
+            ]
+          },
+          {
+            "name": "Stephan van Schaik",
+            "affiliations": [
+              "University of Michigan"
+            ]
+          },
+          {
+            "name": "Youssef Tobah",
+            "affiliations": [
+              "University of Michigan"
+            ]
+          },
+          {
+            "name": "Daniel Genkin",
+            "affiliations": [
+              "Georgia Tech"
+            ]
+          },
+          {
+            "name": "Andrew Kwong",
+            "affiliations": [
+              "UNC Chapel Hill"
+            ]
+          },
+          {
+            "name": "Yuval Yarom",
+            "affiliations": [
+              "Ruhr University Bochum"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      }
+    ]
+  }
+}

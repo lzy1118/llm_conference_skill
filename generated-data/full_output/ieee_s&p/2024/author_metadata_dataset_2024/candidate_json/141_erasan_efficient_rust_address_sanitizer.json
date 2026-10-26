@@ -1,0 +1,346 @@
+{
+  "paper_id": "141_erasan_efficient_rust_address_sanitizer",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "ERASAN: Efficient Rust Address Sanitizer"
+      },
+      {
+        "source": "selected",
+        "value": "ERASAN: Efficient Rust Address Sanitizer"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Rust is a rapidly growing system programming language that ensures a speed comparable to traditional C/C++ system programming languages, along with the additional benefit of guaranteed memory safety. However, Rust's strict security rules make implementing and executing some features challenging. To address this, Rust has introduced unsafe Rust, which is less constrained by these strict rules. Nevertheless, these unsafe Rust, where strict Rust security rules are not fully applied, can cause temporal and spatial memory bugs that account for 22% of the Rust bugs reported between 2016 and 2023. In this paper, we propose an efficient address sanitizer design customized for Rust, called ERASAN, to detect memory bugs in Rust programs more efficiently than prior work. Based on our thorough analysis of safe and unsafe Rust programming language standards as well as memory bugs found in real-world Rust programs over the past years, we design and implement ERASAN to only instrument memory accesses in both safe and unsafe code areas where Rust cannot guarantee safety. We evaluate ERASAN with several real-world applications. ERASAN removes an average of 90.03% of ASan's memory access checks. Due to this, ERASAN significantly reduces ASan's performance overhead by an average of 239.05% without harming its bug-finding ability."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Rust is a rapidly growing system programming language that ensures a speed comparable to traditional C/C++ system programming languages, along with the additional benefit of guaranteed memory safety. However, Rust's strict security rules make implementing and executing some features challenging. To address this, Rust has introduced unsafe Rust, which is less constrained by these strict rules. Nevertheless, these unsafe Rust, where strict Rust security rules are not fully applied, can cause temporal and spatial memory bugs that account for 22% of the Rust bugs reported between 2016 and 2023. In this paper, we propose an efficient address sanitizer design customized for Rust, called ERAS AN, to detect memory bugs in Rust programs more efficiently than prior work. Based on our thorough analysis of safe and unsafe Rust programming language standards as well as memory bugs found in real-world Rust programs over the past years, we design and implement ERAS AN to only instrument memory accesses in both safe and unsafe code areas where Rust cannot guarantee safety. We evaluate ERAS AN with several real-world applications. ERAS AN removes an average of 90.03% of ASan's memory access checks. Due to this, ERAS AN significantly reduces ASan's performance overhead by an average of 239.05% without harming its bug-finding ability. 1. Introduction Traditional C/C++ system programming languages do not guarantee memory safety, leading to memory bugs. However, the newly emerging Rust programming language [ 9] guaran- tees memory safety without sacrificing performance, and for this reason, Rust is now widely used. For example, due to Rust's performance and security, major operating systems such as Linux [ 19], Android [ 3, 8], and Windows [ 10] are being partly implemented in Rust. To guarantee memory safety, Rust employs strict safety rules, including ownership [ 17], lifetime [ 14], and borrow- ing [ 4]. However, these strict rules make it impossible *. Equal Contribution †. Corresponding author to implement some features (e.g., double-linked lists) or to ensure memory safety during certain operations (e.g., interacting with foreign languages). Therefore, an unsafe Rust [ 26] is proposed to allow the implementation and execution of these functions without restrictions imposed by Rust's security rules. However, some operations in these unsafe Rust, which are not fully restricted by Rust security policies, lead to various memory bugs. According to our analysis, 22% of all 581 Rust bugs reported in the RustSec Advisory Database [ 20] over the seven years (from 2016 to 2023) are buffer overflow, use-after-free, and double free. To address these memory bugs in Rust, several ap- proaches have been proposed, and these approaches can generally be classified into static analysis-based [ 29, 31, 38, 43, 44], dynamic analysis-based [ 11, 49] bug detection approaches, and isolation approaches [ 30, 40, 41, 55]. Isola- tion techniques generally separate safe memory areas from unsafe areas to deny illegal access (e.g., due to memory bugs) to safe memory areas from unsafe areas. However, these techniques cannot fundamentally eliminate memory bugs, since these approaches cannot detect and remove memory bugs. Static analysis-based approaches suffer from high false positive issues (e.g., Rudra [ 29] shows a false positive up to 84%) mainly due to the over-approximated analysis of static analysis (e.g., indirect call target analysis). Additionally, existing static analysis tools have limited bug detection coverage, as these tools cover only a specific portion of memory bugs. Unlike static analysis-based techniques, dynamic analysis- based approaches (e.g., sanitizers [ 50]) have fewer false positives and are the most widely used approaches for finding memory bugs. These approaches are generally combined with fuzzing approaches [ 46], which are actively being researched and used to increase detection capability further. The MIRI [ 11] interpreter for Rust's mid-level intermediate representation (MIR) is designed to detect memory bugs. However, it has a significant high runtime overhead limitation, as it interprets all code at execution time. Additionally, MIRI cannot handle specific behaviors, such as releasing memory from user-defined destructors. Address Sanitizer (ASan) [ 49] is the most widely used 4053 DOI 10.1109/SP54263.2024.00182 approach [50] and has detected a large number of bugs in C/C++. For example, ASan has detected more than 10,000 memory bugs [ 34, 36] across various applications, including over 3,000 memory bugs in Chrome [ 34] and more than 3,000 in Google's server software [ 34], as well as in the Linux kernel (over 1,000 memory bugs [ 35, 37]), through a customized Kernel Address Sanitizer (KASan) [ 37]. ASan can also be applied to Rust, as Rust internally uses LLVM as its backend optimizing compiler. Therefore, ASan is widely used to detect memory bugs in Rust due to its strengths (e.g., low false positive and broad detection coverage) and the Rust compiler's support [12, 18] for ASan, making it easy to apply without manual efforts. However, ASan inherently checks all memory accesses, leading to around two times [ 34] runtime overhead. Although several existing works [ 53, 56, 57] have been proposed to reduce this high runtime check overhead in ASan, they can still not eliminate unnecessary checks for memory accesses whose safety is guaranteed by Rust's strict memory safety rules. We present ERAS AN, an efficient address sanitizer customized for the Rust environment, enhancing efficiency by removing unnecessary checks in regions where memory safety is guaranteed per the strict rules of Rust without trading bug detection precision for performance. To achieve this, we first conducted a wide-ranging and in-depth analysis for various standards [ 4, 5, 14, 17, 20, 26], and all 581 bugs reported in the RustSec advisory database [20] over seven years from 2016 to 2023. Through this analysis, we draw memory bug patterns in Rust. We also find that most unsafe areas are still protected by the robust security policies of Rust, which guarantee memory safety. Consequently, we identified that memory bugs occur only in areas related to raw pointers (including even safe Rust). Raw pointers are the only type of pointers not checked by the Rust compiler (rustc). More specifically, this raw pointer can point to invalid memory, free'd memory, or even NULL, since Rust safety checks (e.g., ownership, borrow checks, or bounds check both at compile time and runtime) do not apply to raw pointers. As a result, raw pointers and their related code area (including Rust safe) can break Rust safety barriers and lead to memory bugs. To detect the potential memory bugs in these areas, ERAS AN identifies raw pointer-related areas, including safe Rust, to thoroughly check memory accesses in these identified areas. In addition, ERAS AN further eliminates memory access checks in identified areas if these accesses have already been verified by Rust's runtime checks for spatial memory bugs and are safe from temporal memory bugs. To do this, ERAS AN performs the following three steps: (1) identifying raw pointers, (2) extracting unsafe memory accesses, and (3) conducting selective check instrumentation. Initially, ERAS AN identifies instructions that directly handle raw pointers (e.g., dereferencing raw pointers or assigning an address to a raw pointer). Unfortunately, at the LLVM- IR code, the type information of raw pointers is no longer available (i.e., difficult to distinguish from other instructions such as Rust's safe references), so raw pointer identification is performed at the MIR code for precise analysis. Dur- ing the MIR analysis phase, ERAS AN inserts additional annotation into every instruction that directly handles raw pointers to accurately identify raw pointers in the subsequent analysis phase (e.g., LLVM IR pass). This allows for a more precise analysis in the following analysis stages. In the next step, ERAS AN conducts points-to analysis (to identify possible targets each raw pointer can point to) and value-flow analysis to extract all memory accesses (e.g., references) that are in alias relation with the extracted raw pointer set. These identified raw pointers and references in alias relation, potentially related to memory bugs (e.g., accessing a freed object that is freed by a raw pointer), are candidates for the sanitizer check instrumentation to detect memory bugs. However, for memory accesses excluding raw pointer memory accesses, Rust conducts spatial memory bug checks. Therefore, inserting additional check instrumentation is unnecessary if an identified memory access is not via a raw pointer and is unrelated to temporal memory safety bugs. For this, ERAS AN identifies the free (e.g., drop and return) locations of all objects and then finds all memory access instructions (i.e., ERAS AN's target memory access set) that come after the freeing code, which are potentially related to temporal memory safety bugs. Lastly, ERAS AN selectively applies ASan's memory access check instrumentation to the identified memory access set. Our evaluation shows that ERAS AN significantly reduces ASan's performance overhead without any reduction in its bug-finding capability. More specifically, by removing an average of 90.03% of existing ASan checks, ERAS AN can reduce ASan's performance overhead by an average of 239.05%. Additionally, ERAS AN shows the same bug detection capability as ASan, successfully detecting the same set of reported Rust memory bugs. This paper makes the following contributions: • Conducting a broad and in-depth analysis of memory bugs found in the real-world programs, which allows us to taxonomize patterns of memory bugs in Rust programs. Our key finding is that only areas related to raw pointers, not all unsafe areas, are prone to have memory bugs. • Designing and implementing ERAS AN, which only in- struments memory accesses in both safe and unsafe code regions affected by raw pointers not fully covered by Rust security checks. • Evaluating ERAS AN on various real-world Rust appli- cations and showing that ERAS AN significantly reduces ASan's performance overhead by 239.05% through the elimination of approximately 90.03% of existing ASan checks. 2. Background and Motivation 2.1. Security Rule of Rust Rust is designed to guarantee memory safety by lever- aging the following four main policies: ownership [ 17], borrowing [4], lifetime inference [ 14], and runtime bounds checking [5]. According to the ownership rule, each value 4054"
+      },
+      {
+        "source": "selected",
+        "value": "Rust is a rapidly growing system programming language that ensures a speed comparable to traditional C/C++ system programming languages, along with the additional benefit of guaranteed memory safety. However, Rust's strict security rules make implementing and executing some features challenging. To address this, Rust has introduced unsafe Rust, which is less constrained by these strict rules. Nevertheless, these unsafe Rust, where strict Rust security rules are not fully applied, can cause temporal and spatial memory bugs that account for 22% of the Rust bugs reported between 2016 and 2023. In this paper, we propose an efficient address sanitizer design customized for Rust, called ERASAN, to detect memory bugs in Rust programs more efficiently than prior work. Based on our thorough analysis of safe and unsafe Rust programming language standards as well as memory bugs found in real-world Rust programs over the past years, we design and implement ERASAN to only instrument memory accesses in both safe and unsafe code areas where Rust cannot guarantee safety. We evaluate ERASAN with several real-world applications. ERASAN removes an average of 90.03% of ASan's memory access checks. Due to this, ERASAN significantly reduces ASan's performance overhead by an average of 239.05% without harming its bug-finding ability."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jiun Min",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Yonsei University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Dongyeon Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Yonsei University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Seongyun Jeong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Yonsei University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Dokyung Song",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Yonsei University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yuseok Jeon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science UNIST, Department of Computer Science, Yonsei University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jiun Min",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Dongyeon Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Seongyun Jeong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Dokyung Song",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science Yonsei University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yuseok Jeon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Computer Science"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 113,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Jiun Min",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Dongyeon Yu",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Seongyun Jeong",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Dokyung Song",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Yuseok Jeon",
+          "block_id": "pdf:p1:b15",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Jiun Min",
+          "affiliation_raw": "Department of Computer Science UNIST",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 2.034,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Dongyeon Yu",
+          "affiliation_raw": "Department of Computer Science UNIST",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 5.296,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Seongyun Jeong",
+          "affiliation_raw": "Department of Computer Science UNIST",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9",
+            "pdf:p1:b12"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 1.312,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Dokyung Song",
+          "affiliation_raw": "Department of Computer Science Yonsei University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b16",
+            "pdf:p1:b18"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 3.127,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Yuseok Jeon",
+          "affiliation_raw": "Department of Computer Science UNIST",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b15",
+          "affiliation_block_ids": [
+            "pdf:p1:b17",
+            "pdf:p1:b19"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.35,
+          "center_distance": 2.353,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "ERASAN: Efficient Rust Address Sanitizer",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jiun Min",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Dongyeon Yu",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Seongyun Jeong",
+          "affiliations": [
+            "UNIST"
+          ]
+        },
+        {
+          "name": "Dokyung Song",
+          "affiliations": [
+            "Yonsei University"
+          ]
+        },
+        {
+          "name": "Yuseok Jeon",
+          "affiliations": [
+            "UNIST"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

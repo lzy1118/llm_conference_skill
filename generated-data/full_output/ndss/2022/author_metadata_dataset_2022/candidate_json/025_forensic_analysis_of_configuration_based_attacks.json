@@ -1,0 +1,298 @@
+{
+  "paper_id": "025_forensic_analysis_of_configuration_based_attacks",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Forensic Analysis of Configuration-based Attacks"
+      },
+      {
+        "source": "selected",
+        "value": "Forensic Analysis of Configuration-based Attacks"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Causality analysis is an effective technique for investigating and detecting cyber attacks. However, by focusing on auditing at the Operating System level, existing causal analysis techniques lack visibility into important application-level semantics, such as configuration changes that control application runtime behavior. This leads to incorrect attack attribution and half-baked tracebacks. In this work, we propose Dossier, a specialized provenance tracker that enhances the visibility of the Linux auditing infrastructure. By providing additional hooks into the system, Dossier can generate a holistic view of the target application's event history and causal chains, particularly those pertaining to configuration changes that are among the most common attack vectors observed in the real world. The extra vantage points in Dossier enable forensic investigators to bridge the semantic gap and correctly piece together attack fragments. Dossier leverages the versatility of information flow tracking and system call introspection to track all configuration changes, including both dynamic modifications that directly update configuration-related program variables and revisions to configuration files on disk with negligible runtime overhead (less than 7%). Evaluation on realistic workloads and real-world attack scenarios shows that Dossier can effectively reason about configuration-based attacks and accurately reconstruct the whole attack stories. Unfortunately, existing provenance-tracking techniques primarily collect audit traces exclusively at the operating sys"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Causality analysis is an effective technique for investigating and detecting cyber attacks. However, by focus- ing on auditing at the Operating System level, existing causal analysis techniques lack visibility into important application-level semantics, such as configuration changes that control application runtime behavior. This leads to incorrect attack attribution and half-baked tracebacks. In this work, we propose Dossier, a specialized provenance tracker that enhances the visibility of the Linux auditing in- frastructure. By providing additional hooks into the system, Dossier can generate a holistic view of the target application's event history and causal chains, particularly those pertaining to configuration changes that are among the most common attack vectors observed in the real world. The extra vantage points in Dossier enable forensic investigators to bridge the semantic gap and correctly piece together attack fragments. Dossier leverages the versatility of information flow tracking and system call introspection to track all configuration changes, including both dynamic modifications that directly update configuration-related program variables and revisions to configuration files on disk with negligible runtime overhead (less than 7%). Evaluation on realistic workloads and real-world attack scenarios shows that Dossier can effectively reason about configuration-based attacks and accurately reconstruct the whole attack stories. I. I NTRODUCTION Cyber attacks resulting from improperly configured soft- ware have recently gained significant traction in the cyber security community. For instance, the OW ASP Top-10 list, a well-known index of web application vulnerabilities, has consistently ranked security misconfigurations as one of the primary reasons for data breaches [22], [32], including several high-profile incidents that have recently been in the lime- light [18], [1], [31], [27]. Similarly, CAPEC, which manages a taxonomy database of attack patterns and classifications, has categorized configuration-based attacks as one of the few high-severity classes that can considerably weaken the ∗Equal contribution security posture of an organization [35]. Due to their preva- lence and severity, configuration-based attacks have become major security threats, gaining increasing notoriety in hacking communities with every successful breach. Configuration-based attacks lead to disastrous financial and business consequences, such as data breaches and system compromises. For example, in 2015, 35,000 Internet-facing in- stances of MongoDB were discovered to be publicly accessible without any form of authentication [36]. The total amount of data that was exposed as a result of this misconfiguration to- taled roughly 680TB. Even though MongoDB provides ample security mechanisms to mitigate this problem, broken authen- tication was nonetheless widespread due to misconfiguration. Whether these misconfigurations were a result of oversight (e.g., default setup) or changed dynamically later on by an attacker is not known-this is because configuration changes are not typically audited and thus often go unnoticed . More recently, in July 2019, a configuration-based vulnerability in Capital One's firewall allowed hackers to access the credit card information of more than 100 million customers [7]. The breach cost the company a projected sum of 100 to 150 million dollars. As is evident, there is a growing need to systematically track and audit configuration changes in the face of such devastating attacks. Provenance tracking is known to be effective in analyzing malicious system modifications. A variety of provenance- tracking techniques have been proposed in the literature [42], [62], [66], [72], [77], [63], [52]. These techniques use audit logging to record important events during system execution and then derive causal relationships between events during the analysis phase. Under the hood, these techniques leverage frameworks, such as Linux Audit [39] or Windows Event Tracing [16], which are based on system call interception to monitor accesses between system subjects (e.g., processes) and objects (e.g., files, sockets, pipes, etc.). The audit logs are then parsed into a causal graph for improved analysis and readability. If an Indicator of Compromise (IoC) is observed, a security analyst can use provenance graphs for root cause analysis to understand the chain of events that led to the flagged event. Furthermore, security analysts can also find all of the ramifications of the attack using the provenance graph. Unfortunately, existing provenance-tracking techniques pri- marily collect audit traces exclusively at the operating sys- Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.23057 www.ndss-symposium.org tem (OS) level. Even though this focused approach allows trackers to log a wide variety of low-level OS events, they remain completely or partially oblivious to application se- mantics, resulting in incomplete coverage. Such semantic gaps undermine the forensic investigation of certain classes of attacks where information from the application layer is necessary to reconstruct the attack and correctly understand the complete chain of events. To close the semantic gap, a few provenance trackers [53], [71] attempt to integrate application-level information by leveraging applications' built- in event logging features. However, when surveying the open- source applications used to evaluate prior work [53], [71], we are surprised to discover that very few leading open- source software projects record configuration changes in log messages, rendering existing techniques inapplicable when investigating configuration-based attacks. Hence, in light of the increasing prevalence of configuration-based attacks, we advocate for a novel approach to enhance existing OS-level provenance-tracking techniques by effectively tracking config- uration changes and transparently integrating OS-level audit traces with application-level information. This paper presents Dossier, a system that audits con- figuration changes in a target application and encodes the necessary information into OS-level audit logs. Dossier sup- ports the main interfaces of configuration changes: changing configuration-related program variables in memory (typically through the user/admin interfaces) and changing configuration files on disk. To track memory-based configuration changes, Dossier performs novel static analysis on the application to identify configuration variables and then instruments part of the application to track changes to those variables. For file- based configuration changes, Dossier loads a custom kernel module to track when a specific set of system calls ( write, pwrite, writev, pwritev, etc.) are used to modify an important configuration file. We designed a novel file delta computation algorithm that efficiently tracks changes to the configuration files and removes redundant log entries to significantly reduce space overhead. Finally, Dossier collects whole-system prove- nance logs via Linux Audit based on a widely agreed-upon set of rules for forensic analysis [50], [42]. Taken together, Dossier generates holistic provenance graphs that can not only reason about attacks that are captured by existing provenance trackers [50], [42], but also configuration-based attacks. We demonstrate the effectiveness of Dossier through real- world case studies of configuration-based attacks and show how the system can be used in a forensic investigation to enable complete reconstruction of cyber attacks. We measure the runtime overhead Dossier incurs using a combination of microbenchmarks and representative workloads. Our results show that Dossier has a negligible runtime overhead on average (<7%) for moderate file-based configuration changes, whereas it adds 7.96% maximum runtime overhead for memory-based configuration changes over an insecure baseline that employs application-oblivious system-call logging. This paper makes the following main contributions: • An analysis of configuration-based attacks in the real world (Section II): We present the first characteristic study of real-world configuration-based attacks to understand their impact, spread, and permeation of these attacks. Our study shows the importance of defending against configuration- based attacks and highlights the motivation of tracking configuration changes. • Tracking file-based configuration changes (Section V): We develop a light-weight kernel module that intercepts write-related system calls associated with configuration files and logs any changes of the file content over time. To address scalability issues, we designed an algorithm that computes file differences to determine which part of the file is changed and incrementally store the deltas. • Tracking memory-based configuration changes (Sec- tion IV): We build a novel static analysis tool based on the LLVM compiler infrastructure to locate and instrument code snippets responsible for configuration updates in the target application. During application execution, the instru- mentation enables the underlying audit subsystem to observe modification to configuration values. • Realistic evaluation (Section VII): We evaluate the ef- fectiveness of Dossier against 5 real-world application- based attack scenarios. Dossier captures all important, rele- vant configuration changes. To show the low overheads of Dossier, we measure its performance under representative workloads and benchmarks. II. B ACKGROUND & M OTIVATION In this section, we first introduce several formal definitions which are required to understand the Dossier system, and then we provide a classification for configuration-based vulnerabil- ities. Finally, we present an attack scenario to highlight the limitations of existing work and motivate our work. A. Definitions Application configuration. We use the term configuration to refer to the inputs of an application program that controls the application program's runtime behavior, including feature sets, environments (e.g., data directory, key file, bind address, and remote hosts), policies (e.g., permissions and access control), resource allocation, etc. Therefore, configuration is critical, sensitive information of any application. Configurations can be set in application's configuration files or be set through the application interfaces (e.g., CLIs) for users or sysadmins. Configuration files are typically loaded by the application at the startup time to initialize the applica- tion configuration state, while user/admin interfaces allow the application configuration to be changed dynamically at appli- cation runtime. Essentially, configuration values are loaded into the corresponding program variables in the application and are used during the program execution. We term those program variables configuration variables. Typically, each configuration variable has a default value defined in the application program. The default value will be overwritten by the values specified in the configuration file upon the application startup. Those values will be further updated when users or sysadmins set the configuration through application interface (e.g., CLIs) during the application runtime. Configuration-based vulnerabilities. We use the term configuration-based vulnerabilities to refer to vulnerabilities rooted in or triggered by the configuration settings of the target 2"
+      },
+      {
+        "source": "selected",
+        "value": "Causality analysis is an effective technique for investigating and detecting cyber attacks. However, by focusing on auditing at the Operating System level, existing causal analysis techniques lack visibility into important application-level semantics, such as configuration changes that control application runtime behavior. This leads to incorrect attack attribution and half-baked tracebacks. In this work, we propose Dossier, a specialized provenance tracker that enhances the visibility of the Linux auditing infrastructure. By providing additional hooks into the system, Dossier can generate a holistic view of the target application's event history and causal chains, particularly those pertaining to configuration changes that are among the most common attack vectors observed in the real world. The extra vantage points in Dossier enable forensic investigators to bridge the semantic gap and correctly piece together attack fragments. Dossier leverages the versatility of information flow tracking and system call introspection to track all configuration changes, including both dynamic modifications that directly update configuration-related program variables and revisions to configuration files on disk with negligible runtime overhead (less than 7%). Evaluation on realistic workloads and real-world attack scenarios shows that Dossier can effectively reason about configuration-based attacks and accurately reconstruct the whole attack stories. Unfortunately, existing provenance-tracking techniques primarily collect audit traces exclusively at the operating sys"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Muhammad Adil Inam",
+          "email": "mainam2@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Wajih Ul Hassan",
+          "email": "whassan3@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Ali Ahad",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Adam Bates",
+          "email": "batesa@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Rashid Tahir",
+          "email": "r.tahir@upm.edu.sa",
+          "orcid": "",
+          "affiliations": [
+            "University of Prince Mugrin"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Tianyin Xu",
+          "email": "tyxu@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Fareed Zaffar",
+          "email": "fareed.zaffar@lums.edu.pk",
+          "orcid": "",
+          "affiliations": [
+            "Lahore University of Management Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Muhammad Adil Inam",
+          "email": "mainam2@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Wajih Ul Hassan",
+          "email": "whassan3@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Ali Ahad",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Virginia"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Adam Bates",
+          "email": "batesa@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Rashid Tahir",
+          "email": "r.tahir@upm.edu.sa",
+          "orcid": "",
+          "affiliations": [
+            "University of Prince Mugrin"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Tianyin Xu",
+          "email": "tyxu@illinois.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Fareed Zaffar",
+          "email": "fareed.zaffar@lums.edu.pk",
+          "orcid": "",
+          "affiliations": [
+            "Lahore University of Management Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 110,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Muhammad Adil Inam",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Forensic Analysis of Configuration-based Attacks",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-194/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Muhammad Adil Inam",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Wajih Ul Hassan",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Ali Ahad",
+          "affiliations": [
+            "University of Virginia"
+          ]
+        },
+        {
+          "name": "Adam Bates",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Rashid Tahir",
+          "affiliations": [
+            "University of Prince Mugrin"
+          ]
+        },
+        {
+          "name": "Tianyin Xu",
+          "affiliations": [
+            "University of Illinois at Urbana-Champaign"
+          ]
+        },
+        {
+          "name": "Fareed Zaffar",
+          "affiliations": [
+            "LUMS"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

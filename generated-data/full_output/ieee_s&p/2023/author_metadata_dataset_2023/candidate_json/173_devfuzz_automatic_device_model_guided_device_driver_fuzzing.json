@@ -1,0 +1,331 @@
+{
+  "paper_id": "173_devfuzz_automatic_device_model_guided_device_driver_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DEVFUZZ: Automatic Device Model-Guided Device Driver Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "DEVFUZZ: Automatic Device Model-Guided Device Driver Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The security of device drivers is critical for the entire operating system's reliability. Yet, it remains very challenging to validate if a device driver can properly handle potentially malicious input from a hardware device. Unfortunately, existing symbolic execution-based solutions often do not scale, while fuzzing solutions require real devices or manual device models, leaving many device drivers under-tested and insecure. This paper presents DEVFUZZ, a new model-guided device driver fuzzing framework that does not require a physical device. DEVFUZZ uses symbolic execution to automatically generate the probe model that can guide a fuzzer to properly initialize a device driver under test. DEVFUZZ also leverages both static and dynamic program analyses to construct MMIO, PIO, and DMA device models to improve the effectiveness of fuzzing further. DEVFUZZ successfully tested 191 device drivers of various bus types (PCI, USB, RapidIO, I2C) from different operating systems (Linux, FreeBSD, and Windows) and detected 72 bugs, 41 of which have been patched and merged into the mainstream."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The security of device drivers is critical for the entire operating system's reliability. Y et, it remains very challenging to validate if a device driver can properly handle potentially malicious input from a hardware device. Unfortunately, exist- ing symbolic execution-based solutions often do not scale, while fuzzing solutions require real devices or manual device models, leaving many device drivers under-tested and insecure. This paper presents D EVFUZZ , a new model-guided device driver fuzzing framework that does not require a physical device. D EVFUZZ uses symbolic execution to automatically generate the probe model that can guide a fuzzer to properly initialize a device driver under test. D EVFUZZ also leverages both static and dynamic program analyses to construct MMIO, PIO, and DMA device models to improve the effectiveness of fuzzing further . D EVFUZZ successfully tested 191 device drivers of various bus types (PCI, USB, RapidIO, I2C) from different operating systems (Linux, FreeBSD, and Windows) and detected 72 bugs, 41 of which have been patched and merged into the mainstream. 1. Introduction The security of device drivers is crucial for the entire operating system (OS) security. Modern OSes often include a large number of device drivers to provide compatibility with various hardware devices: e.g., in Ubuntu Linux 20.04, device drivers (under the driver directory) consist of 13M lines of code occupying 64.8% of the entire Linux source code. Such a large codebase undoubtedly makes device drivers a large attack surface, and thus they have become the major sources of OS security vulnerabilities. In fact, the CVE reports of device drivers account for 27-54% of the total Linux kernel CVE reports for the last 5 years. As device drivers run in kernel space (in many OSes), handling the input from peripheral devices to drivers without proper sanitization has been the root cause of many real- world system security issues. For instance, ThunderClap [1] demonstrated how a malicious PCI device can read the sys- tem memory including user-sensitive data and credentials. The PS3 jailbreak [2] targeted a vulnerability in the PS3 hypervisor's USB stack. The PS4 hack [3] enabled control flow hijacking via a malicious PCIe device. The Xbox DVD hack [4] exploited a vulnerable verification process in the DVD driver. The iPhone hack [5] allowed malicious attackers to compromise wireless chips and steal data. Unfortunately, existing solutions provide limited support for testing device drivers, leaving many drivers under-tested and insecure. For instance, some prior solutions [6], [7], [8], [9] rely on symbolic execution that renders input from a device symbolic and enable device driver testing for closed- source systems without a real device. However, symbolic execution often does not scale to large software [10]. Alternatively, fuzzing [11] has shown to be more ef- fective in testing real-world software in practice. However, fuzzing device drivers remains critically challenging for two reasons. First, it is hard for a fuzzer to pass a complex dynamic probing phase. Many modern bus architectures (e.g., PCI, USB) support hot plugging a device. An OS scans a bus, recognizes a device, binds a corresponding driver, and runs the device driver's custom probing logic. The device should follow certain probing protocols: e.g., providing Vendor and Product IDs, and configuring the de- vice's address in the system memory map. Dynamic probing is considered successful if a kernel binds a device and a matching driver, and the driver completes additional custom probing logic. Unguided random inputs often fail in this dynamic probing, leading to premature testing. Second, even after successful probing (post-probing), it is difficult to scalably explore the huge input space of various I/O interfaces such as Memory-Mapped I/O (MMIO), Port I/O (PIO), Direct Memory Access (DMA), and Interrupt (IRQ). Unfortunately, prior fuzzing solutions insufficiently ad- dress the above challenges. For probing, some [12], [13], [14] require real devices to set up device drivers under test, limiting testing for various device drivers. Others [15], [16] require user-provided device models to test device drivers without real devices. However, manually developing device models are error-prone and not scalable. Besides, they all share additional limitations: they are designed for one particular OS, and support only limited bus types. This paper presents D EVFUZZ, a new model-guided device driver fuzzing solution. D EVFUZZ allows users to test a device driver without an actual device. D EVFUZZ supports testing a variety of device drivers of different bus types ( e.g., PCI, USB, RapidIO, I2C); with different I/O interfaces ( e.g., MMIO, PIO, DMA, and IRQ); and from different OSes ( e.g., Linux, FreeBSD, and Windows). The key idea is to automatically generate three device models to facilitate device driver fuzzing in the absence of a physical device. D EVFUZZ first employs symbolic execution to generate (1) Probe Model that allows a device driver to satisfy the probing path constraints. Symbolic probing execution is regarded to be successful-after some explorations-if the driver is bounded to the device (model) by the kernel. Furthermore, D EVFUZZ leverages static and 13246 DOI 10.1109/SP46215.2023.00182 dynamic program analyses of device drivers to construct (2) MMIO/PIO Model and (3) DMA Model that embody MMIO, PIO, DMA addresses and their value range constraints that affect device driver's control flows. They guide D EVFUZZ to explore the device driver's different program paths during fuzzing. As the three models are intended to represent device properties, the models generated from one OS could be reused to test another OS's device drivers. DEVFUZZ combines the three models with a general- purpose fuzzer AFL [17], and performs fuzzing by select- ing an input from either device models or AFL with a configurable probability (50% by default). The combination allows D EVFUZZ to take advantage of both the models' device awareness and the fuzzer's feedback-directed ran- dom mutation. Together, D EVFUZZ fuzzes the target device driver during both the probing and post-probing phases. For probing phase fuzzing, D EVFUZZ repeatedly plugs and un- plugs the target device driver (module), triggers the probing functions multiple times, and feeds a mixed input from the Probe Model and AFL. For post-probing phase fuzzing, DEVFUZZ first uses Probe Model (with no mutation) to pass the probing logic and successfully bind the driver to the device (model). Then, it continuously runs command- line tools and test programs-that trigger the driver's other (non-probing) I/O functions-feeding a mixed input from MMIO/PIO Model , DMA Model , and AFL. We evaluated D EVFUZZ using device drivers of dif- ferent bus types (PCI, USB, RapidIO, I2C) across three OSes (Linux, FreeBSD, Windows). For Linux kernel 5.15, DEVFUZZ managed to test 150 drivers (108 PCI, 31 USB, 1 RapidIO, and 10 I2C types). With symbolic execution, DEVFUZZ successfully probed 112 devices and generated their device models (75%). We offer detailed analysis on the failed cases and the quality of the generated probe models. DEVFUZZ detected 63 bugs, 39 of which have been patched into the mainline Linux kernel. The proposed three device models increase the code coverage for both probing-phase and post-probing-phase fuzzing. The case study with 17 net- work device drivers demonstrates that D EVFUZZ achieves higher code coverage than PrIntFuzz [18] and Drifuzz [19]. Besides, DEVFUZZ's models obtained similar code coverage to manually designed models, e.g., QEMU's virtual devices. Finally, to demonstrate device model re-usability across different OSes, we also tested 25 FreeBSD-12.2 PCI drivers and 16 Windows-10 PCI drivers by reusing the device models derived from Linux. For FreeBSD, D EVFUZZ suc- cessfully probed 14 PCI devices (56%) and found eight bugs. So far two patches have been merged. For Windows, DEVFUZZ probed eight PCI devices (50%) and detected one bug. 2. Background 2.1. Device and Driver Interactions There are two forms of Input/Output (I/O) interfaces be- tween devices and drivers: Memory-Mapped I/O (MMIO) and Port I/O (PIO). Besides, they may share data using Direct Memory Access (DMA). Devices can also notify drivers via an asynchronous Interrupt Request (IRQ). Physical MemoryAddress Space CPU Hub Flash(BIOS)APICPCI MemoryRange UsableDRAM … DMA buf. I/O Address Space…PCI_DATAPCI_ADDR…1MMIO2PIO 3(Reg) Mem 4InterruptPCI device LD r1 Mem[X]ST Mem[Y] r2IN r1 Port[A]OUT Port[B] r2 DMA Driver Figure 1: Four different I/O interfaces (orange arrows) be- tween a device driver and a PCI device. (1) MMIO: Devices are mapped to the “physical mem- ory address space” for MMIO so that their device drivers can access them using memory instructions ( e.g., MOV) and operate on their states using logical instructions ( e.g., AND, OR, TEST). The Memory Management Unit (MMU) hardware redirects any access destined to such an MMIO region to the corresponding device. Figure 1 1 illustrates that the PCI memory range-using Base Address Registers, simply BARs (omitted in the figure)-is mapped to a part of the physical memory address space, next to the BIOS flash and Advanced Programmable Interrupt Controller (APIC) regions. For instance, in Intel x86, the PCIEXBAR register holds the base address of the PCI memory range. (2) PIO: Peripheral devices can also be mapped to a separate address space called “I/O address space”. Device drivers use I/O instructions ( e.g., IN, OUT, INS, OUTS) with the ring 0 privilege to access the I/O address space. These PIO accesses are handled by the I/O Controller Hub (ICH). Figure 1 2 shows that PCI configuration registers are mapped to I/O Addresses PCI DATA and PCI ADDR (in addition to MMIO-mapped PCI memory range). (3) DMA: Direct memory access (DMA) allows devices to transfer a large chunk of data from/to main system memory without involving a CPU. DMA may be supported through a centralized DMA controller ( e.g., Intel 8257 [20]) or by a custom non-standard DMA controller in a device (called bus mastering). DMA is often initiated by performing some MMIO/PIO writes. Figure 1 shows that a DMA buffer is allocated in DRAM. Device drivers can access the DMA buffer using regular memory operations (Figure 1 3 ). (4) IRQ: A device itself can also signal a CPU (Fig- ure 1 4 ) to inform about a certain event ( e.g., transfer completion, new data arrival) in form of an interrupt request (IRQ), triggering the interrupt service routine of the device driver. In general, IRQ is asserted and routed through IO- APIC. Alternatively, PCI defines two in-band mechanisms called Message Signalled Interrupts (MSI/MSI-X). 2.2. Device Enumeration and Probing Device drivers recognize devices based on the pre-populated (static) device information or detect them at run time. (1) Static enumeration: Some device drivers simply recognize devices using pre-defined information. For those devices that are hardwired or whose locations do not change in the system memory map, developers can easily identify 3247"
+      },
+      {
+        "source": "selected",
+        "value": "The security of device drivers is critical for the entire operating system's reliability. Yet, it remains very challenging to validate if a device driver can properly handle potentially malicious input from a hardware device. Unfortunately, existing symbolic execution-based solutions often do not scale, while fuzzing solutions require real devices or manual device models, leaving many device drivers under-tested and insecure. This paper presents DEVFUZZ, a new model-guided device driver fuzzing framework that does not require a physical device. DEVFUZZ uses symbolic execution to automatically generate the probe model that can guide a fuzzer to properly initialize a device driver under test. DEVFUZZ also leverages both static and dynamic program analyses to construct MMIO, PIO, and DMA device models to improve the effectiveness of fuzzing further. DEVFUZZ successfully tested 191 device drivers of various bus types (PCI, USB, RapidIO, I2C) from different operating systems (Linux, FreeBSD, and Windows) and detected 72 bugs, 41 of which have been patched and merged into the mainstream."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yilun Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Electronics, Stony Brook University, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Tong Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Electronics, Stony Brook University, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Changhee Jung",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Electronics, Stony Brook University, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Dongyoon Lee",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Samsung Electronics, Stony Brook University, Purdue University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yilun Wu",
+          "email": "",
+          "affiliations": [
+            "Stony Brook University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Tong Zhang",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Samsung Electronics",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Changhee Jung",
+          "email": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Dongyoon Lee",
+          "email": "",
+          "affiliations": [
+            "Stony Brook University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 9,
+      "author_count": 5,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 12.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 12.0,
+        "candidates": [
+          {
+            "name": "Dongyoon Lee",
+            "block_id": "pdf:p1:b3",
+            "font_size": 12.0,
+            "support_ids": [
+              "pdf:p1:b8"
+            ]
+          },
+          {
+            "name": "Yilun Wu",
+            "block_id": "pdf:p1:b4",
+            "font_size": 12.0,
+            "support_ids": [
+              "pdf:p1:b7"
+            ]
+          },
+          {
+            "name": "Tong Zhang",
+            "block_id": "pdf:p1:b5",
+            "font_size": 12.0,
+            "support_ids": [
+              "pdf:p1:b7"
+            ]
+          },
+          {
+            "name": "Changhee Jung",
+            "block_id": "pdf:p1:b6",
+            "font_size": 12.0,
+            "support_ids": [
+              "pdf:p1:b8"
+            ]
+          }
+        ],
+        "fully_supported": true
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Yilun Wu",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Tong Zhang",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Changhee Jung",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Dongyoon Lee",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Yilun Wu",
+          "affiliation_raw": "Stony Brook University Samsung Electronics",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 14.0,
+          "center_distance": 60.139,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Tong Zhang",
+          "affiliation_raw": "Stony Brook University Samsung Electronics",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 14.0,
+          "center_distance": 60.41,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Changhee Jung",
+          "affiliation_raw": "Purdue University Stony Brook University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 14.0,
+          "center_distance": 71.539,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Dongyoon Lee",
+          "affiliation_raw": "Purdue University Stony Brook University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 14.084,
+          "center_distance": 47.725,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DEVFUZZ: Automatic Device Model-Guided Device Driver Fuzzing",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yilun Wu",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        },
+        {
+          "name": "Tong Zhang",
+          "affiliations": [
+            "Samsung Electronics"
+          ]
+        },
+        {
+          "name": "Changhee Jung",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Dongyoon Lee",
+          "affiliations": [
+            "Stony Brook University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

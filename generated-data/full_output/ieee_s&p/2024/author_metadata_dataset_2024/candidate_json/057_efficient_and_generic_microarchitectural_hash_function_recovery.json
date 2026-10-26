@@ -1,0 +1,210 @@
+{
+  "paper_id": "057_efficient_and_generic_microarchitectural_hash_function_recovery",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Efficient and Generic Microarchitectural Hash-Function Recovery"
+      },
+      {
+        "source": "selected",
+        "value": "Efficient and Generic Microarchitectural Hash-Function Recovery"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Modern CPUs use a variety of undocumented microarchitectural hash functions to efficiently distribute data within microarchitectural structures such as caches. A wellknown function is the cache slice function that distributes cache lines to the slices of the last-level cache. Knowing these functions considerally improves microarchitectural attacks, such as Prime+Probe or Rowhammer. However, while several such linear functions have been reverse-engineered, there is no generic or automated approach for reverse-engineering nonlinear functions, which are common with modern CPUs. In this paper, we introduce a novel generic approach for automatically reverse-engineering a wide range of microarchitectural hash functions. Our approach combines techniques initially used for logic-gate minimization and from computer algebra to infer the hash functions based on input-output pairs observed via side channels. With our framework, we infer 3 previously unknown non-linear hash functions on both AMD and Intel CPUs, including the new Alder Lake hybrid-CPU architecture. We verify our approach by reproducing known hash functions and evaluating side-channel attacks that rely on these functions, resulting in success rates above 97.65 %. We stress the need to design such functions with both performance and security in mind and discuss alternative designs that can be used in future CPUs."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Modern CPUs use a variety of undocumented mi- croarchitectural hash functions to efficiently distribute data within microarchitectural structures such as caches. A well- known function is the cache slice function that distributes cache lines to the slices of the last-level cache. Knowing these functions considerally improves microarchitectural attacks, such as Prime+Probe or Rowhammer. However, while several such linear functions have been reverse-engineered, there is no generic or automated approach for reverse-engineering non- linear functions, which are common with modern CPUs. In this paper, we introduce a novel generic approach for automatically reverse-engineering a wide range of microarchi- tectural hash functions. Our approach combines techniques initially used for logic-gate minimization and from computer algebra to infer the hash functions based on input-output pairs observed via side channels. With our framework, we infer 3 previously unknown non-linear hash functions on both AMD and Intel CPUs, including the new Alder Lake hybrid-CPU architecture. We verify our approach by reproducing known hash functions and evaluating side-channel attacks that rely on these functions, resulting in success rates above 97.65 %. We stress the need to design such functions with both performance and security in mind and discuss alternative designs that can be used in future CPUs. 1. Introduction To ensure that new CPU generations outperform their predecessors, CPU vendors continually improve the microar- chitecture. A common method is to add more caches and predictors to the microarchitecture. Both caches and predic- tors rely on data structures that must be indexed efficiently. Such indexing heavily relies on microarchitectural hash functions. These hash functions are not cryptographically secure but ensure that data is uniformly distributed within these data structures. Typically, these hash functions use virtual or physical addresses of data as input and they output an index into a microarchitectural data structure. These hash functions are designed to balance the load on the data structure and to reduce collisions when linearly accessing memory. A well-known example of such a hash function is the cache-slice function [35], which distributes data uniformly to the slices of the last-level cache. These hash functions are not only relevant for the per- formance of the CPU but also have a significant impact on microarchitectural attacks. Microarchitectural attacks, such as Prime+Probe [40], DRAMA [41], TLBleed [21], Col- lide+Probe [33], or Spectre [29] require knowledge of the hash function to choose addresses mapping to a specific part of a microarchitectural element [17]. Without knowledge of the hash function, attacks are often less effective [41], [51]. In addition, the knowledge of these hash functions enables performance improvements by compiling cache- aware code [36] and allows for cache coloring [66], [53]. However, these functions are typically undocumented. Previous work reverse-engineered various hash func- tions, including those used for cache slices [52], [35], [27], [34], [25], [26], [65], [36], [64], DRAM addressing [51], [41], [63], [24], [59], AMD's way predictor [33], and TLB sets [21], [30]. The approaches for reversing the functions have in common that they collect a large number of in- puts and corresponding outputs and try to infer the hash function from these pairs. For the data recording, various side-channel measurements [41], [33], [22], [26], [59], [63] or CPU interfaces [35], [24], [36] have been used. However, as the general problem of inferring a compact function rep- resentation from inputs and outputs has shown to be a hard problem [11], [57], previous work mainly focused on linear hash functions, i.e., functions that only consist of a single layer of XORs. All previous non-linear microarchitectural hash functions have been reverse-engineered by manually discovering patterns or by assuming a specific structure of the function [65], [36], [26]. This paper presents the first generic reversing approach to infer microarchitectural hash functions from input-output pairs. We handle both linear and non-linear functions with- out relying on specific assumptions about the hash function. To this end, we employ a function-minimization pipeline that finds small representations for a large class of boolean functions. We find compact representations for most of our analyzed microarchitectural hash functions. This confirms the assumption that microarchitectural hash functions are usually of low depth and complexity, as deep functions would needlessly increase the latency of the function. Our function-minimization pipeline consists of 3 main steps: First, linearity of input bits is checked. Using a heuristic check allows to reduce the sample size of input- output pairs significantly. Since many hash functions are 3661 DOI 10.1109/SP54263.2024.00028 linear in at least some bits, this insight makes collection fea- sible for larger address input sizes. Next, the sampled truth table is converted to a disjunctive normal form (DNF). On this formula, the classical ESPRESSO heuristic logic mini- mizer [8] is used to pre-minimize the DNF. Compared to the na¨ıve representation as a truth table, the pre-minimized DNF representation is already significantly smaller in practice. Still, a representation in DNF has exponential blowup for functions that heavily use exclusive-or operations. Hence, in the last step, we use a novel function minimization technique based on Gr¨obner bases. Gr¨obner bases are an important tool in computer algebra and can be used to simplify or solve systems of polynomial equations. Thus, we encode our pre- minimized DNF into such a system of equations, which can be further minimized by computing a Gr ¨obner basis. The resulting Gr¨obner basis can be interpreted again as a boolean function. This process can be continued recursively to yield even more compact function representations. Our approach is also the first automated approach to infer non-linear hash functions, such as those used for cache slices, without relying on specific structures [65] or large look-up tables [36]. We demonstrate our approach on multiple non-linear cache-slice functions for which no hash function is known. Our functions also include the non- linear cache-slice function of AMD Zen3(+) CPUs, which we measure using a timing side channel. In total, we provide 10 hash functions inferred using our approach. To exper- imentally verify the correctness, we implement a Prime+ Probe attack on OpenSSL T-tables on Intel CPUs using the reverse-engineered cache-slice function. Our attacks achieve success rates above 99.9 %, demonstrating the correctness of the slice function. We additionally demonstrate our approach by using it on a wide range of previously reverse-engineered hash func- tions. For all functions analyzed, we successfully infer an equivalent and compact hash function. Our work is fully au- tomated without requiring any adaptions or assumptions for specific targets. Moreover, we show that2 manually reverse- engineered functions can be represented in an even simpler form. In addition to being generic, our approach is also fast enough to be used in practice. All hash functions are inferred within a day, given the required input-output pairs. Hence, for most hash functions, collecting these input-output pairs is the limiting factor, not the recovery of the hash function. Given the resulting small hash functions, we assume that our result is close to the hardware implementation. In addition to the solving approach, we present an open- source framework for measuring the input-output pairs of cache slices, AMD's way predictor, and DRAM addressing. With its modular design, it can be adapted easily for other hash functions. The output of this framework can be used directly by our solving approach to infer the underlying hash function automatically. The framework handles linear and non-linear functions without requiring knowledge about the structure or properties of the function. With this framework, we show the first reverse-engineering of the cache-slice function on the new hybrid CPU architecture introduced with Alder Lake. On this hybrid CPU architecture, one cache slice is used by either 1 or 4 cores, increasing the complexity of the hash function. Even CPUs with 16 cores, such as the Intel Core i9-12900K, have a non-linear cache-slice function that distributes addresses among 10 slices. Based on the results, we discuss several use cases for the reverse-engineered functions, including more effective attacks and defenses. We propose secure and fast alternatives to the currently used microarchitectural hash functions. Our proposed hash functions keep the benefits of currently-used functions but are more difficult to reverse-engineer, which impairs future microarchitectural attacks. To summarize, we make the following contributions: 1) We systematically analyze the currently used approaches for inferring microarchitectural hash functions, showing their limitations in measurement and solving approaches. 2) We design a framework to overcome these limitations with novel measurement and solving techniques, sup- porting linear and non-linear functions. 1 3) We evaluate our framework by inferring new microar- chitectural hash functions, among those the first ones on Intel Alder Lake hybrid cores and AMD processors, and finding new minimal forms for known functions. Outline. Section 2 provides background. Section 3 dis- cusses approaches and limitations of previous approaches. Section 4 introduces our automated approach for recovering hash functions. Section 5 introduces the measurement frame- work. Section 6 evaluates our approach. Section 7 discusses alternative hash functions. Section 8 discusses limitations and future work. Section 9 concludes. 2. Background In this section, we provide the necessary background about hash functions, linear functions, logic minimization and Gr ¨obner bases. 2.1. Hash Functions Hash functions are mathematical functions that take an input and map it to a fixed-size output, generally referred to as the hash value. In this paper, we focus on hash functions with fixed input sizes. In contrast to cryptographic hash functions, microarchitectural hash functions do not provide any of the classical security guarantees. Instead, they are mainly designed to load-balance by distributing data efficiently, as in the LLC or DRAM. Formally, our considered hash functions map an input {0, 1}b to a bucket {0, . . . , n− 1}. Notably, for load-balancing purposes, microarchitectural hash functions usually have a low complexity. As the hash functions are often evaluated (e.g., on every memory access), low latency of the function is of great importance as it has to keep up with the speed of modern CPUs. Hence, mi- croarchitectural hash functions can usually be implemented by a shallow circuit with few gates. Still, to ensure that 1. Source code can be found at: https://github.com/CISPA/ Microarchitectural-Hash-Function-Recovery 3662"
+      },
+      {
+        "source": "selected",
+        "value": "Modern CPUs use a variety of undocumented microarchitectural hash functions to efficiently distribute data within microarchitectural structures such as caches. A wellknown function is the cache slice function that distributes cache lines to the slices of the last-level cache. Knowing these functions considerally improves microarchitectural attacks, such as Prime+Probe or Rowhammer. However, while several such linear functions have been reverse-engineered, there is no generic or automated approach for reverse-engineering nonlinear functions, which are common with modern CPUs. In this paper, we introduce a novel generic approach for automatically reverse-engineering a wide range of microarchitectural hash functions. Our approach combines techniques initially used for logic-gate minimization and from computer algebra to infer the hash functions based on input-output pairs observed via side channels. With our framework, we infer 3 previously unknown non-linear hash functions on both AMD and Intel CPUs, including the new Alder Lake hybrid-CPU architecture. We verify our approach by reproducing known hash functions and evaluating side-channel attacks that rely on these functions, resulting in success rates above 97.65 %. We stress the need to design such functions with both performance and security in mind and discuss alternative designs that can be used in future CPUs."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Lukas Gerlach",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Simon Schwarz",
+          "email": "sschwarz@mpi-inf.mpg.de",
+          "orcid": "",
+          "affiliations": [
+            "Informatics Campus, Saarland University, Saarland"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Nicolas Faroß",
+          "email": "faross@math.uni-sb.de",
+          "orcid": "",
+          "affiliations": [
+            "Department of Mathematics, Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Michael Schwarz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Lukas Gerlach",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security firstname.lastname@cispa.de"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Simon Schwarz",
+          "email": "sschwarz@mpi-inf.mpg.de",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University, Saarland Informatics Campus sschwarz@mpi-inf.mpg.de"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Nicolas Faroß",
+          "email": "faross@math.uni-sb.de",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University, Department of Mathematics faross@math.uni-sb.de"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Michael Schwarz",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security firstname.lastname@cispa.de"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 101,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Michael Schwarz",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Efficient and Generic Microarchitectural Hash-Function Recovery",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Lukas Gerlach",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ]
+        },
+        {
+          "name": "Simon Schwarz",
+          "affiliations": [
+            "Saarland University, Saarland Informatics Campus"
+          ]
+        },
+        {
+          "name": "Nicolas FaroàŸ",
+          "affiliations": [
+            "Saarland University, Department of Mathematics"
+          ]
+        },
+        {
+          "name": "Michael Schwarz",
+          "affiliations": [
+            "CISPA Helmholtz Center for Information Security"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

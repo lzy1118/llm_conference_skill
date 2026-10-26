@@ -1,0 +1,292 @@
+{
+  "paper_id": "077_sigmadiff_semantics_aware_deep_graph_matching_for_pseudocode_diffing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SIGMADIFF: Semantics-Aware Deep Graph Matching for Pseudocode Diffing"
+      },
+      {
+        "source": "selected",
+        "value": "SIGMADIFF: Semantics-Aware Deep Graph Matching for Pseudocode Diffing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Pseudocode diffing precisely locates similar parts and captures differences between the decompiled pseudocode of two given binaries. It is particularly useful in many security scenarios such as code plagiarism detection, lineage analysis, patch, vulnerability analysis, etc. However, existing pseudocode diffing and binary diffing tools suffer from low accuracy and poor scalability, since they either rely on manually-designed heuristics (e.g., Diaphora) or heavy computations like matrix factorization (e.g., DeepBinDiff). To address the limitations, in this paper, we propose a semantics-aware, deep neural network-based model called SIGMADIFF. SIGMADIFF first constructs IR (Intermediate Representation) level interprocedural program dependency graphs (IPDGs). Then it uses a lightweight symbolic analysis to extract initial node features and locate training nodes for the neural network model. SIGMADIFF then leverages the stateof-the-art graph matching model called Deep Graph Matching Consensus (DGMC) to match the nodes in IPDGs. SIGMADIFF also introduces several important updates to the design of DGMC such as the pre-training and fine-tuning schema. Experimental results show that SIGMADIFF significantly outperforms the stateof-the-art heuristic-based and deep learning-based techniques in terms of both accuracy and efficiency. It is able to precisely pinpoint eight vulnerabilities in a widely-used video conferencing application."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Pseudocode diffing precisely locates similar parts and captures differences between the decompiled pseudocode of two given binaries. It is particularly useful in many security scenarios such as code plagiarism detection, lineage analysis, patch, vulnerability analysis, etc. However, existing pseudocode diffing and binary diffing tools suffer from low accuracy and poor scalability, since they either rely on manually-designed heuristics (e.g., Diaphora) or heavy computations like matrix factorization (e.g., DeepBinDiff). To address the limitations, in this paper, we propose a semantics-aware, deep neural network-based model called S IGMA DIFF. S IGMA DIFF first constructs IR (Intermedi- ate Representation) level interprocedural program dependency graphs (IPDGs). Then it uses a lightweight symbolic analysis to extract initial node features and locate training nodes for the neural network model. S IGMA DIFF then leverages the state- of-the-art graph matching model called Deep Graph Matching Consensus (DGMC) to match the nodes in IPDGs. S IGMA DIFF also introduces several important updates to the design of DGMC such as the pre-training and fine-tuning schema. Experimental results show that S IGMA DIFF significantly outperforms the state- of-the-art heuristic-based and deep learning-based techniques in terms of both accuracy and efficiency. It is able to precisely pinpoint eight vulnerabilities in a widely-used video conferencing application. I. I NTRODUCTION Pseudocode diffing, as a special kind of binary code diffing [9], [22], [38], [84], is a technique that precisely locates similar pseudocode tokens and captures the differences between the pseudocode (a.k.a., decompiled code) of two given binaries. It can play an essential role in many security scenarios such as code plagiarism detection [60], [68], lineage analysis [62], vulnerability and patch analysis [77]. In contrast to binary diffing that works at either function level or basic block level, pseudocode diffing provides a more fine-grained, semantic-rich, and human-comprehensible pseudocode token level similarity analysis. Hence, mainstream disassemblers such as IDA Pro [14] and Ghidra [23] can present binaries in pseudocode. Compared to binary diffing, pseudocode diffing has several advantages. First, pseudocode, which is closer to higher-level languages like C than assembly, carries more semantic-level information. Therefore, it is more concise and human-readable. Second, pseudocode diffing compares two pseudocode pro- grams at the token level, and thus is more fine-grained than binary diffing, which is at the basic block or function level. Third, it can achieve better accuracy than binary diffing in general since the semantic information recovered during de- compilation (e.g., def-use relation and type information) can be very helpful during analysis. Fourth, pseudocode naturally supports cross-architecture diffing, as binaries on different architectures are all translated into one C-like language via decompilation. However, pseudocode diffing brings unique challenges. Since much information is unavailable in stripped binaries (e.g., symbol information), decompilers have to infer the high- level features (e.g., variable names, expressions, high-level control constructs) for pseudocode and introduce a consid- erable amount of noise. That is why Diaphora [9] (the only pseudocode diffing tool to our knowledge) does not work well since it relies on a set of heuristics and performs simple string- based matching at the token level. While the problem of pseudocode diffing evidently needs more study, plenty of research has been done on binary diffing. Traditional approaches like BinDiff [22] rely on heuristics (e.g., function name) to find similar functions and perform basic block matching along the control flow graph. These syntax-based heuristics are not robust and can be easily thwarted by compiler optimizations. Dynamic analysis-based approaches [39], [61], [75] are good at capturing the semantics of binaries and have good resilience against code obfusca- tion, but they struggle to cover much code, especially for large binaries. Learning-based approaches [37], [44], [76], [84] leverage machine learning techniques to encode graph information into numerical vectors, a.k.a, graph embeddings, and perform binary diffing. These techniques can distill unique semantic-level features of a program while avoiding heavy graph matching. Despite the reasonable accuracy and scalabil- ity, the majority of them only handle diffing at a coarse-grained function level. DeepBinDiff [38], the only basic block level binary diffing technique in this category, leverages the TADW algorithm [78] to generate context- and semantic-aware basic block embeddings and performs diffing. However, as shown in our evaluation, it does not scale well on large binaries and cannot be easily accelerated by GPUs due to the iterative algorithm in TADW. Besides binary diffing, there also exists a line of research Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.23208 www.ndss-symposium.org for source code matching. GumTree [41] parses source code to abstract syntax tree (AST), and finds a sequence of “edit ac- tions” in AST levels. ClDiff [52] improves previous approaches by grouping fine-grained code differences and summarizing high-level code changes. Nevertheless, the AST of pseudocode can change drastically due to code transformations introduced by compilers and/or decompilers. Consequently, AST-based techniques are not suitable for pseudocode diffing. Source code clone/similarity detection approaches [65], [80], [83] are either too coarse-grained or only consider syntax-level features and do not work well on pseudocode diffing, according to our evaluation. In this paper, we present a novel pseudocode diffing technique, called S IGMA DIFF1. To mitigate the challenges caused by syntax level changes and achieve better accuracy, we design S IGMA DIFF based on two important observations: 1) a large number of syntax level changes in decompilation are introduced during the transformation from intermediate repre- sentation (IR) to pseudocode; 2) the dependency information (e.g., control and data dependencies) among IRs can be of great help for matching and diffing. To this end, we first perform diffing at IR level and map the IR-level diffing results up to the pseudocode level. We construct interprocedural program dependency graphs (IPDGs) [45] and extract a symbolic expression for each IR to capture the semantic meanings of a binary. After that, we model the program-wide IR diffing problem as a graph matching problem on two IPDGs from the two given binaries by leveraging the deep graph matching consensus (DGMC) model [46] to fully exploit the neighboring contextual information. We have implemented a prototype of SIGMA DIFF, and con- ducted extensive experiments to evaluate its efficacy. Experi- mental results show that S IGMA DIFF outperforms Diaphora in cross-version, cross-optimization-level, cross-compiler, and cross-architecture diffing tasks. For instance, it outperforms Diaphora by 308%, 85%, 38% in terms of F1-scores in O0 vs. O3, O1 vs. O3, and O2 vs. O3, respectively. We also compare with DeepBinDiff by mapping its basic block level results to pseudocode tokens and show that S IGMA DIFF outperforms DeepBinDiff in cross-version, cross-optimization- level, and cross-compiler tasks. Besides, we conduct case studies on a patch detection task using real-world CVEs and a vulnerability detection task using Zoom, a popular video conferencing application. Experiments show that S IGMA DIFF is able to pinpoint more patches and vulnerabilities than the baselines. Contributions. This paper makes the following contribu- tions: • We propose a novel graph neural network-based approach to directly generate token matching results for the pseu- docode diffing problem. • We propose a flow-sensitive, call-site sensitive [69], [70] analysis called lightweight symbolic analysis to extract semantic information of a program's high level IRs. • We improve the design and training of the graph neural network model to effectively solve pseudocode diffing as a graph matching problem. 1SIGMA DIFF stands for Semantics-Aware Deep Graph Matching for Pseu- docode Diffing. • We implement a prototype called S IGMA DIFF. Our eval- uation demonstrates that S IGMA DIFF outperforms the state-of-the-art diffing tools at the pseudocode token level. SIGMA DIFF can still get accurate results when handling code changes caused by different optimization techniques. We have made the source code of S IGMA DIFF publicly available 2. II. M OTIVATION In this section, we first discuss some unique challenges in pseudocode diffing via a motivating example, then go over the existing diffing techniques and their limitations, and finally explain how we tackle these challenges in S IGMA DIFF. A. A Motivating Example We use a real-world out-of-bounds read vulnerability CVE- 2020-13790 [2] from the start_input_ppm function in libjpeg-turbo [15] as a motivating example. Figure 1 presents the source code differences between v2.0.4 and v2.1.2, as well as pseudocode diffing results by various diffing tools. The v2.0.4 binary is obtained from Zoom [21], a popular video conferencing COTS (Commercial off-the-shelf) program, and the new version is compiled with GCC v7.5.0 (-O0). The goal is to precisely identify the token-level changes in pseudocode that are semantically equivalent to the source code- level changes while ignoring the syntactical changes produced in the processes of compilation and decompilation. Here, we list several common yet challenging pseudocode-level changes that are caused by compilers and decompilers: (1) Variable renaming. A variable may be named differ- ently from one version to another. For example, variable maxval is named uVar18 in the old version in Figure 1 (b) but uVar13 in the new version in Figure 1 (c), shown as the blue boxes. (2) Expression merging and splitting. A decompiler may merge multiple expressions into one, or vice versa. For instance, “lVar16 + lVar17 ” at Line 4 and “lVar16 = *(long *)(param_2 + 0x48) at Line 7 in Fig- ure 1 (b) are merged into “ *(long *)(param_2 + 0x48) + lVar14) ” at Line 6 in Figure 1 (c). (3) Control structure changes. A decompiler may represent a loop structure as a for loop, a while loop, or a do-while loop. An if-then-else structure may also change, depending on which branch is for “then” or “else”. goto statements are also highly prevalent in pseudocode. As shown in the purple boxes in Figure 1 (b) and (c), a while loop with an if statement inside the loop body in the old version is changed to a do-while loop in the new version. B. Existing Techniques Unfortunately, existing diffing techniques fall short of tackling these pseudocode diffing problems. String Diffing. Diaphora [9] takes this approach by simply treating two code snippets as two strings and leveraging 2https://github.com/yijiufly/SigmaDiff 2"
+      },
+      {
+        "source": "selected",
+        "value": "Pseudocode diffing precisely locates similar parts and captures differences between the decompiled pseudocode of two given binaries. It is particularly useful in many security scenarios such as code plagiarism detection, lineage analysis, patch, vulnerability analysis, etc. However, existing pseudocode diffing and binary diffing tools suffer from low accuracy and poor scalability, since they either rely on manually-designed heuristics (e.g., Diaphora) or heavy computations like matrix factorization (e.g., DeepBinDiff). To address the limitations, in this paper, we propose a semantics-aware, deep neural network-based model called SIGMADIFF. SIGMADIFF first constructs IR (Intermediate Representation) level interprocedural program dependency graphs (IPDGs). Then it uses a lightweight symbolic analysis to extract initial node features and locate training nodes for the neural network model. SIGMADIFF then leverages the stateof-the-art graph matching model called Deep Graph Matching Consensus (DGMC) to match the nodes in IPDGs. SIGMADIFF also introduces several important updates to the design of DGMC such as the pre-training and fine-tuning schema. Experimental results show that SIGMADIFF significantly outperforms the stateof-the-art heuristic-based and deep learning-based techniques in terms of both accuracy and efficiency. It is able to precisely pinpoint eight vulnerabilities in a widely-used video conferencing application."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Lian Gao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside Deepbits Technology Inc. Singapore Management University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yu Qu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside Deepbits Technology Inc. Singapore Management University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Sheng Yu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside Deepbits Technology Inc. Singapore Management University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yue Duan",
+          "email": "yueduan@smu.edu.sg",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside Deepbits Technology Inc. Singapore Management University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Heng Yin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside Deepbits Technology Inc. Singapore Management University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Lian Gao",
+          "email": "lgao027@ucr.edu",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yu Qu",
+          "email": "yuq@ucr.edu",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Sheng Yu",
+          "email": "syu061@ucr.edu",
+          "affiliations": [
+            "University of California, Riverside",
+            "Deepbits Technology Inc."
+          ],
+          "affiliation_source": "pdf_complete_symbol_affiliation",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yue Duan",
+          "email": "yueduan@smu.edu.sg",
+          "affiliations": [
+            "Singapore Management University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Heng Yin",
+          "email": "heng@cs.ucr.edu",
+          "affiliations": [
+            "University of California, Riverside",
+            "Deepbits Technology Inc."
+          ],
+          "affiliation_source": "pdf_complete_symbol_affiliation",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 111,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SigmaDiff: Semantics-Aware Deep Graph Matching for Pseudocode Diffing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/sigmadiff-semantics-aware-deep-graph-matching-for-pseudocode-diffing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Lian Gao",
+          "affiliations": [
+            "University of California Riverside"
+          ]
+        },
+        {
+          "name": "Yu Qu",
+          "affiliations": [
+            "University of California Riverside"
+          ]
+        },
+        {
+          "name": "Sheng Yu",
+          "affiliations": [
+            "University of California, Riverside & Deepbits Technology Inc."
+          ]
+        },
+        {
+          "name": "Yue Duan",
+          "affiliations": [
+            "Singapore Management University"
+          ]
+        },
+        {
+          "name": "Heng Yin",
+          "affiliations": [
+            "University of California, Riverside & Deepbits Technology Inc."
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "replace_affiliations_from_complete_symbol_layout",
+      "stage": "field_level_pdf_merge",
+      "field": "affiliations",
+      "author": "Sheng Yu",
+      "replaced": [
+        "University of California, Riverside"
+      ],
+      "selected": [
+        "University of California, Riverside",
+        "Deepbits Technology Inc."
+      ],
+      "author_markers": [
+        "∗",
+        "†"
+      ],
+      "evidence_lines": [
+        "Lian Gao∗, Yu Qu∗, Sheng Yu∗†, Yue Duan‡ and Heng Yin∗†",
+        "∗University of California, Riverside",
+        "†Deepbits Technology Inc.",
+        "‡Singapore Management University"
+      ],
+      "evidence_block_ids": [
+        "pdfplumber:p1:b9",
+        "pdfplumber:p1:b11",
+        "pdfplumber:p1:b13",
+        "pdfplumber:p1:b15"
+      ]
+    },
+    {
+      "action": "replace_affiliations_from_complete_symbol_layout",
+      "stage": "field_level_pdf_merge",
+      "field": "affiliations",
+      "author": "Heng Yin",
+      "replaced": [
+        "University of California, Riverside"
+      ],
+      "selected": [
+        "University of California, Riverside",
+        "Deepbits Technology Inc."
+      ],
+      "author_markers": [
+        "∗",
+        "†"
+      ],
+      "evidence_lines": [
+        "Lian Gao∗, Yu Qu∗, Sheng Yu∗†, Yue Duan‡ and Heng Yin∗†",
+        "∗University of California, Riverside",
+        "†Deepbits Technology Inc.",
+        "‡Singapore Management University"
+      ],
+      "evidence_block_ids": [
+        "pdfplumber:p1:b9",
+        "pdfplumber:p1:b11",
+        "pdfplumber:p1:b13",
+        "pdfplumber:p1:b15"
+      ]
+    }
+  ]
+}

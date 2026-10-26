@@ -1,0 +1,188 @@
+{
+  "paper_id": "062_dbreach_stealing_from_databases_using_compression_side_channels",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DBREACH: Stealing from Databases Using Compression Side Channels"
+      },
+      {
+        "source": "selected",
+        "value": "DBREACH: Stealing from Databases Using Compression Side Channels"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "We introduce new compression side-channel attacks against database storage engines that simultaneously support compression of database pages and encryption at rest. Given only limited, indirect access to an encrypted and compressed database table, our attacks extract arbitrary plaintext with high accuracy. We demonstrate accurate and performant attacks on the InnoDB storage engine variants found in MariaDB and MySQL as well as the WiredTiger storage engine for MongoDB. Our attacks overcome obstacles unique to the database setting that render previous techniques developed to attack TLS ineffective. Unlike the web setting, where the exact length of a compressed and encrypted message can be observed, we make use of only approximate ciphertext size information gleaned from file sizes on disk. We amplify this noisy signal and combine it with new attack heuristics tailored to the database setting to extract secret plaintext. Our attacks can detect whether a random string appears in a table with > 90% accuracy and extract 10-character random strings from encrypted tables with > 95% success."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "We introduce new compression side-channel attacks against database storage engines that simultaneously support compression of database pages and encryption at rest. Given only limited, indirect access to an encrypted and compressed database table, our attacks extract arbitrary plaintext with high accuracy. We demonstrate accurate and performant attacks on the InnoDB storage engine variants found in MariaDB and MySQL as well as the WiredTiger storage engine for MongoDB. Our attacks overcome obstacles unique to the database setting that render previous techniques developed to attack TLS ineffective. Unlike the web setting, where the exact length of a compressed and encrypted message can be observed, we make use of only approximate ciphertext size information gleaned from file sizes on disk. We amplify this noisy signal and combine it with new attack heuristics tailored to the database setting to extract secret plaintext. Our attacks can detect whether a random string appears in a table with > 90% accuracy and extract 10-character random strings from encrypted tables with > 95% success. I. I NTRODUCTION Compression side-channel attacks take advantage of the combination of compression and encryption to learn information about encrypted messages [ 16, 27]. Encryp- tion methods used in practice aim to hide the content of a message, but do not aim to fully hide its length. Since compression post-encryption is ineffective, all systems that combine compression and encryption first compress the plaintext and then encrypt. This leaks information about encrypted plaintexts through the length of the resulting ciphertext [18, 22]. An attacker who can append their own input to data that is about to be compressed and encrypted can essentially insert “guesses” about the secret plaintext and determine whether those guesses are correct by observing the resulting ciphertext size. A correct guess is likely to compress well with the private data and result in a smaller ciphertext, while an incorrect guess is likely to compress poorly and result in a larger ciphertext. This intuition forms the backbone of the celebrated CRIME and BREACH attacks [ 16, 27], which enabled stealing cookies or CSRF tokens from encrypted HTTPS ses- sions. While the potential for compression side-channel attacks is understood to exist whenever systems combine compression and encryption, few works explore potential attacks beyond the TLS setting. Section VIII contains a brief summary of these works. This paper introduces new compression side-channel attacks against databases. Modern databases provide rich support for data compression as well as encryption of data at rest. We demonstrate a number of settings where an attacker with limited, indirect access to an encrypted and compressed database table can extract arbitrary plaintext with high accuracy. Moreover, we show an even more rapid and extremely accurate attack that enables detection of specific adversary-chosen strings, e.g., email addresses, names, or keywords, in an encrypted table. We call our new attacks DBREACH attacks, standing for Database Reconnaissance and Exfiltration via Adaptive Compression Heuristics. Our attacks require only that an adversary has the ability to insert and update rows in a victim table, either directly or through, e.g., a web interface, and that the attacker can learn the size of encrypted tables. We discuss various settings where an adversary has such capabilities when we elaborate our threat model in Section III. We instantiate our attacks against MariaDB [ 2] and MongoDB [3], configured to use the default InnoDB [ 1] and WiredTiger [ 24] storage engines, respectively. We also demonstrate the feasibility of our attacks against the InnoDB variant in MySQL [ 5], using a slightly stronger threat model. The storage engine is the component of the database system that handles the actual reading, writing, and updating of tables. Our attacks apply to all three com- pression schemes supported by MariaDB's standard InnoDB installation, two of which are also supported 182 DOI 10.1109/SP46215.2023.00083 by MongoDB. Extending the generic notion of compression side channels to a concrete attack on databases requires solving new challenges not present in other settings. Since database pages are ultimately stored in a filesystem, access to file sizes provides only a low-resolution signal regarding the actual size of the underlying table. The database's choices of how to lay out table data on disk pose an additional challenge. These obstacles render any na¨ıve use of the techniques of CRIME, BREACH, or related attacks ineffective. We introduce new attack techniques that correctly align an attacker's “guess” with the page boundaries of both the database storage engine and the underlying filesystem, significantly boosting the noisy signal provided by file size information. We also design a series of new heuristic approaches to using guess compressibility for plaintext extraction. We implement attackers that retrieve file size information from the filesystem and insert guesses using either direct, unprivileged access to the DBMS or via a web front-end. Our attacks can detect whether a random string appears in a table with at least 85% accuracy for any of the compression algorithms analyzed, even achieving accuracy of over 99% under certain conditions. Even for structured string data where the compression side channel is noisier due to incidental compression, e.g., English text or email addresses, we can detect the presence of a string with 70% or higher accuracy. Moreover, for the default zlib compression algorithm in MariaDB, we can extract 10-character random strings with greater than 95% success, and 17-character strings with 92% success. Our proof of concept code is available at https://github. com/mathewdhogan/dbreach-code. Disclosure. We discussed DBREACH and potential miti- gations with the security teams of MariaDB, MongoDB, and MySQL. Since the attack is against the general encryption and compression protocol rather than an implementation bug, a patch was not deemed necessary or feasible. II. B ACKGROUND This section introduces the notion of a compression side channel and gives the background on compression and databases that we use to develop our attacks in subsequent sections. A. The Issue with Compression and Encryption Modern encryption schemes aim to guarantee Semantic Security [18]. Informally, semantic security means that one cannot feasibly extract any information about the original plaintext from an encrypted message, except for its length. Applying compression to the plaintext, prior to encrypting it, breaks the guarantee of semantic security, as the length of the message now depends on the compressibility of the plaintext. By observing the length of an encrypted and compressed message, an adversary learns additional information about the entropy of the plaintext, contrary to the definition given above. This observation, first explored by Kelsey [ 22], re- sulted in critical web vulnerabilities in the form of the CRIME [27] and BREACH [ 16] attacks. These attacks suggest that anywhere compression and encryption are combined, we should consider whether this combination poses a practical security threat that can be exploited. In this paper, we will show how to abuse compression to extract plaintext from encrypted databases. The rest of this section provides the background on encryption and compression in the InnoDB and WiredTiger storage engines that will be needed to explain our attacks. B. Storage Engines We instantiate our attacks against two storage engines: InnoDB [1] and WiredTiger [24]. InnoDB. The InnoDB storage engine [ 1] is used by the relational database management software (RDBMS) MariaDB [2] and MySQL [ 4], although the two InnoDB versions have diverged in terms of implementation and functionality. We attacked InnoDB as used by both MariaDB and MySQL. That said, differences in MySQL's implementation led to a slightly less powerful attack than that against MariaDB. We discuss the MySQL attack in more detail in Appendix D; for the rest of this paper, we will use “InnoDB” to refer to MariaDB's version of the storage engine, unless otherwise noted. WiredTiger. We also demonstrate our attacks against the WiredTiger storage engine [ 24] used by the RDBMS MongoDB [3]. We selected WiredTiger and MongoDB as an additional target because it differs from InnoDB in several important ways, including in its fundamental storage paradigm: WiredTiger and MongoDB are NoSQL database platforms, unlike InnoDB. The success of our attacks against such a variety of storage software and paradigms demonstrates their broad generalizability. C. Table Storage InnoDB for MariaDB offers two choices for storing tables: a single shared tablespace or separate file-per- table tablespaces. For simplicity, we will only consider the latter case, which is the default on a standard Ubuntu 183"
+      },
+      {
+        "source": "selected",
+        "value": "We introduce new compression side-channel attacks against database storage engines that simultaneously support compression of database pages and encryption at rest. Given only limited, indirect access to an encrypted and compressed database table, our attacks extract arbitrary plaintext with high accuracy. We demonstrate accurate and performant attacks on the InnoDB storage engine variants found in MariaDB and MySQL as well as the WiredTiger storage engine for MongoDB. Our attacks overcome obstacles unique to the database setting that render previous techniques developed to attack TLS ineffective. Unlike the web setting, where the exact length of a compressed and encrypted message can be observed, we make use of only approximate ciphertext size information gleaned from file sizes on disk. We amplify this noisy signal and combine it with new attack heuristics tailored to the database setting to extract secret plaintext. Our attacks can detect whether a random string appears in a table with > 90% accuracy and extract 10-character random strings from encrypted tables with > 95% success."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Mathew Hogan",
+          "email": "mhogan1@cs.stanford.edu",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University, Anjuna Security, Inc, UNC Chapel Hill"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yan Michalevsky",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University, Anjuna Security, Inc, UNC Chapel Hill"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Saba Eskandarian",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Stanford University, Anjuna Security, Inc, UNC Chapel Hill"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Compression Side Channels",
+          "email": "",
+          "affiliations": [
+            "Stanford University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Mathew Hogan",
+          "email": "mhogan1@cs.stanford.edu",
+          "affiliations": [
+            "Stanford University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 98,
+      "author_count": 2,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 1,
+          "author": "Mathew Hogan",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 1,
+          "author": "Mathew Hogan",
+          "affiliation_raw": "Stanford University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 6.154,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DBREACH: Stealing from Databases Using Compression Side-Channels",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Mathew Hogan",
+          "affiliations": [
+            "Stanford University"
+          ]
+        },
+        {
+          "name": "Yan Michalevsky",
+          "affiliations": [
+            "Anjuna Security, Inc and Cryptosat, Inc."
+          ]
+        },
+        {
+          "name": "Saba Eskandarian",
+          "affiliations": [
+            "UNC Chapel Hill"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Mathew Hogan",
+      "field": "email",
+      "restored_value": "mhogan1@cs.stanford.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

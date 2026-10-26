@@ -1,0 +1,190 @@
+{
+  "paper_id": "087_mitigating_information_leakage_vulnerabilities_with_type_based_data_isolation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Mitigating Information Leakage Vulnerabilities with Type-based Data Isolation"
+      },
+      {
+        "source": "selected",
+        "value": "Mitigating Information Leakage Vulnerabilities with Type-based Data Isolation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Information leakage vulnerabilities (or simply info leaks) such as out-of-bounds/uninitialized reads in the architectural or speculative domain pose a significant security threat, allowing attackers to leak sensitive data such as crypto keys. At the same time, such vulnerabilities are hard to efficiently mitigate, as every (even speculative) memory load operation needs to be potentially instrumented against unauthorized reads. Existing confidentiality-preserving solutions based on data isolation label memory objects with different (e.g., sensitive vs. nonsensitive) colors, color load operations accordingly using static pointsto analysis, and instrument them to enforce color-matching invariants at run time. Unfortunately, the reliance on conservative points-to analysis introduces overapproximations that are detrimental to security (or further degrade performance). In this paper, we propose Type-based Data Isolation (TDI), a new practical design point in the data isolation space to mitigate info leaks. TDI isolates memory objects of different colors in separate memory arenas and uses efficient compiler instrumentation to constrain loads to the arena of the intended color by construction. TDI's arena-based design moves the instrumentation from loads to pointer arithmetic operations, enabling new aggressive speculation-aware performance optimizations and eliminating the need for points-to analysis. Moreover, TDI's color management is flexible. TDI can support a few-color scheme with sensitive data annotations similar to prior work (e.g., 2 colors) or a many-color scheme based on basic type analysis (i.e., one color per object type). The latter approach provides fine-grained data isolation, eliminates the need for annotations, and enforces strong color-matching invariants equivalent to ideal (context-sensitive) type-based points-to analysis. Our results show that TDI can efficiently support such strong security invariants, at average performance overheads of <10% on SPEC CPU2006 and nginx. 1049 2022 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Information leakage vulnerabilities (or simply info leaks) such as out-of-bounds/uninitialized reads in the architec- tural or speculative domain pose a significant security threat, allowing attackers to leak sensitive data such as crypto keys. At the same time, such vulnerabilities are hard to efficiently mitigate, as every (even speculative) memory load operation needs to be potentially instrumented against unauthorized reads. Existing confidentiality-preserving solutions based on data isolation label memory objects with different (e.g., sensitive vs. nonsensitive) colors, color load operations accordingly using static points- to analysis, and instrument them to enforce color-matching invariants at run time. Unfortunately, the reliance on conser- vative points-to analysis introduces overapproximations that are detrimental to security (or further degrade performance). In this paper, we propose Type-based Data Isolation (TDI), a new practical design point in the data isolation space to mitigate info leaks. TDI isolates memory objects of different colors in separate memory arenas and uses efficient compiler instrumentation to constrain loads to the arena of the intended color by construction. TDI's arena-based design moves the instru- mentation from loads to pointer arithmetic operations, enabling new aggressive speculation-aware performance optimizations and eliminating the need for points-to analysis. Moreover, TDI's color management is flexible. TDI can support a few-color scheme with sensitive data annotations similar to prior work (e.g., 2 colors) or a many-color scheme based on basic type analysis (i.e., one color per object type). The latter approach provides fine-grained data isolation, eliminates the need for annotations, and enforces strong color-matching invariants equivalent to ideal (context-sensitive) type-based points-to analysis. Our results show that TDI can efficiently support such strong security invariants, at average performance overheads of <10% on SPEC CPU2006 and nginx. I. I NTRODUCTION Despite advances in security engineering, information leak- age vulnerabilities (or info leaks ) remain a major security threat. Modern systems software is riddled with info leak bugs [59] and Spectre-based variations [32] have expanded the already large attack surface. Unfortunately, existing mit- igations that aim to significantly reduce such attack surface incur nontrivial performance costs. In this paper, we show such costs are not fundamental and an efficient, fine-grained data isolation strategy based on secure allocation and lightweight compiler instrumentation can mitigate info leaks, with single- digit performance overhead for practical cases of interest. a) The info leak era: Info leaks based on spatial (out-of- bounds, type confused reads) or temporal (uninitialized, use- after-free reads) memory errors are crucial in modern software †Alyssa currently works at Intel; this work was done at the VU. exploitation [59]. Such vulnerabilities enable attackers to leak private data such as crypto keys (e.g., Heartbleed [50]). Moreover, they enable reliable ROP [60] by allowing attackers to bypass mitigations such as ASLR and stack cookies, or by leaking a massaged memory object location [59]. While info leaks in the architectural domain have dominated software exploitation in the last decade, the attack surface has recently expanded to the speculative domain with Spectre [32]. Spectre- BCB (Bounds Check Bypass) is a widespread example of an out-of-bounds read vulnerability using speculative execution. b) Mitigating info leaks: Mitigating info leaks in a practical way is notoriously difficult. Mitigations that en- tirely eliminate the attack surface in the architectural (e.g., memory safety [74]) and speculative (e.g., load fencing [49]) domain are expensive and normally out of reach of the performance budget available in production settings. More practical confidentiality-preserving solutions described in lit- erature are based on data isolation: isolating memory objects in the address space to make them inaccessible from other objects vulnerable to info leaks [12], [15], [38], [51], [65]. Such solutions generally color memory objects and load operations based on the color of the objects they are allowed to access, as dictated by static points-to analysis. Loads are then instrumented to enforce such color-matching invariants at run time by means of pointer masking [15], [33], domain switching [12], [33], [38], [51], [53], [62], [65] or run-time checks [12], [15], [33]. Some (not all) of these techniques (e.g., pointer masking) are also Spectre-safe. Some coarse-grained solutions use a few, often two (sensitive vs. nonsensitive) colors set by user annotations (e.g., labeling an allocation site for crypto keys as sensitive) [12], [15], [51], while other fine-grained solutions use many colors, based on the clusters automatically determined by points-to analysis [7], [20], [62]. Regardless of the particular scheme, existing data isola- tion techniques-barring those targeting very specific code patterns [33]-rely on static points-to analysis to determine the set of possible targets of load operations. Since such analysis is conservative and context-insensitive (other than having trouble scaling to large programs), the set of possible targets is often largely overapproximated even in state-of-the- art implementations such as SVF [63] or data isolation-tailored ones such as DataShield's [15]. Such overapproximations are problematic for either security, as they lead to much weaker color-matching invariants, or for performance, when additional metadata-based run-time checks are used to compensate for 1049 DOI 10.1109/SP46214.2022.00016 this weakness [7], [15]. Even without expensive run-time checks, the cost of instrumenting pervasive load operations for data isolation is nontrivial. For example, generic load pointer masking-based solutions with only two colors incur over 17% average overhead on SPEC CPU2006 [33]. c) TDI: In this paper, we present Type-based Data Isolation (TDI), a new design point in the data isolation space with strong performance and security guarantees against both architectural and speculative info leak vulnerabilities. TDI's key insight is that we can eliminate expensive load- based instrumentation and imprecise points-to analysis if we rearrange the address space layout and constrain pointers within specific address ranges. In particular, TDI allocates independent memory regions ( arenas) for each memory object color, both on the heap and stack, and then uses lightweight compiler instrumentation to ensure each pointer of any given color stays within its arena (i.e., object color) by construction. TDI's design provides several benefits compared to prior work. First, our arena-based strategy moves the compiler instru- mentation from loads to pointer arithmetic operations. Not only does this eliminate any dependency on context-insensitive points-to analysis (which would degrade precision and secu- rity), it also provides much better performance. Intuitively, since many load operations depend on the same (or similar) computed pointers we can reason about, this significantly reduces the number of instrumentation points. Moreover, as we will show, such strategy is particularly amenable to other optimizations, such as efficient masking and the use of inter- arena guard zones. While similar optimization techniques have been explored by traditional SFI solutions [24], [35], [41], [57], [73], we show that TDI's unique pointer arithmetic de- sign enables much more aggressive optimizations, significantly outperforming prior work. We also detail and address the challenges of making our optimizations speculation-aware. Second, our design (and instrumentation) is entirely agnostic to the object coloring scheme. Specifically, TDI supports arbitrary coarse- or fine-grained (i.e., many-color) isolation schemes-with colors determined by explicit user annotations or static analysis-despite significantly outperforming prior (annotation-based) data isolation solutions limited to coarse- grained (e.g., 2-color) schemes. By default, TDI uses simple static type analysis [66] to isolate each individual object type in its own arena. This scheme supports annotation- free protection and provides very fine-grained isolation-well beyond object coloring based on the clusters determined by points-to analysis used by WIT [7] and others [20], [62]. With such a scheme, architectural or speculative info leak vulnerabilities cannot be exploited to leak data across any two given object types. For example, a crypto key can never be leaked by means of a vulnerable string or buffer of any other type. We show that TDI can flexibly protect such situations in OpenSSL with both coarse- and fine-grained coloring. Third, our design eliminates the need for imprecise and hard-to-scale points-to analysis altogether. Our masking in- strumentation does not rely on any particular object coloring scheme, as we simply constrain pointers within their predeter- mined arena rather than attempting to enforce color-matching invariants by reasoning about the targets of load operations. This strategy matches the precision of the underlying object coloring scheme, with no overapproximations. As a result, our standard configuration using per-type arenas can enforce color- matching invariants equivalent to load-side counterparts using ideal (context-sensitive) type-based points-to analysis. To summarize, our contributions are: • We design and implement a prototype 1 of TDI, a low- overhead Type-based Data Isolation system based on lightweight compiler instrumentation. • We explore the challenges of efficiently implement- ing such instrumentation, presenting aggressive but speculation-aware optimizations allowing TDI to be ap- plied to real-world code with low performance overhead. • We automate TDI's object coloring using state-of-the-art type analysis, resulting in a fine-grained isolation system that aggressively contains info leak vulnerabilities in both the architectural and speculative domain. • We evaluate our TDI prototype using standard bench- marks and the modern nginx web server. Our results show TDI incurs only single-digit average performance overhead on SPEC CPU2006 and nginx. II. T HREA T MODEL We assume a typical modern software exploitation scenario with an attacker exploiting either spatial (out-of-bounds reads, type confused reads) or temporal (uninitialized reads, use- after-free reads) info leak vulnerabilities while all the standard modern mitigations, such as ASLR, DEP , stack cookies, etc., are in place. The attacker has not (yet) achieved control-flow hijacking, and aims to leak private data (e.g., crypto keys) or information needed to hijack control (e.g., pointers or stack cookies). The attacker can exploit both classical and specula- tive info leak vulnerabilities. A typical example in the former category would be a classical out-of-bounds read with an attacker-controlled value which is not bounds-checked before being used to index an array. A typical example in the latter category would be a speculative out-of-bounds read with an attacker-controlled value which is only architecturally bounds- checked before being used as an array index. An attacker may speculatively bypass the bounds check and leak data using a (e.g., cache) covert channel a la Spectre-BCB [32]. While we mostly focus on speculative out-of-bounds reads used by the widespread Spectre-BCB variant, all the other classical info leak vulnerabilities exploited in the speculative domain (e.g., speculative type confusion) are in scope. Other unre- lated Spectre (e.g., Spectre-BTB [32]) or transient execution variants (e.g., MDS [67]) are out of scope and addressed by complementary (e.g., hardware) mitigations. We also consider other vulnerabilities (e.g., memory corruption) out of scope. III. O VERVIEW TDI hardens C/C++ programs by preventing pointers from"
+      },
+      {
+        "source": "selected",
+        "value": "Information leakage vulnerabilities (or simply info leaks) such as out-of-bounds/uninitialized reads in the architectural or speculative domain pose a significant security threat, allowing attackers to leak sensitive data such as crypto keys. At the same time, such vulnerabilities are hard to efficiently mitigate, as every (even speculative) memory load operation needs to be potentially instrumented against unauthorized reads. Existing confidentiality-preserving solutions based on data isolation label memory objects with different (e.g., sensitive vs. nonsensitive) colors, color load operations accordingly using static pointsto analysis, and instrument them to enforce color-matching invariants at run time. Unfortunately, the reliance on conservative points-to analysis introduces overapproximations that are detrimental to security (or further degrade performance). In this paper, we propose Type-based Data Isolation (TDI), a new practical design point in the data isolation space to mitigate info leaks. TDI isolates memory objects of different colors in separate memory arenas and uses efficient compiler instrumentation to constrain loads to the arena of the intended color by construction. TDI's arena-based design moves the instrumentation from loads to pointer arithmetic operations, enabling new aggressive speculation-aware performance optimizations and eliminating the need for points-to analysis. Moreover, TDI's color management is flexible. TDI can support a few-color scheme with sensitive data annotations similar to prior work (e.g., 2 colors) or a many-color scheme based on basic type analysis (i.e., one color per object type). The latter approach provides fine-grained data isolation, eliminates the need for annotations, and enforces strong color-matching invariants equivalent to ideal (context-sensitive) type-based points-to analysis. Our results show that TDI can efficiently support such strong security invariants, at average performance overheads of <10% on SPEC CPU2006 and nginx. 1049 2022 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Alyssa Milburn",
+          "email": "amilburn@zall.org",
+          "orcid": "",
+          "affiliations": [
+            "Intel Vrije Universiteit Amsterdam, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Erik Van Der Kouwe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel Vrije Universiteit Amsterdam, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Cristiano Giuffrida",
+          "email": "giuffrida@cs.vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Intel Vrije Universiteit Amsterdam, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Alyssa Milburn",
+          "email": "amilburn@zall.org",
+          "orcid": "",
+          "affiliations": [
+            "Intel Vrije Universiteit Amsterdam, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Erik Van Der Kouwe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Intel Vrije Universiteit Amsterdam, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Cristiano Giuffrida",
+          "email": "giuffrida@cs.vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Intel Vrije Universiteit Amsterdam, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 10,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Mitigating Information Leakage Vulnerabilities with Type-based Data Isolation",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Alyssa Milburn",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam, The Netherlands"
+          ]
+        },
+        {
+          "name": "Erik van der Kouwe",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam, The Netherlands"
+          ]
+        },
+        {
+          "name": "Cristiano Giuffrida",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam, The Netherlands"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 3,
+      "proposed_count": 3,
+      "retained_count": 2,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 3,
+      "country_values_restored": 3,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

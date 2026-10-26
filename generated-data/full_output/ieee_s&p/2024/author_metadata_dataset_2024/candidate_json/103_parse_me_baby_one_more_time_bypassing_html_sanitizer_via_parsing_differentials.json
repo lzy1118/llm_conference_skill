@@ -1,0 +1,141 @@
+{
+  "paper_id": "103_parse_me_baby_one_more_time_bypassing_html_sanitizer_via_parsing_differentials",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Parse Me, Baby, One More Time: Bypassing HTML Sanitizer via Parsing Differentials"
+      },
+      {
+        "source": "selected",
+        "value": "Parse Me, Baby, One More Time: Bypassing HTML Sanitizer via Parsing Differentials"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Websites rely on server-side HTML sanitization to defend against the ever-present threat of cross-site scripting attacks. Parsing arbitrary pieces of markup to assess whether they contain an exploit payload is far from trivial. This complexity leads to divergences between the parsing results of the sanitizer and the user's browser. These so-called parsing differentials open the door for the unexplored category of mutation-based attacks. Here, an attacker abuses the sanitizer's incorrect HTML parser to either directly bypass it or coerce it to transform benign markup into a dangerous exploit payload. In this work, we study the prevalence of such parsing differentials and their security impact. To this end, we built a generator for HTML fragments that are difficult to parse and evaluated how 11 sanitizers across five programming languages deal with such inputs. We found that parsing differentials are commonplace, as each assessed sanitizer has at least several functional deficiencies leading to overzealous removal of benign input. Even worse, we were able to automatically bypass all but two of the 11 sanitizers, painting a dire picture of the state of server-side HTML sanitization. 203 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Websites rely on server-side HTML sanitization to defend against the ever-present threat of cross-site scripting attacks. Parsing arbitrary pieces of markup to assess whether they contain an exploit payload is far from trivial. This complexity leads to divergences between the parsing results of the sanitizer and the user's browser. These so-called parsing differentials open the door for the unexplored category of mutation-based attacks. Here, an attacker abuses the sanitizer's incorrect HTML parser to either directly bypass it or coerce it to transform benign markup into a dangerous exploit payload. In this work, we study the prevalence of such parsing differentials and their security impact. To this end, we built a generator for HTML fragments that are difficult to parse and evaluated how 11 sanitizers across five programming languages deal with such inputs. We found that parsing differentials are commonplace, as each assessed sanitizer has at least several functional deficiencies leading to overzealous removal of benign input. Even worse, we were able to automatically bypass all but two of the 11 sanitizers, painting a dire picture of the state of server-side HTML sanitization. 1. Introduction There are two frontiers to protect against cross-site scripting (XSS): on the client and on the server-side. Tra- ditionally, client-side XSS protection has been seen as the difficult one, as the client offers no protection mechanisms, and writing custom sanitization code is notoriously error- prone [1]. Google, for example, directly acknowledges this fact in their report on Trusted Type adoption: “More than half of the DOM XSS root causes were due to bugs in HTML sanitizers” [2]. The academic community has also mainly focused on client-side XSS, from prevalence scanning [ 3- 8] to studying employed protection mechanisms [ 1, 9], the body of work is extensive. Conversely, the exploration of server-side XSS remains notably underrepresented. Large- scale server-side security scanning is comparatively scarce, primarily due to ethical and legal challenges [ 10]. Due to modern server-side web development's heavy reliance on frameworks, one might assume robust defense mechanisms are in place. Such defenses could come in the form of automatic sanitizer placement, as suggested in past work [11-13]. However, after inspecting the documentation of 11 popular web frameworks about their XSS protections, we found this assumption to be lacking. Instead, we propose to take a step back and ask the question: Is server-side HTML sanitization even possible without mangling benign input? Over the last years, the security community realized that accurate HTML sanitization is only possible with detailed information on where in the website the sanitized result is inserted [14]. While this information is possibly available for client-side sanitization, as the currently proposed Sanitizer API shows, it is out of reach for server-side sanitizers. This context sensitivity influenced the design of the sanitizer API, which does not allow to perform a string-to-string transformation [15], declaring it generally unsafe to do so. On the server, this is the only type of transformation available, as ultimately, the sanitizer's output ends up in an HTTP response, which is text-based. Server-side sanitization routines face an additional chal- lenge. To accurately sanitize an HTML fragment, that is, only to remove the actively dangerous part, a sanitizer has to parse it in the same fashion as a browser. A cursory glance at the HTML specification suffices to highlight the complexity of writing such a parser. Even if the sanitizer implements the specification perfectly, this does not suffice either, as browsers can and do diverge from the specification. Therefore, to accurately sanitize, a sanitizer would have to parse its input exactly like the user's browser would. This requires information on the client's browser, the parsing mode, and the exact injection context to adjust the sanitizer's behavior accordingly. This is not supported by any server-side sanitizer. This problem is further aggravated by browsers accepting invalid HTML input. Instead of aborting the parsing process, they try to rewrite and correct the input, i.e., mutating it and changing the HTML structure in the process. While this behavior is partially specified, it adds another difficulty for the authors of parsing and sanitization routines: Their software would need to support the same behaviors to assess the security impact of HTML fragments correctly. Otherwise, it opens the door to mutation-based XSS vulnerabilities. These issues raise two interesting questions: Is it feasible to write a sanitizer that is both accurate, i.e., does not mangle benign content, and secure? And how do popular open-source sanitizing libraries fare in this respect? These are the questions we will answer in this work. To assess the prevalence of parsing divergences, we first analyzed the HTML specification, selecting HTML tags and edge cases that might lead to interesting parsing behavior. We then present MutaGen, an HTML fragment generator with a special focus on fragments prone to mutations, and 203 DOI 10.1109/SP54263.2024.00177 evaluate such fragments on our testbed. Here, we sanitize each generated fragment with 11 different sanitizers and evaluate their outputs in all major browsers. We also record the DOM-like structure resulting from both the sanitizers as well as the browsers' parsing processes. This allows us to automatically assess if and where parsing behavior diverges and how this can lead to sanitizer bypasses. We detect severe parsing discrepancies between the evaluated sanitizers as well as between the major browsers. Our contributions are the following: • MutaGen: A generator for HTML fragments prone to mutations during parsing. • An analysis framework that detects diverging parsing behavior between sanitizers and web browsers. • We then use these building blocks to assess how 11 sanitization libraries are affected by parsing differentials. We found new bypass vectors for all but two and parsing deficiencies in all of them. The remainder of this paper is structured as follows: First, we provide a recap on the required background in Section 2. We then detail the design of MutaGen and our evaluation and analysis framework (Section 3), followed by an overview of our findings and the efficacy of the presented approach in Section 4. Afterward, we discuss some major takeaways and mitigation approaches (Section 5) and related work (Section 6) before we conclude in Section 7. 2. Background In this section, we first introduce the intricacies of HTML parsing. Afterward, we discuss (mutation) cross- site scripting and how sanitization can protect against such attacks. Lastly, we showcase how parsing differentials lead to HTML sanitizer bypasses. 2.1. Complexities of HTML Parsing HTML is the premiere markup language on the web, supported by all browsers. However, its evolution has not been straightforward. This is acknowledged in the official specification, which states “that many aspects of HTML appear at first glance to be nonsensical and inconsistent.” [16]. Despite being seemingly simple, parsing and rendering HTML is a very involved process. From a visual point of view, one would assume that parsing HTML and XML has many commonalities. They both derive from SGML and consequently share most syntax. Modern XML parsers offer two profiles: SAX-based [ 17] parsing and DOM-based parsing. For the latter, the whole document is parsed into a tree structure and returned at once. SAX parsing has a lighter memory footprint as it is a stream-based parsing approach. As the parser reads the input, it emits parsing events (e.g., opening tags) as it comes across them. One would assume the same is possible for HTML, but this would be a misconception. HTML parsing is divided into two stages: tokenization, i.e., turning incoming bytes into tokens, and tree construction, which builds a Document Object Model (DOM) tree from said tokens. A stream-based HTML parser, i.e., a parser that emits the result of each step in the tree construction stage, can never be specification-compliant. Scattered across the specification are points where the parser has to rearrange previously processed elements. For example, inside a table, if the parser encounters a tag that is not allowed to occur in this position, the foster parenting algorithm is invoked to rearrange the DOM and rehome the offending tag [ 18]. For the input,<table><div><tbody> a stream parser would emit the opening tags table,div andtbody. As the div tag is not a valid child of table, the parser invokes the foster parenting algorithm to correct the input. This results in <div></div><table><tbody>, i.e., it moves div in front of the opening table. Consequently, a stream parser has to invalidate already emitted events, defeating its purpose. Thus, accurately parsing HTML is only possible in a single pass. This complexity is a direct result of the desire to be always able to render a website, even if it violates the HTML specification in one way or another. Instead of rejecting invalid markup, modern browsers attempt to repair the input and display it regardless. This repair step involves the aforementioned DOM transformations, such as foster parenting, effectively mutating the input. Websites violating the specification are commonplace even today [ 19], preventing browser vendors from tightening the parsing process without breaking the web. Another noteworthy aspect is that modern browsers sup- port two HTML parsing algorithms, document and fragment parsing [20]. Document parsing is the regular parsing mode which processes a whole document. The fragment parsing mode instead relies on a context element and returns a DOM fragment, i.e., a tree of nodes rooted at the context element. It is, for example, used for .innerHTML assignments. Differences in the behavior of these two modes are another source of potential issues. A well-known difference between the two parsing modes is the handling of script tags, which are only executed in the document parsing mode. The HTML standard mandates support for both of these two parsing algorithms. However, modern browsers might implement several parsers for each parsing mode. Chromium, for example, has two fragment parsing algorithms. The fastpath parser is used if the fragment only contains tags that do not require DOM rearrangements, and upon encountering such a tag, it bails out to the regular one, which supports the whole tag range [21]. By not considering all the intricacies of HTML, the fastpath parser is generally faster. To top things off, HTML allows embedding so-called foreign content to support increasingly complex use cases. Both typesetting instructions for math formulas (via MathML [ 22]) and vector graphics (via SVG [ 23]) can be directly inserted into HTML documents. As they also share HTML's ancestry, they also share some syntactic structure (and even tag names at times), but additional complexities arise due to this combination. Example. Consider the input from Figure 2a, which serves as the running example throughout this section. When assigning it to the .innerHTML attribute of a div element, Chromium parses the first img tag as an HTML element 204"
+      },
+      {
+        "source": "selected",
+        "value": "Websites rely on server-side HTML sanitization to defend against the ever-present threat of cross-site scripting attacks. Parsing arbitrary pieces of markup to assess whether they contain an exploit payload is far from trivial. This complexity leads to divergences between the parsing results of the sanitizer and the user's browser. These so-called parsing differentials open the door for the unexplored category of mutation-based attacks. Here, an attacker abuses the sanitizer's incorrect HTML parser to either directly bypass it or coerce it to transform benign markup into a dangerous exploit payload. In this work, we study the prevalence of such parsing differentials and their security impact. To this end, we built a generator for HTML fragments that are difficult to parse and evaluated how 11 sanitizers across five programming languages deal with such inputs. We found that parsing differentials are commonplace, as each assessed sanitizer has at least several functional deficiencies leading to overzealous removal of benign input. Even worse, we were able to automatically bypass all but two of the 11 sanitizers, painting a dire picture of the state of server-side HTML sanitization. 203 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "David Klein",
+          "email": "david.klein@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Braunschweig"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Martin Johns",
+          "email": "m.johns@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Braunschweig"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "David Klein",
+          "email": "david.klein@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Braunschweig"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Martin Johns",
+          "email": "m.johns@tu-braunschweig.de",
+          "orcid": "",
+          "affiliations": [
+            "Technische Universität Braunschweig"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 107,
+      "author_count": 2,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Parse Me, Baby, One More Time: Bypassing HTML Sanitizer via Parsing Differentials",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "David Klein",
+          "affiliations": [
+            "Technische Universität Braunschweig"
+          ]
+        },
+        {
+          "name": "Martin Johns",
+          "affiliations": [
+            "Technische Universität Braunschweig"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

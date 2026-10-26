@@ -1,0 +1,265 @@
+{
+  "paper_id": "021_sailfish_vetting_smart_contract_state_inconsistency_bugs_in_seconds",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SAILFISH: Vetting Smart Contract State-Inconsistency Bugs in Seconds"
+      },
+      {
+        "source": "selected",
+        "value": "SAILFISH: Vetting Smart Contract State-Inconsistency Bugs in Seconds"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "This paper presents SAILFISH, a scalable system for automatically finding state-inconsistency bugs in smart contracts. To make the analysis tractable, we introduce a hybrid approach that includes (i) a lightweight exploration phase that dramatically reduces the number of instructions to analyze, and (ii) a precise refinement phase based on symbolic evaluation guided by our novel value-summary analysis, which generates extra constraints to over-approximate the side effects of whole-program execution, thereby ensuring the precision of the symbolic evaluation. We developed a prototype of SAILFISH and evaluated its ability to detect two state-inconsistency flaws, viz., reentrancy and transaction order dependence (TOD) in Ethereum smart contracts. Our experiments demonstrate the efficiency of our hybrid approach as well as the benefit of the value summary analysis. In particular, we show that SAILFISH outperforms five state-ofthe-art smart contract analyzers (SECURIFY, MYTHRIL, OYENTE, SEREUM and VANDAL) in terms of performance, and precision. In total, SAILFISH discovered 47 previously unknown vulnerable smart contracts out of 89,853 smart contracts from ETHERSCAN."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "This paper presents S AILFISH , a scalable system for automatically finding state-inconsistency bugs in smart contracts. To make the analysis tractable, we introduce a hybrid approach that includes (i) a light-weight exploration phase that dramati- cally reduces the number of instructions to analyze, and (ii) a pre- cise refinement phase based on symbolic evaluation guided by our novel value-summary analysis, which generates extra constraints to over-approximate the side effects of whole-program execution, thereby ensuring the precision of the symbolic evaluation. We developed a prototype of S AILFISH and evaluated its ability to detect two state-inconsistency flaws, viz., reentrancy and trans- action order dependence (TOD) in Ethereum smart contracts. Our experiments demonstrate the efficiency of our hybrid approach as well as the benefit of the value summary analysis. In particular, we show that S AILFISH outperforms five state-of- the-art smart contract analyzers ( SECURIFY , MYTHRIL , OYENTE , SEREUM and VANDAL ) in terms of performance, and precision. In total, S AILFISH discovered 47 previously unknown vulnerable smart contracts out of 89,853 smart contracts from ETHERSCAN . I. I NTRODUCTION Smart contracts are programs running on top of the Ethereum blockchain. Due to the convenience of high-level programming languages like SOLIDITY and the security guarantees from the underlying consensus protocol, smart contracts have seen widespread adoption, with over 45 million [ 16] instances covering financial products [6], online gaming [9], real estate, and logistics. Consequently, a vulnerability in a contract can lead to tremendous losses, as demonstrated by recent attacks [ 15], [14], [ 12], [ 21]. For instance, the notorious “TheDAO” [ 11] reentrancy attack led to a financial loss of about $50M in 2016. Furthermore, in recent years, several other reentrancy attacks, e.g., Uniswap [17], Burgerswap [7], Lendf.me [8], resulted in multimillion dollar losses. To make things worse, smart contracts are immutable-once deployed, the design of the consensus protocol makes it particularly difficult to fix bugs. Since smart contracts are not easily upgradable, auditing the contract's source pre-deployment, and deploying a bug-free contract is even more important than in the case of traditional software. In this paper, we present a scalable technique to detectstate- inconsistency (SI) bugs-a class of vulnerabilities that enables an attacker to manipulate the global state,i.e., the storage variables of a contract, by tampering with either the order of execution of multiple transactions (transaction order dependence (TOD)), or the control-flow inside a single transaction (reentrancy). In those attacks, an attacker can tamper with the critical storage variables that transitively have an influence on money transactions through data or control dependency. Though “TheDAO” [ 11] is the most well-known attack of this kind, through an offline analysis [59], [50] of the historical on-chain data, researchers have uncovered several instances of past attacks that leveraged state-inconsistency vulnerabilities. While there are existing tools for detecting vulnerabilities due to state-inconsistency bugs, they either aggressively over- approximate the execution of a smart contract, and report false alarms [54], [36], or they precisely enumerate [3], [46] concrete or symbolic traces of the entire smart contract, and hence, cannot scale to large contracts with many paths. Dynamic tools [50], [59] scale well, but can detect a state-inconsistency bug only when the evidence of an active attack is present. Moreover, existing tools adopt a syntax-directed pattern matching that may miss bugs due to incomplete support for potential attack patterns [54]. A static analyzer for state-inconsistency bugs is crucial for pre-deployment auditing of smart contracts, but designing such a tool comes with its unique set of challenges. For example, a smart contract exposes public methods as interfaces to interact with the outside world. Each of these methods is an entry point to the contract code, and can potentially alter the persistent state of the contract by writing to the storage variables. An attacker can invoke any method(s), any number of times, in any arbitrary order-each invocation potentially impacting the overall contract state. Since different contracts can communicate with each other through public methods, it is even harder to detect a cross-function attack where the attacker can stitch calls to multiple public methods to launch an attack. Though SEREUM [50] and ECFCHECKER [37] detect cross-function attacks, they are dynamic tools that reason about one single execution. However, statically detecting state-inconsistency bugs boils down to reasoning about the entire contract control and data flows, over multiple executions. This presents significant scalability challenges, as mentioned in prior work [50]. This paper presents SAILFISH , a highly scalable tool that is aimed at automatically identifying state-inconsistency bugs in smart contracts. To tackle the scalability issue associated with stat- ically analyzing a contract, SAILFISH adopts a hybrid approach that combines a light-weightEXPLORE phase, followed by aRE- FINE phase guided by our novelvalue-summary analysis, which constrains the scope of storage variables. OurEXPLORE phase dramatically reduces the number of relevant instructions to reason about, while the value-summary analysis in the REFINE phase further improves performance while maintaining the precision of symbolic evaluation. Given a smart contract,SAILFISH first introduces an EXPLORE phase that converts the contract into a 161 DOI 10.1109/SP46214.2022.00072 storage dependency graph (SDG)G. This graph summarizes the side effects of the execution of a contract on storage variables in terms of read-write dependencies. State-inconsistency vulnerabil- ities are modeled as graph queries over the SDG structure. A vul- nerability query returns either an empty result-meaning that the contract is not vulnerable, or a potentially vulnerable subgraph g insideG that matches the query. In the second case, there are two possibilities: either the contract is indeed vulnerable, org is a false alarm due to the over-approximation of the static analysis. To prune potential false alarms,SAILFISH leverages a REFINE phase based on symbolic evaluation. However, a conservative symbolic executor would initialize the storage variables asun- constrained, which would, in turn, hurt the tool's ability to prune many infeasible paths. To address this issue,SAILFISH incorpo- rates a light-weight value-summary analysis (VSA) that summa- rizes the value constraints of the storage variables, which are used as the pre-conditions of the symbolic evaluation. Unlike prior summary-based approaches [31], [34], [20] that compute sum- maries path-by-path, which results in full summaries (that encode all bounded paths through a procedure), leading to scalability problems due to the exponential growth with procedure size, our VSA summarizesall paths through a finite (loop-free) procedure, and it produces compact (polynomially-sized) summaries. As our evaluation shows, VSA not only enablesSAILFISH to refute more false positives, but also scales much better to large contracts com- pared to a classic summary-based symbolic evaluation strategy. We evaluated SAILFISH on the entire data set from ETHERSCAN [16] (89,853 contracts), and showed that our tool is efficient and effective in detecting state-inconsistency bugs. SAILFISH significantly outperforms all five state-of-the-art smart contract analyzers we evaluated against, in the number of reported false positives and false negatives. For example, on average SAILFISH took only 30.79 seconds to analyze a smart contract, which is 31 times faster than MYTHRIL [3], and six orders of magnitude faster than SECURIFY [54]. In summary, this paper makes the following contributions: • We define state-inconsistency vulnerabilities and identify two of its root-causes ( Section III ), including a new reentrancy attack pattern that has not been investigated in the previous literature. • We model state-inconsistency detection as hazardous access queries over a unified, compact graph representation (called a storage dependency graph (SDG)), which encodes the high-level semantics of smart contracts over global states. (Section V) • We propose a novelvalue-summary analysis that efficiently computes global constraints over storage variables, which when combined with symbolic evaluation, enables SAILFISH to significantly reduce false alarms. (Section VI) • We perform a systematic evaluation of SAILFISH on the entire data set from ETHERSCAN . Not only does SAILFISH outperforms state-of-the-art smart contract analyzers in terms of both run-time and precision, but also is able to uncover 47 zero-day vulnerabilities (out of 195 contracts that we could manually analyze) not detected by any other tool. (Section VIII) • In the spirit of open science, we pledge to release both the tool and the experimental data to further future research. II. B ACKGROUND This section introduces the notion of the state of a smart contract, and provides a brief overview of the vulnerabilities leading to an inconsistent state during a contract's execution. Smart contract. Ethereum smart contracts are written in high- level languages likeSOLIDITY , VYPER , etc., and are compiled down to the EVM (Ethereum Virtual Machine) bytecode. Pub- lic/external methods of a contract, which act as independent entry points of interaction, can be invoked in two ways: either by a transaction, or from another contract. We refer to the invocation of a public/external method from outside the contract as anevent. Note that events exclude method calls originated from inside the contract, i.e., a methodf calling another methodg. A schedule H is a valid sequence of events that can be executed by the EVM. The events of a schedule can originate from one or more transac- tions. Persistent data of a contract is stored in the storage variables which are, in turn, recorded in the blockchain. Thecontract state ∆=(V,B) is a tuple, whereV ={V1,V2,V3,...,Vn} is the set of all the storage variables of a contract, andB is its balance. State inconsistency (SI). When the events of a schedule H execute on an initial state ∆ of a contract, it reaches the final state ∆′. However, due to the presence of several sources of non- determinism [55] during the execution of a smart contract on the Ethereum network, ∆′ is not always predictable. For example, two transactions are not guaranteed to be processed in the order in which they got scheduled. Also, an external calle originated from a methodf of a contractC can transfer control to a malicious actor, who can now subvert the original control and data-flow by re-enteringC through any public methodf′∈C in the same transaction, even before the execution off completes. LetH1 be a schedule that does not exhibit any of the above-mentioned non- deterministic behavior. However, due to either reordering of trans- actions, or reentrant calls, it might be possible to rearrange the events ofH1 to form another scheduleH2. If those two schedules individually operate on the same initial state∆, but yield different final states, we consider the contract to have a state-inconsistency. Reentrancy. If a contract A calls another contract B, the Ethereum protocol allowsB to call back to any public/external methodm ofA in the same transaction before even finishing the original invocation. An attack happens whenB reentersA in an inconsistent state beforeA gets the chance to update its internal state in the original call. Launching an attack executes operations that consume gas. Though, SOLIDITY tries to prevent such attacks by limiting the gas stipend to 2,300 when the call is made throughsend andtransfer APIs, thecall opcode puts no such restriction-thereby making the attack possible."
+      },
+      {
+        "source": "selected",
+        "value": "This paper presents SAILFISH, a scalable system for automatically finding state-inconsistency bugs in smart contracts. To make the analysis tractable, we introduce a hybrid approach that includes (i) a lightweight exploration phase that dramatically reduces the number of instructions to analyze, and (ii) a precise refinement phase based on symbolic evaluation guided by our novel value-summary analysis, which generates extra constraints to over-approximate the side effects of whole-program execution, thereby ensuring the precision of the symbolic evaluation. We developed a prototype of SAILFISH and evaluated its ability to detect two state-inconsistency flaws, viz., reentrancy and transaction order dependence (TOD) in Ethereum smart contracts. Our experiments demonstrate the efficiency of our hybrid approach as well as the benefit of the value summary analysis. In particular, we show that SAILFISH outperforms five state-ofthe-art smart contract analyzers (SECURIFY, MYTHRIL, OYENTE, SEREUM and VANDAL) in terms of performance, and precision. In total, SAILFISH discovered 47 previously unknown vulnerable smart contracts out of 89,853 smart contracts from ETHERSCAN."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Priyanka Bose",
+          "email": "priyanka@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Dipanjan Das",
+          "email": "dipanjan@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yanju Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yu Feng",
+          "email": "yufeng@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Christopher Kruegel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Priyanka Bose",
+          "email": "priyanka@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Dipanjan Das",
+          "email": "dipanjan@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yanju Chen",
+          "email": "yanju@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yu Feng",
+          "email": "yufeng@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Christopher Kruegel",
+          "email": "chris@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Giovanni Vigna",
+          "email": "vigna@cs.ucsb.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 142,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SAILFISH: Vetting Smart Contract State-Inconsistency Bugs in Seconds",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Priyanka Bose",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Dipanjan Das",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Yanju Chen",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Yu Feng",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Christopher Kruegel",
+          "affiliations": [
+            "University of California, Santa Barbara"
+          ]
+        },
+        {
+          "name": "Giovanni Vigna",
+          "affiliations": [
+            "UC Santa Barbara"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

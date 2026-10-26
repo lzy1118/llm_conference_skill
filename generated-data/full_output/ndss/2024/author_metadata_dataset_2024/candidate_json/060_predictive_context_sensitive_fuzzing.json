@@ -1,0 +1,311 @@
+{
+  "paper_id": "060_predictive_context_sensitive_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Predictive Context-sensitive Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "Predictive Context-sensitive Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Coverage-guided fuzzers expose bugs by progressively mutating testcases to drive execution to new program locations. Code coverage is currently the most effective and popular exploration feedback. For several bugs, though, also how execution reaches a buggy program location may matter: for those, only tracking what code a testcase exercises may lead fuzzers to overlook interesting program states. Unfortunately, context-sensitive coverage tracking comes with an inherent state explosion problem. Existing attempts to implement contextsensitive coverage-guided fuzzers struggle with it, experiencing non-trivial issues for precision (due to coverage collisions) and performance (due to context tracking and queue/map explosion). In this paper, we show that a much more effective approach to context-sensitive fuzzing is possible. First, we propose function cloning as a backward-compatible instrumentation primitive to enable precise (i.e., collision-free) context-sensitive coverage tracking. Then, to tame the state explosion problem, we argue to account for contextual information only when a fuzzer explores contexts selected as promising. We propose a prediction scheme to identify one pool of such contexts: we analyze the data-flow diversity of the incoming argument values at call sites, exposing to the fuzzer a contextually refined clone of the callee if the latter sees incoming abstract objects that its uses at other sites do not. Our work shows that, by applying function cloning to program regions that we predict to benefit from context-sensitivity, we can overcome the aforementioned issues while preserving, and even improving, fuzzing effectiveness. On the FuzzBench suite, our approach largely outperforms state-of-the-art coverageguided fuzzing embodiments, unveiling more and different bugs without incurring explosion or other apparent inefficiencies. On these heavily tested subjects, we also found 8 enduring security issues in 5 of them, with 6 CVE identifiers issued."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Coverage-guided fuzzers expose bugs by progres- sively mutating testcases to drive execution to new program locations. Code coverage is currently the most effective and popular exploration feedback. For several bugs, though, also how execution reaches a buggy program location may matter: for those, only tracking what code a testcase exercises may lead fuzzers to overlook interesting program states. Unfortunately, context-sensitive coverage tracking comes with an inherent state explosion problem. Existing attempts to implement context- sensitive coverage-guided fuzzers struggle with it, experiencing non-trivial issues for precision (due to coverage collisions) and performance (due to context tracking and queue/map explosion). In this paper, we show that a much more effective approach to context-sensitive fuzzing is possible. First, we propose function cloning as a backward-compatible instrumentation primitive to enable precise (i.e., collision-free) context-sensitive coverage tracking. Then, to tame the state explosion problem, we argue to account for contextual information only when a fuzzer explores contexts selected as promising. We propose a prediction scheme to identify one pool of such contexts: we analyze the data-flow diversity of the incoming argument values at call sites, exposing to the fuzzer a contextually refined clone of the callee if the latter sees incoming abstract objects that its uses at other sites do not. Our work shows that, by applying function cloning to pro- gram regions that we predict to benefit from context-sensitivity, we can overcome the aforementioned issues while preserving, and even improving, fuzzing effectiveness. On the FuzzBench suite, our approach largely outperforms state-of-the-art coverage- guided fuzzing embodiments, unveiling more and different bugs without incurring explosion or other apparent inefficiencies. On these heavily tested subjects, we also found 8 enduring security issues in 5 of them, with 6 CVE identifiers issued. I. I NTRODUCTION Fuzz testing (or fuzzing for short) techniques earned a prominent place in the software security research landscape over the last decade. Their efficacy in generating unexpected or invalid inputs that make a program crash helps developers catch bugs early, even before they turn into vulnerabilities [1]. As an example, their deployment at scale in the OSS-Fuzz [2] initiative has led so far to the discovery of over 30 000bugs in the daily testing of hundreds of open-source projects. The most popular and researched form of fuzzing is coverage-guided fuzzing (CGF), which uses code or other cov- erage information from program execution to deem whether the current testing input led to interesting (for example, previously unseen) portions of a program. The main intuition behind much CGF research is that code coverage is strongly correlated with bug coverage [3] and no dynamic testing technique can detect a bug if execution does not reach the corresponding program point at least once. A flourishing topic of research is to enlarge the covered code by improving the effectiveness of the input generation process, e.g., by guiding input mutations to meet complex control-flow conditions in the program [4], [5], [6]. However, for software testing, coverage is only one part of the equation [7], and the ultimate metric for the effec- tiveness of fuzzing remains the ability to discover bugs. As recently observed in [8], successful CGF embodiments balance between exploration and exploitation. While exploration aims to increase coverage, exploitation tries to trigger bugs in already-covered program regions by varying the inputs used to reach them before. As there is no immediate feedback for exploitation, fuzzers have to count on input mutations to execute such code “sufficiently well” to trigger bugs in it [8]. Therefore, other efforts focus on retaining for further mutation inputs that, while being equivalent to prior executions in terms of covered program points, exercise new valuable execution paths and/or internal states of the program [9]. Intuitively, these inputs offer alternative (and possibly more profitable) “starting points” for the above-said mutations to trigger some bugs. For example, most state-of-the-art CGF systems track edge coverage information to distinguish visits to the same basic block from different predecessor blocks [10]. Edge coverage and other function-local metrics track and summarize program execution for its effects on entities (e.g., code blocks, variable values) involving individual functions. A limitation of this strategy is that it may lead a fuzzer to overlook internal program states for which alsohow an entity is reached matters. In program analysis, this concept goes under the name of context-sensitivity and has seen many applications, such as refining the precision of pointer analyses [11] and developing compiler optimizations [12]. ANGORA [1] showcases the benefits of context-sensitivity for fuzzing by augmenting edge coverage with calling-context information, which captures the sequence of active function calls on the stack leading to the currently executing func- tion [13]. In principle, such a fully context-sensitive approach can differentiate the coverage of each testcase in a fine-grained manner and lead to the discovery of more bugs [1], [10]. Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.24113 www.ndss-symposium.org However, as an accurate call-stack tracking and context encoding would be costly and degrade the fuzzer's throughput, ANGORA [1] and other fuzzers [14], [15] embody a best-effort strategy for full context-sensitivity. In particular, they model the calling context as a hash of the call stack and compute context-sensitive coverage identifiers by combining the hash for the current context with the function-local edge identifier upon entering a basic block. This scheme is naturally prone to collisions, which are detrimental to fuzzing as they may lead to missing many relevant testcases [16]. To mitigate this shortcoming, these fuzzers employ larger coverage maps (e.g., 220 entries in ANGORA [1]), a choice that does not come cheap as it can severely harm the fuzzing throughput. More importantly, as we study, fully context-sensitive ap- proaches are prone to state explosion, enlarging the fuzzer's queue with additional testcases that further reduce fuzzing efficiency, as the fuzzer will often fall short of the time needed to schedule or sufficiently mutate them [10]. In this paper, we will refer to all such kinds of detrimental effects as the internal wastage that the fuzzer experiences. Our approach: We argue that the current “all-or- nothing” approach to context-sensitive fuzzing is unnecessarily inefficient, and that a much more effective approach is possi- ble. The design we propose builds on three main insights: 1 We show that we can do away with run-time call stack tracking by relying on a code specialization primitive. For a given calling context, with function cloning we create a clone of each callee and redirect the caller invocation to it. As a result, existing function-local coverage tracking techniques can naturally disambiguate calling contexts with no changes. For example, edges from cloned functions can benefit from the collision-free encoding of modern fuzzers as their presence implicitly carries (precise) contextual information, opposed to current approaches that enforce (and, as we study, further deteriorate) an imprecise hash-based edge encoding scheme. 2 We show that, while fully context-sensitive approaches are in general problematic due to an inherent state explosion problem, selective approaches can be a much better alter- native. Through techniques that restrict cloning to program portions that are likely to benefit from contextually refined edge profiles, we can bound our cloning efforts to trade a modest increase in program size with efficient context- sensitivity provided only for the callees that “matter”. We term our approach predictive context-sensitive fuzzing . 3 We show that data-flows for function call arguments can be an effective predictor for several such regions. We analyze the flow of objects through function arguments at call sites and pick those call targets that see a highly diverse incoming data-flow if compared to other invocations of the function in the rest of the program. The intuition is that such differences may reflect relevant variations in program behavior that we want to capture by means of context-sensitive coverage tracking. Moreover, we show how to realize the strategy without analyzing full calling contexts, but building instead atop a standard context-insensitive inter-procedural analysis. This design results in a practical and performant context- sensitive fuzzing solution. On the popular FuzzBench suite [17], our approach can reveal more unique bugs than ANGORA -style context-sensitivity (+22.55%). Also, it outper- forms a collision-free edge coverage solution boosted with link-time optimization ( +11.6%), with the bugs found across trials being different than with edge coverage alone by 19.2%. These improvements mainly come from our ability to trigger bugs in code regions that other solutions explore but fail to exploit. Our approach experiences only a limited growth of retained testcases ( +26% w.r.t. edge coverage, opposed to +81.7% from ANGORA -style context-sensitivity) and a modest impact on the fuzzing throughput ( −6.5% vs. −20.3%). Finally, despite the FuzzBench subjects we study are well- tested in prior efforts and daily in OSS-Fuzz, our tests revealed 8 long-standing security issues involving 5 of these subjects, with 6 CVE identifiers issued upon responsible disclosure. Contributions: To summarize, this paper proposes: • A selective approach to context-sensitive fuzzing that aug- ments only promising program portions with contextual information, using function cloning to enable a collision- free encoding with no run-time tracking machinery; • A data-flow analysis to predict program portions likely to benefit from contextual refinement when fuzzing, using a strong signal given by call-argument value diversity among the different callers of a given target function. • An open-source implementation in LLVM that produces programs suitable for out-of-the-box fuzzing (available at: https://github.com/eurecom-s3/predictive-cs-fuzzing). • An evaluation of our approach atop AFL ++ on the FuzzBench suite, where we consistently outrank state-of- the-art context sensitive and insensitive techniques, also exposing 8 enduring vulnerabilities in 5 popular subjects. II. B ACKGROUND This section covers fundamental concepts of fuzzing and the points-to analysis primitives that back our predictive context-sensitive approach. A. Coverage-guided Fuzzing Fuzzing techniques have a prominent place in software security research due to their effectiveness in bug discov- ery [18]. In the most naive embodiment, a fuzzer is a system that attempts repeated executions of a target program over randomly generated testcases while monitoring it for crashes. Many techniques are available to optimize the testcase gener- ation process, e.g., to discover more bugs within a given time budget [19] or prioritize specific code regions for testing [20]. The amount of information that a modern fuzzer acquires during the (many) executions of the program under test can vary, leading to a distinction between black-box [21], [22], white-box [23], [24], and grey-box [25], [26] fuzzers. In particular, grey-box fuzzers use lightweight instrumentation to track coarse-grained state information such as the code coverage achieved by each testcase and are largely popular due to their effectiveness. As we anticipated in Section I, tracking code coverage can also serve as a feedback for coverage-guided fuzzers, allowing them to distinguish the program behaviors distinctive of each testcase by profiling, e.g., the control-flow edges taken during"
+      },
+      {
+        "source": "selected",
+        "value": "Coverage-guided fuzzers expose bugs by progressively mutating testcases to drive execution to new program locations. Code coverage is currently the most effective and popular exploration feedback. For several bugs, though, also how execution reaches a buggy program location may matter: for those, only tracking what code a testcase exercises may lead fuzzers to overlook interesting program states. Unfortunately, context-sensitive coverage tracking comes with an inherent state explosion problem. Existing attempts to implement contextsensitive coverage-guided fuzzers struggle with it, experiencing non-trivial issues for precision (due to coverage collisions) and performance (due to context tracking and queue/map explosion). In this paper, we show that a much more effective approach to context-sensitive fuzzing is possible. First, we propose function cloning as a backward-compatible instrumentation primitive to enable precise (i.e., collision-free) context-sensitive coverage tracking. Then, to tame the state explosion problem, we argue to account for contextual information only when a fuzzer explores contexts selected as promising. We propose a prediction scheme to identify one pool of such contexts: we analyze the data-flow diversity of the incoming argument values at call sites, exposing to the fuzzer a contextually refined clone of the callee if the latter sees incoming abstract objects that its uses at other sites do not. Our work shows that, by applying function cloning to program regions that we predict to benefit from context-sensitivity, we can overcome the aforementioned issues while preserving, and even improving, fuzzing effectiveness. On the FuzzBench suite, our approach largely outperforms state-of-the-art coverageguided fuzzing embodiments, unveiling more and different bugs without incurring explosion or other apparent inefficiencies. On these heavily tested subjects, we also found 8 enduring security issues in 5 of them, with 6 CVE identifiers issued."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Pietro Borrello",
+          "email": "borrello@diag.uniroma1.it",
+          "orcid": "",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Andrea Fioraldi",
+          "email": "fioraldi@eurecom.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Daniele Cono D'elia",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Davide Balzarotti",
+          "email": "balzarot@eurecom.fr",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Leonardo Querzoni",
+          "email": "querzoni@diag.uniroma1.it",
+          "orcid": "",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Cristiano Giuffrida",
+          "email": "giuffrida@cs.vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Eurecom",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Pietro Borrello",
+          "email": "borrello@diag.uniroma1.it",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Andrea Fioraldi",
+          "email": "fioraldi@eurecom.fr",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Daniele Cono D'Elia",
+          "email": "delia@diag.uniroma1.it",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Davide Balzarotti",
+          "email": "balzarot@eurecom.fr",
+          "affiliations": [],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Leonardo Querzoni",
+          "email": "querzoni@diag.uniroma1.it",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Cristiano Giuffrida",
+          "email": "giuffrida@cs.vu.nl",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 94,
+      "author_count": 6,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Predictive Context-sensitive Fuzzing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/predictive-context-sensitive-fuzzing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Pietro Borrello",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ]
+        },
+        {
+          "name": "Andrea Fioraldi",
+          "affiliations": [
+            "EURECOM"
+          ]
+        },
+        {
+          "name": "Daniele Cono D’Elia",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ]
+        },
+        {
+          "name": "Davide Balzarotti",
+          "affiliations": [
+            "Eurecom"
+          ]
+        },
+        {
+          "name": "Leonardo Querzoni",
+          "affiliations": [
+            "Sapienza University of Rome"
+          ]
+        },
+        {
+          "name": "Cristiano Giuffrida",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Pietro Borrello",
+      "field": "email",
+      "restored_value": "borrello@diag.uniroma1.it",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Andrea Fioraldi",
+      "field": "email",
+      "restored_value": "fioraldi@eurecom.fr",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Daniele Cono D'Elia",
+      "field": "email",
+      "restored_value": "delia@diag.uniroma1.it",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Davide Balzarotti",
+      "field": "email",
+      "restored_value": "balzarot@eurecom.fr",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Leonardo Querzoni",
+      "field": "email",
+      "restored_value": "querzoni@diag.uniroma1.it",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Cristiano Giuffrida",
+      "field": "email",
+      "restored_value": "giuffrida@cs.vu.nl",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

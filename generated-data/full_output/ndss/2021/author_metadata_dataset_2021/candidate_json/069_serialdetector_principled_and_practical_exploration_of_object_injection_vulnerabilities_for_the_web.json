@@ -1,0 +1,193 @@
+{
+  "paper_id": "069_serialdetector_principled_and_practical_exploration_of_object_injection_vulnerabilities_for_the_web",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SerialDetector: Principled and Practical Exploration of Object Injection Vulnerabilities for the Web"
+      },
+      {
+        "source": "selected",
+        "value": "SerialDetector: Principled and Practical Exploration of Object Injection Vulnerabilities for the Web"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The last decade has seen a proliferation of codereuse attacks in the context of web applications. These attacks stem from Object Injection Vulnerabilities (OIV) enabling attacker-controlled data to abuse legitimate code fragments within a web application's codebase to execute a code chain (gadget) that performs malicious computations, like remote code execution, on attacker's behalf. OIVs occur when untrusted data is used to instantiate an object of attacker-controlled type with attacker-chosen properties, thus triggering the execution of code available but not necessarily used by the application. In the web application domain, OIVs may arise during the process of deserialization of client-side data, e.g., HTTP requests, when reconstructing the object graph that is subsequently processed by the backend applications on the server side. This paper presents the first systematic approach for detecting and exploiting OIVs in .NET applications including the framework and libraries. Our key insight is: The root cause of OIVs is the untrusted information flow from an application's public entry points (e.g., HTTP request handlers) to sensitive methods that create objects of arbitrary types (e.g., reflection APIs) to invoke methods (e.g., native/virtual methods) that trigger the execution of a gadget. Drawing on this insight, we develop and implement SerialDetector, a taint-based dataflow analysis that discovers OIV patterns in .NET assemblies automatically. We then use these patterns to match publicly available gadgets and to automatically validate the feasibility of OIV attacks. We demonstrate the effectiveness of our approach by an indepth evaluation of a complex production software such as the Azure DevOps Server. We describe the key threat models and report on several remote code execution vulnerabilities found by SerialDetector, including three CVEs on Azure DevOps Server. We also perform an in-breadth security analysis of recent publicly available CVEs. Our results show that SerialDetector can detect OIVs effectively and efficiently. We release our tool publicly to support open science and encourage researchers and practitioners explore the topic further."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The last decade has seen a proliferation of code- reuse attacks in the context of web applications. These at- tacks stem from Object Injection Vulnerabilities (OIV) enabling attacker-controlled data to abuse legitimate code fragments within a web application's codebase to execute a code chain (gadget) that performs malicious computations, like remote code execution, on attacker's behalf. OIVs occur when untrusted data is used to instantiate an object of attacker-controlled type with attacker-chosen properties, thus triggering the execution of code available but not necessarily used by the application. In the web application domain, OIVs may arise during the process of deserialization of client-side data, e.g., HTTP requests, when reconstructing the object graph that is subsequently processed by the backend applications on the server side. This paper presents the first systematic approach for de- tecting and exploiting OIVs in .NET applications including the framework and libraries. Our key insight is: The root cause of OIVs is the untrusted information flow from an application's public entry points (e.g., HTTP request handlers) to sensitive methods that create objects of arbitrary types (e.g., reflection APIs) to invoke methods (e.g., native/virtual methods) that trigger the execution of a gadget. Drawing on this insight, we develop and implement SerialDetector, a taint-based dataflow analysis that discovers OIV patterns in .NET assemblies automatically. We then use these patterns to match publicly available gadgets and to automatically validate the feasibility of OIV attacks. We demonstrate the effectiveness of our approach by an in- depth evaluation of a complex production software such as the Azure DevOps Server. We describe the key threat models and report on several remote code execution vulnerabilities found by SerialDetector, including three CVEs on Azure DevOps Server. We also perform an in-breadth security analysis of recent publicly available CVEs. Our results show that SerialDetector can detect OIVs effectively and efficiently. We release our tool publicly to support open science and encourage researchers and practitioners explore the topic further. I. I NTRODUCTION The last decade has seen a proliferation of code-reuse attacks in the context of web applications [9], [13], [17], [18], [24], [28], [33]. The impact of these attacks can be devastating. The recent attack that hit the credit reporting agency Equifax exposed the personal information (credit card numbers, Social Security numbers) of 143 million US consumers. As a result, the law firms filed 23 class-action lawsuits, which would make it the largest suit in US history. The breach rooted in insecure deserialization in the Apache Struts framework within a Java web application, which led to remote code execution (RCE) on Equifax web servers. The attack exploited the XML serialization of complex data objects into textual strings to introduce malicious XML payloads into Struts servers during the deserialization process [46]. These attacks motivate the need for studying code-reuse vulnerabilities systematically. Object Injection Vulnerabilities. In web applications, Object Injection Vulnerabilities (OIV) occur when an attacker can arbitrarily modify the properties of an object to abuse the data and control flow of the application. For example, OIVs may arise during the deserialization of data from the client side, e.g., HTTP requests, when reconstructing the object graph that is subsequently processed by the backend applications on the server side. Similarly to classical exploits such as return- oriented programming (ROP) and jump-oriented programming (JOP), which target memory corruption vulnerabilities [8], [36], [45], OIVs enable attacker-controlled data to trigger the execution of legitimate code fragments (gadgets) to perform malicious computations on attacker's behalf. The following requirements are needed to exploit an OIV [32]: (i) the attacker controls the type of the object to be instantiated, e.g., upon deserialization; (ii) the reconstructed object calls methods in the application's scope; (iii) there exists a big enough gadget space to find types that the attacker can chain to get an RCE. Existing works show that OIVs are present in mainstream programming languages and platforms like Java [24], [33], JavaScript [28], PHP [17], .NET [18], [32], and Android [34]. Challenges. Despite the high impact of OIV , efforts on tackling their root cause have been unsatisfactory. A witness is the fact that a decade after the discovery of these vulnerabilities a comprehensive understanding of languages features at the heart of OIVs has yet to emerge. One result is the ongoing arms race between researchers discovering new attacks and gadgets and vendors providing patches in an ad-hoc manner. To date, the best efforts in discovering and exploiting OIVs have been put forward by the practitioners' community [17], [18], [22], [32]. Except for a few recent works [13], [23], [25], [28], [31], the problem remains largely unexplored in the academic community. Most existing works address OIVs within the general context of injection vulnerabilities, thus lacking targeted techniques for detection and exploitation in web applications [6], [9], [43], [47]. A principled investigation of OIVs in real-world applica- tions requires analyzing not only the applications, but also Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.24550 www.ndss-symposium.org the underlying framework and libraries that these applications build on. In fact, most of the known attacks stem from weak- nesses in frameworks and libraries. This is challenging task since production scale frameworks, e.g., the .NET Framework, are complex entities with large codebases, intricate language features, and lack of source code. Existing approaches rely on static source code analysis of applications and ignore frameworks and libraries. Moreover, they focus on a whitelist of magic methods [13], [17], i.e., vulnerable APIs at the application level, thus missing attacks that may be present in unknown methods using the same features at the framework level. Another key challenge is the lack of automation and open source tools to investigate the feasibility of potential attacks. While state-of-the-art countermeasures against OIVs rely on blacklisting/whitelisting techniques [5], [10], [23], [25], [27], [31], [39], [40], it is essential to develop tools that check feasibility of attacks in a principled and practical manner. Contributions. This work presents the first systematic ap- proach for detecting and exploiting OIVs in .NET applications, including the .NET Framework and third-party libraries. Our key observation is that the root cause of OIVs is the untrusted information flow from an applications' entry points to sensitive sinks that create objects of arbitrary types to invoke attack triggers that initiate the execution of a gadget. Drawing on this insight, we develop and implement SerialDetector [41], a tool for detecting OIV patterns automatically and exploiting these patterns based on publicly-available gadgets in a semi- automated fashion. Following the line of work on static analy- sis at bytecode level [4], [7], [15], [21], [47], [48], SerialDetec- tor implements an efficient and scalable inter-procedural taint- based static analysis targeting .NET's Common Intermediate Language. At the heart of our approach lies a field-sensitive and type-sensitive data flow analysis [42], [47] that we leverage to analyze the relevant object-oriented features and detect vulnerable patterns. We evaluate the feasibility of our approach on 15 deserializers reporting on the efficiency and effectiveness of SerialDetector in generating OIV patterns. We conduct an in-depth security analysis of production software such as the Azure DevOps Server and find three RCE vulnerabilities. To further evaluate SerialDetector, we perform an in-breadth security analysis of recent .NET CVEs from public databases and report on the effort to analyze and reproduce these exploits. In summary, the paper offers the following contributions: • We identify the root cause of Object Injection Vulnerabilities and present a principled and practical approach to detect such vulnerabilities in a framework-agnostic manner. • We present the first systematic approach for detecting and exploiting OIVs in .NET applications including the frame- work and libraries. • We develop SerialDetector [41], a practical open source tool implementing a scalable taint-based dataflow analysis to discover OIV patterns, as well as leveraging publicly available gadgets to exploit OIVs in real-world software. • We perform an thorough evaluation of OIV patterns in .NET- based deserialization libraries showing that SerialDetector can find vulnerable patterns with low burden on a security analysis. We use these patterns in an in-breadth security analysis of vulnerable applications to show that SerialDe- tector can help uncovering OIVs effectively and efficiently. • We carry out an in-depth security analysis of Azure DevOps Server illuminating the different threat models. Drawing on these threat models, we show SerialDetector in action to identify and exploit highly-critical vulnerabilities leading to remote code execution on the server. II. T ECHNICAL BACKGROUND This section provides background information and illumi- nates the core security issues with OIVs in .NET applications. We identify the key ingredients in the lifecycle of an OIV , distinguishing between application-level OIVs (Section II-A) and infrastructure-level OIVs (Section II-B). Appendix A provides a brief overview of the .NET Framework. A. Application-level OIVs Applications can be vulnerable to OIVs whenever untrusted data instantiates an object of arbitrary type and subsequently influences a chain of method calls resulting in the execution of a dangerous operation. For an attack to be successful, the following ingredients are required: (1) a public entry point allowing the attacker to inject untrusted data; (2) a sensitive method creating an object of attacker-controlled type; (3) a gadget consisting of a chain of method calls that ultimately execute a dangerous operation; (4) a malicious payload trig- gering the execution of steps (1)-(3). Consider a C# implementation of the classical Command design pattern [20] for a smart home controller (Listing 1). The controller implements the method CommandAction as an entry point handling HTTP POST requests. Following the design pattern, a developer creates an object of type name dynamically using the method Activator.CreateInstance of the .NET Framework. Subsequently, the code calls the virtual method Execute to execute the command specified in the input parameter args, e.g., a Backup command that runs a database backup. The main benefit of this design pattern is that a developer can define new commands without changing the implementation of the method CommandAction. This can be achieved by simply adding a new class that implements the interface ICommand. public class SmartHomeController : Controller { [HttpPost] public ActionResult CommandAction( string name, string args) { var t = Type.GetType(name); var c = (ICommand) Activator.CreateInstance(t); c.Execute(args); return RedirectToAction(\"Index\"); }} public class Backup : ICommand { public virtual void Execute(string parameters) { DB.Backup(parameters); }} Listing 1: Implementation of Command pattern Unfortunately, such flexible design comes with security issues. Consider the class OSCommand implementing the same interface ICommand to run a process based on the data from parameters (Listing 2). The method Execute splits the 2"
+      },
+      {
+        "source": "selected",
+        "value": "The last decade has seen a proliferation of codereuse attacks in the context of web applications. These attacks stem from Object Injection Vulnerabilities (OIV) enabling attacker-controlled data to abuse legitimate code fragments within a web application's codebase to execute a code chain (gadget) that performs malicious computations, like remote code execution, on attacker's behalf. OIVs occur when untrusted data is used to instantiate an object of attacker-controlled type with attacker-chosen properties, thus triggering the execution of code available but not necessarily used by the application. In the web application domain, OIVs may arise during the process of deserialization of client-side data, e.g., HTTP requests, when reconstructing the object graph that is subsequently processed by the backend applications on the server side. This paper presents the first systematic approach for detecting and exploiting OIVs in .NET applications including the framework and libraries. Our key insight is: The root cause of OIVs is the untrusted information flow from an application's public entry points (e.g., HTTP request handlers) to sensitive methods that create objects of arbitrary types (e.g., reflection APIs) to invoke methods (e.g., native/virtual methods) that trigger the execution of a gadget. Drawing on this insight, we develop and implement SerialDetector, a taint-based dataflow analysis that discovers OIV patterns in .NET assemblies automatically. We then use these patterns to match publicly available gadgets and to automatically validate the feasibility of OIV attacks. We demonstrate the effectiveness of our approach by an indepth evaluation of a complex production software such as the Azure DevOps Server. We describe the key threat models and report on several remote code execution vulnerabilities found by SerialDetector, including three CVEs on Azure DevOps Server. We also perform an in-breadth security analysis of recent publicly available CVEs. Our results show that SerialDetector can detect OIVs effectively and efficiently. We release our tool publicly to support open science and encourage researchers and practitioners explore the topic further."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Mikhail Shcherbakov",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KTH Royal Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Musard Balliu",
+          "email": "musard@kth.se",
+          "orcid": "",
+          "affiliations": [
+            "KTH Royal Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Mikhail Shcherbakov",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "KTH Royal Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Musard Balliu",
+          "email": "musard@kth.se",
+          "orcid": "",
+          "affiliations": [
+            "KTH Royal Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 104,
+      "author_count": 2,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Mikhail Shcherbakov",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Musard Balliu",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Mikhail Shcherbakov",
+          "affiliation_raw": "KTH Royal Institute of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b4"
+          ],
+          "email_raw": "mshc@kth.se",
+          "email_block_ids": [
+            "pdf:p1:b6"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 1.882,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Musard Balliu",
+          "affiliation_raw": "KTH Royal Institute of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b5"
+          ],
+          "email_raw": "musard@kth.se",
+          "email_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.476,
+          "center_distance": 0.99,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SerialDetector: Principled and Practical Exploration of Object Injection Vulnerabilities for the Web",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/serialdetector-principled-and-practical-exploration-of-object-injection-vulnerabilities-for-the-web/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Mikhail Shcherbakov",
+          "affiliations": [
+            "KTH Royal Institute of Technology"
+          ]
+        },
+        {
+          "name": "Musard Balliu",
+          "affiliations": [
+            "KTH Royal Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

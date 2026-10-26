@@ -1,0 +1,266 @@
+{
+  "paper_id": "093_invisible_probe_timing_attacks_with_pcie_congestion_side_channel",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Invisible Probe: Timing Attacks with PCIe Congestion Side-channel"
+      },
+      {
+        "source": "selected",
+        "value": "Invisible Probe: Timing Attacks with PCIe Congestion Side-channel"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "PCIe (Peripheral Component Interconnect express) protocol is the de facto protocol to bridge CPU and peripheral devices like GPU, NIC, and SSD drive. There is an increasing demand to install more peripheral devices on a single machine, but the PCIe interfaces offered by Intel CPUs are fixed. To resolve such contention, PCIe switch, PCH (Platform Controller Hub), or virtualization cards are installed on the machine to allow multiple devices to share a PCIe interface. Congestion happens when the collective PCIe traffic from the devices overwhelm the PCIe link capacity, and transmission delay is then introduced. In this work, we found the PCIe delay not only harms device performance but also leaks sensitive information about a user who uses the machine. In particular, as user's activities might trigger data movement over PCIe (e.g., between CPU and GPU), by measuring PCIe congestion, an adversary accessing another device can infer the victim's secret indirectly. Therefore, the delay resulted from I/O congestion can be exploited as a side-channel. We demonstrate the threat from PCIe congestion through 2 attack scenarios and 4 victim settings. Specifically, an attacker can learn the workload of a GPU in a remote server by probing a RDMA NIC that shares the same PCIe switch and measuring the delays. Based on the measurement, the attacker is able to know the keystroke timings of the victim, what webpage is rendered on the GPU, and what machine-learning model is running on the GPU. Besides, when the victim is using a low-speed device, e.g., an Ethernet NIC, an attacker controlling an NVMe SSD can launch a similar attack when they share a PCH or virtualization card. The evaluation result shows our attack can achieve high accuracy (e.g., 96.31% accuracy in inferring webpage visited by a victim)."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "PCIe (Peripheral Component Interconnect express) protocol is the de facto protocol to bridge CPU and peripheral devices like GPU, NIC, and SSD drive. There is an increasing demand to install more peripheral devices on a single machine, but the PCIe interfaces offered by Intel CPUs are fixed. To resolve such contention, PCIe switch, PCH (Platform Controller Hub), or virtualization cards are installed on the machine to allow multiple devices to share a PCIe interface. Congestion happens when the collective PCIe traffic from the devices overwhelm the PCIe link capacity, and transmission delay is then introduced. In this work, we found the PCIe delay not only harms device performance but also leaks sensitive information about a user who uses the machine. In particular, as user's activities might trigger data movement over PCIe (e.g., between CPU and GPU), by measuring PCIe congestion, an adversary accessing another device can infer the victim's secret indirectly. Therefore, the delay resulted from I/O congestion can be exploited as a side-channel. We demonstrate the threat from PCIe congestion through 2 attack scenarios and 4 victim settings. Specifically, an attacker can learn the workload of a GPU in a remote server by probing a RDMA NIC that shares the same PCIe switch and measuring the delays. Based on the measurement, the attacker is able to know the keystroke timings of the victim, what webpage is rendered on the GPU, and what machine-learning model is running on the GPU. Besides, when the victim is using a low-speed device, e.g., an Ethernet NIC, an attacker controlling an NVMe SSD can launch a similar attack when they share a PCH or virtualization card. The evaluation result shows our attack can achieve high accuracy (e.g., 96.31% accuracy in inferring webpage visited by a victim). I. I NTRODUCTION Devices peripheral to CPU are innovated at a fast pace. For instance, the speed of NIC (Network Interface Card) has been increased from 10 Mbps to 10 Gbps in the recent decade [1]. The throughput of hard drives is improved 100x due to new storage techniques like NVMe (Non-V olatile Mem- ory Express) [2]. Followed by the upgrade of the peripheral devices, the data volume exchanged between them and CPUs is “exploding”. The traditional PCI (Peripheral Component Interconnect) protocol cannot meet such demand, hence PCIe (PCI express) was proposed and has become the de facto protocol for I/O between CPU and peripheral devices [3]. I/O switch and congestion. Though PCIe supports high throughput I/O, e.g., 16 GB/s for a PCIe 3.0 link [4], the ∗ The first two authors are equally contributed. † Zhe Zhou is the corre- sponding author. support from CPU seems to fall behind. For example, only three 16-lane PCIe interfaces are provided by the Intel high- end CPUs [5], but a computer can integrate a large number of peripheral devices. For instance, 8 GPUs, 4 NVMe SSDs, and 1 x16 high-speed NIC are equipped by Tyan Thunder HX FT77DB7109 [6], a mainstream server for deep learning. Apparently, a gap exists between CPU's limited PCIe support and the strong demand for high-speed peripheral devices. As an intermediate solution, PCIe switch and PCH (Platform Controller Hub) are invented to expand CPU's PCIe support, which we term I/O switch in this paper. With I/O switch, two or more I/O devices can share a PCIe link and send data to the same PCIe interface of CPU. Besides link share, a GPU can directly talk to NICs and SSDs without the involvement of CPU, with the help of PCIe switches, which is termed RTX IO by NVIDIA [7]. However, I/O switch also introduces a new problem: I/O congestion. When one device fills a PCIe link ( e.g., Nvidia GTX 1080Ti GPU can produce 480 GB/s data [8]), the PCIe packets generated by the other devices sharing the same I/O switch will be delayed due to point-to-point credit-based flow control of PCIe [9]. While congestion has been well studied in the network protocols like TCP [10], [11] and the security issues like denial-of-service (DoS) attacks are well known, no prior works have looked into the I/O congestion brought by PCIe on a single machine, not to mention its security implications. In this work, we make the first attempt to study these issues. PCIe congestion side-channel. Through exploratory analysis, we found the degree of PCIe congestion might reflect the operational status of a connected device. When a device transfers data through a congested PCIe link, the interval between request and response will be increased. Therefore, if an attacker has access to a device that shares a PCIe link with another device used by a victim, the attacker can keep probing the link and use the delay to infer the status of the victim device. Furthermore, as the device I/O patterns can be determined by the user's activities (e.g., typing and browsing), the attacker can recover the sensitive user information from the probed delays potentially. Though the high-level idea is simple, measuring the delay at high resolution and recovering the user's information at high 322 DOI 10.1109/SP40001.2021.00059 accuracy is non-trivial. The attack seems impossible initially using traditional probing methods (e.g., keep reading procfs of Linux [12]) and time measurement ( e.g., clock()). But the new functionalities provided by the software and hardware stacks of peripheral devices enable our attack, as we observed. Here we name a few: 1) Kernel-bypass removes the random delays from CPU scheduling and interrupts, conserving the at- tacker's measurement to the communication latency. 2) RDMA (Remote Direct Memory Access) NICs widely installed on data centers and public clouds allow the attacker to transmit data at ultra-low latency, leading to a very high sampling rate of a PCIe link. 3) The hardware clock provided by RDMA NIC enables high-precision measurement. Our attack and evaluation. Based on the above observa- tions, we propose a new side-channel attack that exploits PCIe I/O congestion, termed I NVISI PROBE. We demonstrate INVISI PROBE in two scenarios. Firstly, when the victim uses a high-speed device like GPU on a server, an attacker can use an RDMA NIC on her machine to probe the RDMA NIC on the server and infer the victim's secret. We demonstrate three attack settings, including 1) inferring keystroke events and words typed by the victim; 2) inferring the webpages visited by the victim; 3) inferring the machine-learning model trained by the victim. We found the delay (for keystroke inference) or delay sequence (for webpage and model inference) patterns are distinguishable, due to the unique data movement patterns between CPU and GPU. To achieve accurate inference on the probed delays, we develop an inference model based onAttention-Based Bidirectional LSTM (AttBLSTM) [13], which is capable of handling long sequences with variable length. In addition to the high-speed device, we found the low- speed device used by a victim is not immune to INVISI PROBE. When a victim is using an Ethernet NIC, e.g., 1Gbps NIC, an attacker can probe the server's NVMe SSDs at high frequency to introduce PCIe congestion, and measure the delays at the same time. We demonstrate that the collected delays can help the attacker infer which website is visited, due to that loading different websites results in different file downloading patterns. We evaluate the four proposed attacks in a lab environ- ment consisting of one server and one PC. To highlight the evaluation results, 98.97% keystroke events can be detected, and 96.31% visited webpages can be correctly classified, in the first attack scenario. We also evaluate the second attack scenario in a public cloud, Alibaba cloud, and found high ac- curacy (91.02% for webpage inference) can be achieved. Our results indicate the threat is practical when PCIe congestion is exploited by an attacker. As I/O switches become prevalent in data centers and the recent trend encourages PCIe switches to be shared by I/O devices across machines, i.e., through PCIe fabric, we believe more attention should be paid by the security community. We propose a few directions for threat mitigation and are discussing them with cloud providers like Alibaba cloud. Contributions. We summarize our contributions below. • We identify a new side-channel attack exploiting the unique features of PCIe congestion. • We develop two concrete attack strategies: using RDMA NIC to attack GPU and using NVMe SSD to attack Ethernet NIC. • We evaluate the two strategies under 3 victim scenar- ios: keystroke typing, webpage browsing and training machine-learning model. The result shows our method, INVISI PROBE, is effective. • We will release the code and experimental data after the discussion with the stake-holders to help other researchers investigate the related issues. II. B ACKGROUND A. PCIe PCIe (Peripheral Component Interconnect Express) is thede facto protocol for the peripheral devices to transmit data to a processor [3], thanks to its prominent advantages like higher maximum bus throughput. There are 4 ways to let a device communicate through PCIe. 1) Installing the device on the PCIe slot of the motherboard, e.g., discrete GPU; 2) Installing the device on another type of slot which is compatible with PCIe protocol, e.g., installing NVMe (Non-V olatile Memory Express) SSDs on M.2 slots; 3) Soldering a device on the motherboard and using PCIe protocol, e.g., onboard NIC (Network Interface Card); 4) Leveraging a controller to convert a different protocol used by a device to PCIe protocol, e.g., SATA hard disks. The communication between PCIe devices is carried out by interconnect (or link). A link consists of one or more lanes, which carries a full-duplex byte stream, producing 985 MB/s bandwidth per lane per direction for the version supported by the mainstream Intel CPUs [14]. The number of lanes per link can be 1, 2, 4, 8, or 16. Thus, the device's PCIe speed can be adjusted based on the number of occupied lanes. Different from PCI protocol in which a shared parallel bus architecture is used and the bus clock is constrained by the slowest peripheral device, PCIe protocol is packet-based, which enables more efficient bus usage. Similar to the network stack, PCIe has three layers and they are transaction layer, data link layer, and physical layer. The data are encapsulated into packets by transaction layer and routed based on memory address, I/O address and device ID [15]. The data link layer handles integrity check, flow control, and re-transmissions, ensuring the data integrity and reliability for the upper layers. To this end, point-to-point credit-based flow control [9] is employed by PCIe. On a PCIe link, the receiver notifies the sender the size of the receiving buffer reserved for it ahead, and the data transmitted by the sender is always under the buffer limit. B. PCIe Topology PCIe allows devices to connect to the processor in a tree- like topology [15] 1, with the help of PCIe switch and PCH 1In the future, PCIe fabric may be used in a data center, changing the topology to a network-like topology. 323"
+      },
+      {
+        "source": "selected",
+        "value": "PCIe (Peripheral Component Interconnect express) protocol is the de facto protocol to bridge CPU and peripheral devices like GPU, NIC, and SSD drive. There is an increasing demand to install more peripheral devices on a single machine, but the PCIe interfaces offered by Intel CPUs are fixed. To resolve such contention, PCIe switch, PCH (Platform Controller Hub), or virtualization cards are installed on the machine to allow multiple devices to share a PCIe interface. Congestion happens when the collective PCIe traffic from the devices overwhelm the PCIe link capacity, and transmission delay is then introduced. In this work, we found the PCIe delay not only harms device performance but also leaks sensitive information about a user who uses the machine. In particular, as user's activities might trigger data movement over PCIe (e.g., between CPU and GPU), by measuring PCIe congestion, an adversary accessing another device can infer the victim's secret indirectly. Therefore, the delay resulted from I/O congestion can be exploited as a side-channel. We demonstrate the threat from PCIe congestion through 2 attack scenarios and 4 victim settings. Specifically, an attacker can learn the workload of a GPU in a remote server by probing a RDMA NIC that shares the same PCIe switch and measuring the delays. Based on the measurement, the attacker is able to know the keystroke timings of the victim, what webpage is rendered on the GPU, and what machine-learning model is running on the GPU. Besides, when the victim is using a low-speed device, e.g., an Ethernet NIC, an attacker controlling an NVMe SSD can launch a similar attack when they share a PCH or virtualization card. The evaluation result shows our attack can achieve high accuracy (e.g., 96.31% accuracy in inferring webpage visited by a victim)."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Mingtian Tan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Junpeng Wan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zhe Zhou",
+          "email": "zhouzhe@fudan.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Zhou Li",
+          "email": "zhou.li@uci.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Fudan University 18210240176"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Irvine"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Congestion Side-channel",
+          "email": "",
+          "affiliations": [
+            "School of Computer Science Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Mingtian Tan",
+          "email": "",
+          "affiliations": [
+            "School of Computer Science Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Junpeng Wan",
+          "email": "",
+          "affiliations": [
+            "School of Computer Science Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zhe Zhou",
+          "email": "zhouzhe@fudan.edu.cn",
+          "affiliations": [
+            "School of Computer Science Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Zhou Li",
+          "email": "zhou.li@uci.edu",
+          "affiliations": [
+            "University of California, Irvine"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 111,
+      "author_count": 5,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 4,
+          "author": "Zhou Li",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 4,
+          "author": "Zhou Li",
+          "affiliation_raw": "University of California, Irvine",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.227,
+          "center_distance": 10.179,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Invisible Probe: Timing Attacks with PCIe Congestion Side-channel",
+      "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Mingtian Tan",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Junpeng Wan",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Zhe Zhou",
+          "affiliations": [
+            "Fudan University"
+          ]
+        },
+        {
+          "name": "Zhou Li",
+          "affiliations": [
+            "University of California, Irvine"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Zhe Zhou",
+      "field": "email",
+      "restored_value": "zhouzhe@fudan.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Zhou Li",
+      "field": "email",
+      "restored_value": "zhou.li@uci.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

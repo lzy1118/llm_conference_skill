@@ -1,0 +1,388 @@
+{
+  "paper_id": "041_ldr_secure_and_efficient_linux_driver_runtime_for_embedded_tee_systems",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "LDR: Secure and Efficient Linux Driver Runtime for Embedded TEE Systems"
+      },
+      {
+        "source": "selected",
+        "value": "LDR: Secure and Efficient Linux Driver Runtime for Embedded TEE Systems"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Trusted execution environments (TEEs), like Trust-Zone, are pervasively employed to protect security sensitive programs and data from various attacks. We target compact TEE operating systems like OP-TEE, which implement minimum TEE internal core APIs. Such a TEE OS often has poor device driver support and we want to alleviate such issue by reusing existing Linux drivers inside TEE OSes. An intuitive approach is to port all its dependency functions into the TEE OS so that the driver can directly execute inside the TEE. But this approach significantly enlarges the trusted computing base (TCB), making the TEE OS no longer compact. In this paper, we propose a TEE driver execution environment-Linux driver runtime (LDR). A Linux driver needs two types of functions, library functions and Linux kernel subsystem functions that a compact TEE OS does not have. The LDR reuses the existing TEE OS library functions whenever possible and redirects the kernel subsystem function calls to the Linux kernel in the normal world. LDR is realized as a sandbox environment, which confines the Linux driver inside the TEE through the ARM domain access control features to address associated security issues. The sandbox mediates the driver's TEE functions calls, sanitizing arguments and return values as well as enforcing forward control flow integrity. We implement and deploy an LDR prototype on an NXP IMX6Q SABRE-SD evaluation board, adapt 6 existing Linux drivers into LDR, and evaluate their performance. The experimental results show that the LDR drivers can achieve comparable performance with their Linux counterparts with negligible overheads. We are the first to reuse functions in both the TEE OS and normal world Linux kernel to run a TEE device driver and address related security issues."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Trusted execution environments (TEEs), like Trust- Zone, are pervasively employed to protect security sensitive programs and data from various attacks. We target compact TEE operating systems like OP-TEE, which implement minimum TEE internal core APIs. Such a TEE OS often has poor device driver support and we want to alleviate such issue by reusing existing Linux drivers inside TEE OSes. An intuitive approach is to port all its dependency functions into the TEE OS so that the driver can directly execute inside the TEE. But this approach significantly enlarges the trusted computing base (TCB), making the TEE OS no longer compact. In this paper, we propose a TEE driver execution environment-Linux driver runtime (LDR). A Linux driver needs two types of functions, library functions and Linux kernel subsystem functions that a compact TEE OS does not have. The LDR reuses the existing TEE OS library functions whenever possible and redirects the kernel subsystem function calls to the Linux kernel in the normal world. LDR is realized as a sandbox environment, which confines the Linux driver inside the TEE through the ARM domain access control features to address associated security issues. The sandbox mediates the driver's TEE functions calls, sanitizing arguments and return values as well as enforcing forward control flow integrity. We implement and deploy an LDR prototype on an NXP IMX6Q SABRE-SD evaluation board, adapt 6 existing Linux drivers into LDR, and evaluate their performance. The experimental results show that the LDR drivers can achieve comparable performance with their Linux counterparts with negligible overheads. We are the first to reuse functions in both the TEE OS and normal world Linux kernel to run a TEE device driver and address related security issues. I. I NTRODUCTION Trusted execution environments (TEEs) are extensively uti- lized to safeguard the integrity and confidentiality of security- sensitive program logic (SPL). Contemporary TEEs employ hardware-based methods, delivering robust security founda- tions for creating an isolated domain (such as SGX en- claves [1], SEV secure virtual machines [2], TrustZone secure worlds [3], and RISC-V enclaves [4]), which functions as a black box to the external environment. SPLs are typically deployed within these isolated domains to protect against *Corresponding author: Prof. Zhen Ling of Southeast University, China. external threats, particularly privileged attacks from root users, operating systems, hypervisors, etc. As a result, TEEs are widely adopted by cloud service providers and embedded system manufacturers to enable secure data processing. However, due to the absence of sophisticated driver support inside TEEs compared to the comprehensive driver support found in commodity OS kernels, such as the Linux kernel, it is difficult to implement I/O-oriented TEE services. Instead of employing a monolithic design like KNOX [5], embedded TEE OSes, like OP-TEE [6] and SierraTEE [7], take a compact kernel design in order to reduce attack surfaces, and we refer to these TEE OSes as compact TEE OSes. Compact TEE OSes typically maintain a minimal trusted computing base (TCB) with a small line of code (LoC) [8], [9], [10], providing only security-critical services like secure boot, cryptographic operations, and attestation. When it comes to TEE exclusive I/O interactions, many research works choose to port existing device drivers into TEEs [11], [12], which involves a huge amount of repeated engineering efforts. To reduce the engineering efforts introduced by trivial driver porting, Driverlets [13] proposes a general driver-reuse method where a recorder executes a driver inside an emulator like QEMU [14] and records its runtime I/O and DMA behaviors. Then, a replayer replays the recorded behaviors inside TEE to reproduce driver functionalities. However, the request of a sophisticated emulator is hard to satisfy, as only a limited set of hardware board models is currently supported by QEMU [15]. Moreover, such approach of replying recorded driver behaviors exhibits poor performance. Other systems like MyTEE [16] enable secure I/O by reusing existing NW drivers and provid- ing security guarantees through virtualization-based memory isolation as well as temporary supervised privilege escalation. However, since MyTEE I/O operations involve world switches and hypercalls, it incurs heavy overhead for devices with frequent I/O requests. Therefore, we are motivated to explore an approach that reuses the existing device drivers to facilitate secure and efficient driver support inside compact TEE OSes while maintaining a small TCB. In this paper, we propose a TEE driver execution environ- ment, named Linux driver runtime (LDR), that enables secure and efficient TEE driver support. We focus our design on ARM TrustZone-empowered embedded systems and choose to reuse existing Linux drivers. LDR is a sandbox environment that provides necessary runtime support for driver execution inside the secure OS which works as the operating system inside the TrustZone secure world (SW). In brief, we load a Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.23009 www.ndss-symposium.org driver module for a target secure peripheral, which we refer to as a SW driver, into LDR and orchestrate and mediate its interactions with the secure OS as well as the normal world (NW) Linux kernel so that the driver module can properly initialize and operate on the target peripheral. To mitigate the security concerns introduced by the SW driver's dependency on the NW Linux kernel, LDR provides library function (e.g., memory management, I/O operation, etc.) support for the SW driver by reusing the secure OS library functions. As for the remaining ones which the secure OS does not implement, LDR redirects them to the NW Linux kernel yet with security checks on both passed arguments and return values. To maintain a small TCB and to protect the secure OS from potentially untrusted drivers, LDR isolates SW drivers from the secure OS as well as from each other. To be specific, LDR leverages ARM domain access control (DAC) [3] features to create an isolated execution domain (IED) for each SW driver so that an untrusted driver cannot directly access the secure OS memory or other SW drivers' data during execution. To facilitate secure interactions between SW drivers and the secure OS, LDR creates an IED gate that acts as the secure gateway of the secure OS. Particularly, during SW driver execution, the IED gate intercepts and mediates every secure OS function call issued by a SW driver. Additionally, LDR enforces forward control flow integrity (F-CFI) on these function calls to defend against control-flow hijacking attacks on the secure OS. Finally, we investigate the secure driver state maintenance schemes to prevent sensitive SW driver data from being leaked to the NW during redirected Linux subsystem calls. LDR design choices have several advantages over existing approaches in terms of 1) engineering efforts (§VI-C): Beside driver code reuse, LDR reuses existing secure OS functions and redirects unsupported ones to the NW Linux kernel instead of implementing the driver runtime from the scratch. 2) performance (§VI-E, §VI-F): LDR runs compiled driver modules in native speed and therefore outperforms Driverlets that leverages emulated execution. 3) security (§VII): LDR enables secure I/O with all device I/O operations exclusively conducted inside the SW. LDR isolates all SW drivers from the secure OS as well as from each other to maintain a small TCB. Meanwhile, LDR mediates each function call issued from SW drivers and enforces security checks on those redirected to the NW Linux kernel. We develop an LDR prototype and deploy it on a TrustZone-empowered NXP IMX6Q SABRE-SD board in order to demonstrate the feasibility and effectiveness of LDR. To estimate engineering efforts, we generate the SW drivers for diverse sensors, including accelerometer, image processing unit, etc. The results show that the modification to the original Linux driver code is reasonable and most driver code stays untouched. Additionally, we evaluate the LDR performance using these SW drivers via various use cases. The experimental results demonstrate that the LDR SW drivers can exert the full power of the devices for these real-world use cases, with sensor data collection in full sampling speed and only -2.43% streaming speed penalty to high-definition video streaming. In summary, this paper offers the following contributions: • We present several key observations on the internal structures of modern Linux drivers. Such observations can minimize the dependency functions of a SW driver, thus simplifying the overall LDR design and reducing engineering efforts. • We are the first to offer driver runtime environment sup- port by reusing existing TEE functions whenever possible and redirecting the unsupported ones to the NW OS kernel. • We propose a TEE driver isolation mechanism based on efficient ARM DAC features, which separates untrusted drivers from the secure OS as well as from each other while securely mediating their interactions with the secure OS and the NW Linux kernel through CFI. • We implement an LDR prototype and evaluate its fea- sibility and effectiveness in supporting various sensor drivers. The experimental results demonstrate that LDR introduces minimal performance overhead to real-world use cases. II. M OTIVATION & O BSERVATION In this section, we first present our motivations and inves- tigate two alternative design choices, briefly discussing their merits and limitations. Then, we present our observation and insights on the Linux driver model which can greatly simplify the overall LDR design. A. Motivations TrustZone-based secure OSes have limited support for device driver inside the SW, which hinders the deployment of I/O-oriented secure services on TrustZone-enabled platforms. In contrast, the Linux kernel provides sophisticated driver support to almost all devices whose drivers are well maintained by a lot of communities. Therefore, we are motivated to propose an approach that shall realize 1) Code reuse. The existing driver code should be reused. We intend to reuse low- layered driver functions related to direct I/O, interrupt handling and utility functions since these functions interact with the peripheral and realize basic driver functionalities. 2) Security. To preserve a small TCB size, the modifications to the secure OS should be as small as possible. Additionally, since a SW driver is large in size and may contain potential security flaws, all SW drivers should be isolated from the secure OS rather than being included as part of the TCB. 3) Good performance. The SW drivers shall achieve comparative performance with their Linux counterparts. B. Alternative Designs Porting Linux Kernel Functions into Secure OS. One straightforward approach is to include driver loadable kernel modules (LKM) and the Linux kernel inside the secure OS, as shown in Figure 1-(a), so that all external functions depended by the driver LKM can be provided by the secure OS. To minimize code base introduced to the secure OS, the original Linux kernel can be trimmed down only to include functions needed by the drivers. During runtime, drivers can directly invoke functions of the trimmed kernel as they do when run- ning inside the Linux kernel. This approach can result in good performance as both the drivers and the trimmed kernel reside in the same address space of the secure OS. Additionally, since the trimmed kernel provides all the functions needed 2"
+      },
+      {
+        "source": "selected",
+        "value": "Trusted execution environments (TEEs), like Trust-Zone, are pervasively employed to protect security sensitive programs and data from various attacks. We target compact TEE operating systems like OP-TEE, which implement minimum TEE internal core APIs. Such a TEE OS often has poor device driver support and we want to alleviate such issue by reusing existing Linux drivers inside TEE OSes. An intuitive approach is to port all its dependency functions into the TEE OS so that the driver can directly execute inside the TEE. But this approach significantly enlarges the trusted computing base (TCB), making the TEE OS no longer compact. In this paper, we propose a TEE driver execution environment-Linux driver runtime (LDR). A Linux driver needs two types of functions, library functions and Linux kernel subsystem functions that a compact TEE OS does not have. The LDR reuses the existing TEE OS library functions whenever possible and redirects the kernel subsystem function calls to the Linux kernel in the normal world. LDR is realized as a sandbox environment, which confines the Linux driver inside the TEE through the ARM domain access control features to address associated security issues. The sandbox mediates the driver's TEE functions calls, sanitizing arguments and return values as well as enforcing forward control flow integrity. We implement and deploy an LDR prototype on an NXP IMX6Q SABRE-SD evaluation board, adapt 6 existing Linux drivers into LDR, and evaluate their performance. The experimental results show that the LDR drivers can achieve comparable performance with their Linux counterparts with negligible overheads. We are the first to reuse functions in both the TEE OS and normal world Linux kernel to run a TEE device driver and address related security issues."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Huaiyu Yan",
+          "email": "huaiyuyan@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zhen Ling",
+          "email": "zhenling@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Haobo Li",
+          "email": "haoboli@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Lan Luo",
+          "email": "jluo@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University",
+            "Anhui University of Technology, Email"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Xinhui Shao",
+          "email": "xinhuishao@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Kai Dong",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Ping Jiang",
+          "email": "jiangping@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Ming Yang",
+          "email": "yangming2002@seu.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Junzhou Luo",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Xinwen Fu",
+          "email": "fu@uml.edu",
+          "orcid": "",
+          "affiliations": [
+            "Southeast University",
+            "University of Massachusetts Lowell"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Huaiyu Yan",
+          "email": "huaiyu yan@seu.edu.cn",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zhen Ling",
+          "email": "zhenling@seu.edu.cn",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 2,
+          "name": "Haobo Li",
+          "email": "haobo li@seu.edu.cn",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Lan Luo",
+          "email": "lanluo448@gmail.com",
+          "affiliations": [
+            "Anhui University of Technology, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Xinhui Shao",
+          "email": "xinhuishao@seu.edu.cn",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Kai Dong",
+          "email": "",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Ping Jiang",
+          "email": "jiangping@seu.edu.cn",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Ming Yang",
+          "email": "yangming2002@seu.edu.cn",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Junzhou Luo",
+          "email": "jluo@seu.edu.cn",
+          "affiliations": [
+            "Southeast University, Email"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Xinwen Fu",
+          "email": "fu@uml.edu",
+          "affiliations": [
+            "University of Massachusetts Lowell, Email: xinwen"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 104,
+      "author_count": 10,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 10,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "LDR: Secure and Efficient Linux Driver Runtime for Embedded TEE Systems",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/ldr-secure-and-efficient-linux-driver-runtime-for-embedded-tee-systems/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Huaiyu Yan",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Zhen Ling",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Haobo Li",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Lan Luo",
+          "affiliations": [
+            "Anhui University of Technology"
+          ]
+        },
+        {
+          "name": "Xinhui Shao",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Kai Dong",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Ping Jiang",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Ming Yang",
+          "affiliations": [
+            "Southeast University"
+          ]
+        },
+        {
+          "name": "Junzhou Luo",
+          "affiliations": [
+            "Southeast University, Nanjing, P.R. China"
+          ]
+        },
+        {
+          "name": "Xinwen Fu",
+          "affiliations": [
+            "University of Massachusetts Lowell"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Xinwen Fu",
+      "field": "email",
+      "restored_value": "fu@uml.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

@@ -1,0 +1,274 @@
+{
+  "paper_id": "020_rr_a_fault_model_for_efficient_tee_replication",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "RR: A Fault Model for Efficient TEE Replication"
+      },
+      {
+        "source": "selected",
+        "value": "RR: A Fault Model for Efficient TEE Replication"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Trusted Execution Environments (TEEs) ensure the confidentiality and integrity of computations in hardware. Subject to the TEE's threat model, the hardware shields a computation from most externally induced fault behavior except crashes. As a result, a crash-fault tolerant (CFT) replication protocol should be sufficient when replicating trusted code inside TEEs. However, TEEs do not provide efficient and general means of ensuring the freshness of external, persistent state. Therefore, CFT replication is insufficient for TEE computations with external state, as this state could be rolled back to an earlier version when a TEE restarts. Furthermore, using BFT protocols in this setting is too conservative, because these protocols are designed to tolerate arbitrary behavior, not just rollback during a restart. In this paper, we propose the restart-rollback (RR) fault model for replicating TEEs, which precisely captures the possible fault behaviors of TEEs with external state. Then, we show that existing replication protocols can be easily adapted to this fault model with few changes, while retaining their original performance. We adapted two widely used crash fault tolerant protocols-the ABD [6] read/write register protocol and the Paxos [34] consensus protocol-to the RR model. Furthermore, we leverage these protocols to build a replicated metadata service called TEEMS, and then show that it can be used to add TEEgrade confidentiality, integrity, and freshness to untrusted cloud storage services. Our evaluation shows that our protocols perform significantly better than their BFT counterparts (between 1.25 and 55× better throughput), while performing identically to the CFT versions, which do not protect against rollback attacks."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Trusted Execution Environments (TEEs) ensure the confidentiality and integrity of computations in hardware. Subject to the TEE's threat model, the hardware shields a computation from most externally induced fault behavior except crashes. As a result, a crash-fault tolerant (CFT) replication protocol should be sufficient when replicating trusted code inside TEEs. However, TEEs do not provide efficient and general means of ensuring the freshness of external, persistent state. Therefore, CFT replication is insufficient for TEE computations with external state, as this state could be rolled back to an earlier version when a TEE restarts. Furthermore, using BFT protocols in this setting is too conservative, because these protocols are designed to tolerate arbitrary behavior, not just rollback during a restart. In this paper, we propose the restart-rollback (RR) fault model for replicating TEEs, which precisely captures the possible fault behaviors of TEEs with external state. Then, we show that existing replication protocols can be easily adapted to this fault model with few changes, while retaining their original performance. We adapted two widely used crash fault tolerant protocols - the ABD [6] read/write register protocol and the Paxos [34] consensus protocol - to the RR model. Furthermore, we leverage these protocols to build a replicated metadata service called TEEMS, and then show that it can be used to add TEE- grade confidentiality, integrity, and freshness to untrusted cloud storage services. Our evaluation shows that our protocols perform significantly better than their BFT counterparts (between 1.25 and 55× better throughput), while performing identically to the CFT versions, which do not protect against rollback attacks. I. I NTRODUCTION Replication is a standard technique in distributed systems, which adds fault tolerance to a service implemented by an individual networked node. To ensure that the replicated ser- vice appears to clients like its single-node equivalent except for higher availability, a replication protocol coordinates the replicated nodes. For instance, a state machine replication (SMR) protocol like Paxos [34] may be used for this purpose. Networked services implemented inside a trusted execution environment (TEE) like ARM TrustZone [4], AMD SEV- SNP [2], [3], Intel SGX [23], or the future Intel TDX [31] and ARM CCA [5] can similarly benefit from replication. Repli- cated TEE-based systems aim to combine the confidentiality, integrity, and remote attestation of TEEs with replication to ensure high availability. Examples include permissioned blockchains [37], monotonic counters for ensuring state fresh- ness [42], in-memory key-value stores [8], as well as broadcast and common random number generator primitives [32]. A key design decision in all replicated systems is the choice of fault model underlying the replication protocol. This model captures the set of faults that can affect an individual replica. For instance, in the crash fault model, faulty nodes are assumed to execute correctly until they crash at an arbitrary point in their execution, when they cease to perform further steps until they restart. Alternatively, in the Byzantine fault model , faulty nodes may perform arbitrary actions. The choice of fault model affects the complexity, overhead, and tolerance threshold of a replication protocol, and is important for both performance and security. In particular, a fault model that is too pessimistic may lead to unnecessary safeguards, which can impact both performance and the cost of replication. Conversely, a fault model that is too optimistic may fail to account for all faults that can occur, which then leads to broken assumptions and loss of correctness or security of the replicated system. In the case of TEE-based replication, the choice of existing systems that store replica state persistently [37], [42] was to employ Byzantine fault tolerant (BFT) replication. This may seem necessary given that rollback of persistent state is a behavior not covered by the crash fault model. However, the Byzantine model is much stronger than necessary for this setting. Intuitively, this is because it assumes arbitrary behavior of faulty components, thus not taking into account the integrity guarantees for the code running inside TEEs. In this paper, we fill a gap in distributed replication research by introducing the restart-rollback (RR) fault model, which captures precisely the set of faults that TEEs can suffer according to their specification. The main insight behind RR is that, apart from crash faults, whenever a TEE restarts, the fault model allows for a rollback of externally stored state to an earlier version. Such rollback events are possible because TEEs lack general and high-performance means of ensuring the freshness of externally stored state. During an execution, however, the integrity of the internal, volatile state of a TEE is ensured by hardware, and the integrity of any externally stored state can be ensured by standard cryptographic means. The RR fault model occupies a middle ground between crash fault tolerance (CFT) and BFT. As we will show, unlike CFT it provides security for replicated TEEs by tolerating state roll-back at a cost that is similar to CFT and better than BFT. Specifically, it is able to substantially reduce the required communication, particularly for read operations, in the common case where restarts are infrequent. Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24001 www.ndss-symposium.org To demonstrate the potential of the RR model, we apply it to two types of replication protocols, namely the Attiya, Bar-Noy, Dolev (ABD) replication protocol for a read/write register [6] and the Paxos state machine replication (SMR) protocol [34], showing that this adaptation is relatively straight- forward. We then use these protocols to devise a replicated metadata service called TEEMS, which enables Cloud storage with the same strong confidentiality and integrity guarantees provided by TEEs, while also ensuring freshness of data. TEEMS is used with one or more untrusted cloud storage services. TEEMS maintains metadata for each data item (in- cluding the encryption key, authentication code, latest version number and policy), while ensuring strong security and en- abling concurrent sharing of data. We implemented both the read/write and SMR replication protocols for three different fault models (RR, crash, and Byzantine), and we also implemented TEEMS and used it to implement a new class of secure cloud storage services. We evaluated the protocols using microbenchmarks and the storage system using both microbenchmarks and YCSB [21]. Our experimental results show that the protocols for the RR model perform significantly better than their BFT counterparts, and compared to CFT, they perform identically while additionally tolerating rollback attacks. Furthermore, TEEMS offers secure, shareable storage at modest overhead. Our contributions include: (1) The RR fault model, which is the first to capture precisely the fault behavior of TEEs that rely on external storage; (2) a derivation of quorum sizes for replication protocols in the RR model; (3) principles for the adaptation of CFT protocols to the RR model; (4) two proto- cols adapted to RR, which implement read-write storage and SMR, respectively; (5) the TEEMS generic metadata service and its integration with untrusted cloud storage services to give clients the ability to share and concurrently access persistent data with strong confidentiality, integrity, and freshness; (6) an experimental evaluation of our protocol and the storage solutions based on TEEMS in different deployment scenarios. The remainder of the paper is organized as follows. We motivate our work and provide some background §II, describe the RR model in §III, present the replication protocols in the new model in §IV, and TEEMS as an example application built using those protocols in §V. We describe our prototype implementations in §VI, evaluate them experimentally in §VII, survey related work in §VIII, and conclude in §IX. II. M OTIVATION : TEE PROPERTIES In this section, we review the properties of TEEs and motivate the RR fault model. While the precise guarantees pro- vided by a TEE vary with the TEE design, we can summarize common guarantees across platforms. a) Confidentiality. TEEs allow a computation to execute with hardware-enforced confidentiality over the internal code and data used by the computation. Data and instructions are decrypted in hardware as they are fetched from memory inside the CPU chip and modified data is re-encrypted before it leaves the CPU chip. Only code executing inside the TEE has access to cleartext data, therefore ensuring confidentiality even from OS, hypervisor, and platform operators. b) Integrity and attestation. When a TEE is started, the secure platform computes a hash of the TEE's initial code and data and compares it to the expected measurement hash for the instance. Only when this attestation succeeds is the TEE provided with the key material it needs to authenticate itself to third parties and to access and decrypt persistent data stored externally on its behalf. A remote party can ascertain that it is communicating with a TEE instance that has a particular initial measurement hash and executes on a legitimate TEE platform via remote attestation . Furthermore, to protect the TEE's integrity during execution, the hardware isolates the TEE and detects modification of encrypted code and data while stored in main memory. Implementations like Intel SGX even protect code and data from certain physical attacks. c) State continuity in the presence of external state. TEEs may store encrypted state in external persistent storage across activations through a process called sealing. As described above, a correctly attested TEE receives a secret key unique to its instance, which allows the TEE to store encrypted external state with confidentiality and integrity guarantees. To ensure the recency of its external state, however, a TEE must ensure that the encrypted external state it is presented with after a restart is the most recent version it had previously stored. More generally, TEE computations may require state continuity , which states that a TEE never executes an operation with a stale state, or executes an operation with different inputs from the same state [51]. TEE implementations lack general, high-performance sup- port for ensuring freshness and state continuity of com- putations with external state. Some TEE platforms provide trusted, persistent monotonic counters associated with the CPU platform. While these counters can ensure state continuity in principle, they are not sufficient in practice [51]. In particular, hardware intentionally slows the time to increment these coun- ters to milliseconds in order to avoid wrap-around attacks [51], [42]. As a result, such counters can at best support state continuity for TEEs that exhibit infrequent, orderly shutdowns, during which a TEE can update the counter and store its exter- nal state with the latest counter value embedded [51]. Trusted counters are inadequate for TEEs that frequently update their external state (e.g., a database or key-value store) and can crash at any time; ensuring state continuity for such TEEs requires rapid counter updates. Moreover, trusted counters are tied to a particular CPU/motherboard and do not support safe migration of TEE computations. Note that state continuity implies fork protection [11], i.e., guaranteeing that no duplicate TEEs are instantiated with access to the same stored state. We discuss fork protection and how it can be achieved in replicated systems in Section VIII. d) TEE threat model and guarantees. The design of TEEs assumes a powerful adversary, who has full control over the operating system and hypervisor that hosts a TEE. The adversary can arbitrarily create and shutdown TEE"
+      },
+      {
+        "source": "selected",
+        "value": "Trusted Execution Environments (TEEs) ensure the confidentiality and integrity of computations in hardware. Subject to the TEE's threat model, the hardware shields a computation from most externally induced fault behavior except crashes. As a result, a crash-fault tolerant (CFT) replication protocol should be sufficient when replicating trusted code inside TEEs. However, TEEs do not provide efficient and general means of ensuring the freshness of external, persistent state. Therefore, CFT replication is insufficient for TEE computations with external state, as this state could be rolled back to an earlier version when a TEE restarts. Furthermore, using BFT protocols in this setting is too conservative, because these protocols are designed to tolerate arbitrary behavior, not just rollback during a restart. In this paper, we propose the restart-rollback (RR) fault model for replicating TEEs, which precisely captures the possible fault behaviors of TEEs with external state. Then, we show that existing replication protocols can be easily adapted to this fault model with few changes, while retaining their original performance. We adapted two widely used crash fault tolerant protocols-the ABD [6] read/write register protocol and the Paxos [34] consensus protocol-to the RR model. Furthermore, we leverage these protocols to build a replicated metadata service called TEEMS, and then show that it can be used to add TEEgrade confidentiality, integrity, and freshness to untrusted cloud storage services. Our evaluation shows that our protocols perform significantly better than their BFT counterparts (between 1.25 and 55× better throughput), while performing identically to the CFT versions, which do not protect against rollback attacks."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Baltasar Dinis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Peter Druschel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Rodrigo Rodrigues",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Instituto Superior",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Baltasar Dinis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Peter Druschel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Rodrigo Rodrigues",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Instituto Superior",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Max Planck Institute for Software Systems"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 113,
+      "author_count": 4,
+      "matched_author_count": 3,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Baltasar Dinis",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Peter Druschel",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Rodrigo Rodrigues",
+          "block_id": "pdf:p1:b6",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Baltasar Dinis",
+          "affiliation_raw": "INESC-ID Max Planck Institute for Software Systems",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b10",
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 21.19,
+          "center_distance": 30.277,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Peter Druschel",
+          "affiliation_raw": "INESC-ID Max Planck Institute for Software Systems",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b7",
+            "pdf:p1:b10",
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 25.149,
+          "center_distance": 38.149,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Rodrigo Rodrigues",
+          "affiliation_raw": "Instituto Superior T ´ecnico (ULisboa) INESC-ID Max Planck Institute for Software Systems",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b8",
+            "pdf:p1:b10",
+            "pdf:p1:b12"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.805,
+          "center_distance": 59.493,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 3,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "RR: A Fault Model for Efficient TEE Replication",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/rr-a-fault-model-for-efficient-tee-replication/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Baltasar Dinis",
+          "affiliations": [
+            "Instituto Superior Técnico (IST-ULisboa) / INESC-ID / MPI-SWS"
+          ]
+        },
+        {
+          "name": "Peter Druschel",
+          "affiliations": [
+            "MPI-SWS"
+          ]
+        },
+        {
+          "name": "Rodrigo Rodrigues",
+          "affiliations": [
+            "Instituto Superior Técnico (IST-ULisboa) / INESC-ID"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

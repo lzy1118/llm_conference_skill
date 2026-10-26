@@ -1,0 +1,242 @@
+{
+  "paper_id": "071_dumpling_fine_grained_differential_javascript_engine_fuzzing",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DUMPLING: Fine-grained Differential JavaScript Engine Fuzzing"
+      },
+      {
+        "source": "selected",
+        "value": "DUMPLING: Fine-grained Differential JavaScript Engine Fuzzing"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Web browsers are ubiquitous and execute untrusted JavaScript (JS) code. JS engines optimize frequently executed code through just-in-time (JIT) compilation. Subtly conflicting assumptions between optimizations frequently result in JS engine vulnerabilities. Attackers can take advantage of such diverging assumptions and use the flexibility of JS to craft exploits that produce a miscalculation, remove bounds checks in JIT compiled code, and ultimately gain arbitrary code execution. Classical fuzzing approaches for JS engines only detect bugs if the engine crashes or a runtime assertion fails. Differential fuzzing can compare interpreted code against optimized JIT compiled code to detect differences in execution. Recent approaches probe the execution states of JS programs through ad-hoc JS functions that read the value of variables at runtime. However, these approaches have limited capabilities to detect diverging executions and inhibit optimizations during JIT compilation, thus leaving JS engines under-tested. We propose DUMPLING, a differential fuzzer that compares the full state of optimized and unoptimized execution for arbitrary JS programs. Instead of instrumenting the JS input, DUMPLING instruments the JS engine itself, enabling deep and precise introspection. These extracted fine-grained execution states, coined as (frame) dumps, are extracted at a high frequency even in the middle of JIT compiled functions. DUMPLING finds eight new bugs in the thoroughly tested V8 engine, where previous differential fuzzing approaches struggled to discover new bugs. We receive $11,000 from Google's Vulnerability Rewards Program for reporting the vulnerabilities found by DUMPLING."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Web browsers are ubiquitous and execute untrusted JavaScript (JS) code. JS engines optimize frequently executed code through just-in-time (JIT) compilation. Subtly conflicting assumptions between optimizations frequently result in JS engine vulnerabilities. Attackers can take advantage of such diverging assumptions and use the flexibility of JS to craft exploits that produce a miscalculation, remove bounds checks in JIT compiled code, and ultimately gain arbitrary code execution. Classical fuzzing approaches for JS engines only detect bugs if the engine crashes or a runtime assertion fails. Differential fuzzing can compare interpreted code against optimized JIT compiled code to detect differences in execution. Recent approaches probe the execution states of JS programs through ad-hoc JS functions that read the value of variables at runtime. However, these approaches have limited capabilities to detect diverging executions and inhibit optimizations during JIT compilation, thus leaving JS engines under-tested. We propose D UMPLING , a differential fuzzer that compares the full state of optimized and unoptimized execution for ar- bitrary JS programs. Instead of instrumenting the JS input, DUMPLING instruments the JS engine itself, enabling deep and precise introspection. These extracted fine-grained execution states, coined as (frame) dumps, are extracted at a high frequency even in the middle of JIT compiled functions. D UMPLING finds eight new bugs in the thoroughly tested V8 engine, where pre- vious differential fuzzing approaches struggled to discover new bugs. We receive $11,000 from Google's Vulnerability Rewards Program for reporting the vulnerabilities found by D UMPLING . I. I NTRODUCTION Web browsers are the portal to the World Wide Web. Users directly run JavaScript (JS) code on their devices, which is delivered from websites, but also embedded advertisements and third-party front-end frameworks. Due to the ubiquitous- ness and attack surface, JS engines are the focus of security researchers and malicious attackers, who find bugs that can be used to gain arbitrary code execution. Therefore, it is important to improve vulnerability discovery and broaden the class of automatically detectable vulnerabilities. Modern web applications heavily rely on the performant execution of JS code. The JS engine has evolved into one of the most crucial components of a web browser. To meet performance expectations, JS engines use optimized just-in- time (JIT) compilation [1]. Modern JS engines include multiple execution tiers implementing the same semantics: the inter- preter and one or more JIT compilers. Execution tiers represent different trade-offs between execution time and compilation time and are selected based on runtime-profiled usage at func- tion granularity. Different from C/system code, a JS engine may switch between different optimizations at arbitrary points during execution, even during the execution of a function. The interpreter and the compiler's emitted code must have the same semantics even after compiler optimizations. A mismatch in semantics can be as subtle as a JIT compiler wrongly assuming a float value to be 0.0 when it could also be the distinct float value 0.0. This real-world example of a bug in the V8 JS engine allowed arbitrary code execution in the Chrome renderer [2]. The above bug belongs to a logic bug class (Typer bug) unique to JS engines [3], [4]. Starting from a proof-of- concept that merely leads to the JIT compiler making a wrong assumption (e.g., typing a 0.0 value as 0.0), multiple steps are necessary to make the bug observable without introspection (e.g., debugging) into the JS engine. These steps involve, first, making the compiler act on the wrong assumption by producing a wrong value (miscalculation). Second, preserving this wrong value, such that it is propagated during subsequent optimization and execution. Third, manipulating and passing the value to a sink that finally makes the differential observ- able. The bug may be observable as a crash due to memory corruption, a violation of a manually inserted assertion in the JS engine, or by a wrong output print. Like Typer bugs other phases of JIT compilation regularly feature their own classes exploitable vulnerabilities that share the property of miscalculation before memory corruption [5], [6]. Fuzz testing ( fuzzing) is a powerful technique to detect errors in programs [7]. Fuzzing relies on bug oracles for detecting bugs, such as detecting crashes and compiling with address sanitizers [8]. Address sanitizers are limited in their effectiveness for JS engines, as they heavily leverage JIT compiled code and handwritten assembly, which cannot be instrumented. While assertions are an effective bug oracle, they need to be manually inserted by developers and can only check locally available information. To go beyond memory corruption bugs and also detect logic bugs, differential fuzzing is a promising strategy. Differential fuzzing executes a large number of inputs against two implementations of the same Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.241411 www.ndss-symposium.org specification and reports a bug if their outputs differ [9], [10], [11]. If the implementations are not in agreement, the tuple of differing output prints is called a differential. Differential fuzzing across JS engines needs to manually account for implementation specific behavior that the ECMAScript speci- fication [12] leaves open [13], [14], [15]. Instead, differential fuzzing can also be done between different execution tiers of the JS engine, such as the interpreter and optimizing JIT compilers [16], [17], [18]. State-of-the-art differential fuzzers for JS engines share the design choice of probing the execution state at JS level with techniques similar to print statements of individual variables. This design choice positions them as generic approaches since they can be easily deployed on different JS engines. However, relying on probes inside the JS code constrains the observation to only a small subset of the execution state, while such bugs can appear in any part of the execution state [19]. Furthermore, injecting JS probes alters the JS code and may inhibit JIT compiler optimizations, and therefore leave the JS engine under-tested. We propose D UMPLING , a differential fuzzer that extracts and compares the execution state of the JS engine between op- timized JIT compiled code and unoptimized code without any modification of the JS code. The key innovation of D UMPLING is to enable a fuzzer to observe the full execution state of the JS engine, instead of only comparing single variables, while not interfering with JIT compiler optimizations. To achieve this goal, we propose a new introspection mechanism for modern JS engines that allows for such state extraction at a high frequency, even in the middle of JIT compiled functions. DUMPLING 's representation of individual objects is more in- depth and fine-grained than previous approaches [18], [17], [20]. This new level of sensitivity enables the fuzzer to detect bugs before they become observable as wrong output prints or memory corruptions. Another key challenge is to avoid false positives. During our evaluation, we observe that existing differential fuzzing approaches suffer from a high false posi- tive rate [18], [17]. Without a fuzzing approach avoiding false positives, true positives are hidden between many false alarms, which hinders efficient bug fixing in practice. D UMPLING is designed and carefully tuned to avoid false positives, as demonstrated in our evaluation. DUMPLING 's design revolves around the general principles of JS JIT compilers described by Gal et al. [1]. Gal et al.s' work forms the cornerstone of contemporary JS engines. In our work, we choose the V8 engine as the most used implementation of Gal's principles, holding a market share of 75% for web browsers [21]. V8 is built for Google's Chrome and Chromium browsers, but it is also used in Microsoft Edge and Opera. Furthermore, V8 is running in other contexts as well, for example, server-side JS environments, desktop applications, mobile apps, database management systems, and PDF readers. We believe that the ubiquity, criticality, and ongoing discovery of new vulnerabilities warrants research in domain-specific bug oracles for JS engines, at the example of V8. Section VI discusses the porting effort of D UMPLING to other JS engines. Fig. 1: V8 compiler's tiers, based on Maglev's design [22]. In our evaluation, we compare the overhead, sensitivity, and specificity of D UMPLING to state-of-the-art JS engine differential fuzzing approaches. We show that D UMPLING 's bug oracle is significantly more sensitive than the state-of- the-art while maintaining a similar performance in terms of coverage and execution speed. This sensitivity is quantified as the entropy of information given to the bug oracle of which D UMPLING improves on the state-of-the-art by around 30%. Furthermore, D UMPLING 's bug finding capabilities are demonstrated by identifying ten bugs in V8, eight of which are new. The contributions of this paper are as follows: 1) We design a bug oracle that probes the execution state of a JS engine during execution of arbitrary programs. The generated dumps provide fine-grained insight of the execution state, do not modify execution semantics, and have a concise format (allowing for efficient transmis- sion). 2) We propose D UMPLING , a differential fuzzer that em- ploys our bug oracle to find vulnerabilities in the well-tested V8 JS engine. Our evaluation shows that DUMPLING finds more bugs than the state-of-the-art, while we do not observe any false positives from DUMPLING . We publicly release the prototype of D UMPLING and the necessary materials to replicate our experiments at https: //github.com/two-heart/dumpling-artifact-evaluation. In the following, we introduce core JS engine internals, that are fundamental for understanding the design of D UMPLING . We choose to use V8 terminology throughout the paper to make the implementation easier to follow. Section VI maps this terminology to the equivalent concepts in other JS engines. V8 consists of four execution tiers, the bytecode interpreter Ignition, the non-optimizing baseline compiler Sparkplug, the mid-tier compiler Maglev, and the most optimizing compiler TurboFan. The V8 execution tiers and their interactions are depicted in Figure 1. D UMPLING 's design revolves around the concept of execution state and the interaction between the execution tiers. II. B ACKGROUND AND MOTIV ATION In the following, we introduce core JS engine internals, that are fundamental for understanding the design of D UMPLING . We choose to use V8 terminology throughout the paper to make the implementation easier to follow. Section VI maps this terminology to the equivalent concepts in other JS engines."
+      },
+      {
+        "source": "selected",
+        "value": "Web browsers are ubiquitous and execute untrusted JavaScript (JS) code. JS engines optimize frequently executed code through just-in-time (JIT) compilation. Subtly conflicting assumptions between optimizations frequently result in JS engine vulnerabilities. Attackers can take advantage of such diverging assumptions and use the flexibility of JS to craft exploits that produce a miscalculation, remove bounds checks in JIT compiled code, and ultimately gain arbitrary code execution. Classical fuzzing approaches for JS engines only detect bugs if the engine crashes or a runtime assertion fails. Differential fuzzing can compare interpreted code against optimized JIT compiled code to detect differences in execution. Recent approaches probe the execution states of JS programs through ad-hoc JS functions that read the value of variables at runtime. However, these approaches have limited capabilities to detect diverging executions and inhibit optimizations during JIT compilation, thus leaving JS engines under-tested. We propose DUMPLING, a differential fuzzer that compares the full state of optimized and unoptimized execution for arbitrary JS programs. Instead of instrumenting the JS input, DUMPLING instruments the JS engine itself, enabling deep and precise introspection. These extracted fine-grained execution states, coined as (frame) dumps, are extracted at a high frequency even in the middle of JIT compiled functions. DUMPLING finds eight new bugs in the thoroughly tested V8 engine, where previous differential fuzzing approaches struggled to discover new bugs. We receive $11,000 from Google's Vulnerability Rewards Program for reporting the vulnerabilities found by DUMPLING."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Liam Wachter ⇤ † ‡",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Asymmetric Research",
+            "Karlsruhe Institute of Technology (KIT)",
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Julian Gremminger",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Karlsruhe Institute of Technology (KIT)",
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Christian Wressnegger",
+          "email": "christian.wressnegger@kit.edu",
+          "orcid": "",
+          "affiliations": [
+            "Karlsruhe Institute of Technology (KIT)"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Mathias Payer",
+          "email": "mathias.payer@nebelwelt.net",
+          "orcid": "",
+          "affiliations": [
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Flavio Toffalini",
+          "email": "flavio.toffalini@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Liam Wachter ⇤ † ‡",
+          "email": "liam@seine.email",
+          "orcid": "",
+          "affiliations": [
+            "Asymmetric Research",
+            "Karlsruhe Institute of Technology (KIT)",
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Julian Gremminger",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Karlsruhe Institute of Technology (KIT)",
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Christian Wressnegger",
+          "email": "christian.wressnegger@kit.edu",
+          "orcid": "",
+          "affiliations": [
+            "Karlsruhe Institute of Technology (KIT)"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Mathias Payer",
+          "email": "mathias.payer@nebelwelt.net",
+          "orcid": "",
+          "affiliations": [
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Flavio Toffalini",
+          "email": "flavio.toffalini@rub.de",
+          "orcid": "",
+          "affiliations": [
+            "EPFL, Ruhr-Universität Bochum"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 100,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DUMPLING: Fine-grained Differential JavaScript Engine Fuzzing",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/dumpling-fine-grained-differential-javascript-engine-fuzzing/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Liam Wachter",
+          "affiliations": [
+            "EPFL"
+          ]
+        },
+        {
+          "name": "Julian Gremminger",
+          "affiliations": [
+            "EPFL"
+          ]
+        },
+        {
+          "name": "Christian Wressnegger",
+          "affiliations": [
+            "Karlsruhe Institute of Technology (KIT)"
+          ]
+        },
+        {
+          "name": "Mathias Payer",
+          "affiliations": [
+            "EPFL"
+          ]
+        },
+        {
+          "name": "Flavio Toffalini",
+          "affiliations": [
+            "EPFL"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

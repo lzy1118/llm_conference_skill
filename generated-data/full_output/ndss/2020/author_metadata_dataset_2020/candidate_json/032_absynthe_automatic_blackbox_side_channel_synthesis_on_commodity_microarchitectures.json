@@ -1,0 +1,236 @@
+{
+  "paper_id": "032_absynthe_automatic_blackbox_side_channel_synthesis_on_commodity_microarchitectures",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "ABSynthe: Automatic Blackbox Side-channel Synthesis on Commodity Microarchitectures"
+      },
+      {
+        "source": "selected",
+        "value": "ABSynthe: Automatic Blackbox Side-channel Synthesis on Commodity Microarchitectures"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": ""
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The past decade has seen a plethora of side-channel attacks on various CPU components. Each new attack typically follows a whitebox analysis approach, which involves (i) identify- ing a specific shared CPU component, (ii) reversing its behavior on a specific microarchitecture, and (iii) surgically exploiting such knowledge to leak information (e.g., by actively evicting shared entries to monitor victim accesses). This approach requires lengthy reverse engineering, repeated for every component and microarchitecture, and does not allow for attacking unknown shared resources. In this paper, we present ABSynthe, a system that takes a target program and a microarchitecture as inputs and auto- matically synthesizes new side channels. The key insight is that by limiting ourselves to (typically on-core) contention-based side channels, we can treat the target CPU microarchitecture as a black box, enabling automation. To make ABSynthe possible, we have automatically generated leakage maps for a variety of x86_64 microarchitectures. These leakage maps show a complex picture of interaction between different x86_64 instructions and justify a black box approach to finding the best sequence of instructions that cause information to leak from a given software target, which we also treat as a black box. To recover the secret information using the optimized sequence of instructions, ABSynthe relies on a recurrent neural network to craft practical side-channel attacks that recover a secret bit stream. Our evaluation shows that ABSynthe can synthesize better attacks by exploiting contention on multiple components at the same time compared to state of the art contention-based attacks that focus on a single component. Furthermore, the automation made possible by ABSynthe allows us to synthesize cross-thread attacks for a variety of microarchitectures (from Intel, AMD and ARM) on four different cryptographic software targets, in both native and virtualized environments. The results show that ABSynthe can recover cryptographic key bit streams with high accuracy. As an example, ABSynthe recovers a full 256-bit EdDSA key from just a single trace capture with 100% success rate on one of our test beds. I. I NTRODUCTION Modern processors provide strong isolation guarantees be- tween distrusting execution contexts at the architectural level of abstraction. These guarantees are unfortunately not enforced at the microarchitectural level. A plenitude of existing side- channel attacks show one can leak secret information (e.g., cryptographic keys) by examining changes made by a victim's execution to the state of shared microarchitectural components such as caches [1, 2, 3, 4, 5], cache directories [6], TLBs [7], and branch predictors [8, 9]. Such attacks are typically based on whitebox side-channel analyses which require heroic reverse engineering efforts to gain a deep understanding of the tar- get component and then craft component-specific exploitation primitives (e.g., the ability to track victim cache accesses by actively forcing evictions). Such manual efforts need to be re- peated for each new component and each (micro)architecture, in search of new, dedicated exploitation primitives. In this paper, we present ABSynthe, an automatic, black box approach towards synthesizing microarchitectural side channels in a more general and sustainable fashion, by exploit- ing contention on shared resources. Its blackbox analysis re- quires no reverse engineering effort on the part of the attacker, and eschews complicated eviction strategies that require deep understanding of the dimensions, organization and policies that govern certain wide-exploited shared resource such as CPU caches. Instead, ABSynthe exploits the insight that the mere presence or absence of contention on shared resources often leads to measurable performance differences. For efficiency reasons, microarchitectures today include a large number of shared resources that may, potentially, serve in side channels attacks. Examples include per-core caches, execution units, and execution ports, but there are many others. Since any of these resources may harbor a side channel, we designed ABSynthe as a generic solution to measure and optimize the information leakage-for any component, software, and (micro)architecture. Interestingly, during our analysis we also found new sources of leakage, including some that we cannot easily associate with a single component. By focusing exclusively on contention-based side channels, ABSynthe can treat the target CPU microarchitecture and its components as black boxes, while synthesizing side channels that are stealthy [10, 11], that are easy to regenerate across different architectures, and that may even combine multiple microarchitectural components to boost the signal and outperform state-of-the-art side-channel attacks. Microarchitectural side-channel attacks Existing microar- chitectural side-channel attacks rely on leakage primitives derived from the reverse engineering of a specific microar- chitectural component. Such whitebox side-channel strategies often take the form of eviction-based attacks-attacks that exploit knowledge of the target component to measure modi- fications made to the microarchitectural state by the victim's secret operation. At their core, these measurements involve Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.23018 www.ndss-symposium.org the eviction of certain state from the component of interest. For example, in FLUSH +RELOAD , the attacker evicts a shared cache line and later checks whether it is reloaded by the victim in a secret operation. While attacks on CPU caches are the most common, attackers may equally target other microarchitectural components, including cache directories [6], TLBs [7], and branch predictors [9]. Some recent efforts, such as PortSmash [10] and SMoTherSpectre [11], show that one can also leak secret information by crafting contention- based attacks that exploit contention on execution ports. The high-level strategy in contention-based attacks is to replace the active evictions of prior efforts with passive monitoring , which also vastly improves the stealthiness of the attack [10]. However, these efforts still rely on exploitation primitives spe- cific to a particular microarchitectural component, in particular execution ports. ABSynthe In this paper, we present the first complete Syn- chronous Multithreading (SMT) leakage maps for different microarchitectures implementing the x86_64 ISA. These leak- age maps show complex interactions between different x86_64 instructions and allow us to make a number of observations. First, there are many different microarchitectural components that leak secret information and allow for practical contention- based attacks. Second, by testing different instructions, we can create contention on arbitrarily different microarchitectural components without any knowledge of the contended com- ponent(s) or of the microarchitecture , opening the door for attack automation. Third, the instructions that create observable contention on one microarchitecture do not necessarily do so on others. This means that contention-based attacks are not always portable across different processors with different microarchitectures. Building on these insights, we present ABSynthe, the first system to automatically synthesize new side-channel attacks on a given microarchitecture and a given software target. To build ABSynthe, we combine a number of novel tech- niques. First, to automatically detect secret-dependent control flows in a given software target, we employ taint analysis similar to DATA [12]. We further refine the analysis by relying on performance monitoring counters to identify the target branches. Once ABSynthe identifies the target branches, it tries to find a sequence of instructions from the leakage maps that maximizes the information leakage from the target branches. ABSynthe relies on a genetic algorithm to find a combination of instructions that create the best contention to leak the maximum amount of information from the target software. The result is a highly optimized target-specific sequence of instructions that performs better than any single instruction used in recent work [10, 11]. Using a number of different cryptographic functions and commodity CPU architectures (Intel, AMD, ARM), we show that ABSynthe is effective in synthesizing practical cross-thread attacks in native and virtu- alized environments. Lastly, ABSynthe employs a Recurrent Neural Network (RNN) for complete cryptographic key bit stream recovery using the synthesized attacks. As we later show with an example, an analyst armed with ABSynthe's results can then recover the final secret key with basic post processing techniques. Like fuzzers and other testing techniques, ABSynthe may primarily serve as a powerful regression testing framework for memory requests Thread 0 micro-operations Merged streams of micro-operations Out-of-order stream of micro-operations Completed micro-operations In-order stream of instructions Thread 1 micro-operations branch uops Frontend Fed by per-thread architectural instruction streams Resource Allocation Reservation Station memory data memory uops BTB PHT TLBload buffers store buffers L1 cache L2 cache L3 cache Retirement Unit Execution Units Fig. 1: Simplified diagram of a superscalar, out-of-order ex- ecution pipeline showing the stream of instructions being dispatched and retired (green, thick arrows), units that hold and process them (red, thick boxes), the memory request and data stream (purple, thin arrows), and their supporting micro- architectural caches and data structures (blue, thin boxes). both hardware vendors to find new side channel leakages in their microarchitectures and software developers to determine if their, say, crypto algorithm is vulnerable to contention-based side channels on a target CPU. Contributions This paper makes the following contributions: • We present the first complete leakage maps for a number of x86_64 microarchitectures in SMT settings which additionally provide us with new insights for building contention-based side-channel attacks. • We present ABSynthe, a fully automated approach for synthesizing side-channel attacks on arbitrary microar- chitectures and software targets (by treating both as blackboxes)-eliminating the need for per-component reverse engineering and enabling a portable, multi- component side-channel analysis on commodity CPUs. • We show that ABSynthe can synthesize side-channel attacks on a variety of cryptographic routines on differ- ent architectures (Intel, AMD, ARM) and environments (native, virtualized) by creating contention on different microarchitectural components. Surprisingly, these attacks perform even better than creating contention on a single specific component as done in prior work [10, 11]. II. B ACKGROUND We discuss the microarchitectures of modern processors to get an overview of shared components across different execu- tion contexts. We then discuss how some of these components are prone to contention-based side channels. A. Microarchitectural components CPUs implement their Instruction Set Architecture (ISA) using microarchitectural components. Such components in- crease in number, size and complexity with each new CPU generation. Given that these components are not visible to software, their low-level details can only be uncovered by careful reverse engineering. Furthermore, the properties of each of these components can change between CPU revisions, without posing compatibility problems for the software, but 2"
+      },
+      {
+        "source": "selected",
+        "value": "The past decade has seen a plethora of side-channel attacks on various CPU components. Each new attack typically follows a whitebox analysis approach, which involves (i) identify- ing a specific shared CPU component, (ii) reversing its behavior on a specific microarchitecture, and (iii) surgically exploiting such knowledge to leak information (e.g., by actively evicting shared entries to monitor victim accesses). This approach requires lengthy reverse engineering, repeated for every component and microarchitecture, and does not allow for attacking unknown shared resources. In this paper, we present ABSynthe, a system that takes a target program and a microarchitecture as inputs and auto- matically synthesizes new side channels. The key insight is that by limiting ourselves to (typically on-core) contention-based side channels, we can treat the target CPU microarchitecture as a black box, enabling automation. To make ABSynthe possible, we have automatically generated leakage maps for a variety of x86_64 microarchitectures. These leakage maps show a complex picture of interaction between different x86_64 instructions and justify a black box approach to finding the best sequence of instructions that cause information to leak from a given software target, which we also treat as a black box. To recover the secret information using the optimized sequence of instructions, ABSynthe relies on a recurrent neural network to craft practical side-channel attacks that recover a secret bit stream. Our evaluation shows that ABSynthe can synthesize better attacks by exploiting contention on multiple components at the same time compared to state of the art contention-based attacks that focus on a single component. Furthermore, the automation made possible by ABSynthe allows us to synthesize cross-thread attacks for a variety of microarchitectures (from Intel, AMD and ARM) on four different cryptographic software targets, in both native and virtualized environments. The results show that ABSynthe can recover cryptographic key bit streams with high accuracy. As an example, ABSynthe recovers a full 256-bit EdDSA key from just a single trace capture with 100% success rate on one of our test beds. I. I NTRODUCTION Modern processors provide strong isolation guarantees be- tween distrusting execution contexts at the architectural level of abstraction. These guarantees are unfortunately not enforced at the microarchitectural level. A plenitude of existing side- channel attacks show one can leak secret information (e.g., cryptographic keys) by examining changes made by a victim's execution to the state of shared microarchitectural components such as caches [1, 2, 3, 4, 5], cache directories [6], TLBs [7], and branch predictors [8, 9]. Such attacks are typically based on whitebox side-channel analyses which require heroic reverse engineering efforts to gain a deep understanding of the tar- get component and then craft component-specific exploitation primitives (e.g., the ability to track victim cache accesses by actively forcing evictions). Such manual efforts need to be re- peated for each new component and each (micro)architecture, in search of new, dedicated exploitation primitives. In this paper, we present ABSynthe, an automatic, black box approach towards synthesizing microarchitectural side channels in a more general and sustainable fashion, by exploit- ing contention on shared resources. Its blackbox analysis re- quires no reverse engineering effort on the part of the attacker, and eschews complicated eviction strategies that require deep understanding of the dimensions, organization and policies that govern certain wide-exploited shared resource such as CPU caches. Instead, ABSynthe exploits the insight that the mere presence or absence of contention on shared resources often leads to measurable performance differences. For efficiency reasons, microarchitectures today include a large number of shared resources that may, potentially, serve in side channels attacks. Examples include per-core caches, execution units, and execution ports, but there are many others. Since any of these resources may harbor a side channel, we designed ABSynthe as a generic solution to measure and optimize the information leakage-for any component, software, and (micro)architecture. Interestingly, during our analysis we also found new sources of leakage, including some that we cannot easily associate with a single component. By focusing exclusively on contention-based side channels, ABSynthe can treat the target CPU microarchitecture and its components as black boxes, while synthesizing side channels that are stealthy [10, 11], that are easy to regenerate across different architectures, and that may even combine multiple microarchitectural components to boost the signal and outperform state-of-the-art side-channel attacks. Microarchitectural side-channel attacks Existing microar- chitectural side-channel attacks rely on leakage primitives derived from the reverse engineering of a specific microar- chitectural component. Such whitebox side-channel strategies often take the form of eviction-based attacks-attacks that exploit knowledge of the target component to measure modi- fications made to the microarchitectural state by the victim's secret operation. At their core, these measurements involve Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.23018 www.ndss-symposium.org the eviction of certain state from the component of interest. For example, in FLUSH +RELOAD , the attacker evicts a shared cache line and later checks whether it is reloaded by the victim in a secret operation. While attacks on CPU caches are the most common, attackers may equally target other microarchitectural components, including cache directories [6], TLBs [7], and branch predictors [9]. Some recent efforts, such as PortSmash [10] and SMoTherSpectre [11], show that one can also leak secret information by crafting contention- based attacks that exploit contention on execution ports. The high-level strategy in contention-based attacks is to replace the active evictions of prior efforts with passive monitoring , which also vastly improves the stealthiness of the attack [10]. However, these efforts still rely on exploitation primitives spe- cific to a particular microarchitectural component, in particular execution ports. ABSynthe In this paper, we present the first complete Syn- chronous Multithreading (SMT) leakage maps for different microarchitectures implementing the x86_64 ISA. These leak- age maps show complex interactions between different x86_64 instructions and allow us to make a number of observations. First, there are many different microarchitectural components that leak secret information and allow for practical contention- based attacks. Second, by testing different instructions, we can create contention on arbitrarily different microarchitectural components without any knowledge of the contended com- ponent(s) or of the microarchitecture , opening the door for attack automation. Third, the instructions that create observable contention on one microarchitecture do not necessarily do so on others. This means that contention-based attacks are not always portable across different processors with different microarchitectures. Building on these insights, we present ABSynthe, the first system to automatically synthesize new side-channel attacks on a given microarchitecture and a given software target. To build ABSynthe, we combine a number of novel tech- niques. First, to automatically detect secret-dependent control flows in a given software target, we employ taint analysis similar to DATA [12]. We further refine the analysis by relying on performance monitoring counters to identify the target branches. Once ABSynthe identifies the target branches, it tries to find a sequence of instructions from the leakage maps that maximizes the information leakage from the target branches. ABSynthe relies on a genetic algorithm to find a combination of instructions that create the best contention to leak the maximum amount of information from the target software. The result is a highly optimized target-specific sequence of instructions that performs better than any single instruction used in recent work [10, 11]. Using a number of different cryptographic functions and commodity CPU architectures (Intel, AMD, ARM), we show that ABSynthe is effective in synthesizing practical cross-thread attacks in native and virtu- alized environments. Lastly, ABSynthe employs a Recurrent Neural Network (RNN) for complete cryptographic key bit stream recovery using the synthesized attacks. As we later show with an example, an analyst armed with ABSynthe's results can then recover the final secret key with basic post processing techniques. Like fuzzers and other testing techniques, ABSynthe may primarily serve as a powerful regression testing framework for memory requests Thread 0 micro-operations Merged streams of micro-operations Out-of-order stream of micro-operations Completed micro-operations In-order stream of instructions Thread 1 micro-operations branch uops Frontend Fed by per-thread architectural instruction streams Resource Allocation Reservation Station memory data memory uops BTB PHT TLBload buffers store buffers L1 cache L2 cache L3 cache Retirement Unit Execution Units Fig. 1: Simplified diagram of a superscalar, out-of-order ex- ecution pipeline showing the stream of instructions being dispatched and retired (green, thick arrows), units that hold and process them (red, thick boxes), the memory request and data stream (purple, thin arrows), and their supporting micro- architectural caches and data structures (blue, thin boxes). both hardware vendors to find new side channel leakages in their microarchitectures and software developers to determine if their, say, crypto algorithm is vulnerable to contention-based side channels on a target CPU. Contributions This paper makes the following contributions: • We present the first complete leakage maps for a number of x86_64 microarchitectures in SMT settings which additionally provide us with new insights for building contention-based side-channel attacks. • We present ABSynthe, a fully automated approach for synthesizing side-channel attacks on arbitrary microar- chitectures and software targets (by treating both as blackboxes)-eliminating the need for per-component reverse engineering and enabling a portable, multi- component side-channel analysis on commodity CPUs. • We show that ABSynthe can synthesize side-channel attacks on a variety of cryptographic routines on differ- ent architectures (Intel, AMD, ARM) and environments (native, virtualized) by creating contention on different microarchitectural components. Surprisingly, these attacks perform even better than creating contention on a single specific component as done in prior work [10, 11]. II. B ACKGROUND We discuss the microarchitectures of modern processors to get an overview of shared components across different execu- tion contexts. We then discuss how some of these components are prone to contention-based side channels. A. Microarchitectural components CPUs implement their Instruction Set Architecture (ISA) using microarchitectural components. Such components in- crease in number, size and complexity with each new CPU generation. Given that these components are not visible to software, their low-level details can only be uncovered by careful reverse engineering. Furthermore, the properties of each of these components can change between CPU revisions, without posing compatibility problems for the software, but 2"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ben Gras",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam Intel Corporation"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Cristiano Giuffrida",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam Intel Corporation"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Michael Kurth",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam Intel Corporation"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Herbert Bos",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam Intel Corporation"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Kaveh Razavi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam Intel Corporation"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ben Gras",
+          "email": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Cristiano Giuffrida",
+          "email": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Michael Kurth",
+          "email": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Herbert Bos",
+          "email": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Kaveh Razavi",
+          "email": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 112,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "ABSynthe: Automatic Blackbox Side-channel Synthesis on Commodity Microarchitectures",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/absynthe-automatic-blackbox-side-channel-synthesis-on-commodity-microarchitectures/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ben Gras",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam, Intel Corporation"
+          ]
+        },
+        {
+          "name": "Cristiano Giuffrida",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Michael Kurth",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Herbert Bos",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Kaveh Razavi",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_abstract_from_pdf",
+      "stage": "abstract_arbitration",
+      "field": "abstract",
+      "source": "pdfplumber_section_boundary"
+    }
+  ]
+}

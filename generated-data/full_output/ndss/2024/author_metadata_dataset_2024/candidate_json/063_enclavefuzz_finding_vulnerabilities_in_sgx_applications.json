@@ -1,0 +1,301 @@
+{
+  "paper_id": "063_enclavefuzz_finding_vulnerabilities_in_sgx_applications",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "EnclaveFuzz: Finding Vulnerabilities in SGX Applications"
+      },
+      {
+        "source": "selected",
+        "value": "EnclaveFuzz: Finding Vulnerabilities in SGX Applications"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Intel's Software Guard Extensions (SGX) offers an isolated execution environment, known as an enclave, where everything outside the enclave is considered potentially malicious, including non-enclave memory region, peripherals, and the operating system. Despite its robust attack model, the code running within enclaves is still prone to common memory corruption vulnerabilities. Moreover, such an attack model may introduce new threats or amplify existing ones. For instance, any direct memory access to untrusted memory from within an enclave can lead to Time-of-Check-Time-of-Use (TOCTOU) bugs since attackers are capable of controlling the whole untrusted memory. Moreover, null-pointer dereference may have a more severe security impact since the zero page controlled by the operating system is also considered malicious. Current fuzzing solutions, such as SGXFuzz and FuzzSGX, have limitations detecting such SGX-specific vulnerabilities. In this paper, we propose EnclaveFuzz, a multi-dimension structure-aware fuzzing framework that analyzes enclave sources to extract input structures and correlations, then generates fuzz harnesses that can produce valid inputs to pass sanity checks. To conduct multi-dimensional fuzzing, EnclaveFuzz creates data for all three input dimensions of an enclave, including both parameters and return values that enter an enclave, as well as direct untrusted memory access from within an enclave. To detect more types of vulnerabilities, we design a new sanitizer to detect both SGX-specific vulnerabilities and typical memory corruption vulnerabilities. Lastly, we provide a custom SDK to accelerate the fuzzing process and execute the enclave without the need for special hardware. To verify the effectiveness of our solution, we applied our work to test 20 real-world open-source enclaves and found 162 bugs in 14 of them."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Intel's Software Guard Extensions (SGX) offers an isolated execution environment, known as an enclave, where everything outside the enclave is considered potentially malicious, including non-enclave memory region, peripherals, and the oper- ating system. Despite its robust attack model, the code running within enclaves is still prone to common memory corruption vulnerabilities. Moreover, such an attack model may introduce new threats or amplify existing ones. For instance, any direct memory access to untrusted memory from within an enclave can lead to Time-of-Check-Time-of-Use (TOCTOU) bugs since attackers are capable of controlling the whole untrusted memory. Moreover, null-pointer dereference may have a more severe security impact since the zero page controlled by the operating system is also considered malicious. Current fuzzing solutions, such as SGXFuzz and FuzzSGX, have limitations detecting such SGX-specific vulnerabilities. In this paper, we propose EnclaveFuzz, a multi-dimension structure-aware fuzzing framework that analyzes enclave sources to extract input structures and correlations, then generates fuzz harnesses that can produce valid inputs to pass sanity checks. To conduct multi-dimensional fuzzing, EnclaveFuzz creates data for all three input dimensions of an enclave, including both parameters and return values that enter an enclave, as well as direct untrusted memory access from within an enclave. To detect more types of vulnerabilities, we design a new sanitizer to detect both SGX-specific vulnerabilities and typical memory corruption vulnerabilities. Lastly, we provide a custom SDK to accelerate the fuzzing process and execute the enclave without the need for special hardware. To verify the effectiveness of our solution, we applied our work to test 20 real-world open-source enclaves and found 162 bugs in 14 of them. I. I NTRODUCTION The Trusted Execution Environment (TEE) is an important security mechanism to protect modern systems. With the help of hardware, TEEs could provide enforced isolation for critical code and data. SGX is one of the most popular TEEs developed by Intel, which provides a secure enclave running within a host application. The enclave is protected by the *The first two authors contributed equally to this work. †Corresponding author: chaoz@tsinghua.edu.cn CPU and could remain secure even if the host application is compromised. More importantly, the attack model of SGX even assumes that everything except the CPU itself could be malicious, including the operating system, peripherals, etc. Such assumptions make SGX attractive for users seeking top- level security. For example, Signal [1] application utilizes SGX for contact discovery service to protect private contact information. Although SGX provides such a robust attack model at the system level, many SGX applications are developed in C/C++, which are prone to memory vulnerabilities like buffer overflow, use-after-free, etc. What is worse, the special attack model may bring new vulnerabilities to SGX applications or make some vulnerabilities more prevalent. For example, null pointer dereference, which usually considered as a bug, can potentially transform into a vulnerability within the SGX environment. The reason is that the zero address falls under the control of an untrusted operating system. Such a subtle, yet crucial difference in SGX's attack model amplifies the security risks of such common bugs. Consequently, researchers and developers are actively pur- suing automated techniques for bug detection within SGX applications. Fuzzing is one of the most powerful techniques to find bugs in software. However, current fuzzing solutions meet several roadblocks while testing enclaves. To test an enclave, SGXFuzz [2] tests enclave binaries as a black box and tries to recover the input structure from page-fault feedback. However, it may fail for the following reasons. First, the SGX SDK will encapsulate the developer's code and automatically add sanity checks for enclave inputs. More specifically, the SGX SDK generates bridge code according to Enclave Definition Language (EDL) files provided by developers for both host application and enclave. The bridge code contains input sanity checks and will reject illegal inputs, which makes fuzz ineffi- cient. A fuzzer without knowledge of the exact input structure may waste time to bypass those checks or even worse never reach the developer's code. Also, although SGXFuzz could guess input parameter structures with page fault feedback, it may still lead to insufficient fuzzing due to a lack of input dimensions. As one SGX application is consisted of two components, host application and enclave, those two parts rely on two special types of function calls to communicate with each other, which are ECalls (call from host appli- Network and Distributed System Security (NDSS) Symposium 2024 https://dx.doi.org/10.14722/ndss.2024.24819 www.ndss-symposium.org cation to enclave) and OCalls (call from enclave to host application). More importantly, both parameters and return values of ECalls and OCalls are directional. Specifically, both parameters of ECalls and return values of OCalls are considered as inputs of enclave. Besides that, the enclave shares the same process memory space with host application and any direct untrusted memory access is also considered as input of enclave. FuzzSGX [3] tries to extract input structures and test enclaves via host mutations but both of them do not consider untrusted memory access. Second, the whole fuzzing process heavily relies on bug oracles to monitor the program execution state and identify potential bugs. However, SGXFuzz relies solely on page fault signals for error detection, which inevitably introduces false negatives. And the sanitizers utilized by FuzzSGX cannot detect SGX-specific vulnerabilities well. Lastly, although the enclave is loaded by the host application during startup, the enclave maintains its own separate heap and stack memory regions. To make it possible, each enclave contains redundant memory management routines as well as context-switching mechanisms, which will greatly slow down the fuzzing process. To address these challenges, we propose EnclaveFuzz, a multi-dimension structure-aware fuzzing framework, which extracts input structures from enclave sources and performs fuzzing across multiple input dimensions of an enclave. Specifically, to achieve more code coverage, EnclaveFuzz extracts input structures and automatically generates harnesses capable of creating valid inputs that bypass sanity checks. To trigger more bugs, EnclaveFuzz analyzes enclave's trust boundaries to identify input dimensions of enclaves and feeds fuzzing to all three input dimensions of enclaves, including ECall input, returned value of OCall, and untrusted mem- ory access from enclave. Also, to detect more types of bugs, EnclaveFuzz incorporates a sanitizer that could detect both memory corruption bugs and SGX-specific vulnerabilities, in- cluding null pointer dereference and Time-of-Check-Time-of- Use (TOCTOU). Moreover, to speed up fuzzing, EnclaveFuzz provides an optimized SGX SDK which is compatible with Intel's official one and eliminates the redundant memory man- agement and context switch routines, and it also encapsulates the enclave as a standard shared object (.so) to perform fuzzing without special SGX hardware requirements. Our experiment shows structure-aware inputs of Enclave- Fuzz can enhance the success rate of reaching developers' code, achieving an average success rate of nearly 99%, which is 2.94 times higher than that of SGXFuzz. Additionally, it leads to a 3.62 times increase in code coverage compared to SGXFuzz. Moreover, the optimized SDK could speed up fuzzing by 6.91 times on average. As a result, EnclaveFuzz finds 162 bugs across 14 SGX applications, including both memory corruption bugs and SGX-specific vulnerabilities. In summary, we have made the following contributions: 1) We propose a multi-dimensions structure-aware fuzzing framework EnclaveFuzz, that can effectively find the vulnerabilities for the SGX applications. 2) We optimize the SGX SDK to speed up fuzzing, improv- ing the efficiency of fuzzing in detecting vulnerabilities. 3) We design and implement an SGX-specific sanitizer that can detect both memory corruption and SGX-specific vulnerabilities. II. B ACKGROUND With the rapid growth of cloud computing services, people tend to build their applications on shared resources. Nev- ertheless, potential attacks from other tenants or even the service provider can raise concerns. A TEE is an isolation solution to such problems. SGX is Intel's implementation of the TEE, which provides users with a hardware-protected user mode enclave to process sensitive data. SGX holds a robust threat model that anything except the enclave itself and CPU is untrusted, including the operating system (OS), peripheral devices, et al. This section will briefly explain how SGX works and intro- duce the fuzzing technique to help understand EnclaveFuzz. A. Intel Software Guard Extensions (SGX) Fundamentally, SGX is a set of instructions that can es- tablish a CPU-protected memory area for the execution and storage of critical code and data. To streamline the devel- opment of SGX applications, Intel provides an SGX SDK for developers, which contains enclave management routine code, C/C++ runtimes, and other auxiliary tools. A developer needs to specify interfaces using Enclave Definition Language (EDL) and generate bridge code for both the host application and enclave. Subsequently, the host application and enclave are compiled into two separate binaries. The host application binary is a standard executable file depending on the OS, for example, ELF (executable and linkable format) under the Linux platform. The enclave binary image will be signed cryp- tographically and the booted enclave instance can be attested remotely, which means developers can verify the enclave's executing environment is trusted by querying Intel's attestation servers or their own ones. Those mechanisms ensure the security of enclaves while transferring and loading. While enclave creating, it is loaded into Enclave Page Cache (EPC), which is in Processor Reserved Memory (PRM). The contents of EPC memory are encrypted and can only be decrypted within the CPU, which enforces the enclave security during runtime, as Figure 1 shows. SGX memory model and runtime routines: The memory model of an SGX application differs from a standard user- space program. As Figure 1 shows, the enclave shares the same virtual address space with the host application during runtime. The whole enclave, including its control structures, sensitive data et al., is placed in a contiguous virtual memory space named Enclave Linear Address Range (ELRANGE). The SGX Enclave Control Structure (SECS) represents the identification of each enclave, the number of Thread Control Structures (TCS) decides the maximum number of concurrent threads running at the same time. More importantly, the enclave holds 2"
+      },
+      {
+        "source": "selected",
+        "value": "Intel's Software Guard Extensions (SGX) offers an isolated execution environment, known as an enclave, where everything outside the enclave is considered potentially malicious, including non-enclave memory region, peripherals, and the operating system. Despite its robust attack model, the code running within enclaves is still prone to common memory corruption vulnerabilities. Moreover, such an attack model may introduce new threats or amplify existing ones. For instance, any direct memory access to untrusted memory from within an enclave can lead to Time-of-Check-Time-of-Use (TOCTOU) bugs since attackers are capable of controlling the whole untrusted memory. Moreover, null-pointer dereference may have a more severe security impact since the zero page controlled by the operating system is also considered malicious. Current fuzzing solutions, such as SGXFuzz and FuzzSGX, have limitations detecting such SGX-specific vulnerabilities. In this paper, we propose EnclaveFuzz, a multi-dimension structure-aware fuzzing framework that analyzes enclave sources to extract input structures and correlations, then generates fuzz harnesses that can produce valid inputs to pass sanity checks. To conduct multi-dimensional fuzzing, EnclaveFuzz creates data for all three input dimensions of an enclave, including both parameters and return values that enter an enclave, as well as direct untrusted memory access from within an enclave. To detect more types of vulnerabilities, we design a new sanitizer to detect both SGX-specific vulnerabilities and typical memory corruption vulnerabilities. Lastly, we provide a custom SDK to accelerate the fuzzing process and execute the enclave without the need for special hardware. To verify the effectiveness of our solution, we applied our work to test 20 real-world open-source enclaves and found 162 bugs in 14 of them."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Liheng Chen",
+          "email": "chenliheng21@mails.ucas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences",
+            "School of Cyber Security, University of Chinese Academy of Sciences",
+            "Institute for Network Sciences, Cyberspace of Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Zheming Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Zheyu Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences, Cyberspace of Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yuan Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences, Cyberspace of Tsinghua University",
+            "Zhongguancun Laboratory"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Baojian Chen",
+          "email": "chenbaojian20@mails.ucas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences",
+            "School of Cyber Security, University of Chinese Academy of Sciences",
+            "Institute for Network Sciences, Cyberspace of Tsinghua University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Chao Zhang",
+          "email": "chaoz@tsinghua.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "Institute for Network Sciences, Cyberspace of Tsinghua University",
+            "Zhongguancun Laboratory"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Liheng Chen",
+          "email": "chenliheng21@mails.ucas.ac.cn",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences.",
+            "School of Cyber Security, University of Chinese Academy of Sciences.",
+            "Institute for Network Sciences and Cyberspace of Tsinghua University."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zheming Li",
+          "email": "lizm20@mails.tsinghua.edu.cn",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace of Tsinghua University."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Zheyu Ma",
+          "email": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace of Tsinghua University."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yuan Li",
+          "email": "",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace of Tsinghua University.",
+            "Zhongguancun Laboratory."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Baojian Chen",
+          "email": "chenbaojian20@mails.ucas.ac.cn",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences.",
+            "School of Cyber Security, University of Chinese Academy of Sciences."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Chao Zhang",
+          "email": "chaoz@tsinghua.edu.cn",
+          "affiliations": [
+            "Institute for Network Sciences and Cyberspace of Tsinghua University.",
+            "Zhongguancun Laboratory."
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 88,
+      "author_count": 6,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.0,
+        "candidates": [
+          {
+            "name": "Liheng Chen",
+            "block_id": "pdfplumber:p1:b8",
+            "font_size": 10.959,
+            "support_ids": []
+          }
+        ],
+        "fully_supported": false,
+        "anchored_existing_count": 1
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Liheng Chen",
+          "block_id": "pdfplumber:p1:b8",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 6,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "EnclaveFuzz: Finding Vulnerabilities in SGX Applications",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/enclavefuzz-finding-vulnerabilities-in-sgx-applications/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Liheng Chen",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences; School of Cyber Security, University of Chinese Academy of Sciences; Institute for Network Science and Cyberspace of Tsinghua University"
+          ]
+        },
+        {
+          "name": "Zheming Li",
+          "affiliations": [
+            "Institute for Network Science and Cyberspace of Tsinghua University"
+          ]
+        },
+        {
+          "name": "Zheyu Ma",
+          "affiliations": [
+            "Institute for Network Science and Cyberspace of Tsinghua University"
+          ]
+        },
+        {
+          "name": "Yuan Li",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        },
+        {
+          "name": "Baojian Chen",
+          "affiliations": [
+            "Institute of Information Engineering, Chinese Academy of Sciences; School of Cyber Security, University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Chao Zhang",
+          "affiliations": [
+            "Tsinghua University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Zheming Li",
+      "field": "email",
+      "restored_value": "lizm20@mails.tsinghua.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Chao Zhang",
+      "field": "email",
+      "restored_value": "chaoz@tsinghua.edu.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

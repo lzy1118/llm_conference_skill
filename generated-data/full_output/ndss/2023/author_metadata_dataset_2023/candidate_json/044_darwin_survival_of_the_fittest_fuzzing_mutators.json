@@ -1,0 +1,253 @@
+{
+  "paper_id": "044_darwin_survival_of_the_fittest_fuzzing_mutators",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "DARWIN: Survival of the Fittest Fuzzing Mutators"
+      },
+      {
+        "source": "selected",
+        "value": "DARWIN: Survival of the Fittest Fuzzing Mutators"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fuzzing is an automated software testing technique broadly adopted by the industry. A popular variant is mutationbased fuzzing, which discovers a large number of bugs in practice. While the research community has studied mutationbased fuzzing for years now, the algorithms' interactions within the fuzzer are highly complex and can, together with the randomness in every instance of a fuzzer, lead to unpredictable effects. Most efforts to improve this fragile interaction focused on optimizing seed scheduling. However, real-world results like Google's FuzzBench highlight that these approaches do not consistently show improvements in practice. Another approach to improve the fuzzing process algorithmically is optimizing mutation scheduling. Unfortunately, existing mutation scheduling approaches also failed to convince because of missing real-world improvements or too many user-controlled parameters whose configuration requires expert knowledge about the target program. This leaves the challenging problem of cleverly processing test cases and achieving a measurable improvement unsolved. We present DARWIN, a novel mutation scheduler and the first to show fuzzing improvements in a realistic scenario without the need to introduce additional user-configurable parameters, opening this approach to the broad fuzzing community. DARWIN uses an Evolution Strategy to systematically optimize and adapt the probability distribution of the mutation operators during fuzzing. We implemented a prototype based on the popular general-purpose fuzzer AFL. DARWIN significantly outperforms the state-of-the-art mutation scheduler and the AFL baseline in our own coverage experiment, in FuzzBench, and by finding 15 out of 21 bugs the fastest in the MAGMA benchmark. Finally, DARWIN found 20 unique bugs (including one novel bug), 66% more than AFL, in widely-used real-world applications."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fuzzing is an automated software testing technique broadly adopted by the industry. A popular variant is mutation- based fuzzing, which discovers a large number of bugs in practice. While the research community has studied mutation- based fuzzing for years now, the algorithms' interactions within the fuzzer are highly complex and can, together with the randomness in every instance of a fuzzer, lead to unpredictable effects. Most efforts to improve this fragile interaction focused on optimizing seed scheduling. However, real-world results like Google's FuzzBench highlight that these approaches do not consistently show improvements in practice. Another approach to improve the fuzzing process algorithmically is optimizing mutation scheduling. Unfortunately, existing mutation scheduling approaches also failed to convince because of missing real-world improvements or too many user-controlled parameters whose configuration requires expert knowledge about the target pro- gram. This leaves the challenging problem of cleverly processing test cases and achieving a measurable improvement unsolved. We present DARWIN, a novel mutation scheduler and the first to show fuzzing improvements in a realistic scenario without the need to introduce additional user-configurable parameters, open- ing this approach to the broad fuzzing community. DARWIN uses an Evolution Strategy to systematically optimize and adapt the probability distribution of the mutation operators during fuzzing. We implemented a prototype based on the popular general-purpose fuzzer AFL. DARWIN significantly outperforms the state-of-the-art mutation scheduler and the AFL baseline in our own coverage experiment, in FuzzBench, and by finding 15 out of 21 bugs the fastest in the MAGMA benchmark. Finally, DARWIN found 20 unique bugs (including one novel bug), 66% more than AFL, in widely-used real-world applications. I. I NTRODUCTION Vulnerabilities caused by programming errors are still a major threat to today's programs [47]. An important class of programming errors is memory corruption vulnerabilities, where unexpected, malformed inputs can lead to uncontrolled behavior in the program, which can often be abused by attackers. A modern, cost-efficient strategy to uncover these programming errors is automated software testing using fuzz testing (commonly known as fuzzing). Fuzzing automatically generates inputs from testcases and feeds them to the program under test while monitoring the program. If a programming er- ror has been reached, the fuzzer notices that the program hangs or crashes. Optionally, the observed control-flow changes can serve as feedback for the next iteration, i.e., whether a new path in the control flow (known as coverage) has been taken due to the generated input. In recent years, fuzzers emerged as an important topic in academic as well as industrial research and are nowadays widely used for finding bugs in commercial software [41], [28]. Projects like Google OSSFuzz [28] helped to significantly increase the adoption rate by offering free com- putation for fuzzing while still allowing security researchers, who provide the fuzzers, to keep the bug bounty for discovered vulnerabilities. While fuzzers are responsible for discovering tremendous amounts of bugs, even in operating system kernels [62], they are still extensively researched, e.g., in the areas of making targets available to fuzz testing [69], [20], improving fuzzers using new algorithms [7], [11], [38], [39], [37], [51], and leveraging new hardware features for performance or coverage improvements [56], [13]. This paper focuses on the subject of algorithmic improve- ments for mutational fuzzers, which leverage an existing set of testcases (referred to as corpus) to constantly generate new variants of these testcases by applying mutation operators inspired by genetic mutations. Most notably, a significant number of works focused on the effects of algorithmically sampling a subset of optimal seeds from the corpus. The goals of these works range from removing redundancy to creating a minimal coverage-preserving corpus with small files [67], [48], efficiently reaching specific locations in the control-flow graph [7], [11], [70], or improving coverage in general [44]. While these approaches are designed to select from a large number of possible testcases, in reality, testcases suitable for fuzzing are often rare [29]. Aside from seed-selection algorithms, other approaches have been proposed [37], [38], [51] that approximate which byte positions in the testcase give the best results when being mutated, but not which mutation operators to apply. Yet, this problem is highly challenging, as it is required to be shown whether 1) mutation selection is actually target-dependent, 2) the selection distribution is static or dynamic, 3) introducing an optimization algorithm reduces execution speed s.t. its better mutation selection is outweighed. The first approach to optimize the actual selection of muta- tions (mutation scheduling) has been MO PT [39]. MOPT pro- poses a variant of the Particle Swarm Optimization algorithm (PSO) to learn a globally optimal mutation probability distri- bution. However, MO PT's PSO algorithm has both local and global best probability distributions, making finding the best solution, and therefore the algorithm itself, complex and more expensive to use during fuzzing. Similar to other algorithmic Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.23159 www.ndss-symposium.org improvements to fuzzing, finding a practical trade-off between complexity and algorithmic improvements is challenging. All additional algorithms have direct implications on execution speed, and hence, reduce coverage over time. Further, MO PT introduces various user-configurable parameters that steer the optimization process directly, so the user needs to solve another complex problem instead to avoid non-optimal scheduling. For a reasonable choice of parameters, the user either needs expert knowledge of the target application or a preliminary fuzzing campaign. Finally, MO PT fails to outperform AFL, which is built on, in the popular FuzzBench fuzzer benchmark by Google [27]. This makes designing and building a practical mutation scheduler a challenging open problem. This work. This paper focuses on one aspect of the fuzzing process: finding (approx.) optimal mutation scheduling strategies to improve fuzzing algorithmically. Here, the challenging goal is to infer which mutation operator is the optimal choice for the next fuzzing iteration. We address this problem with DARWIN, a novel mutation-scheduling algorithm to improve the general performance of mutational fuzzers. DARWIN leverages an Evolution Strategy (ES), in a setting similar to reinforcement learning, to approximate ideal probability distribution for the mutation operator selection to avoid wasting fuzzing iterations on suboptimal mutators. The resulting probability distribution is not statically set but learned during the fuzzing process and dynamically adapted to the target program. DARWIN outperforms related work significantly, not only in coverage but also in the time to find bugs, without the user having to adjust any target-specific parameters, which allows non-expert users to leverage mutation scheduling. Challenges. Although we focus only on a specific phase of the fuzzing process, namely the mutation selection in the havoc phase, the problem of finding an optimal probability distribution for mutation selection is highly challenging: numerous mutation operators can be used, and their efficiency varies depending on the target program, the current input, and the state inherently implied by the current input. Furthermore, the efficiency can vary depending on the non-deterministic nature of each fuzzing run and the interplay between fuzzing stages. Therefore, it is impossible to examine all possible options exhaustively in the general case. Contributions. Our DARWIN mutation scheduler and its implementation based on AFL tackle all these challenges. To summarize, our main contributions include: • We present a novel mutation scheduling approach, DAR- WIN; the first mutation scheduler that leverages a variant of Evolution Strategy to optimize the probability distri- bution of mutation operators. DARWIN dramatically im- proves the efficiency of mutation selection while keeping the execution speed constant. DARWIN can be applied to any feedback-guided mutation-based fuzzer. • We implemented a prototype of DARWIN by extend- ing AFL with our mutation scheduling algorithm. By modifying only three code lines in AFL to integrate our DARWIN mutation scheduler, we show that DAR- WIN's design is easily adoptable by existing fuzzers. We further highlight this by also integrating DARWIN in EcoFuzz[67]. What is more, we do not introduce any additional user-configurable parameters to avoid creating adoption barriers. • We thoroughly evaluate DARWIN against AFL as a base- line and the most recent related work in this area, MO PT. Our prototype significantly outperforms both fuzzers, MOPT and AFL, in terms of code coverage reached in the well-fuzzed GNU binutils suite. Next, DARWIN is the first mutation scheduler to outperform its base fuzzer in Google's Fuzzbench. Further, we evaluate DARWIN on MAGMA, where we show that DARWIN triggers 15 out of the 21 bugs found the fastest. Finally, DARWIN finds 20 unique bugs (including one previously unreported bug), 66% more than AFL, across various real-world targets. • We thoroughly analyze the root causes for DARWIN's efficiency by first comparing DARWIN to a static pre- optimized mutation probability distribution, and further, studying the mutation probability distribution over time, and introducing a metric to measure a fuzzer's effective- ness in scheduling mutations. We show that DARWIN needs fewer mutations than AFL to reach a coverage point while achieving a higher execution speed than the state- of-the-art MOPT fuzzer. To foster future research in this area, we open-source our fuzzer at https://github.com/TUDA-SSL/DARWIN. II. B ACKGROUND This section presents the necessary background information to understand the general concept of fuzzers, the workflow of mutation-based fuzzers, and metaheuristic optimization. A. Fuzzing On a high level, fuzzers can be divided into mutational, i.e., mutating testcases, and generational, i.e., deriving structured inputs, fuzzers. Mutational fuzzing requires a set ( corpus) of program inputs ( seeds), which can, e.g., be obtained from testcases or real inputs. These seeds are then mutated using operations known from genetics, like inserting random errors (bit flips), changing values to corner cases, or combining two inputs to create a new input. As this way of input generation does not follow any constraints on the input, the generated inputs are more unlikely to pass, e.g., initial parser checks or checksums [63]. The process of mutation can be influenced in two ways: 1) the location in the input that gets mutated and 2) the mutation that is applied, whereby the selection can either be made randomly or guided by a heuristic. Such a heuristic can be, e.g., success measured in an increase of coverage or a certain state that should be reached (where the target has been tainted to find a clear path to that state). For example, the popular AFL fuzzer uses the coverage metric of basic-block transitions as a heuristic [29]. B. Fuzzing Loop of Mutational Fuzzers For mutational fuzzers, the so-called fuzzing loop, which is the place in the code where the loaded seeds are mutated before being used as inputs for the program under test, usually can be divided into three stages, the deterministic, havoc, and splicing stage [56], [7], [11], [39], [4]. While some aspects are 2"
+      },
+      {
+        "source": "selected",
+        "value": "Fuzzing is an automated software testing technique broadly adopted by the industry. A popular variant is mutationbased fuzzing, which discovers a large number of bugs in practice. While the research community has studied mutationbased fuzzing for years now, the algorithms' interactions within the fuzzer are highly complex and can, together with the randomness in every instance of a fuzzer, lead to unpredictable effects. Most efforts to improve this fragile interaction focused on optimizing seed scheduling. However, real-world results like Google's FuzzBench highlight that these approaches do not consistently show improvements in practice. Another approach to improve the fuzzing process algorithmically is optimizing mutation scheduling. Unfortunately, existing mutation scheduling approaches also failed to convince because of missing real-world improvements or too many user-controlled parameters whose configuration requires expert knowledge about the target program. This leaves the challenging problem of cleverly processing test cases and achieving a measurable improvement unsolved. We present DARWIN, a novel mutation scheduler and the first to show fuzzing improvements in a realistic scenario without the need to introduce additional user-configurable parameters, opening this approach to the broad fuzzing community. DARWIN uses an Evolution Strategy to systematically optimize and adapt the probability distribution of the mutation operators during fuzzing. We implemented a prototype based on the popular general-purpose fuzzer AFL. DARWIN significantly outperforms the state-of-the-art mutation scheduler and the AFL baseline in our own coverage experiment, in FuzzBench, and by finding 15 out of 21 bugs the fastest in the MAGMA benchmark. Finally, DARWIN found 20 unique bugs (including one novel bug), 66% more than AFL, in widely-used real-world applications."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Patrick Jauernig",
+          "email": "patrick.jauernig@sanctuary.dev",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Darmstadt, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Domagoj Jakobovic",
+          "email": "domagoj.jakobovic@fer.hr",
+          "orcid": "",
+          "affiliations": [
+            "University of Zagreb, Croatia"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Stjepan Picek",
+          "email": "picek.stjepan@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Radboud University and TU, Delft, The Netherlands"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Emmanuel Stapf",
+          "email": "emmanuel.stapf@sanctuary.dev",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Darmstadt, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Ahmad-Reza Sadeghi",
+          "email": "ahmad.sadeghi@trust.tu-darmstadt.de",
+          "orcid": "",
+          "affiliations": [
+            "Technical University of Darmstadt, Germany"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Patrick Jauernig",
+          "email": "patrick.jauernig@sanctuary.dev",
+          "affiliations": [
+            "Technical University of Darmstadt, Germany"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Domagoj Jakobovic",
+          "email": "domagoj.jakobovic@fer.hr",
+          "affiliations": [
+            "University of Zagreb, Croatia"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Stjepan Picek",
+          "email": "picek.stjepan@gmail.com",
+          "affiliations": [
+            "Radboud University and TU Delft, The, Netherlands"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Emmanuel Stapf",
+          "email": "emmanuel.stapf@sanctuary.dev",
+          "affiliations": [
+            "Technical University of Darmstadt, Germany"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Ahmad-Reza Sadeghi",
+          "email": "ahmad.sadeghi@trust.tu-darmstadt.de",
+          "affiliations": [
+            "Technical University of Darmstadt, Germany"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 123,
+      "author_count": 5,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 4,
+          "author": "Ahmad-Reza Sadeghi",
+          "block_id": "pdf:p1:b5",
+          "match_score": 0.75
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "DARWIN: Survival of the Fittest Fuzzing Mutators",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/darwin-survival-of-the-fittest-fuzzing-mutators/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Patrick Jauernig",
+          "affiliations": [
+            "Technical University of Darmstadt"
+          ]
+        },
+        {
+          "name": "Domagoj Jakobovic",
+          "affiliations": [
+            "University of Zagreb, Croatia"
+          ]
+        },
+        {
+          "name": "Stjepan Picek",
+          "affiliations": [
+            "Radboud University and TU Delft"
+          ]
+        },
+        {
+          "name": "Emmanuel Stapf",
+          "affiliations": [
+            "Technical University of Darmstadt"
+          ]
+        },
+        {
+          "name": "Ahmad-Reza Sadeghi",
+          "affiliations": [
+            "Technical University of Darmstadt"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Ahmad-Reza Sadeghi",
+      "field": "email",
+      "restored_value": "ahmad.sadeghi@trust.tu-darmstadt.de",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 4,
+      "country_values_restored": 4,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

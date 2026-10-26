@@ -1,0 +1,403 @@
+{
+  "paper_id": "236_no_privacy_left_outside_on_the_in_security_of_tee_shielded_dnn_partition_for_on_device_ml",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "No Privacy Left Outside: On the (In-)Security of TEE-Shielded DNN Partition for On-Device ML"
+      },
+      {
+        "source": "selected",
+        "value": "No Privacy Left Outside: On the (In-)Security of TEE-Shielded DNN Partition for On-Device ML"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "On-device ML introduces new security challenges: DNN models become white-box accessible to device users. Based on white-box information, adversaries can conduct effective model stealing (MS) against model weights and membership inference attack (MIA) against training data privacy. Using Trusted Execution Environments (TEEs) to shield ondevice DNN models aims to downgrade (easy) white-box attacks to (harder) black-box attacks. However, one major shortcoming of TEEs is the sharply increased latency (up to 50×). To accelerate TEE-shield DNN computation with GPUs, researchers proposed several model partition techniques. These solutions, referred to as TEE-Shielded DNN Partition (TSDP), partition a DNN model into two parts, offloading 1 the privacyinsensitive part to the GPU while shielding the privacy-sensitive part within the TEE. However, the community lacks an indepth understanding of the seemingly encouraging privacy guarantees offered by existing TSDP solutions during DNN inference. This paper benchmarks existing TSDP solutions using both MS and MIA across a variety of DNN models, datasets, and metrics. We show important findings that existing TSDP solutions are vulnerable to privacy-stealing attacks and are not as safe as commonly believed. We also unveil the inherent difficulty in deciding the optimal DNN partition configurations, which vary across datasets and models. Based on lessons harvested from the experiments, we present TEESLICE, a novel TSDP method that defends against MS and MIA during DNN inference. Unlike existing approaches, TEESLICE follows a partition-before-training strategy, which allows for accurate separation between privacy-related weights from public weights. TEESLICE delivers the same security protection as shielding the entire DNN model inside TEE (the \"upper-bound\" security guarantees) with over 10× less overhead (in both experimental and real-world environments) than prior TSDP solutions and no accuracy loss. We make the code and artifacts publicly available on the Internet. 1. In this paper, \"offload\" refers to executing computation-intensive DNN operations on insecure devices with strong computation ability (e.g. GPUs), rather than secure devices with weak computation ability (e.g. TEEs). 3327 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "On-device ML introduces new security challenges: DNN models become white-box accessible to device users. Based on white-box information, adversaries can conduct ef- fective model stealing (MS) against model weights and mem- bership inference attack (MIA) against training data privacy. Using Trusted Execution Environments (TEEs) to shield on- device DNN models aims to downgrade (easy) white-box attacks to (harder) black-box attacks. However, one major shortcoming of TEEs is the sharply increased latency (up to 50×). To accelerate TEE-shield DNN computation with GPUs, researchers proposed several model partition techniques. These solutions, referred to as TEE-Shielded DNN Partition (TSDP), partition a DNN model into two parts, offloading 1 the privacy- insensitive part to the GPU while shielding the privacy-sensitive part within the TEE. However, the community lacks an in- depth understanding of the seemingly encouraging privacy guarantees offered by existing TSDP solutions during DNN inference. This paper benchmarks existing TSDP solutions using both MS and MIA across a variety of DNN models, datasets, and metrics. We show important findings that exist- ing TSDP solutions are vulnerable to privacy-stealing attacks and are not as safe as commonly believed. We also unveil the inherent difficulty in deciding the optimal DNN parti- tion configurations, which vary across datasets and models. Based on lessons harvested from the experiments, we present TEES LICE , a novel TSDP method that defends against MS and MIA during DNN inference. Unlike existing approaches, TEES LICE follows a partition-before-training strategy, which allows for accurate separation between privacy-related weights from public weights. TEES LICE delivers the same security protection as shielding the entire DNN model inside TEE (the “upper-bound” security guarantees) with over 10× less overhead (in both experimental and real-world environments) than prior TSDP solutions and no accuracy loss. We make the code and artifacts publicly available on the Internet. 1. In this paper, “offload” refers to executing computation-intensive DNN operations on insecure devices with strong computation ability (e.g. GPUs), rather than secure devices with weak computation ability ( e.g. TEEs). 1. Introduction On-device machine learning (ML) has become an impor- tant paradigm for latency- and privacy-sensitive tasks [93], [110], [28], [92] on mobile and IoT devices. However, on- device learning also introduces new security threats to the deployed deep neural network (DNN) models: by making DNN models white-box accessible to device users , adver- saries can obtain full model information and easily achieve high attack accuracy with much less cost for representa- tive attacks like Model Stealing (MS) and Membership Inference Attack (MIA) [42], [77], [46], [80], [19], [57]. Therefore, one key objective for hardening on-device ML is to prevent adversaries from accessing the on-device models, thereby downgrading white-box MS and MIA attacks to black-box (much harder) settings [42], [68], [40], [92]. Unfortunately, protecting on-device DNN models is par- ticularly challenging due to the security-and-utility trade-off. Algorithmic-level protections, such as Multi-Party Compu- tation (MPC) [48], Homomorphic Encryption (HE) [32], Regularization [72], and Differential Privacy (DP) [29], are not applicable since they are either too computationally expensive for mobile and IoT devices, or downgrade the accuracy of the protected models significantly [42], [94]. Employing Trusted Execution Environments (TEEs) [37], [56], [50], [59] to directly host DNN models is also not practical, because shielding the whole DNN model in TEEs (shielding-whole-model) leads to about 50× deduction in model speed due to TEE's limited computation speed [94]. While protecting an entire DNN model with TEEs is infeasible for on-device ML, recent works have advocated to protect privacy-related portion of a DNN model to offer high utility and security. In particular, researchers propose TEE- shielded DNN partition (TSDP), which only puts a subset of the DNN model in TEEs and offloads the rest computation on GPUs [68], [40], [85], [92]. Existing research broadly assumes that the offloaded part is insufficient to expose critical private information of DNN models, meaning the exposed model parts do not leak substantially more in- formation than a black-box interface. However, we argue 3327 DOI 10.1109/SP54263.2024.00052 that this assumption is questionable given a practical threat model where adversaries have access to abundant public information on the Internet, such as pre-trained models and public datasets [24], [22], [99]. To exploit TSDP, adversaries may use public information to analyze the offloaded model parts and acquire more privacy than only analyzing black- box outputs, breaking the promises of TSDP. Nevertheless, none of existing approaches have systematically evaluated their security promise when taking public information into account. This paper conducts the first systematic empirical eval- uation on the security of TSDP approaches. We first inves- tigate papers published between 2018-2023 in prestigious RTSS, MICRO, AAAI, ICLR, MICRO, and TDSC. We then put the reviewed approaches into five categories based on their technical pipelines, and empirically evaluated each category with MS/MIA initiated by a practical adversary with public information on hand. The experiment shows that existing TSDP approaches expose substantial private information to attackers via the offloaded model weights, enabling approximately white-box quality attacks toward TEE shielded models. MS attack accuracies toward existing TSDP solutions are 3.76× - 3.92× higher than the black-box (shielding-whole-model) baseline. For comparison, the unprotected white-box base- line (offloading an entire DNN model outside TEE) has a 4.24× higher accuracy than the shielding-whole-model setting. The results for MIA are similar. Existing TSDP approaches have 1.16× - 1.28× higher MIA accuracy in comparison to the shielding-whole-model baseline, while the accuracy for the white-box setting is 1.36× higher. Worse still, we encountered high difficulties to augment the security of existing TSDP approaches without making substantial changes to their methodologies. To illustrate this, we measured the attack accuracy of MS/MIA using various configurations of existing TSDP approaches. We found it particularly difficult to determine a “sweet spot” configura- tion, that can maximize a DNN model's utility while still satisfying security requirements. Specifically, given a max- imally tolerant attack accuracy, existing TSDP approaches require substantially different settings to config the shielded part when protecting different models and datasets. There- fore, for all existing TSDP approaches, we need to conduct an empirical procedure to identify the “sweet spot” con- figuration for specific models and datasets. However, such empirical procedures are prohibitively expensive, given the vast number of potential model and dataset combinations. The fundamental weakness of existing TSDP approaches is that they follow a training-before-partition strategy. This involves first training a private model with a public pre- trained model and private data, and then separating the model into two parts: a shielded part that runs in TEEs, and an offloaded part that runs out of TEEs. Since training occurs before model partition, privacy-related weights may likely pervade the entire model. Thus, it is hard for ex- isting TSDP solutions to accurately isolate privacy-related weights, creating potential attack surfaces. To ensure the security of TSDP solutions, we propose a slicing-based approach, called TEES LICE , that accurately isolates privacy-related weights from offloaded weights at the inference stage. TEES LICE adopts a partition-before- training strategy, which first partitions a DNN model into a backbone and multiple private slices, then reuses public pre-trained models as the backbone, and at last trains the slices with private data. Therefore, TEES LICE accurately separates privacy-related weights from offloaded weights and is able to shield all privacy-related weights in TEEs. The key challenge to realizing the partition-before- training strategy is to ensure that the private slices are small enough to run in TEEs while maintaining a decent accuracy. To this end, we propose a dynamic pruning algorithm that first trains the private slices with large sizes that have a sufficient model capacity for high accuracy, and then opti- mizes the size of the slices automatically under a threshold of accuracy loss. In this way, TEES LICE automatically finds the “sweet spot” configuration, which minimizes the number of slices (computation) inside TEE while keeping the same accuracy as the corresponding unpartitioned model. Our evaluation shows that TEES LICE outperforms ex- isting TSDP approaches in terms of security guarantee and utility cost. Attackers can hardly obtain any private information by analyzing the model architectures, and as a result, TEES LICE is shown to achieve the security level of shielding-whole-model baseline with 10× less computation cost (in both experimental and real-world environments) than other TSDP solutions. Besides, TEES LICE reaches a high-security level with nearly no sacrifice. The statistical evaluation shows no change between the accuracy of the TEES LICE protected model and the original unpartitioned model. The offloaded public backbone does not increase the attack performance as well. The contribution of this paper can be summarized as follows: • We systematically evaluate the security guarantee of prior TSDP solutions using two representative attacks, MS and MIA, and reveal the security issues of these solutions. • We illustrate the difficulty of improving the secu- rity of prior TSDP approaches without substantially changing their methodologies. • We propose TEES LICE , a novel TSDP solution for DNN inference that isolates privacy from offloaded model parts to provide a strong security guarantee using TEEs and cryptographic primitives. Our thor- ough evaluation shows that TEES LICE offers a high security guarantee with moderate overhead and no accuracy loss. Availability: The artifact is available at [2]. We also provide supplementary experimental results of this paper at [5]. 2. Background and Threat Model 2.1. Background TEE. A Trusted Execution Environment (TEE) is an isolated hardware enclave that stores and processes sensitive data. 3328"
+      },
+      {
+        "source": "selected",
+        "value": "On-device ML introduces new security challenges: DNN models become white-box accessible to device users. Based on white-box information, adversaries can conduct effective model stealing (MS) against model weights and membership inference attack (MIA) against training data privacy. Using Trusted Execution Environments (TEEs) to shield ondevice DNN models aims to downgrade (easy) white-box attacks to (harder) black-box attacks. However, one major shortcoming of TEEs is the sharply increased latency (up to 50×). To accelerate TEE-shield DNN computation with GPUs, researchers proposed several model partition techniques. These solutions, referred to as TEE-Shielded DNN Partition (TSDP), partition a DNN model into two parts, offloading 1 the privacyinsensitive part to the GPU while shielding the privacy-sensitive part within the TEE. However, the community lacks an indepth understanding of the seemingly encouraging privacy guarantees offered by existing TSDP solutions during DNN inference. This paper benchmarks existing TSDP solutions using both MS and MIA across a variety of DNN models, datasets, and metrics. We show important findings that existing TSDP solutions are vulnerable to privacy-stealing attacks and are not as safe as commonly believed. We also unveil the inherent difficulty in deciding the optimal DNN partition configurations, which vary across datasets and models. Based on lessons harvested from the experiments, we present TEESLICE, a novel TSDP method that defends against MS and MIA during DNN inference. Unlike existing approaches, TEESLICE follows a partition-before-training strategy, which allows for accurate separation between privacy-related weights from public weights. TEESLICE delivers the same security protection as shielding the entire DNN model inside TEE (the \"upper-bound\" security guarantees) with over 10× less overhead (in both experimental and real-world environments) than prior TSDP solutions and no accuracy loss. We make the code and artifacts publicly available on the Internet. 1. In this paper, \"offload\" refers to executing computation-intensive DNN operations on insecure devices with strong computation ability (e.g. GPUs), rather than secure devices with weak computation ability (e.g. TEEs). 3327 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ziqi Zhang",
+          "email": "ziqizhang@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Chen Gong",
+          "email": "gongchen17@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yifeng Cai",
+          "email": "caiyifeng@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yuanyuan Yuan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Hong Kong University of Science and Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Bingyan Liu",
+          "email": "bingyanliu@bupt.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Ding Li",
+          "email": "dingli@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Yao Guo",
+          "email": "yaoguo@pku.edu.cn",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Xiangqun Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Computer Science, Key Laboratory of High-Confidence Software Technologies (MOE), Peking University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "On-Device ML",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Ziqi Zhang",
+          "email": "ziqizhang@pku.edu.cn",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Chen Gong",
+          "email": "gongchen17@pku.edu.cn",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Yifeng Cai",
+          "email": "caiyifeng@pku.edu.cn",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yuanyuan Yuan",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Bingyan Liu",
+          "email": "bingyanliu@bupt.edu.cn",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Ding Li",
+          "email": "dingli@pku.edu.cn",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Yao Guo",
+          "email": "yaoguo@pku.edu.cn",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Xiangqun Chen",
+          "email": "",
+          "affiliations": [
+            "Key Laboratory of High-Confidence Software Technologies (MOE), School of Computer Science, Peking University †School of Computer Science, Peking University ‡The Hong Kong University of Science and Technology",
+            "School of Computer Science, Beijing University of Posts and Telecommunications"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 104,
+      "author_count": 9,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 14.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "On-Device ML",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "No Privacy Left Outside: On the (In-)Security of TEE-Shielded DNN Partition for On-Device ML",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ziqi Zhang",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Chen Gong",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Yifeng Cai",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Yuanyuan Yuan",
+          "affiliations": [
+            "HKUST"
+          ]
+        },
+        {
+          "name": "Bingyan Liu",
+          "affiliations": [
+            "BUPT"
+          ]
+        },
+        {
+          "name": "Shuai Wang",
+          "affiliations": [
+            "HKUST"
+          ]
+        },
+        {
+          "name": "Ding Li",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Yao Guo",
+          "affiliations": [
+            "Peking University"
+          ]
+        },
+        {
+          "name": "Xiangqun Chen",
+          "affiliations": [
+            "Peking University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Ziqi Zhang",
+      "field": "email",
+      "restored_value": "ziqizhang@pku.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Chen Gong",
+      "field": "email",
+      "restored_value": "gongchen17@pku.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yifeng Cai",
+      "field": "email",
+      "restored_value": "caiyifeng@pku.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Bingyan Liu",
+      "field": "email",
+      "restored_value": "bingyanliu@bupt.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Ding Li",
+      "field": "email",
+      "restored_value": "dingli@pku.edu.cn",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Yao Guo",
+      "field": "email",
+      "restored_value": "yaoguo@pku.edu.cn",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

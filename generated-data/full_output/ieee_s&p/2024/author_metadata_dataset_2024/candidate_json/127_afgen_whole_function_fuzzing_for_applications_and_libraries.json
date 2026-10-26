@@ -1,0 +1,245 @@
+{
+  "paper_id": "127_afgen_whole_function_fuzzing_for_applications_and_libraries",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "AFGEN: Whole-Function Fuzzing for Applications and Libraries"
+      },
+      {
+        "source": "selected",
+        "value": "AFGEN: Whole-Function Fuzzing for Applications and Libraries"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fuzzing technology has been widely used to discover vulnerabilities, but existing fuzzing techniques still cannot cover and explore all functions in an application or a library. The works that automatically generate fuzzing harnesses for API functions of libraries provide a way to test the target function directly. However, applying these approaches to arbitrary internal functions of a project (e.g., library) is challenging. Specifically, the context of an API function is usually simple and clear for users, but the complex dependence of the internal functions leads to a more complicated running context and constraints on their parameters, making it hard to generate fuzzing harnesses efficiently. In this paper, we propose whole-function fuzzing, a \"bottomup\" approach that fuzzes applications and libraries by covering all functions. We argue that it is beneficial to vulnerability discovery if one achieves full function coverage with precision sacrifice that can be mitigated through a delicate design. To this end, we design and implement AFGEN, a framework of automatic whole-function fuzzing. Given a target function, AFGEN will generate a fuzzing harness that reaches the target function with proper initial program context, and it will refine the fuzzing harness based on the constraints of the discovered crashes. Specifically, it slices the calling statements of a target function based on the control flow and data flow dependency, assigns values for the necessary variables used in the sliced code according to their types, and searches the constraint statements of the variables related to crash. In this way, AFGEN generates fuzzing harnesses with a low false positive rate. To verify the effectiveness of AFGEN, we collected 102 known vulnerabilities from 11 open-source projects. AFGEN successfully creates fuzzing harnesses for all vulnerable functions, and it identifies 66 vulnerabilities of the collected 102 known vulnerabilities, which outperforms all comparing tools and achieves 2x vulnerabilities discovered by the second best fuzzer (i.e., AFL++). The crashes triggered by AFGEN achieve 77.1% precision, which is 10 times the precision of FUDGE. AFGEN also discovers 24 unknown vulnerabilities confirmed with CVE IDs."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fuzzing technology has been widely used to discover vulnerabilities, but existing fuzzing techniques still cannot cover and explore all functions in an application or a library. The works that automatically generate fuzzing harnesses for API functions of libraries provide a way to test the target function directly. However, applying these approaches to arbitrary internal functions of a project (e.g., library) is challenging. Specifically, the context of an API function is usually simple and clear for users, but the complex dependence of the internal functions leads to a more complicated running context and constraints on their parameters, making it hard to generate fuzzing harnesses efficiently. In this paper, we propose whole-function fuzzing, a “bottom- up” approach that fuzzes applications and libraries by covering all functions. We argue that it is beneficial to vulnerability discovery if one achieves full function coverage with precision sacrifice that can be mitigated through a delicate design. To this end, we design and implement AFG EN, a framework of automatic whole-function fuzzing. Given a target function, AFG EN will generate a fuzzing harness that reaches the target function with proper initial program context, and it will refine the fuzzing harness based on the constraints of the discovered crashes. Specifically, it slices the calling statements of a target function based on the control flow and data flow dependency, assigns values for the necessary variables used in the sliced code according to their types, and searches the constraint statements of the variables related to crash. In this way, AFG EN generates fuzzing harnesses with a low false positive rate. To verify the effectiveness of AFG EN, we collected 102 known vulnerabilities from 11 open-source projects. AFG EN successfully creates fuzzing harnesses for all vulnerable functions, and it identifies 66 vulnerabilities of the collected 102 known vulnerabilities, which outperforms all comparing tools and achieves 2x vulnerabilities discovered by the second best fuzzer (i.e., AFL++). The crashes triggered by AFG EN achieve 77.1% precision, which is 10 times the precision of FUDGE. AFG EN also discovers 24 unknown vulnerabilities confirmed with CVE IDs. † co-leading authors. ∗ corresponding authors. 1. Introduction Fuzzing technology has been widely used in real-world applications and libraries [ 3, 4, 6, 8, 9, 12-14, 16, 17, 20, 21, 24, 32-34, 37, 38]. The nature of mutating inputs with little or no understanding of the details of target programs empowers fuzzing to analyze large-scale applications and libraries. Fuzzing has helped developers find a large number of security vulnerabilities in applications and libraries. However, fuzzing, as a dynamic testing technique, still needs to be improved for better program coverage. Unfortu- nately, none of the existing fuzzing techniques has reached a satisfactory result. In fact, it is challenging to create a fuzzing technique that achieves complete coverage (and is perhaps impossible for program state coverage), even taking the coarse-grained coverage metrics such as function coverage. The core reason is that real-world applications and libraries usually contain a large number of functions with complex dependencies. Although one can explore the “top-level” functions, - functions that take inputs from the outside or can be invoked externally, such as library APIs - the internal functions are difficult to reach due to the long paths from the “top-level” functions to the internal functions. Therefore, researchers are trying to explore internal functions such as directed greybox fuzzing and library fuzzing. For application fuzzing, directed greybox fuzzing such as AFLGo [ 5] helps to generate inputs that target a set of specified code locations. In particular, AFLGo uses heuristics to optimize the seeds towards minimizing the distance to the target location. However, directed greybox fuzzing cannot be used to achieve complete function coverage either, because including all functions in the target location set is equivalent to no specific target locations, which degrades directed greybox fuzzing to generic fuzzing. For library fuzzing, existing works [ 3, 14, 16, 17, 34] on automatic fuzz driver (harness) generation focus on the operations of APIs. Based on the inferred API information, they reason about the dependency of internal functions and use that as guidance to generate the calling sequences with well-formatted arguments. For example, FUDGE [ 3] constructs the context for a fuzz driver by slicing the usage code of the target function. FuzzGen [16], APICraft [34], and 1901 DOI 10.1109/SP54263.2024.00011 RULF [17] analyze the dependencies for API functions to generate fuzz drivers by merging different API call sequences. GraphFuzz [14] takes a step further by modifying the API sequence as well as the input samples during fuzzing. All these works start with API functions and focus on these “top-level” functions, trying to explore more “bottom-level” internal functions. Unfortunately, due to the complexity of library functions, it is, by design, hard to cover a great number of internal functions through exposed APIs. And the fuzzing results are far from the actual vulnerable internal functions, making it hard to understand and fix bugs. In this paper, we present the idea of whole-function fuzzing: instead of fuzzing an application from the entry point or fuzzing a library via the APIs, we will fuzz applications and libraries from every function. To achieve whole-function fuzzing, we treat each function as a target function and generate harnesses that invoke the target function with reasonable arguments. On the high level, whole-function fuzzing has two advan- tages over existing fuzzing approaches. First, our approach, by design, achieves full function coverage and can find more bugs. Based on the experiments of all functions in 11 real- world libraries, we generated valid fuzzing harnesses and found at least 20 more bugs than existing fuzzing approaches. Second, whole-function fuzzing will explore un-exposed functions and help fix bugs more proactively. We have discovered 24 new vulnerabilities that were hidden from the exposed APIs and confirmed as vulnerabilities by CVE. There are two challenges in realizing whole-function fuzzing in practice. The first challenge is how to generate an appropriate program context with which the harness will invoke target functions legitimately. For example, if the target function requires a complex struct-type argument, then it is challenging to automatically generate the code that yields the argument. The second challenge is how to design whole- function fuzzing properly to mitigate false positives. Crashes associated with a target function may not be triggerable from the application entry points or library APIs. Therefore, it is challenging to design a dedicated whole-function fuzzing approach that mitigates false positives. To tackle these challenges, we propose AFG EN, an automatic whole-function fuzzing framework. Our idea is to construct fuzz harnesses by leveraging the calling statements of target functions, through which we can automatically extract proper context without breaking the program logic. To eliminate false positives, we perform backward slicing for the variants in the generated fuzzing harnesses and add the variants' constraints gradually to adjust the harnesses according to continuous fuzzing results. To evaluate the effectiveness of AFG EN, we collected the vulnerable functions of 102 CVE-assigned vulnerabilities from 11 widely used open-source projects, and we applied AFG EN to build fuzz harnesses for the collected functions. AFG EN creates fuzz harnesses for all of these functions, and 66 of them can trigger vulnerabilities successfully during the fuzzing process. The experiment results show that AFG EN outperforms other state-of-the-art greybox fuzzers (i.e., AFL, AFL++, AFLGo, Parmesan, and Beacon) and the previous fuzz driver generation work (i.e., FUDGE) in bug discovery and vulnerability reproduction with high precision. We also applied AFG EN to 11 real-world libraries to generate fuzzing harnesses for all functions and compared with FUDGE. AFG EN found more crashes with fewer false positives than FUDGE. During the experiment of real-world libraries, AFG EN discovered 24 unknown vulnerabilities (with 24 confirmed CVEs) and 2 incorrect patches. In summary, this paper makes the following contributions. • We propose the concept of whole-function fuzzing, and we develop an automatic approach to realize this concept. The approach achieves full function coverage and identifies vulnerabilities with a reasonable false positive rate. • We performed a series of experiments with 102 CVE- assigned vulnerabilities from 11 open-source projects and compared AFG EN with 5 state-of-the-art greybox fuzzers and a fuzz driver generation work. AFG EN outperforms existing fuzzers in tested applications and libraries. • We applied AFG EN to real-world applications and libraries and discovered 24 unknown vulnerabilities confirmed with CVE IDs. 1 2. Background and Motivation 2.1. Library and Application Fuzzing Fuzzing is a popular technique for finding vulnerabilities and is already widely applied to testing applications and libraries. For example, AFL (American Fuzzy Lop) [ 33] feeds numerous inputs directly to the target program, while libFuzzer [22] is designed for library fuzzing which requires fuzzing harnesses. Although there are some differences between application fuzzing and library fuzzing (e.g., AFL vs. libFuzzer), the coverage is a critical metric to evaluate the effectiveness of fuzzing, because more coverage brings more chances of finding vulnerabilities. While researchers have been trying to improve the code coverage, it is impossible to get a satisfactory result of the coverage. Thus, we propose a novel idea of whole-function fuzzing . If we could generate fuzzing harnesses for all functions, we can test every function directly, and increase the function coverage easily. However, the biggest problem is how to generate fuzzing harnesses automatically and accurately. We illustrate the challenges with the following motivating example. 2.2. Motivating Example Listing 1 shows a motivating example of whole-function fuzzing. This example shows ngiflib'sGetByte [1] function, which contains vulnerability CVE-2021-36531 [ 2]. The function takes a struct pointer denoted by g as input. It checks the value of g->mode; if it is NGIFLIB_NO_FILE, the function gets one byte from memory buffer (line 15); otherwise, it gets the byte from file (line 17). GetByte contains a heap 1. https://github.com/Marsman1996/AFGen 21902"
+      },
+      {
+        "source": "selected",
+        "value": "Fuzzing technology has been widely used to discover vulnerabilities, but existing fuzzing techniques still cannot cover and explore all functions in an application or a library. The works that automatically generate fuzzing harnesses for API functions of libraries provide a way to test the target function directly. However, applying these approaches to arbitrary internal functions of a project (e.g., library) is challenging. Specifically, the context of an API function is usually simple and clear for users, but the complex dependence of the internal functions leads to a more complicated running context and constraints on their parameters, making it hard to generate fuzzing harnesses efficiently. In this paper, we propose whole-function fuzzing, a \"bottomup\" approach that fuzzes applications and libraries by covering all functions. We argue that it is beneficial to vulnerability discovery if one achieves full function coverage with precision sacrifice that can be mitigated through a delicate design. To this end, we design and implement AFGEN, a framework of automatic whole-function fuzzing. Given a target function, AFGEN will generate a fuzzing harness that reaches the target function with proper initial program context, and it will refine the fuzzing harness based on the constraints of the discovered crashes. Specifically, it slices the calling statements of a target function based on the control flow and data flow dependency, assigns values for the necessary variables used in the sliced code according to their types, and searches the constraint statements of the variables related to crash. In this way, AFGEN generates fuzzing harnesses with a low false positive rate. To verify the effectiveness of AFGEN, we collected 102 known vulnerabilities from 11 open-source projects. AFGEN successfully creates fuzzing harnesses for all vulnerable functions, and it identifies 66 vulnerabilities of the collected 102 known vulnerabilities, which outperforms all comparing tools and achieves 2x vulnerabilities discovered by the second best fuzzer (i.e., AFL++). The crashes triggered by AFGEN achieve 77.1% precision, which is 10 times the precision of FUDGE. AFGEN also discovers 24 unknown vulnerabilities confirmed with CVE IDs."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yuwei Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yanhao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xiangkun Jia",
+          "email": "xiangkun@iscas.ac",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Zheng Zhang",
+          "email": "zhengzhang097@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "Ocean University of China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Purui Su",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yuwei Liu",
+          "email": "yuwei2018@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Ocean University of China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 1,
+          "name": "Yanhao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Ocean University of China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 2,
+          "name": "Xiangkun Jia",
+          "email": "xiangkun@iscas.ac",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Ocean University of China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zheng Zhang",
+          "email": "zhengzhang097@gmail.com",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Ocean University of China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Purui Su",
+          "email": "purui@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "1TCA/SKLCS, Institute of Software, Chinese Academy of Sciences 2University of Chinese Academy of Sciences 3Ocean University of China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 109,
+      "author_count": 5,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "AFGen: Whole-Function Fuzzing for Applications and Libraries",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yuwei Liu",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yanhao Wang",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Xiangkun Jia",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Zheng Zhang",
+          "affiliations": [
+            "Ocean University of China"
+          ]
+        },
+        {
+          "name": "Purui Su",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 5,
+      "country_values_restored": 5,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

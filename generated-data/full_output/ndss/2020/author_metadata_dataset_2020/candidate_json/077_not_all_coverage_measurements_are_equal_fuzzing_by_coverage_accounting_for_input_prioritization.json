@@ -1,0 +1,434 @@
+{
+  "paper_id": "077_not_all_coverage_measurements_are_equal_fuzzing_by_coverage_accounting_for_input_prioritization",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Not All Coverage Measurements Are Equal: Fuzzing by Coverage Accounting for Input Prioritization"
+      },
+      {
+        "source": "selected",
+        "value": "Not All Coverage Measurements Are Equal: Fuzzing by Coverage Accounting for Input Prioritization"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Coverage-based fuzzing has been actively studied and widely adopted for finding vulnerabilities in real-world software applications. With coverage information, such as statement coverage and transition coverage, as the guidance of input mutation, coverage-based fuzzing can generate inputs that cover more code and thus find more vulnerabilities without prerequisite information such as input format. Current coveragebased fuzzing tools treat covered code equally. All inputs that contribute to new statements or transitions are kept for future mutation no matter what the statements or transitions are and how much they impact security. Although this design is reasonable from the perspective of software testing that aims at full code coverage, it is inefficient for vulnerability discovery since that 1) current techniques are still inadequate to reach full coverage within a reasonable amount of time, and that 2) we always want to discover vulnerabilities early so that it can be fixed promptly. Even worse, due to the non-discriminative code coverage treatment, current fuzzing tools suffer from recent anti-fuzzing techniques and become much less effective in finding vulnerabilities from programs enabled with anti-fuzzing schemes. To address the limitation caused by equal coverage, we propose coverage accounting, a novel approach that evaluates coverage by security impacts. Coverage accounting attributes edges by three metrics based on three different levels: function, loop and basic block. Based on the proposed metrics, we design a new scheme to prioritize fuzzing inputs and develop TortoiseFuzz, a greybox fuzzer for finding memory corruption vulnerabilities. We evaluated TortoiseFuzz on 30 real-world applications and compared it with 6 state-of-the-art greybox and hybrid fuzzers: AFL, AFLFast, FairFuzz, MOPT, QSYM, and Angora. Statistically, TortoiseFuzz found more vulnerabilities than 5 out of 6 fuzzers (AFL, AFLFast, FairFuzz, MOPT, and Angora), and it had a comparable result to QSYM yet only consumed around 2% of QSYM's memory usage on average. We also compared coverage accounting metrics with two other metrics, AFL-Sensitive and LEOPARD, and TortoiseFuzz performed significantly better than both metrics in finding vulnerabilities. Furthermore, we applied the coverage accounting metrics to QSYM and noticed that coverage accounting helps increase the number of discovered vulnerabilities by 28.6% on average. TortoiseFuzz found 20 zero-day vulnerabilities with 15 confirmed with CVE identifications."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Coverage-based fuzzing has been actively studied and widely adopted for finding vulnerabilities in real-world software applications. With coverage information, such as state- ment coverage and transition coverage, as the guidance of input mutation, coverage-based fuzzing can generate inputs that cover more code and thus find more vulnerabilities without prerequisite information such as input format. Current coverage- based fuzzing tools treat covered code equally. All inputs that contribute to new statements or transitions are kept for future mutation no matter what the statements or transitions are and how much they impact security. Although this design is reasonable from the perspective of software testing that aims at full code coverage, it is inefficient for vulnerability discovery since that 1) current techniques are still inadequate to reach full coverage within a reasonable amount of time, and that 2) we always want to discover vulnerabilities early so that it can be fixed promptly. Even worse, due to the non-discriminative code coverage treatment, current fuzzing tools suffer from recent anti-fuzzing techniques and become much less effective in finding vulnerabilities from programs enabled with anti-fuzzing schemes. To address the limitation caused by equal coverage, we propose coverage accounting , a novel approach that evaluates coverage by security impacts. Coverage accounting attributes edges by three metrics based on three different levels: function, loop and basic block. Based on the proposed metrics, we design a new scheme to prioritize fuzzing inputs and develop TortoiseFuzz, a greybox fuzzer for finding memory corruption vulnerabilities. We evaluated TortoiseFuzz on 30 real-world applications and compared it with 6 state-of-the-art greybox and hybrid fuzzers: AFL, AFLFast, FairFuzz, MOPT, QSYM, and Angora. Statistically, TortoiseFuzz found more vulnerabilities than 5 out of 6 fuzzers (AFL, AFLFast, FairFuzz, MOPT, and Angora), and it had a comparable result to QSYM yet only consumed around 2% of QSYM's memory usage on average. We also compared coverage accounting metrics with two other met- rics, AFL-Sensitive and LEOPARD, and TortoiseFuzz performed significantly better than both metrics in finding vulnerabilities. Furthermore, we applied the coverage accounting metrics to QSYM and noticed that coverage accounting helps increase the number of discovered vulnerabilities by 28.6% on average. TortoiseFuzz found 20 zero-day vulnerabilities with 15 confirmed with CVE identifications. I. I NTRODUCTION Fuzzing has been extensively used to find real-world software vulnerabilities. Companies such as Google and Apple have deployed fuzzing tools to discover vulnerabilities, and researchers have proposed various fuzzing techniques [4, 6, 7, 12, 18, 29, 33, 43, 45, 47, 56, 60, 61]. Specifically, coverage- guided fuzzing [4, 6, 12, 18, 33, 43, 45, 56, 61] has been actively studied in recent years. In contrast to generational fuzzing, which generates inputs based on given format speci- fications [2, 3, 16], coverage-guided fuzzing does not require knowledge such as input format or program specifications. Instead, coverage-guided fuzzing mutates inputs randomly and uses coverage to select and prioritize mutated inputs. AFL [60] leverages edge coverage (a.k.a. branch coverage or transition coverage), and libFuzzer [47] supports both edge and block coverage. Specifically, AFL saves all inputs with new edge coverage, and it prioritizes inputs by size and latency while guaranteeing that the prioritized inputs cover all edges. Based on AFL, recent work advances the edge coverage metrics by adding finer-grained information such as call context [12], memory access addresses, and more preceding basic blocks [53]. However, previous work treats edges equally, neglecting that the likelihoods of edge destinations being vulnerable are different. As a result, for all the inputs that lead to new coverage, those that execute the newly explored code that is less likely to be vulnerable are treated as important as the others and are selected for mutation and fuzzing. Although such design is reasonable for program testing which aims at full program coverage, it delays the discovery of a vulnerability. VUzzer [43] mitigates the issue by de- prioritizing inputs that lead to error-handling code, but it depends on taint analysis and thus is expensive. CollAFL [18] proposes alternative input prioritization algorithms regarding the execution path, but it cannot guarantee that prioritized inputs cover all security-sensitive edges and it may cause the fuzzer to be trapped in a small part of the code. AFL- Sensitive [53] and Angora [12] add more metrics comple- mentary to edges, but edges are still considered equally, so the issue still exists for the inputs with the same value in the complementary metrics. LEOPARD [15] considers function coverage instead of edges and it weights functions differently, but it requires static analysis to preprocess, which causes extra performance overhead. Even worse, these approaches are Network and Distributed Systems Security (NDSS) Symposium 2020 https://dx.doi.org/10.14722/ndss.2020.24422 www.ndss-symposium.org all vulnerable to anti-fuzzing techniques [23, 28] (See II-D). Therefore, we need a new input prioritization method that finds more vulnerabilities and is less affected by anti-fuzzing techniques. In this paper, we propose coverage accounting , a new approach for input prioritization. Our insight is that, any work that adds additional information to edge representation will not be able to defeat anti-fuzzing since the fundamental issue is that current edge-guided fuzzers treat coverage equally. Moreover, memory corruption vulnerabilities are closely re- lated to sensitive memory operations, and sensitive memory operations can be represented at different granularity of func- tion, loop, and basic block [27]. To find memory corruption vulnerabilities effectively, we should cover and focus on edges associated with sensitive memory operations only. Based on this observation, our approach assesses edges from function, loop, and basic block levels, and it labels edges security- sensitive based on the three metrics of different levels. We prioritize inputs by new security-sensitive coverage, and cull the prioritized inputs by the hit count of security-sensitive edges and meanwhile guarantee the selected inputs cover all visited security-sensitive edges. Based on the proposed approach, we develop TortoiseFuzz, a greybox coverage-guided fuzzer1. TortoiseFuzz does not rely on taint analysis or symbolic execution; the only addition to AFL is the coverage accounting scheme inserted in the step of queue culling (See II). TortoiseFuzz is simple yet powerful in finding vulnera- bilities. We evaluated TortoiseFuzz on 30 popular real-world applications and compared TortoiseFuzz with 6 state-of-the- art greybox [7, 31, 36, 60] and hybrid fuzzers [12, 59]. We calculated the number of discovered vulnerabilities, and con- ducted Mann-Whitney U test to justify statistical significance between TortoiseFuzz and the compared fuzzers. TortoiseFuzz performed better than 5 out of 6 fuzzers (AFL, AFLFast, FairFuzz, MOPT, and Angora), and it had a comparable result to QSYM yet only consumed, on average, around 2% of the memory resourced used by QSYM. TortoiseFuzz found 20 zero-day vulnerabilities with 15 confirmed with CVE identifications. We also compared coverage accounting metrics against AFL-Sensitive and LEOPARD, and the experiment showed that our coverage accounting metrics performed significantly better in finding vulnerabilities than both metrics. Further- more, we applied the coverage accounting metrics to QSYM, and we noticed that coverage accounting boosted the number of discovered vulnerabilities by 28.6% on average. To foster future research, we will release the prototype of TortoiseFuzz open-sourced at https://github.com/TortoiseFuzz/ as well as the experiment data for reproducibility. Contribution. In summary, this paper makes the following contributions. • We propose coverage accounting, a novel approach for input prioritization with metrics that evaluates edges in 1The name comes from a story of Aesop's Fables. A tortoise is ridiculed by a rabbit at first in a race, crawls slowly but steadily, and beats the rabbit finally. As American Fuzzy Lop is a kind of rabbit, TortoiseFuzz wins. Fork- Server Fuzz Loop Application Program InstancesCases Bitmap Test Case Selection Instrument Next Case Case Mutation Execution & Monitor Crash Report Queue IsFavor Fig. 1: The framework of AFL. terms of the relevance of memory corruption vulnerabil- ities. Our approach is lightweighted without expensive analyses, such as taint analysis and symbolic execution, and is less affected by anti-fuzzing techniques. • We design and develop TortoiseFuzz, a greybox fuzzer based on coverage accounting. We will release Tortoise- Fuzz with source code. • We evaluated TortoiseFuzz on 30 real-world programs and compared it with 4 greybox fuzzers and 2 hybrid fuzzers. As a greybox fuzzer, TortoiseFuzz outperformed all the 4 greybox fuzzers and 1 hybrid fuzzers. Tortoise- Fuzz achieved a comparable result to the other hybrid fuzzer, QSYM, yet only spent 2% of the memory resource costed by QSYM. TortoiseFuzz also found 20 zero-day vulnerabilities, with 15 confirmed with CVE IDs. II. B ACKGROUND In this section, we present the background of coverage- guided fuzzing techniques. We first introduce the high-level design of coverage-guided fuzzing, and then explain the details of input prioritization and input mutation in fuzzing. A. Coverage-guided Fuzzing Fuzzing is an automatic program testing technique for gen- erating and testing inputs to find software vulnerabilities [38]. It is flexible and easy to apply to different programs, as it does not require the understanding of programs, nor manual generation of testing cases. At a high level, coverage-guided fuzzing takes an initial input (seed) and a target program as input, and produces inputs triggering program error as outputs. It works in a loop, where it repeats the process of selecting an input, running the target program with the input, and generating new inputs based on the current input and its running result. In this loop, coverage is used as the fundamental metric to select inputs, which is the reason why such techniques are called coverage-guided fuzzing. Figure 1 shows the architecture of AFL [60], a reputable coverage-guided fuzzer based on which many other fuzzers 2"
+      },
+      {
+        "source": "selected",
+        "value": "Coverage-based fuzzing has been actively studied and widely adopted for finding vulnerabilities in real-world software applications. With coverage information, such as statement coverage and transition coverage, as the guidance of input mutation, coverage-based fuzzing can generate inputs that cover more code and thus find more vulnerabilities without prerequisite information such as input format. Current coveragebased fuzzing tools treat covered code equally. All inputs that contribute to new statements or transitions are kept for future mutation no matter what the statements or transitions are and how much they impact security. Although this design is reasonable from the perspective of software testing that aims at full code coverage, it is inefficient for vulnerability discovery since that 1) current techniques are still inadequate to reach full coverage within a reasonable amount of time, and that 2) we always want to discover vulnerabilities early so that it can be fixed promptly. Even worse, due to the non-discriminative code coverage treatment, current fuzzing tools suffer from recent anti-fuzzing techniques and become much less effective in finding vulnerabilities from programs enabled with anti-fuzzing schemes. To address the limitation caused by equal coverage, we propose coverage accounting, a novel approach that evaluates coverage by security impacts. Coverage accounting attributes edges by three metrics based on three different levels: function, loop and basic block. Based on the proposed metrics, we design a new scheme to prioritize fuzzing inputs and develop TortoiseFuzz, a greybox fuzzer for finding memory corruption vulnerabilities. We evaluated TortoiseFuzz on 30 real-world applications and compared it with 6 state-of-the-art greybox and hybrid fuzzers: AFL, AFLFast, FairFuzz, MOPT, QSYM, and Angora. Statistically, TortoiseFuzz found more vulnerabilities than 5 out of 6 fuzzers (AFL, AFLFast, FairFuzz, MOPT, and Angora), and it had a comparable result to QSYM yet only consumed around 2% of QSYM's memory usage on average. We also compared coverage accounting metrics with two other metrics, AFL-Sensitive and LEOPARD, and TortoiseFuzz performed significantly better than both metrics in finding vulnerabilities. Furthermore, we applied the coverage accounting metrics to QSYM and noticed that coverage accounting helps increase the number of discovered vulnerabilities by 28.6% on average. TortoiseFuzz found 20 zero-day vulnerabilities with 15 confirmed with CVE identifications."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yanhao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "QiAnXin Technology Research Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Xiangkun Jia",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yuwei Liu",
+          "email": "liuyuwei@tca.iscas.ac.cnpurui@iscas.ac.cn",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "School of Cyber Security, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Kyle Zeng",
+          "email": "zengyhkyle@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Tiffany Bao",
+          "email": "tbao@asu.edu",
+          "orcid": "",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Dinghao Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Purui Su",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "School of Cyber Security, University of Chinese Academy of Sciences",
+            "Cyberspace Security Research Center, Peng Cheng Laboratory"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yanhao Wang",
+          "email": "wangyanhao@tca.iscas.ac.cn",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "QiAnXin Technology Research Institute"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Xiangkun Jia",
+          "email": "",
+          "affiliations": [
+            "Pennsylvania State University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yuwei Liu",
+          "email": "liuyuwei@tca.iscas.ac.cn",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "School of Cyber Security, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Kyle Zeng",
+          "email": "zengyhkyle@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Tiffany Bao",
+          "email": "tbao@asu.edu",
+          "affiliations": [
+            "Arizona State University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Dinghao Wu",
+          "email": "",
+          "affiliations": [
+            "Pennsylvania State University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Purui Su",
+          "email": "purui@iscas.ac.cn",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "School of Cyber Security, University of Chinese Academy of Sciences",
+            "Cyberspace Security Research Center, Peng Cheng Laboratory"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 122,
+      "author_count": 7,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Yanhao Wang",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Kyle Zeng",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Tiffany Bao",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Dinghao Wu",
+          "block_id": "pdf:p1:b10",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Purui Su",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Yanhao Wang",
+          "affiliation_raw": "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences Pennsylvania State University Arizona State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9",
+            "pdf:p1:b17",
+            "pdf:p1:b21",
+            "pdf:p1:b25"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 10.847,
+          "center_distance": 71.036,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Kyle Zeng",
+          "affiliation_raw": "Qi An Xin Technology Research Institute School of Cyber Security, University of Chinese Academy of Sciences Cyberspace Security Research Center, Peng Cheng Laboratory",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b13",
+            "pdf:p1:b19",
+            "pdf:p1:b23",
+            "pdf:p1:b27"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 14.806,
+          "center_distance": 0.897,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Tiffany Bao",
+          "affiliation_raw": "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences Pennsylvania State University Arizona State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b17",
+            "pdf:p1:b21",
+            "pdf:p1:b25"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 8.278,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 5,
+          "author": "Dinghao Wu",
+          "affiliation_raw": "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences Pennsylvania State University Arizona State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b10",
+          "affiliation_block_ids": [
+            "pdf:p1:b17",
+            "pdf:p1:b21",
+            "pdf:p1:b25"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 16.436,
+          "center_distance": 59.237,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 6,
+          "author": "Purui Su",
+          "affiliation_raw": "School of Cyber Security, University of Chinese Academy of Sciences Cyberspace Security Research Center, Peng Cheng Laboratory",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b12",
+          "affiliation_block_ids": [
+            "pdf:p1:b23",
+            "pdf:p1:b27"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 28.764,
+          "center_distance": 34.802,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Not All Coverage Measurements Are Equal: Fuzzing by Coverage Accounting for Input Prioritization",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/not-all-coverage-measurements-are-equal-fuzzing-by-coverage-accounting-for-input-prioritization/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yanhao Wang",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Xiangkun Jia",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Yuwei Liu",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Kyle Zeng",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Tiffany Bao",
+          "affiliations": [
+            "Arizona State University"
+          ]
+        },
+        {
+          "name": "Dinghao Wu",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Purui Su",
+          "affiliations": [
+            "Institute of Software, Chinese Academy of Sciences"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Kyle Zeng",
+      "field": "email",
+      "restored_value": "zengyhkyle@asu.edu",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

@@ -1,0 +1,402 @@
+{
+  "paper_id": "003_beagle_forensics_of_deep_learning_backdoor_attack_for_better_defense",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "BEAGLE: Forensics of Deep Learning Backdoor Attack for Better Defense"
+      },
+      {
+        "source": "selected",
+        "value": "BEAGLE: Forensics of Deep Learning Backdoor Attack for Better Defense"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Deep Learning backdoor attacks have a threat model similar to traditional cyber attacks. Attack forensics, a critical countermeasure for traditional cyber attacks, is hence of importance for defending model backdoor attacks. In this paper, we propose a novel model backdoor forensics technique. Given a few attack samples such as inputs with backdoor triggers, which may represent different types of backdoors, our technique automatically decomposes them to clean inputs and the corresponding triggers. It then clusters the triggers based on their properties to allow automatic attack categorization and summarization. Backdoor scanners can then be automatically synthesized to find other instances of the same type of backdoor in other models. Our evaluation on 2,532 pre-trained models, 10 popular attacks, and comparison with 9 baselines show that our technique is highly effective. The decomposed clean inputs and triggers closely resemble the ground truth. The synthesized scanners substantially outperform the vanilla versions of existing scanners that can hardly generalize to different kinds of attacks."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Deep Learning backdoor attacks have a threat model similar to traditional cyber attacks. Attack forensics, a critical counter-measure for traditional cyber attacks, is hence of importance for defending model backdoor attacks. In this paper, we propose a novel model backdoor forensics technique. Given a few attack samples such as inputs with backdoor triggers, which may represent different types of backdoors, our technique automatically decomposes them to clean inputs and the corresponding triggers. It then clusters the triggers based on their properties to allow automatic attack categorization and summarization. Backdoor scanners can then be automatically synthesized to find other instances of the same type of backdoor in other models. Our evaluation on 2,532 pre-trained models, 10 popular attacks, and comparison with 9 baselines show that our technique is highly effective. The decomposed clean inputs and triggers closely resemble the ground truth. The synthesized scanners substantially outperform the vanilla versions of existing scanners that can hardly generalize to different kinds of attacks. I. I NTRODUCTION Deep Learning (DL) backdoor attacks [24], [54] leverage vulnerabilities in pre-trained models such that inputs stamped with a specific (small) input pattern (e.g., a polygon patch) or undergone some fixed transformation (e.g., applying a filter) induce intended model misbehaviors, such as mis- classification to a target label . The misbehavior-inducing input patterns/transformations are called backdoor triggers . The vulnerabilities are usually injected through various data poisoning methods [10], [46], [50], [67], [68], [75], [76]. Some even naturally exist in normally trained models [87], [88]. The attack model of DL backdoors becomes increasingly similar to that of traditional cyber attacks (on software), and in the meantime DL models have more and more applications in critical tasks such as autonomous driving and ID recogni- tion (for access control). Defending model backdoors hence becomes a pressing need. Figure 1 shows the traditional cyber attack model. Vulnerabilities exist in applications (e.g., due to implementation bugs). The adversary exploits a vulnerability by crafting a special input, e.g., an extremely long input to exploit a buffer overflow vulnerability. The exploit could lead to a wide range of damage (e.g., hijacking a system, leaking information, and corrupting services). The adversary has no ProgramBug ExploitInput Consequence Adversary ProgramExploitInput Bug Damage Attack & Bug Info ToolConstruction Vul. Finding ToolAttk. Detection Tool Forensics Fig. 1: Cyber attack ProgramBug ExploitInput Consequence Adversary ProgramExploitInput Bug Damage Attack & Bug Info ToolConstruction Vul. Finding ToolAttk. Detection Tool Forensics Fig. 2: Forensics control of the execution environment of application on the user side (the dotted box in Figure 1). He can only manipulate the input to achieve his goal. Many inputs can be easily crafted to exploit the same vulnerability. And vulnerabilities can be patched by fixing bugs. Analogously in DL backdoor attacks, vulnerabilities are model properties such that (any) inputs can be transformed in a specific way to exploit them. The process of crafting inputs does not require access to model execution (on the user side). The input crafting efforts are minimal as triggers are known by the adversary beforehand (because he injected them). In contrast, traditional adversarial attack [5], [7], [63] usually requires much more computing efforts to generate exploit perturbations. Some even do that on-the-fly. Moreover, backdoors can be effectively removed by model hardening with negligible model accuracy degradation [48], [51], [97], [106]. Model misbehaviors can have a lot of downstream ramifications. For example, misclassifying a stop sign to something else could have catastrophic consequences in an auto-driving system. Forensics [11], [27], [28], [62], [101] is an important countermeasure for traditional cyber attacks. As shown in Figure 2, given attack instances (including the application and a small set of exploit inputs), forensics techniques aim to identify their root causes (e.g., the bug), assess damage, and provide critical information to build vulnerability/malware scanners to identify similar attack instances and similar bugs. They also greatly facilitate attack prevention and program repair [44], [52], [66], [96]. Due to the similarity of DL backdoor attacks and traditional cyber attacks, we argue that forensics is an important step in fighting against DL backdoor attacks as well. There are existing efforts in detecting inputs that contain backdoor triggers [15], [33] and recognizing, cleansing poisonous inputs from training data using evidence collected from a few attack Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24944 www.ndss-symposium.org instances [9], [21]. The former aims to decide if a given input contains any backdoor trigger. Existing techniques usually leverage the observation that such inputs manifest themselves by having out-of-distribution values in the input or feature space [15], [92]. The latter searches for a subset of training samples such that training on the subset reduces the attack success rate (ASR) to almost 0 without causing model accuracy degradation. Februus [15] aims to cleanse individual trojaned inputs by removing stamped triggers. It first identifies the trigger in a given input using GradCAM [78] based on the assumption that the classification output is dominated by the trigger area. It then removes the entire trigger area and uses GAN to fill in the space. These existing works focus on specific sub-problems in forensics, inspiring a more comprehensive forensics workflow. For example, backdoor input detection techniques can be used to capture attack instances for downstream forensics analysis. In this work, we propose a novel DL backdoor forensics method BEAGLE (Forensics of Backdoor attack on deep lEArninG modeLs for better defens E). Given a few attack instances, each including the model and a few inputs likely containing backdoor triggers, BEAGLE automatically decom- poses each trojaned input to a clean input and a trigger. The trigger could be a patch-like input pattern or an input space transformation function. The decomposed clean input should closely resemble the original clean input (which is unknown to BEAGLE ), and the decomposed trigger should be very similar to the injected trigger (which is also unknown to BEAGLE ). The decomposed trigger will be able to flip a large set of clean inputs to the same target label, if applied. This is analogous to the root cause analysis stage in traditional cyber attack fornensics. More importantly, BEAGLE will automatically cluster these attack instances leveraging the decomposition results such that each cluster denotes a specific type of backdoor. It further summarizes each cluster to a set of distributions, and automatically synthesizes a corresponding scanner to find the same type of backdoor in other models . Note that the instantiations of a type of backdoor on different models are largely different. For example, different patch attack instances (on different models) may have different patch shapes, sizes, pixel patterns, and different positions to stamp the patches. It is unlikely that we can detect other instances of the same type of attack by simply stamping the raw decomposed triggers produced by the forensics analysis. Instead, BEAGLE abstracts the given instances such that other instantiations can be detected. This is analogous to building vulnerability and malware detection tools based on forensics results in traditional cyber security. Our method formulates the attack decomposition step as a cyclic optimization problem. At the beginning, the decomposed clean input and the decomposed trigger are of very low quality, for instance, some random disintegration of the trojaned input. The cyclic optimization ensures that any improvement on the decomposed clean input leads to improvement of the decomposed trigger, and vice versa. High quality decomposition can be achieved when the process converges. We formulate backdoor attacks in two mathematical forms: patching attacks that induce localized input perturbations and transforming attacks that induce pervasive perturbations. As such, the existing wide range of different attacks can be modeled by different coefficient distributions for the mathematical forms, allowing us to achieve automatic categorization. The formulas and their coefficient distributions are then used to synthesize loss functions for scanners. A scanner determines if a model contains any backdoor, without requiring any trojaned inputs, analogous to a traditional malware/vulnerability scanner, which scans without (exploit) inputs. Given a model to scan, the synthesized loss functions are used to invert a backdoor trigger for the model. If such inversion succeeds, the model is considered trojaned. The inversion process essentially generates small input perturbation patterns or transformation functions by gradient descent based on the synthesized loss functions such that the generated perturbation/transformation (i.e., trigger) can induce model misclassification. Our contributions are summarized in the following. ‚ We propose a novel model backdoor attack forensics technique that contains automatic attack root cause analysis, attack summarization, and scanner synthesis. ‚ Our root cause analysis features a new cyclic optimiza- tion pipeline that can decompose a trojaned input to its clean version and the trigger. ‚ We propose to formulate existing attacks using two mathematical forms such that different attacks become different distributions of coefficients of the two forms, enabling automatic attack categorization, and scanner synthesis. ‚ We evaluate our prototype BEAGLE on 10 popular backdoor attacks, including BadNets [24], TrojNN [54], Dynamic [76], Reflection [56], SIG [3], Blend [10], Invisible [46], WaNet [68], Instagram filter [53], DFST [12], and on 2,532 pre-trained models. We demonstrate the benefits of forensics analysis by en- hancing five existing backdoor scanning techniques and comparing with an existing trojaned input decomposi- tion method. Our results show that existing scanners have substantial performance degradation when they are used to scan attacks that they are not designed for (e.g., from over 0.9 scanning accuracy down to lower than 0.55), whereas the scanners synthesized by BEAGLE can achieve 0.9 detection accuracy for all these attacks, when only 10 trojaned input instances are assumed for each attack during forensics and the models under scanning are completely different from the ones used in forensics. We also show that BEAGLE can even improve existing scanners' performance on their targeted attacks by 9%-27% because although they are fined-tuned for the targeted attacks, the fine-tunings were done manually by their original developers, whereas BEAGLE automatically synthesizes scanners. Our experiments also show that the trojaned input decomposition produces high-quality results. The decomposed clean images are 22% more similar to the ground truth than a baseline method Februus [15]. And 100% of them are correctly classified by the models, compared to 38% by the baseline. Our decomposed trig- gers achieve 96% ASR whereas those by the baseline can only achieve 45%. Our ablation study, sensitivity study, and adaptive attack show that BEAGLE has a robust design. Threat Model. Our threat model is similar to that in data poisoning [10], [24], [54], [56], [68], in which the adversary 2"
+      },
+      {
+        "source": "selected",
+        "value": "Deep Learning backdoor attacks have a threat model similar to traditional cyber attacks. Attack forensics, a critical countermeasure for traditional cyber attacks, is hence of importance for defending model backdoor attacks. In this paper, we propose a novel model backdoor forensics technique. Given a few attack samples such as inputs with backdoor triggers, which may represent different types of backdoors, our technique automatically decomposes them to clean inputs and the corresponding triggers. It then clusters the triggers based on their properties to allow automatic attack categorization and summarization. Backdoor scanners can then be automatically synthesized to find other instances of the same type of backdoor in other models. Our evaluation on 2,532 pre-trained models, 10 popular attacks, and comparison with 9 baselines show that our technique is highly effective. The decomposed clean inputs and triggers closely resemble the ground truth. The synthesized scanners substantially outperform the vanilla versions of existing scanners that can hardly generalize to different kinds of attacks."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Siyuan Cheng",
+          "email": "cheng535@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Guanhong Tao",
+          "email": "taog@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Yingqi Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Shengwei An",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Xiangzhe Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Shiwei Feng",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Guangyu Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Kaiyuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Qiuling Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 9
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Siyuan Cheng",
+          "email": "cheng535@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Guanhong Tao",
+          "email": "taog@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Yingqi Liu",
+          "email": "liu1751@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Shengwei An",
+          "email": "an93@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Xiangzhe Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Shiwei Feng",
+          "email": "feng292@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Guangyu Shen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Kaiyuan Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Qiuling Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Xiangyu Zhang",
+          "email": "xyzhang@cs.purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Rutgers University"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 99,
+      "author_count": 10,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 9,
+          "author": "Xiangyu Zhang",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 11,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "BEAGLE: Forensics of Deep Learning Backdoor Attack for Better Defense",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/beagle-forensics-of-deep-learning-backdoor-attack-for-better-defense/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Siyuan Cheng",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Guanhong Tao",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Yingqi Liu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Shengwei An",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Xiangzhe Xu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Shiwei Feng",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Guangyu Shen",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Kaiyuan Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Qiuling Xu",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Shiqing Ma",
+          "affiliations": [
+            "Rutgers University"
+          ]
+        },
+        {
+          "name": "Xiangyu Zhang",
+          "affiliations": [
+            "Purdue University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

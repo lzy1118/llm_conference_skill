@@ -1,0 +1,346 @@
+{
+  "paper_id": "076_pata_fuzzing_with_path_aware_taint_analysis",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "PATA: Fuzzing with Path Aware Taint Analysis"
+      },
+      {
+        "source": "selected",
+        "value": "PATA: Fuzzing with Path Aware Taint Analysis"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Taint analysis assists fuzzers in solving complex fuzzing constraints by inferring the influencing input bytes. Execution paths in real-world programs often reach loops, where constraints in these loops can be visited and recorded multiple times. Conventional taint analysis techniques experience difficulties when distinguishing between multiple occurrences of the same constraint. In this paper, we propose PATA, a fuzzer that implements path-aware taint analysis, i.e. one that distinguishes between multiple occurrences of the same variable based on the execution path information. PATA does so using the following steps. First, PATA identifies variables used in constraints and constructs the Representative Variable Sequence (RVS), consisting of occurrences of all representative constraint variables and their values. Next, PATA perturbs the input, matches its RVS with that of the original input, and looks for value changes to identify the influencing input bytes for each entry in the RVS. Finally, PATA mutates the corresponding input bytes to solve constraints in the given path. To demonstrate the effectiveness of PATA over conventional taint analysis methods, we evaluated its performance on the benchmarks Google's fuzzer-test-suite and LAVA-M against AFL, MOPT, TortoriseFuzz, VUzzer, Angora, REDQUEEN, and GREYONE. On Google's fuzzer-test-suite, PATA outperformed these state-of-the-art fuzzers by 29%-1830% and 7%-87% in the number of unique paths found and basic blocks covered, respectively. More importantly, it found more bugs than the comparison fuzzers, including 17 unlisted ones. On LAVA-M, PATA performed the best out of all evaluated fuzzers and found 2602 bugs. On open-source projects, PATA found 40 previously unknown bugs, with 12 of them confirmed as CVEs."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Taint analysis assists fuzzers in solving complex fuzzing constraints by inferring the influencing input bytes. Execution paths in real-world programs often reach loops, where constraints in these loops can be visited and recorded multiple times. Conventional taint analysis techniques experience difficulties when distinguishing between multiple occurrences of the same constraint. In this paper, we propose PATA, a fuzzer that implements path-aware taint analysis, i.e. one that distinguishes between multiple occurrences of the same variable based on the execution path information. PATA does so using the following steps. First, PATA identifies variables used in constraints and constructs the Representative Variable Sequence (RVS), consisting of occurrences of all representative constraint variables and their values. Next, PATA perturbs the input, matches its RVS with that of the original input, and looks for value changes to identify the influencing input bytes for each entry in the RVS. Finally, PATA mutates the corresponding input bytes to solve constraints in the given path. To demonstrate the effectiveness of PATA over conventional taint analysis methods, we evaluated its performance on the benchmarks Google's fuzzer-test-suite and LA V A-M against AFL, MO PT, TortoriseFuzz, VUzzer, Angora, R EDQUEEN , and GREYONE. On Google's fuzzer-test-suite, PATA outperformed these state-of-the-art fuzzers by 29%-1830% and 7%-87% in the number of unique paths found and basic blocks covered, respectively. More importantly, it found more bugs than the comparison fuzzers, including 17 unlisted ones. On LA V A-M, PATA performed the best out of all evaluated fuzzers and found 2602 bugs. On open-source projects, PATA found 40 previously unknown bugs, with 12 of them confirmed as CVEs. I. I NTRODUCTION Mutation-based greybox fuzzing is one of the most popular techniques for mining vulnerabilities [1, 2, 5, 8, 14, 15, 25, 29, 30]. Most mutation-based fuzzers employ an evolutionary algorithm, which prioritizes inputs that trigger new program coverage [3, 7, 20, 24, 36]. While the algorithm can determine the quality of an existing input, mutated inputs are still gener- ated using random techniques. This blind generation scheme severely limits the overall performance of such fuzzers. Recently, taint analysis has gained much interest in assist- ing fuzzing. Taint analysis improves the mutation quality of fuzzers by identifying the influencing input bytes of a given constraint. This allows the fuzzer to focus on these critical bytes instead of touching all bytes universally. As a result, fuzzers can explore program logic more efficiently. There are two mainstream taint analysis techniques, namely propagation and inference. Propagation-based taint analysis [4, 11, 26, 32] taints each byte of the input with different labels, then propa- gates these labels using propagation rules during program exe- cution. Inference-based taint analysis [6, 17, 22, 34] perturbs BYu Jiang and Zhe Liu are the corresponding authors. the input bytes repeatedly and collects the variables' values during program execution. If a variable's value changes, then there are data dependencies between the perturbed bytes and this variable. State-of-the-art fuzzers can achieve significantly better performance and detect many bugs due to taint analysis. However, over-tainting and under-tainting will incur major penalties in analysis correctness, and consequently, fuzzing performance. One of the most prominent causes is path- unawareness: loops and multiple function call sites may re- sult in a given constraint being visited multiple times and influenced by different input bytes in a single execution path. Despite having well-known control-flow paradigms when ana- lyzing real-world programs, both aforementioned taint analysis approaches are error-prone in such scenarios. (1) Propagation- based taint analysis suffers from over-tainting without path- awareness. It fails to distinguish between different occurrences and cannot determine when to clear redundant labels. There- fore, when the same constraint is visited multiple times, its label continues to accumulate, resulting in over-tainting. In the worst case, all input bytes are labeled as critical to one constraint, which is no help to mutation at all. (2) Inference- based taint analysis suffers from under-tainting without path- awareness. First, the byte-level mutation used by this approach may alter the execution path, resulting in visiting a constraint for a different amount of times or skipping it altogether. Its lack of path-awareness may lead to incorrect or incomplete results. Second, even if the path remains the same across mutations, the path-unaware inference technique can only capture each constraint's value once; therefore, the bytes which affect other occurrences are missed in the results. In this paper, we propose a novel path-aware approach for inference-based taint analysis. Our approach does so using the following steps. First, it collects constraint variables that represent program states along an execution path into a Representative Variable Sequence. The challenge here is to trace representative vari- ables reasonably in taint analysis. Because the analysis is based on variable occurrences, the highest fidelity approach is to record the states of all variables during execution. However, the cost to record them is prohibitive, thus sampling must be used instead. Therefore, a reasonable strategy must be deployed to trace a subset of all variables, the representative variables, without compromising analysis precision. Then, it identifies corresponding critical bytes for each variable occurrence. During the inference process, the fuzzer perturbs each byte of an input and monitors the value changes of variable occurrences to identify critical bytes . However, the path might deviate from the original path. For example, a 1 DOI 10.1109/SP46214.2022.00010 constraint variable might completely disappear or still appear but with different occurrence counts. The challenge here is to match variable occurrences correctly when the execution path change. Therefore, a matching algorithm is required to correctly match variable occurrences between changed paths. Finally, it leverages the results of path-aware taint analysis to guide the fuzzer's mutation process. The challenge here is to utilize analysis results effectively to explore other branches along the original path. During execution, the results of path- aware taint inference consist of the critical bytes and values of each variable occurrence. If the results are sufficiently utilized, the fuzzer's mutation effectiveness can be improved, allowing the fuzzer to solve magic bytes checks as well as other complicated constraints. Thus a mutation strategy is needed to exploit these results sufficiently. To address these challenges, we propose PATA, a fuzzer that implements the aforementioned procedures. 1 PATA collects constraint variables along paths, by narrowing down the scope to variables with high impacts to constraints through searching and increasing the sensitivity to input bytes by backtracking. 2 It then identifies critical bytes by extracting the sub- sequence for a given variable from the path, matching the vari- ables and comparing the values before and after perturbation. 3 Finally, PATA mutates critical bytes by employing a path- oriented mutation to exploit the analyzed results effectively. PATA tries to explore every uncovered branch in a given execution path. With the values and features of variables, PATA selects proper mutation methods on critical bytes to bypass constraints. We evaluated PATA on two widely used benchmarks: Google's fuzzer-test-suite, which contains a series of real- world programs, and LA V A-M, which consists of four real- world programs with synthetic bugs inserted. The results show that PATA demonstrates excellent performance. On Google's fuzzer-test-suite, PATA outperformed seven state-of-the-art fuzzers (e.g. Angora and GREYONE) by 29%-1830% and 7%- 87% in the number of unique paths found and basic blocks covered. In addition, PATA was capable of finding more bugs than others, including 17 unlisted ones 1 . On LA V A-M, PATA performed best and found 2602 bugs. We further evaluated PATA on a diverse set of open-source projects. PATA found 40 new unknown bugs, with 12 confirmed as CVEs. II. M OTIVATING EXAMPLE Problem Description. A PNG file consists of a series of chunks. Figure 1 shows the first two chunks of a simple PNG file: the image header chunk,IHDR; and the image data chunk, IDAT. Listing 1 is extracted from libpng. It uses a loop to determine the type of the chunk. Specifically, libpng first gets the chunk length and the chunk name (e.g. “IHDR”). Then it compares the chunk name with predefined values sequentially until the matched type is found and handles them with their corresponding logic. Let v1 and v2 represent the variables at Line 7 and Line 13. For the sample input, as shown in Figure 2, its path is “ v1 → v2 → v1 → v2”. Note that both constraint variables are visited exactly two times. Due to the inability to distinguish between a variable's different 1https://github.com/PATA-FUZZ/pata 1 void PNGAPI png_read_info(structp png_ptr, / *...*/) { 2 // ... 3 for (/*...*/) { 4 png_uint_32 length = png_read_chunk_header(png_ptr); 5 png_bytep chunk_name = png_ptr->chunk_name; 6 // v1 {lhs: chunk_name, rhs: png_IDAT} 7 if (chunk_name == png_IDAT) { 8 if ((png_ptr->mode & PNG_HAVE_IHDR) == 0) 9 chunk_error(png_ptr,\"Missing IHDR before IDAT\"); 10 //... 11 } 12 // v2 {lhs: chunk_name, rhs: png_IHDR} 13 if (chunk_name == png_IHDR) { 14 // ... png_handle_IHDR ... 15 png_ptr->mode |= PNG_HAVE_IHDR;//... 16 } // ... 17 } 18 } Listing 1. Code snippet extracted from libpng. This example illustrat- es the necessity of path-awareness in taint analysis. When the for loop is executed multiple times, the constraint variables v1 and v2 have different influencing input bytes on different iterations. Path-unaware taint analysis methods cannot perceive this information, leaving fuzzers with inaccurate information regarding constraints. occurrences, propagation-based taint analysis will over-taint while inference-based taint analysis will under-taint. 0 1 2 3 4 5 6 7 8 9 a b c d e f 000000 89 P N G 0d 0a 1a 0a 00 00 00 0d I H D R 000010 00 00 00 20 00 00 00 20 08 03 00 00 00 44 a4 8a 000020 3c 00 00 00 61 I D A T 78 da dc 93 31 0e c0 … … Fig. 1. A sample PNG file. It shows the first two necessary chunks: the image header chunk, IHDR; and the image data chunk, IDAT. Propagation-Based Path-Unaware Taint Analysis. This ap- proach taints the input bytes with labels and propagates them during program execution. The path-unawareness causes it to over-taint the critical bytes for constraints. Specifically, fol- lowing the execution path and propagation rules, when dealing with the first chunk, the labels of bytes at 0x0c-0x0f (“IHDR”) propagate to v1. But when parsing the second chunk, the labels of bytes at 0x25-0x28 (“IDAT”) also propagate to v1. Because the labels for the first occurrence are not cleaned up, v1 has the labels of all two chunk names. In other words, the bytes at 0x0c-0x0f and 0x25-0x28 will all be considered as its critical bytes. However, the bytes at 0x0c-0x0f only affect the first occurrence of v1, and the bytes at 0x25-0x28 only affect the second occurrence. In more common cases, more consecutive bytes would be considered as critical bytes. The results make it difficult for fuzzers to choose appropriate bytes to mutate. CMP LHS:IHDR RHS:IDAT v2 CMP LHS:IHDR RHS:IHDR v1 CMP LHS:IDAT RHS:IDAT v2 CMP LHS:IDAT RHS:IHDR v3 CMP LHS:IDAT RHS:IEND v1 CMP LHS:JHDR RHS:IDAT v2 CMP LHS:JHDR RHS:IHDR v3 CMP LHS:JHDR RHS:IEND v1 CMP LHS:IDAT RHS:IDAT path path' v1 v1 CMP LHS:IEND RHS:IHDR v2 CMP LHS:IEND RHS:IDAT v3 CMP LHS:IEND RHS:IEND V1 V2 D G Line 11: len < 15 Line 14: buf[10] < 10 Line 16: buf[12] < 10"
+      },
+      {
+        "source": "selected",
+        "value": "Taint analysis assists fuzzers in solving complex fuzzing constraints by inferring the influencing input bytes. Execution paths in real-world programs often reach loops, where constraints in these loops can be visited and recorded multiple times. Conventional taint analysis techniques experience difficulties when distinguishing between multiple occurrences of the same constraint. In this paper, we propose PATA, a fuzzer that implements path-aware taint analysis, i.e. one that distinguishes between multiple occurrences of the same variable based on the execution path information. PATA does so using the following steps. First, PATA identifies variables used in constraints and constructs the Representative Variable Sequence (RVS), consisting of occurrences of all representative constraint variables and their values. Next, PATA perturbs the input, matches its RVS with that of the original input, and looks for value changes to identify the influencing input bytes for each entry in the RVS. Finally, PATA mutates the corresponding input bytes to solve constraints in the given path. To demonstrate the effectiveness of PATA over conventional taint analysis methods, we evaluated its performance on the benchmarks Google's fuzzer-test-suite and LAVA-M against AFL, MOPT, TortoriseFuzz, VUzzer, Angora, REDQUEEN, and GREYONE. On Google's fuzzer-test-suite, PATA outperformed these state-of-the-art fuzzers by 29%-1830% and 7%-87% in the number of unique paths found and basic blocks covered, respectively. More importantly, it found more bugs than the comparison fuzzers, including 17 unlisted ones. On LAVA-M, PATA performed the best out of all evaluated fuzzers and found 2602 bugs. On open-source projects, PATA found 40 previously unknown bugs, with 12 of them confirmed as CVEs."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jie Liang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Mingzhe Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Chijin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Zhiyong Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Jianzhong Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Zhe Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science and Technology, Nanjing University of Aeronautics and Astronautics, Nanjing, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Jiaguang Sun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jie Liang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Mingzhe Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Chijin Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Zhiyong Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yu Jiang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 5,
+          "name": "Jianzhong Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Zhe Liu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Computer Science and Technology, Nanjing University of Aeronautics and Astronautics, Nanjing, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 7,
+          "name": "Jiaguang Sun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "School of Software, Tsinghua University, KLISS, Beijing, BNRist, China"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 131,
+      "author_count": 8,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 7,
+          "author": "Jiaguang Sun",
+          "block_id": "pdf:p1:b12",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "PATA: Fuzzing with Path Aware Taint Analysis",
+      "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jie Liang",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "Mingzhe Wang",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "Chijin Zhou",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "Zhiyong Wu",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "Yu Jiang",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "(Jianzhong Liu (Tsinghua University, China), Zhe Liu (Nanjing University of Aeronautics",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        },
+        {
+          "name": "Astronautics, China), Jiaguang Sun",
+          "affiliations": [
+            "Tsinghua University, China"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "reject_author_list_rebuild",
+      "stage": "conference_strategy",
+      "field": "authors",
+      "baseline_count": 8,
+      "proposed_count": 8,
+      "retained_count": 7,
+      "reason": "clean_baseline_author_list_would_be_mostly_lost"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 5,
+      "country_values_restored": 5,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

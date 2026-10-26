@@ -1,0 +1,169 @@
+{
+  "paper_id": "213_training_solo_on_the_limitations_of_domain_isolation_against_spectre_v2_attacks",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Training Solo: On the Limitations of Domain Isolation Against Spectre-v2 Attacks"
+      },
+      {
+        "source": "selected",
+        "value": "Training Solo: On the Limitations of Domain Isolation Against Spectre-v2 Attacks"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Spectre-v2 vulnerabilities have been increasingly gaining momentum, as they enable particularly powerful crossdomain transient execution attacks. Attackers can train the indirect branch predictor in one protection domain (e.g., user process) in order to speculatively hijack control flow and disclose data in a victim domain (e.g., kernel). In response to these attacks, vendors have deployed increasingly strong domain isolation techniques (e.g., eIBRS and IBPB) to prevent the predictor in one domain from being influenced by another domain's execution. While recent attacks such as BHI and Postbarrier Spectre have evidenced (now patched) implementation flaws of such techniques, the common assumption is that, barring implementation issues, domain isolation can close the attack surface in the practical cases of interest. In this paper, we challenge this assumption and show that even perfect domain isolation is insufficient to deter practical attacks. To this end, we systematically analyze selftraining Spectre-v2 attacks, where both training and speculative control-flow hijacking occur in the same (victim) domain. While self-training attacks are believed to be limited to the indomain scenario-where attackers can run arbitrary code and inject their own disclosure gadgets in a (default-off) sandbox such as eBPF-our analysis shows cross-domain variants are possible in practice. Specifically, we describe three new classes of attacks against the Linux kernel and present two end-toend exploits that leak kernel memory on recent Intel CPUs at up to 17 KB/sec. During our investigation, we also stumbled upon two Intel issues which completely break (user, guest, and hypervisor) isolation and re-enable classic Spectre-v2 attacks."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Spectre-v2 vulnerabilities have been increasingly gaining momentum, as they enable particularly powerful cross- domain transient execution attacks. Attackers can train the indirect branch predictor in one protection domain (e.g., user process) in order to speculatively hijack control flow and disclose data in a victim domain (e.g., kernel). In response to these attacks, vendors have deployed increasingly strong domain isolation techniques (e.g., eIBRS and IBPB) to prevent the predictor in one domain from being influenced by another domain's execution. While recent attacks such as BHI and Post- barrier Spectre have evidenced (now patched) implementation flaws of such techniques, the common assumption is that, barring implementation issues, domain isolation can close the attack surface in the practical cases of interest. In this paper, we challenge this assumption and show that even perfect domain isolation is insufficient to deter practical attacks. To this end, we systematically analyze self- training Spectre-v2 attacks, where both training and speculative control-flow hijacking occur in the same (victim) domain. While self-training attacks are believed to be limited to the in- domain scenario-where attackers can run arbitrary code and inject their own disclosure gadgets in a (default-off) sandbox such as eBPF-our analysis shows cross-domain variants are possible in practice. Specifically, we describe three new classes of attacks against the Linux kernel and present two end-to- end exploits that leak kernel memory on recent Intel CPUs at up to 17 KB/sec. During our investigation, we also stumbled upon two Intel issues which completely break (user, guest, and hypervisor) isolation and re-enable classic Spectre-v2 attacks. 1. Introduction Spectre-v2 attacks [ 1], [ 2], [ 3], [ 4], originally demon- strated in 2018 [ 1], allow attackers to speculatively hijack an indirect branch in a victim protection domain (e.g., kernel) and redirect it to a disclosure gadget . The latter transmits secret data back to the attacker over a covert channel such as FLUSH+RELOAD [5]. Both in-domain and cross-domain Spectre-v2 attacks are possible [ 6]. In the former scenario, attackers can run arbitrary code in a sandbox environment (e.g., eBPF) and speculatively execute their own injected gadgets. In the latter scenario, attackers can only run code in their own domain (e.g., user process) to train the indi- Kernel Cross-domain training User Figure 1: Cross-domain training versus self training. With self training, an attacker (e.g., an unprivileged user) can lure the victim (e.g., a kernel) to train itself, effectively bypassing even perfect domain isolation implementations. rect branch predictor and then lure the victim domain into speculatively executing a disclosure gadget in its own code. While clearly more constrained, cross-domain attacks are much more powerful and have received much attention in recent research [ 2], [ 3], [ 4]. This is due to their wide applicability across arbitrary security boundaries and our inability to mitigate them by simply forbidding untrusted sandbox execution (e.g., disallowing privileged eBPF [ 4]). In response, hardware vendors have deployed increas- ingly sophisticated mitigations based on domain isolation , either by means of explicit indirect branch prediction barri- ers (e.g., IBPB) or implicit predictor mode separation (e.g., eIBRS) [ 7]. The key assumption behind these mitigations is that, while in-domain attackers can run their own code to directly train the predictor in the victim domain, such self-training capabilities are not available to cross-domain attackers, who can only run arbitrary code for training purposes in their own domain. And that, due to domain iso- lation, training in one domain cannot control indirect branch prediction in another domain-barring implementation flaws that lead to imperfect isolation of the branch history [ 2], [4] or other indirect branch prediction structures [ 8]. In this paper, we show that this assumption is flawed and that even a perfect implementation of domain isolation is insufficient to deter practical attacks. More specifically, we demonstrate that cross-domain self-training Spectre-v2 attacks (Figure 1) are feasible in practice for the very first time. To this end, we conduct a systematic attack surface *&&&4ZNQPTJVNPO4FDVSJUZBOE1SJWBDZ 41 ¥ 4BOEFS8JFCJOH6OEFSMJDFOTFUP*&&& %0*41 analysis of these attacks, focusing on the user/kernel inter- face and the Linux kernel in particular-a prime target of state-of-the-art attacks [ 1], [ 2], [ 3], [ 4], [ 8]. We start our analysis by reverse engineering the be- havior of state-of-the-art mitigations and of the indirect branch predictor in the context of self-training Spectre-v2 attacks. Our investigation reveals several new insights across microarchitectures, including details on the undocumented behavior of recent mitigations such as BHI DIS S and BHI NO as well as different training strategies. Based on such strategies, we describe three self-training Spectre-v2 attack classes affecting recent Intel CPUs-although some classes also affect ARM, as detailed later. The first class of attacks exploits branch history colli- sions, similar in spirit to BHI [ 2] but with a cross-domain attacker exploiting self-training and triggering branch his- tory collisions exclusively in the victim domain for the first time. To exploit this class, the attacker must find a code path in the victim that gathers a desired branch history be- fore speculatively executing the victim indirect branch. For practical exploitation, we show the attacker can abuse Linux kernel filters (widely used by SECCOMP [ 9] and socket filtering [ 10]) to lure the kernel into executing a sequence of direct branches and building up the desired history. To demonstrate the viability of this approach, we present an end-to-end exploit leaking arbitrary Linux kernel memory on last-generation (Lunar Lake) Intel CPUs at 1.7 KB/sec. The second class of attacks exploits IP-based branch collisions in a history-agnostic indirect branch prediction scenario. To exploit this class, the attacker must first reliably disable the history-based kernel indirect branch predictor from userland. We describe a number of new techniques for this purpose, including one portable across microarchitec- tures and mitigations. We also show collisions are scarce, yielding a smaller attack surface than the other classes. Nonetheless, we present evidence of potentially exploitable (898) gadgets in large-scale attack scenarios. The third class of attacks exploits direct-to-indirect branch collisions . We show these collisions occur in a history-agnostic fashion and provide a full speculation win- dow on recent Intel CPUs, increasing the attack surface of IP-based branch collisions. To exploit this class, the attacker must find a direct branch in the victim colliding with the victim indirect branch. We discovered two variants for this class on recent Intel CPUs. The most severe variant has now been branded as Indirect Target Selection or ITS by Intel. For ease of exploitation, we show attackers can again abuse Linux filters and present an end-to-end ITS exploit leaking arbitrary Linux kernel memory on 10-11th-generation Intel CPUs at 17 KB/sec. We also present evidence of exploitation without Linux filters by means of gadget analysis. Finally, we examine the broader implications of our findings, and in particular of our third class of attacks. Since collisions can occur between direct and indirect branches, domain isolation techniques targeting only indirect branches are insufficient. We experimentally confirm that indirect branch prediction barriers such as IBPB are ineffective for both our two variants, breaking isolation guarantees and re- enabling traditional user-to-user or guest-to-guest Spectre- v2 attacks (normally addressed by IBPB). We also experi- mentally verified other mitigations guarding the user/kernel interface such as eIBRS are not affected. However, after disclosing our findings to vendors- which responded by developing several industry-wide miti- gations, including microcode updates, new instructions, and OS/hypervisor changes-Intel eventually evidenced that ITS does break eIBRS isolation for the guest/host interface on certain microarchitectures. We experimentally confirmed this behavior, with a traditional cross-training Spectre-v2 proof of concept (PoC) leaking hypervisor memory on 10th- generation Intel CPUs at 8.5 KB/sec. Contributions. To summarize our contributions: 1) We systematically analyze the attack surface of self- training Spectre-V2 attacks by means of reverse engi- neering, gadget analysis, and exploit development. 2) We describe three classes of self-training attacks, study their exploitability, and present two end-to-end exploits based on Linux kernel filters. All our artifacts are available at https://github.com/vusec/training-solo, in- cluding our test suite used for reverse engineering. 3) As a by-product of our investigation, we uncover two new hardware issues on Intel CPUs-i.e., CVE- 2024-28956 (ITS) and CVE-2025-24495. Both issues completely break user and guest isolation and one (ITS) also breaks hypervisor isolation, collectively re-enabling classic cross-training Spectre-v2 attacks across a variety of security boundaries. 4) We discuss mitigations, some of which have been picked up by affected vendors. 2. Background Branch Prediction. Branch prediction, performed by the Branch Prediction Unit (BPU), is a crucial CPU optimiza- tion. By predicting and speculatively executing the next in- struction block, the CPU mitigates memory latency impact. Although direct branch targets are encoded in the instruc- tion, the CPU stores executed targets in the Branch Target Buffer (BTB), indexed by the instruction pointer (IP) [ 11], [12], [ 13], [ 14]. The CPU uses this IP-based prediction to fetch the next block even before decoding completes, although speculative execution is typically prevented until the target is validated. This differs for indirect branches, where the target is un- known at decode time and speculative execution is allowed before the branch operand's value is available. On Intel and AMD CPUs, indirect branches also use the BTB for IP- based prediction, but additionally use an Indirect Branch Target Buffer (iBTB) indexed by the Branch History Buffer (BHB) for history-based prediction [ 11], [12], [15]. On Intel, the BHB is a shift register gathering specific bits of the source and target address of a taken branch [ 11], [ 16], [ 17]."
+      },
+      {
+        "source": "selected",
+        "value": "Spectre-v2 vulnerabilities have been increasingly gaining momentum, as they enable particularly powerful crossdomain transient execution attacks. Attackers can train the indirect branch predictor in one protection domain (e.g., user process) in order to speculatively hijack control flow and disclose data in a victim domain (e.g., kernel). In response to these attacks, vendors have deployed increasingly strong domain isolation techniques (e.g., eIBRS and IBPB) to prevent the predictor in one domain from being influenced by another domain's execution. While recent attacks such as BHI and Postbarrier Spectre have evidenced (now patched) implementation flaws of such techniques, the common assumption is that, barring implementation issues, domain isolation can close the attack surface in the practical cases of interest. In this paper, we challenge this assumption and show that even perfect domain isolation is insufficient to deter practical attacks. To this end, we systematically analyze selftraining Spectre-v2 attacks, where both training and speculative control-flow hijacking occur in the same (victim) domain. While self-training attacks are believed to be limited to the indomain scenario-where attackers can run arbitrary code and inject their own disclosure gadgets in a (default-off) sandbox such as eBPF-our analysis shows cross-domain variants are possible in practice. Specifically, we describe three new classes of attacks against the Linux kernel and present two end-toend exploits that leak kernel memory on recent Intel CPUs at up to 17 KB/sec. During our investigation, we also stumbled upon two Intel issues which completely break (user, guest, and hypervisor) isolation and re-enable classic Spectre-v2 attacks."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Sander Wiebing",
+          "email": "s.j.wiebing@vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Cristiano Giuffrida",
+          "email": "c.giuffrida@vu.nl",
+          "orcid": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Against Spectre-v Attacks",
+          "email": "",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Sander Wiebing",
+          "email": "s.j.wiebing@vu.nl",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Cristiano Giuffrida",
+          "email": "c.giuffrida@vu.nl",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 10,
+      "author_count": 3,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 2,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Training Solo: On the Limitations of Domain Isolation Against Spectre-v2 Attacks",
+      "source_url": "https://sp2025.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Sander Wiebing",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        },
+        {
+          "name": "Cristiano Giuffrida",
+          "affiliations": [
+            "Vrije Universiteit Amsterdam"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Sander Wiebing",
+      "field": "email",
+      "restored_value": "s.j.wiebing@vu.nl",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Cristiano Giuffrida",
+      "field": "email",
+      "restored_value": "c.giuffrida@vu.nl",
+      "reason": "later_stage_produced_blank"
+    }
+  ]
+}

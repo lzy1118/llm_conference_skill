@@ -1,0 +1,258 @@
+{
+  "paper_id": "037_hardware_software_contracts_for_secure_speculation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Hardware-Software Contracts for Secure Speculation"
+      },
+      {
+        "source": "selected",
+        "value": "Hardware-Software Contracts for Secure Speculation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Since the discovery of Spectre, a large number of hardware mechanisms for secure speculation has been proposed. Intuitively, more defensive mechanisms are less efficient but can securely execute a larger class of programs, while more permissive mechanisms may offer more performance but require more defensive programming. Unfortunately, there are no hardwaresoftware contracts that would turn this intuition into a basis for principled co-design. In this paper, we put forward a framework for specifying such contracts, and we demonstrate its expressiveness and flexibility. On the hardware side, we use the framework to provide the first formalization and comparison of the security guarantees provided by a representative class of mechanisms for secure speculation. On the software side, we use the framework to characterize program properties that guarantee secure co-design in two scenarios traditionally investigated in isolation: (1) ensuring that a benign program does not leak information while computing on confidential data, and (2) ensuring that a potentially malicious program cannot read outside of its designated sandbox. Finally, we show how the properties corresponding to both scenarios can be checked based on existing tools for software verification, and we use them to validate our findings on executable code."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Since the discovery of Spectre, a large number of hardware mechanisms for secure speculation has been proposed. Intuitively, more defensive mechanisms are less efficient but can securely execute a larger class of programs, while more permis- sive mechanisms may offer more performance but require more defensive programming. Unfortunately, there are no hardware- software contracts that would turn this intuition into a basis for principled co-design. In this paper, we put forward a framework for specifying such contracts, and we demonstrate its expressiveness and flexibility. On the hardware side, we use the framework to provide the first formalization and comparison of the security guarantees provided by a representative class of mechanisms for secure speculation. On the software side, we use the framework to characterize program properties that guarantee secure co-design in two scenarios traditionally investigated in isolation: (1) ensuring that a benign program does not leak information while computing on confidential data, and (2) ensuring that a potentially malicious program cannot read outside of its designated sandbox. Finally, we show how the properties corresponding to both scenarios can be checked based on existing tools for software verification, and we use them to validate our findings on executable code. I. I NTRODUCTION Speculative execution avoids expensive pipeline stalls by predicting the outcome of branching (and other) decisions, and by continuing the execution based on these predictions. When a prediction turns out to be incorrect, the processor rolls back the effects of speculatively executed instructions on the archi- tectural state consisting of registers, flags, and main memory. However, the microarchitectural state, which includes the content of various caches and buffers, is not (or only partially) rolled back. This side effect can leak information about the speculatively accessed data and thus violate confidentiality, see Figure 1a. Spectre attacks [1], [2] demonstrate that this vulnerability affects all modern general-purpose processors and poses a serious threat for platforms with multiple tenants. A multitude of hardware mechanisms for secure speculation have been proposed. They are based on a number of basic ideas, such as delaying load operations until they cannot be squashed [3], delaying operations that depend on specula- tively loaded data [4], [5], limiting the effect of speculatively executed instructions [6], [7], [8], [9], or rolling back the microarchitectural state when a misprediction is detected [10]. Intuitively, more defensive mechanisms are less efficient but can securely execute a larger class of programs, while more permissive mechanisms offer more performance but require more defensive programming. We refer to this intuition as (*). For example, consider the variant of Spectre v1 shown in Figure 1b, where array A is accessed before the bounds check. 1 if (y < size_A) 2 x = A[y]; 3 temp &= B[x * 64]; (a) Program P1 1 x = A[y]; 2 if (y < size_A) 3 temp &= B[x * 64]; (b) Program P2 Fig. 1: Program P1 is the vanilla Spectre v1 example, where A[y] can be speculatively read and leaked into the data cache via an access to array B, for y >= size_A. Program P2, is a variant where A[y] is accessed non-speculatively before the bounds check but the leak occurs during speculative execution. Mechanisms delaying loads until they cannot be squashed [3] prevent speculatively leaking A[y], for y ≥ size_A. In contrast, more permissive mechanisms that delay only loads depending on speculatively accessed data [4], [5] do not prevent the leak, because A[y] is accessed non-speculatively. While the performance characteristics of secure speculation mechanisms are well-studied, there has been little work on (1) characterizing the security guarantees they provide, and in particular on (2) investigating how these guarantees can be effectively leveraged by software to achieve global security guarantees.1 That is, we lack hardware-software contracts that support principled co-design for secure speculation, and that would formalize the intuition (*) described above. Contracts: In this paper, we put forward a framework for specifying such contracts, based on three basic building blocks: an ISA language, a model of the microarchitecture, and an adversary model specifying which microarchitectural components (such as caches or branch predictor state) are observable via side-channels. Contracts specify which program executions a side-channel adversary can distinguish. A contract in our framework is defined in terms of executions and observations made on these executions, and it is formalized in terms of a labelled ISA semantics. A CPU satisfies a contract if, whenever two program executions agree on all observations, they are guaranteed to be indistinguishable by the adversary at the microarchitectural level. The contract semantics can mandate exploration of mispredicted paths, effectively requiring agree- ment on observations corresponding to transient instructions. Secrets at the program level must not affect contract obser- 1A notable exception to (1) is STT [5], which is backed by a security prop- erty that guarantees the confidentiality of speculatively loaded data. However, this property alone does not provide an actionable basis for (2), as preventing leakage of non-speculatively accessed data (as in Figure 1b) is declared out of scope [5, Section 4]. 1868 DOI 10.1109/SP40001.2021.00036 vations, because then they can become visible to the adversary. Hence, contracts exposing more observations correspond to hardware with weaker security guarantees, whereas contracts exposing fewer observations correspond to hardware with stronger guarantees. The extreme case is a contract with no observations, which is satisfied by an ideal side-channel resilient platform that can securely execute every program. Software Side: Our framework provides a basis for deriving requirements thatsoftwareneeds to satisfy to run securely on a specific platform. For deriving such requirements, we consider two scenarios typically considered in the literature: • In the first scenario, called “constant-time programming”, the goal is to ensure that a benign program, such as a crypto- graphic algorithm, does not leak information while computing on confidential data. • In the second scenario, which we call “sandboxing”, the goal is to restrict the memory region that a potentially malicious program, such as a Web application, can read from.2 For each scenario, we identify program-level properties that guarantee security on hardware that satisfies a given contract. We stress that secure speculation approaches usuallyeither consider constant-time programming [11], [12], [13], [14]or sandboxing [15], [16]. In contrast, our framework supports both goals through program-level properties. We provide tool support for automatically checking if programs are secure in both scenarios. For this, we extend a static analysis tool for detecting speculative leaks [11] to cater for different contracts, and we use it to validate all examples used in the paper on x86 executable code. Hardware Side: We use our framework to define contracts for a comprehensive set of recent hardware mechanisms for secure speculation: disabling speculation, delaying speculative load operations [3], and speculative taint tracking [4], [5]. To this end, we formalize each mechanism in the context of a variant of the simple speculative out-of-order processor from [13] and we prove that it satisfies specific contracts against an adversary that observes caches, predictors, and (part of) the reorder buffer during execution. We show that the contracts we define form a lattice, and we use this to give, for the first time, a rigorous comparison of the security guarantees offered by different secure speculation mechanisms. Our analysis highlights that the studied mechanisms [3], [4], [5] prevent leaks of speculatively accessed data, and confirms the results of [5]. For software, this means that “sandboxing” is supported out-of-the-box, in the sense that programs only need to place appropriate bounds checks, but no speculation barriers. Our analysis also shows that the mechanisms offer no support for “constant-time programming”. This means that programs that are constant-time in the traditional sense [17] still require additional checks [11], [13] or insertion of spec- ulation barriers [18], even if hardware mechanisms for secure speculation are deployed. Summary of contributions:We propose a novel framework for expressing security contracts between hardware and soft- ware. Our framework is expressive enough to (1) characterize 2In the terminology of [2], sandboxing aims to block disclosure gadgets. the security guarantees provided by recent proposals for secure speculation, and (2) provide program-level properties formal- izing how to leverage these hardware guarantees to achieve global, end-to-end security for different scenarios. From a theoretical perspective, we provide the first characterization of security for a comprehensive class of hardware mechanisms for secure speculation. From a practical perspective, we show how to automate checks for programs to run securely on top of these mechanisms. Bonus material:A technical report containing a full formal- ization and proofs of all technical results is available at [19]. II. ISA LANGUAGE, SEMANTICS, AND ADVERSARIES We introduce the foundations for specifying hardware- software contracts: an ISA language (§II-A), its architectural semantics (§II-B), a general notion of hardware semantics (§II-C), and an adversary model capturing which aspects of the microarchitecture are observable via side channels (§II-D). A. ISA language For modeling the ISA we rely onµASM, a simple assembly language from [11] with the following syntax: Basic Types (Registers) x ∈ Regs (Values) n , ℓ ∈ Vals= N∪ {⊥} Syntax (Expressions) e := n | x | ⊖e | e1 ⊗e2 | ite(e1,e2,e3) (Instructions) i := skip| x ←e | load x,e | store x,e | jmp e | beqz x, ℓ| spbarr (Programs) p := i | p1; p2 • µASM expressions are built from a set of register iden- tifiersRegs, which contains a designated element pc repre- senting the program counter, and a set of valuesVals, which consists of the natural numbers and⊥. • µASM instructions include assignments, load and store instructions, indirect jumps, branching instructions, and a speculation barrierspbarr. • µASM programs are sequences of instructions. B. Architectural semantics→ The architectural semantics models the execution ofµASM programs at the architectural level. It is defined in terms of architectural statesσ = ⟨m,a⟩ consisting of amemory mand a register assignment a. Memoriesm map memory addresses, represented by natural numbers, to values in Vals. Register assignmentsa map register identifiers to values inVals. We signal program termination by assigning the special value⊥ to the program counterpc. The architectural semantics is a deterministic binary relation σ→σ′, which we formalize in [19], mapping an architectural state σ to its successorσ′. A run is a finite sequence of states σ0, . . . ,σn with σ0→. . .→σn such thatσ0 is initial (that is, all registers includingpc have value 0) and σn is final (that is, σn(pc) = ⊥). 1869"
+      },
+      {
+        "source": "selected",
+        "value": "Since the discovery of Spectre, a large number of hardware mechanisms for secure speculation has been proposed. Intuitively, more defensive mechanisms are less efficient but can securely execute a larger class of programs, while more permissive mechanisms may offer more performance but require more defensive programming. Unfortunately, there are no hardwaresoftware contracts that would turn this intuition into a basis for principled co-design. In this paper, we put forward a framework for specifying such contracts, and we demonstrate its expressiveness and flexibility. On the hardware side, we use the framework to provide the first formalization and comparison of the security guarantees provided by a representative class of mechanisms for secure speculation. On the software side, we use the framework to characterize program properties that guarantee secure co-design in two scenarios traditionally investigated in isolation: (1) ensuring that a benign program does not leak information while computing on confidential data, and (2) ensuring that a potentially malicious program cannot read outside of its designated sandbox. Finally, we show how the properties corresponding to both scenarios can be checked based on existing tools for software verification, and we use them to validate our findings on executable code."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Marco Guarnieri",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Boris Köpf",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jan Reineke",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Pepe Vila",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Imdea Software Institute",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Microsoft Research",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Saarland University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Secure Speculation",
+          "email": "",
+          "affiliations": [
+            "IMDEA Software Institute † Microsoft Research ‡ Saarland University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Marco Guarnieri",
+          "email": "",
+          "affiliations": [
+            "IMDEA Software Institute † Microsoft Research ‡ Saarland University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Boris Köpf",
+          "email": "",
+          "affiliations": [
+            "IMDEA Software Institute † Microsoft Research ‡ Saarland University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Jan Reineke",
+          "email": "",
+          "affiliations": [
+            "IMDEA Software Institute † Microsoft Research ‡ Saarland University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Pepe Vila",
+          "email": "",
+          "affiliations": [
+            "IMDEA Software Institute † Microsoft Research ‡ Saarland University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 131,
+      "author_count": 5,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Secure Speculation",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Secure Speculation",
+          "affiliation_raw": "† IMDEA Software Institute",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b3",
+            "pdf:p1:b6"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 17.857,
+          "center_distance": 10.626,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Hardware-Software Contracts for Secure Speculation",
+      "source_url": "https://www.ieee-security.org/TC/SP2021/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Marco Guarnieri",
+          "affiliations": [
+            "IMDEA Software Institute"
+          ]
+        },
+        {
+          "name": "Boris Köpf",
+          "affiliations": [
+            "Microsoft Research"
+          ]
+        },
+        {
+          "name": "Jan Reineke",
+          "affiliations": [
+            "Saarland University"
+          ]
+        },
+        {
+          "name": "Pepe Vila",
+          "affiliations": [
+            "IMDEA Software Institute"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

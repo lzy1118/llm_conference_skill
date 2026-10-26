@@ -1,0 +1,2477 @@
+{
+  "title": "SpecHammer: Combining Spectre and Rowhammer for New Speculative Attacks",
+  "year": "2022",
+  "abstract": "The recent Spectre attacks have revealed how the performance gains from branch prediction come at the cost of weakened security. Spectre Variant 1 (v1) shows how an attacker-controlled variable passed to speculatively executed lines of code can leak secret information to an attacker. Numerous defenses have since been proposed to prevent Spectre attacks, each attempting to block all or some of the Spectre variants. In particular, defenses using taint-tracking are claimed to be the only way to protect against all forms of Spectre v1. However, we show that the defenses proposed thus far can be bypassed by combining Spectre with the well-known Rowhammer vulner- ability. By using Rowhammer to modify victim values, we relax the requirement that the attacker needs to share a variable with the victim. Thus, defenses that rely on this requirement, such as taint-tracking, are no longer effective. Furthermore, without this crucial requirement, the number of gadgets that can potentially be used to launch a Spectre attack increases dramatically; those present in Linux kernel version 5.6 increases from about 100 to about 20,000 via Rowhammer bit-flips. Attackers can use these gadgets to steal sensitive information such as stack cookies or canaries, or use new triple gadgets to read any address in memory. We demonstrate two versions of the combined attack on example victims in both user and kernel spaces, showing the attack's ability to leak sensitive data. I. I NTRODUCTION Computer architecture development has long put emphasis on optimizing for performance in the common case, often at the cost of security. Speculative execution is one feature following this trend, as it provides significant performance gains at a detrimental security cost. This feature attempts to predict a program's execution flow before determining the correct path to take, saving time on a correct prediction, and simply rolls back any code executed in the case of a misprediction. However, such predictions may mistakenly speculate that malicious code or values are safe, allowing for attackers to temporarily bypass safeguards and run malicious code within misspeculation windows. The potential of such speculative and out-of-order exploits was first demonstrated by Spectre [25] and Meltdown [31], which revealed a new class of vulnerabilities rooted in tran- sient execution. These attacks have shaken the world of computer architecture and security, leading to a large body of work in transient execution attacks [4], [5], [24], [33], [42] and defenses [5], [38], [39], [46], [51]. Moving away from information leakage, Rowhammer [23] is a complimentary vulnerability that breaks the integrity of data and code stored in a machine's main memory. More specifically, the tight packing of transistors in DRAM DIMMs allows attackers to induce bit-flips in inaccessible memory addresses, by rapidly accessing physically-adjacent memory rows. Similarly to Spectre, Rowhammer has spawned numer- ous exploits [3], [11], [13], [17], [18], [27], [32], [34], [37], [40], [43], [45], [47], including the recent bypass of dedicated defenses, such as Targeted Row Refresh (TRR) [50] and Error Correcting Codes (ECC-RAM) [9]. While both Spectre and Rowhammer have been extensively studied individually, much less is known, however, about the combination of both vulnerabilities. Indeed, only one prior work, GhostKnight [55], has considered the new exploit potential resulting from combining both techniques. At a high level, GhostKnight demonstrates that despite their transient nature, speculative memory accesses can cause bit-flips in addresses that Rowhammer could not reach alone, resulting in bit-flips at those memory locations. However, GhostKnight only shows how Spectre can be used to enhance Rowhammer, and neglects to consider the complimentary question of how Rowhammer may be used to enhance Spectre. Noting that most modern machines are vulnerable to both Spectre and Rowhammer, in this paper we ask the following questions: Can the Rowhammer vulnerability be used to strengthen Spectre attacks? In particular, can an attacker somehow leverage Rowhammer to alleviate Spectre's main limitation of having a gadget inside the victim's code with attacker controlled inputs? Finally, what implications do combined attacks have on existing Spectre mitigations? A. Our Contributions We demonstrate that Rowhammer and Spectre can, in fact, be combined to evade the proposed defenses and increase the number of exploitable gadgets in widely-used code. In what follows, we provide a high-level overview of this combined attack, called SpecHammer, and discuss our discovery of newly exploitable gadgets in the kernel. Attack Methods. The core idea of SpecHammer is to trigger a Spectre v1 attack by using Rowhammer bit-flips to insert malicious values into victim gadgets. We present two forms of SpecHammer: the first relaxes the restrictions on ordinary Spectre gadgets (which will henceforth be called double gadgets ), and the second uses new triple gadgets to provide arbitrary reads with just a single bit-flip. 681 DOI 10.1109/SP46214.2022.00079 Double Gadget Exploit. Ordinarily, Spectre v1 allows an attacker to send any malicious value to a Spectre gadget and read memory arbitrarily within the victim's address space. The main weakness of Spectre v1 is that it requires a gadget within the victim's code that uses an attacker controlled offset variable, limiting Spectre v1's attack surface. The target for the first version of SpecHammer, however, is a portion of code that meets all the requirements of a Spectre gadget, but does not provide the attacker any direct way to control the victim offset. By using Rowhammer, it is possible to modify the offset and trigger a Spectre attack on such victims to leak sensitive data. This attack eliminates Spectre v1's main weakness, allowing for exploits on a wider range of code. Unfortunately, Rowhammer can be used to flip, at best, only a few bits for a given word of memory, limiting control the attacker has over the victim offset. Nonetheless, we demon- strate how the attacker, even with limited control, is still able to leak sensitive data. For example, it is feasible to flip bits in the offset such that it points to just past the bounds of an array. This allows for leaking secret stack data, such as stack canaries designed to protect against buffer-overflow attacks [10]. That is, we show how the double gadget exploit can be used to leak such secrets, bypassing stack protection mechanisms. Triple Gadget Exploit. While the first exploit poses a threat to a common defense against buffer-overflow attacks, its scope is more limited than the original Spectre attack which leaked arbitrary memory in the victim's address space. The second type of SpecHammer attack, however, can be used to dump the data of any address in memory. This method relies on a triple gadget , which has similar behavior to the Spectre v1 gadget, except that it features a triple nested access. Using this, the attacker can modify an offset to point to attacker- controlled data. This data can be set to point to secret data, which leads to the use of secret data in a nested array access, just as is done in Spectre v1. The attacker-controlled data can be modified to point to any secret within the attacker's address space, including kernel memory when exploiting a triple gadget residing in the kernel. Thus, a single bit-flip allows for arbitrary memory reads, as opposed to the double gadget which is more restricted in what addresses it can leak. Challenges. Implementing these SpecHammer attacks presents several key challenges: 1) We must find addresses containing useful bit-flips that can force a victim to access secret data under misspeculation. 2) We need to massage memory to force victims to allocate their array offset variables at addresses that contain these useful flips. For targets residing in the kernel, this means massaging kernel stack memory. 3) We must demonstrate that flipping an array offset value in a Spectre v1 gadget can leak data under misspeculation. 4) Finally, we need to find gadgets in sensitive real-world code to understand the impact of relaxing gadget requirements. Challenge 1: Producing Sufficient Rowhammer Flips. SpecHammer requires bit-flips at specific page offsets in order to leak secret data. To that aim, we used the code repositories attached to prior work [16], [44], [48], [50] in order to test the susceptibility of DRAM DIMMs to Rowhammer attacks. Unfortunately, the amount of flips produced by these repositories suggests it is hard to find a DIMM with enough bit-flips to practically execute SpecHammer. However, as we show in Section IV, we observe that all of these repositories make a key oversight regarding cached data: they first initialize victim rows, and then induce bit-flips in DRAM (not caches), but neglect to flush the victim cache line before checking for flips. This leads them to observe cached data when checking for flips, leaving many flips in the DRAM arrays unobserved. By correcting these oversights, we are able to increase the number of bit flips by 248x in the worst case and 525x in the best case on DDR3, and 16x in the best case on DDR4, demonstrating bit-flips are much more common than previous work would suggest. Not only does this allow us to run SpecHammer, but it also makes Rowhammer attacks more practical than previously thought. Challenge 2: Stack Massaging. For the SpecHammer attack, the target for Rowhammer bit-flips is a variable used as an index into an array. Such offsets are most often allocated as local variables, meaning they are located on the stack. Rowhammer attacks rely on massaging targets onto physical addresses that are vulnerable to bit-flips. However, to the best of our knowledge, only one prior work [40] has demonstrated hammering stack variables, relying on memory deduplication to massage stack data as needed. With deduplication now disabled by default, SpecHammer thus requires a new way of massaging a victim stack into place. Furthermore, the most attractive targets for this attack are gadgets residing in the kernel, as they can be used to leak kernel data, and hence a kernel stack massaging primitive is highly desirable. Yet, the prior examples of kernel massaging focused on PTEs, rather than the stack [43], or were performed on mobile devices, taking advantage of features exclusive to Android [47]. Thus, we develop new primitives for massaging both user and kernel stacks, in order to allow for stack hammering without the use of deduplication (Section V). Challenge 3: Proof-of-Concept (PoC) Demonstration. As a proof of concept, we demonstrate (in Section VI) the variations of the attack on example artificial victims in both user and kernel spaces. We demonstrate the double gadget attack in user space and the triple gadget attack in kernel space due to each attack's applicability in its respective space. These PoC attacks act as the basis for eventual attacks on the gadgets already found in widely-used code. We demonstrate a leakage rate of up to 24 bits/s on DDR3 and 19 bits/min on DDR4. Challenge 4: Kernel Gadgets. In order to better understand the effects of relaxing gadget requirements, we found the number of gadgets present in the Linux kernel, with the original Spectre v1 restrictions compared to the amount of SpecHammer gadgets. As shown in Section VII, we find that with the original requirements, there are about 100 ordinary, double gadgets, and only 2 triple gadgets. Modifying the function to search for gadgets vulnerable to our SpecHammer attack leads it to report about 20,000 double gadgets, and about 2682",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Youssef Tobah",
+      "email": "ytobah@umich.edu",
+      "affiliations": [
+        "The University of Michigan"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 1,
+      "name": "Andrew Kwong",
+      "email": "ankwong@umich.edu",
+      "affiliations": [
+        "University of Michigan"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 2,
+      "name": "Ingab Kang",
+      "email": "igkang@umich.edu",
+      "affiliations": [
+        "University of Michigan"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "name": "Daniel Genkin",
+      "email": "",
+      "affiliations": [
+        "Georgia Institute of Technology"
+      ],
+      "affiliation_source": "conference_official_web",
+      "order": 3,
+      "co_first_author": false,
+      "corresponding": false,
+      "equal_contribution": false,
+      "first_author": false
+    },
+    {
+      "order": 4,
+      "name": "Kang G. Shin",
+      "email": "kgshin@umich.edu",
+      "affiliations": [
+        "The University of Michigan"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Youssef Tobah"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "The University of Michigan"
+  ],
+  "first_affiliation": "The University of Michigan",
+  "participating_affiliations": [
+    "The University of Michigan",
+    "University of Michigan",
+    "Georgia Institute of Technology"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Youssef Tobah",
+      "affiliation": "The University of Michigan",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Andrew Kwong",
+      "affiliation": "University of Michigan",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Ingab Kang",
+      "affiliation": "University of Michigan",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Daniel Genkin",
+      "affiliation": "Georgia Institute of Technology",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Kang G. Shin",
+      "affiliation": "The University of Michigan",
+      "source": "conference_official_web"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "SpecHammer: Combining Spectre and Rowhammer for New Speculative Attacks"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2022"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Youssef Tobah",
+        "order": 0,
+        "email": "ytobah@umich.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Andrew Kwong",
+        "order": 1,
+        "email": "ankwong@umich.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Ingab Kang",
+        "order": 2,
+        "email": "igkang@umich.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:3",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Daniel Genkin",
+        "order": 3,
+        "email": "genkin@gatech.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:4",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Kang GShin",
+        "order": 4,
+        "email": "kgshin@umich.edu",
+        "affiliations": []
+      },
+      {
+        "evidence_id": "tei:author:5",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "",
+        "order": 5,
+        "email": "",
+        "affiliations": [
+          "University of Michigan, Georgia Tech"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:6",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "",
+        "order": 6,
+        "email": "",
+        "affiliations": [
+          "University of Michigan"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "SpecHammer: Combining Spectre and Rowhammer"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "for New Speculative Attacks"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Youssef Tobah"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "University of Michigan"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "ytobah@umich.edu"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Andrew Kwong"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:6",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "University of Michigan"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:7",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "ankwong@umich.edu"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:8",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Ingab Kang"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:9",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "University of Michigan"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:10",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "igkang@umich.edu"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:11",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Daniel Genkin"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:12",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Georgia Tech"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:13",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "genkin@gatech.edu"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:14",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Kang G. Shin"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:15",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "University of Michigan"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:16",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "kgshin@umich.edu"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          189.29,
+          762.0,
+          405.29,
+          772.0
+        ],
+        "font_size": 10.0,
+        "raw_text": "2022 IEEE Symposium on Security and Privacy (SP)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          52.481,
+          720.768,
+          515.145,
+          744.678
+        ],
+        "font_size": 23.91,
+        "raw_text": "SpecHammer: Combining Spectre and Rowhammer",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          165.408,
+          692.873,
+          455.918,
+          716.783
+        ],
+        "font_size": 23.91,
+        "raw_text": "for New Speculative Attacks",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          72.196,
+          661.49,
+          136.306,
+          672.449
+        ],
+        "font_size": 10.959,
+        "raw_text": "Youssef Tobah",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          174.867,
+          661.49,
+          234.045,
+          672.449
+        ],
+        "font_size": 10.959,
+        "raw_text": "Andrew Kwong",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          289.483,
+          661.49,
+          338.798,
+          672.449
+        ],
+        "font_size": 10.959,
+        "raw_text": "Ingab Kang",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          378.688,
+          661.49,
+          442.798,
+          672.449
+        ],
+        "font_size": 10.959,
+        "raw_text": "Daniel Genkin",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          475.892,
+          661.49,
+          535.07,
+          672.449
+        ],
+        "font_size": 10.959,
+        "raw_text": "Kang G. Shin",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          55.749,
+          649.014,
+          259.724,
+          658.977
+        ],
+        "font_size": 9.963,
+        "raw_text": "University of Michigan University of Michigan",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          266.439,
+          649.014,
+          436.092,
+          658.977
+        ],
+        "font_size": 9.963,
+        "raw_text": "University of Michigan Georgia Tech",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          457.691,
+          649.014,
+          556.321,
+          658.977
+        ],
+        "font_size": 9.963,
+        "raw_text": "University of Michigan",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          65.991,
+          636.685,
+          137.722,
+          646.648
+        ],
+        "font_size": 9.963,
+        "raw_text": "ytobah@umich.edu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          166.683,
+          636.685,
+          242.897,
+          646.648
+        ],
+        "font_size": 9.963,
+        "raw_text": "ankwong@umich.edu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          276.68,
+          636.685,
+          348.411,
+          646.648
+        ],
+        "font_size": 9.963,
+        "raw_text": "igkang@umich.edu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          371.783,
+          636.685,
+          447.997,
+          646.648
+        ],
+        "font_size": 9.963,
+        "raw_text": "genkin@gatech.edu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          468.207,
+          636.685,
+          539.938,
+          646.648
+        ],
+        "font_size": 9.963,
+        "raw_text": "kgshin@umich.edu",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          589.628,
+          231.341,
+          598.594
+        ],
+        "font_size": 8.966,
+        "raw_text": "Abstract -The recent Spectre attacks have revealed how the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          589.627,
+          580.968,
+          599.59
+        ],
+        "font_size": 9.963,
+        "raw_text": "specifically, the tight packing of transistors in DRAM DIMMs",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          579.665,
+          278.952,
+          588.631
+        ],
+        "font_size": 8.966,
+        "raw_text": "performance gains from branch prediction come at the cost",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          577.672,
+          576.485,
+          587.635
+        ],
+        "font_size": 9.963,
+        "raw_text": "allows attackers to induce bit-flips in inaccessible memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          569.702,
+          278.952,
+          578.668
+        ],
+        "font_size": 8.966,
+        "raw_text": "of weakened security. Spectre Variant 1 (v1) shows how an",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          565.717,
+          572.002,
+          575.68
+        ],
+        "font_size": 9.963,
+        "raw_text": "addresses, by rapidly accessing physically-adjacent memory",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          559.74,
+          319.301,
+          568.706
+        ],
+        "font_size": 8.966,
+        "raw_text": "attacker-controlled variable passed to speculatively executed lines",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          553.762,
+          563.036,
+          563.725
+        ],
+        "font_size": 9.963,
+        "raw_text": "rows. Similarly to Spectre, Rowhammer has spawned numer-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          549.777,
+          291.057,
+          558.743
+        ],
+        "font_size": 8.966,
+        "raw_text": "of code can leak secret information to an attacker. Numerous",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          541.807,
+          603.384,
+          551.77
+        ],
+        "font_size": 9.963,
+        "raw_text": "ous exploits [3], [11], [13], [17], [18], [27], [32], [34], [37],",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          539.814,
+          295.092,
+          548.78
+        ],
+        "font_size": 8.966,
+        "raw_text": "defenses have since been proposed to prevent Spectre attacks,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          529.852,
+          307.196,
+          538.818
+        ],
+        "font_size": 8.966,
+        "raw_text": "each attempting to block all or some of the Spectre variants. In",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          529.852,
+          598.901,
+          539.815
+        ],
+        "font_size": 9.963,
+        "raw_text": "[40], [43], [45], [47], including the recent bypass of dedicated",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          519.889,
+          303.161,
+          528.855
+        ],
+        "font_size": 8.966,
+        "raw_text": "particular, defenses using taint-tracking are claimed to be the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          517.896,
+          576.485,
+          527.859
+        ],
+        "font_size": 9.963,
+        "raw_text": "defenses, such as Targeted Row Refresh (TRR) [50] and Error",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          509.926,
+          295.092,
+          518.892
+        ],
+        "font_size": 8.966,
+        "raw_text": "only way to protect against all forms of Spectre v1. However,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          505.941,
+          450.956,
+          515.904
+        ],
+        "font_size": 9.963,
+        "raw_text": "Correcting Codes (ECC-RAM) [9].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          499.964,
+          287.022,
+          508.93
+        ],
+        "font_size": 8.966,
+        "raw_text": "we show that the defenses proposed thus far can be bypassed",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.94,
+          493.373,
+          564.031,
+          503.336
+        ],
+        "font_size": 9.963,
+        "raw_text": "While both Spectre and Rowhammer have been extensively",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          490.001,
+          282.987,
+          498.967
+        ],
+        "font_size": 8.966,
+        "raw_text": "by combining Spectre with the well-known Rowhammer vulner-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          481.418,
+          563.036,
+          491.381
+        ],
+        "font_size": 9.963,
+        "raw_text": "studied individually, much less is known, however, about",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          480.039,
+          295.092,
+          489.005
+        ],
+        "font_size": 8.966,
+        "raw_text": "ability. By using Rowhammer to modify victim values, we relax",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          470.076,
+          307.196,
+          479.042
+        ],
+        "font_size": 8.966,
+        "raw_text": "the requirement that the attacker needs to share a variable with",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          469.463,
+          567.519,
+          479.426
+        ],
+        "font_size": 9.963,
+        "raw_text": "the combination of both vulnerabilities. Indeed, only one",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          460.113,
+          311.231,
+          469.079
+        ],
+        "font_size": 8.966,
+        "raw_text": "the victim. Thus, defenses that rely on this requirement, such as",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          457.507,
+          580.968,
+          467.47
+        ],
+        "font_size": 9.963,
+        "raw_text": "prior work, GhostKnight [55], has considered the new exploit",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          450.151,
+          315.266,
+          459.117
+        ],
+        "font_size": 8.966,
+        "raw_text": "taint-tracking, are no longer effective. Furthermore, without this",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          445.552,
+          585.451,
+          455.515
+        ],
+        "font_size": 9.963,
+        "raw_text": "potential resulting from combining both techniques. At a high",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          440.188,
+          303.161,
+          449.154
+        ],
+        "font_size": 8.966,
+        "raw_text": "crucial requirement, the number of gadgets that can potentially",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          433.597,
+          580.968,
+          443.56
+        ],
+        "font_size": 9.963,
+        "raw_text": "level, GhostKnight demonstrates that despite their transient",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          430.225,
+          307.196,
+          439.191
+        ],
+        "font_size": 8.966,
+        "raw_text": "be used to launch a Spectre attack increases dramatically; those",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          421.642,
+          572.002,
+          431.605
+        ],
+        "font_size": 9.963,
+        "raw_text": "nature, speculative memory accesses can cause bit-flips in",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          420.263,
+          303.161,
+          429.229
+        ],
+        "font_size": 8.966,
+        "raw_text": "present in Linux kernel version 5.6 increases from about 100 to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          410.3,
+          295.092,
+          419.266
+        ],
+        "font_size": 8.966,
+        "raw_text": "about 20,000 via Rowhammer bit-flips. Attackers can use these",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          409.687,
+          567.519,
+          419.65
+        ],
+        "font_size": 9.963,
+        "raw_text": "addresses that Rowhammer could not reach alone, resulting",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          400.337,
+          303.161,
+          409.303
+        ],
+        "font_size": 8.966,
+        "raw_text": "gadgets to steal sensitive information such as stack cookies or",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          397.731,
+          580.968,
+          407.694
+        ],
+        "font_size": 9.963,
+        "raw_text": "in bit-flips at those memory locations. However, GhostKnight",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          390.375,
+          129.662,
+          399.341
+        ],
+        "font_size": 8.966,
+        "raw_text": "canaries, or use new triple gadgets",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          128.305,
+          390.375,
+          249.351,
+          399.341
+        ],
+        "font_size": 8.966,
+        "raw_text": "to read any address in memory.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          385.776,
+          563.036,
+          395.739
+        ],
+        "font_size": 9.963,
+        "raw_text": "only shows how Spectre can be used to enhance Rowhammer,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          380.412,
+          295.092,
+          389.378
+        ],
+        "font_size": 8.966,
+        "raw_text": "We demonstrate two versions of the combined attack on example",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          373.821,
+          572.002,
+          383.784
+        ],
+        "font_size": 9.963,
+        "raw_text": "and neglects to consider the complimentary question of how",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          370.449,
+          291.057,
+          379.415
+        ],
+        "font_size": 8.966,
+        "raw_text": "victims in both user and kernel spaces, showing the attack's",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          361.866,
+          549.586,
+          371.829
+        ],
+        "font_size": 9.963,
+        "raw_text": "Rowhammer may be used to enhance Spectre. Noting that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          360.487,
+          174.045,
+          369.453
+        ],
+        "font_size": 8.966,
+        "raw_text": "ability to leak sensitive data.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          349.911,
+          558.552,
+          359.874
+        ],
+        "font_size": 9.963,
+        "raw_text": "most modern machines are vulnerable to both Spectre and",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          135.62,
+          341.756,
+          153.553,
+          351.719
+        ],
+        "font_size": 9.963,
+        "raw_text": "I. I",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          135.62,
+          341.756,
+          175.072,
+          349.726
+        ],
+        "font_size": 7.97,
+        "raw_text": "NTRODUCTION",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          337.956,
+          563.036,
+          347.919
+        ],
+        "font_size": 9.963,
+        "raw_text": "Rowhammer, in this paper we ask the following questions:",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          326.626,
+          305.501,
+          336.589
+        ],
+        "font_size": 9.963,
+        "raw_text": "Computer architecture development has long put emphasis",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.94,
+          321.717,
+          559.548,
+          331.68
+        ],
+        "font_size": 9.963,
+        "raw_text": "Can the Rowhammer vulnerability be used to strengthen",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          314.671,
+          295.538,
+          324.634
+        ],
+        "font_size": 9.963,
+        "raw_text": "on optimizing for performance in the common case, often",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          309.762,
+          558.552,
+          319.725
+        ],
+        "font_size": 9.963,
+        "raw_text": "Spectre attacks? In particular, can an attacker somehow",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          302.716,
+          322.437,
+          312.679
+        ],
+        "font_size": 9.963,
+        "raw_text": "at the cost of security. Speculative execution is one feature",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          297.807,
+          567.519,
+          307.77
+        ],
+        "font_size": 9.963,
+        "raw_text": "leverage Rowhammer to alleviate Spectre's main limitation",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          290.76,
+          317.954,
+          300.723
+        ],
+        "font_size": 9.963,
+        "raw_text": "following this trend, as it provides significant performance",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          285.852,
+          567.519,
+          295.815
+        ],
+        "font_size": 9.963,
+        "raw_text": "of having a gadget inside the victim's code with attacker",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          278.805,
+          326.921,
+          288.768
+        ],
+        "font_size": 9.963,
+        "raw_text": "gains at a detrimental security cost. This feature attempts to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          273.896,
+          567.519,
+          283.859
+        ],
+        "font_size": 9.963,
+        "raw_text": "controlled inputs? Finally, what implications do combined",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          266.85,
+          304.505,
+          276.813
+        ],
+        "font_size": 9.963,
+        "raw_text": "predict a program's execution flow before determining the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          261.941,
+          513.721,
+          271.904
+        ],
+        "font_size": 9.963,
+        "raw_text": "attacks have on existing Spectre mitigations?",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          254.895,
+          308.988,
+          264.858
+        ],
+        "font_size": 9.963,
+        "raw_text": "correct path to take, saving time on a correct prediction,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          242.94,
+          291.055,
+          252.903
+        ],
+        "font_size": 9.963,
+        "raw_text": "and simply rolls back any code executed in the case of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          238.049,
+          401.641,
+          248.012
+        ],
+        "font_size": 9.963,
+        "raw_text": "A. Our Contributions",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          230.985,
+          304.505,
+          240.948
+        ],
+        "font_size": 9.963,
+        "raw_text": "a misprediction. However, such predictions may mistakenly",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          321.94,
+          220.81,
+          568.514,
+          230.773
+        ],
+        "font_size": 9.963,
+        "raw_text": "We demonstrate that Rowhammer and Spectre can, in fact,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          219.029,
+          326.921,
+          228.992
+        ],
+        "font_size": 9.963,
+        "raw_text": "speculate that malicious code or values are safe, allowing for",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          208.855,
+          576.485,
+          218.818
+        ],
+        "font_size": 9.963,
+        "raw_text": "be combined to evade the proposed defenses and increase the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          207.074,
+          317.954,
+          217.037
+        ],
+        "font_size": 9.963,
+        "raw_text": "attackers to temporarily bypass safeguards and run malicious",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          196.899,
+          572.002,
+          206.862
+        ],
+        "font_size": 9.963,
+        "raw_text": "number of exploitable gadgets in widely-used code. In what",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          195.119,
+          205.875,
+          205.082
+        ],
+        "font_size": 9.963,
+        "raw_text": "code within misspeculation windows.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          184.944,
+          572.002,
+          194.907
+        ],
+        "font_size": 9.963,
+        "raw_text": "follows, we provide a high-level overview of this combined",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          183.158,
+          323.434,
+          193.121
+        ],
+        "font_size": 9.963,
+        "raw_text": "The potential of such speculative and out-of-order exploits",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          17.6,
+          173.144,
+          467.6,
+          181.144
+        ],
+        "font_size": 8.0,
+        "raw_text": "2022 IEEE Symposium on Security and Privacy (SP) | 978-1-6654-1316-9/22/$31.00 ©2022 IEEE | DOI: 10.1109/SP46214.2022.9833802",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          172.989,
+          558.552,
+          182.952
+        ],
+        "font_size": 9.963,
+        "raw_text": "attack, called SpecHammer, and discuss our discovery of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          171.203,
+          304.505,
+          181.166
+        ],
+        "font_size": 9.963,
+        "raw_text": "was first demonstrated by Spectre [25] and Meltdown [31],",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          161.034,
+          491.305,
+          170.997
+        ],
+        "font_size": 9.963,
+        "raw_text": "newly exploitable gadgets in the kernel.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          159.247,
+          322.437,
+          169.21
+        ],
+        "font_size": 9.963,
+        "raw_text": "which revealed a new class of vulnerabilities rooted in tran-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          147.292,
+          295.538,
+          157.255
+        ],
+        "font_size": 9.963,
+        "raw_text": "sient execution. These attacks have shaken the world of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          147.286,
+          459.923,
+          157.249
+        ],
+        "font_size": 9.963,
+        "raw_text": "Attack Methods. The core idea of SpecHammer is to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          135.337,
+          313.471,
+          145.3
+        ],
+        "font_size": 9.963,
+        "raw_text": "computer architecture and security, leading to a large body",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          135.331,
+          576.485,
+          145.294
+        ],
+        "font_size": 9.963,
+        "raw_text": "trigger a Spectre v1 attack by using Rowhammer bit-flips to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          123.382,
+          340.37,
+          133.345
+        ],
+        "font_size": 9.963,
+        "raw_text": "of work in transient execution attacks [4], [5], [24], [33], [42]",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b99",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          123.376,
+          576.485,
+          133.339
+        ],
+        "font_size": 9.963,
+        "raw_text": "insert malicious values into victim gadgets. We present two",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b100",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          111.427,
+          232.774,
+          121.39
+        ],
+        "font_size": 9.963,
+        "raw_text": "and defenses [5], [38], [39], [46], [51].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b101",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          111.421,
+          572.002,
+          121.384
+        ],
+        "font_size": 9.963,
+        "raw_text": "forms of SpecHammer: the first relaxes the restrictions on",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b102",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          58.927,
+          99.466,
+          292.052,
+          109.429
+        ],
+        "font_size": 9.963,
+        "raw_text": "Moving away from information leakage, Rowhammer [23]",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b103",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          99.465,
+          567.519,
+          109.428
+        ],
+        "font_size": 9.963,
+        "raw_text": "ordinary Spectre gadgets (which will henceforth be called",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b104",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          87.51,
+          322.437,
+          97.473
+        ],
+        "font_size": 9.963,
+        "raw_text": "is a complimentary vulnerability that breaks the integrity of",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b105",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          87.51,
+          437.118,
+          97.473
+        ],
+        "font_size": 9.963,
+        "raw_text": "double gadgets ), and the second uses new triple gadgets",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b106",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          494.075,
+          87.51,
+          504.038,
+          97.473
+        ],
+        "font_size": 9.963,
+        "raw_text": "to",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b107",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.964,
+          75.555,
+          286.572,
+          85.518
+        ],
+        "font_size": 9.963,
+        "raw_text": "data and code stored in a machine's main memory. More",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b108",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          311.978,
+          75.555,
+          545.103,
+          85.518
+        ],
+        "font_size": 9.963,
+        "raw_text": "provide arbitrary reads with just a single bit-flip.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b109",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          38.0,
+          208.0,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "© 2022, Youssef Tobah. Under license to IEEE.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b110",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          299.33,
+          38.0,
+          310.13,
+          46.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "681",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b111",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          46.0,
+          30.0,
+          154.0,
+          38.0
+        ],
+        "font_size": 8.0,
+        "raw_text": "DOI 10.1109/SP46214.2022.00079",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b112",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          86.179,
+          21.908,
+          514.579,
+          28.908
+        ],
+        "font_size": 7.0,
+        "raw_text": "Authorized licensed use limited to: Yanshan University. Downloaded on June 24,2026 at 05:53:49 UTC from IEEE Xplore. Restrictions apply.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "The recent Spectre attacks have revealed how the performance gains from branch prediction come at the cost of weakened security. Spectre Variant 1 (v1) shows how an attacker-controlled variable passed to speculatively executed lines of code can leak secret information to an attacker. Numerous defenses have since been proposed to prevent Spectre attacks, each attempting to block all or some of the Spectre variants. In particular, defenses using taint-tracking are claimed to be the only way to protect against all forms of Spectre v1. However, we show that the defenses proposed thus far can be bypassed by combining Spectre with the well-known Rowhammer vulner- ability. By using Rowhammer to modify victim values, we relax the requirement that the attacker needs to share a variable with the victim. Thus, defenses that rely on this requirement, such as taint-tracking, are no longer effective. Furthermore, without this crucial requirement, the number of gadgets that can potentially be used to launch a Spectre attack increases dramatically; those present in Linux kernel version 5.6 increases from about 100 to about 20,000 via Rowhammer bit-flips. Attackers can use these gadgets to steal sensitive information such as stack cookies or canaries, or use new triple gadgets to read any address in memory. We demonstrate two versions of the combined attack on example victims in both user and kernel spaces, showing the attack's ability to leak sensitive data. I. I NTRODUCTION Computer architecture development has long put emphasis on optimizing for performance in the common case, often at the cost of security. Speculative execution is one feature following this trend, as it provides significant performance gains at a detrimental security cost. This feature attempts to predict a program's execution flow before determining the correct path to take, saving time on a correct prediction, and simply rolls back any code executed in the case of a misprediction. However, such predictions may mistakenly speculate that malicious code or values are safe, allowing for attackers to temporarily bypass safeguards and run malicious code within misspeculation windows. The potential of such speculative and out-of-order exploits was first demonstrated by Spectre [25] and Meltdown [31], which revealed a new class of vulnerabilities rooted in tran- sient execution. These attacks have shaken the world of computer architecture and security, leading to a large body of work in transient execution attacks [4], [5], [24], [33], [42] and defenses [5], [38], [39], [46], [51]. Moving away from information leakage, Rowhammer [23] is a complimentary vulnerability that breaks the integrity of data and code stored in a machine's main memory. More specifically, the tight packing of transistors in DRAM DIMMs allows attackers to induce bit-flips in inaccessible memory addresses, by rapidly accessing physically-adjacent memory rows. Similarly to Spectre, Rowhammer has spawned numer- ous exploits [3], [11], [13], [17], [18], [27], [32], [34], [37], [40], [43], [45], [47], including the recent bypass of dedicated defenses, such as Targeted Row Refresh (TRR) [50] and Error Correcting Codes (ECC-RAM) [9]. While both Spectre and Rowhammer have been extensively studied individually, much less is known, however, about the combination of both vulnerabilities. Indeed, only one prior work, GhostKnight [55], has considered the new exploit potential resulting from combining both techniques. At a high level, GhostKnight demonstrates that despite their transient nature, speculative memory accesses can cause bit-flips in addresses that Rowhammer could not reach alone, resulting in bit-flips at those memory locations. However, GhostKnight only shows how Spectre can be used to enhance Rowhammer, and neglects to consider the complimentary question of how Rowhammer may be used to enhance Spectre. Noting that most modern machines are vulnerable to both Spectre and Rowhammer, in this paper we ask the following questions: Can the Rowhammer vulnerability be used to strengthen Spectre attacks? In particular, can an attacker somehow leverage Rowhammer to alleviate Spectre's main limitation of having a gadget inside the victim's code with attacker controlled inputs? Finally, what implications do combined attacks have on existing Spectre mitigations? A. Our Contributions We demonstrate that Rowhammer and Spectre can, in fact, be combined to evade the proposed defenses and increase the number of exploitable gadgets in widely-used code. In what follows, we provide a high-level overview of this combined attack, called SpecHammer, and discuss our discovery of newly exploitable gadgets in the kernel. Attack Methods. The core idea of SpecHammer is to trigger a Spectre v1 attack by using Rowhammer bit-flips to insert malicious values into victim gadgets. We present two forms of SpecHammer: the first relaxes the restrictions on ordinary Spectre gadgets (which will henceforth be called double gadgets ), and the second uses new triple gadgets to provide arbitrary reads with just a single bit-flip. 681 DOI 10.1109/SP46214.2022.00079 Double Gadget Exploit. Ordinarily, Spectre v1 allows an attacker to send any malicious value to a Spectre gadget and read memory arbitrarily within the victim's address space. The main weakness of Spectre v1 is that it requires a gadget within the victim's code that uses an attacker controlled offset variable, limiting Spectre v1's attack surface. The target for the first version of SpecHammer, however, is a portion of code that meets all the requirements of a Spectre gadget, but does not provide the attacker any direct way to control the victim offset. By using Rowhammer, it is possible to modify the offset and trigger a Spectre attack on such victims to leak sensitive data. This attack eliminates Spectre v1's main weakness, allowing for exploits on a wider range of code. Unfortunately, Rowhammer can be used to flip, at best, only a few bits for a given word of memory, limiting control the attacker has over the victim offset. Nonetheless, we demon- strate how the attacker, even with limited control, is still able to leak sensitive data. For example, it is feasible to flip bits in the offset such that it points to just past the bounds of an array. This allows for leaking secret stack data, such as stack canaries designed to protect against buffer-overflow attacks [10]. That is, we show how the double gadget exploit can be used to leak such secrets, bypassing stack protection mechanisms. Triple Gadget Exploit. While the first exploit poses a threat to a common defense against buffer-overflow attacks, its scope is more limited than the original Spectre attack which leaked arbitrary memory in the victim's address space. The second type of SpecHammer attack, however, can be used to dump the data of any address in memory. This method relies on a triple gadget , which has similar behavior to the Spectre v1 gadget, except that it features a triple nested access. Using this, the attacker can modify an offset to point to attacker- controlled data. This data can be set to point to secret data, which leads to the use of secret data in a nested array access, just as is done in Spectre v1. The attacker-controlled data can be modified to point to any secret within the attacker's address space, including kernel memory when exploiting a triple gadget residing in the kernel. Thus, a single bit-flip allows for arbitrary memory reads, as opposed to the double gadget which is more restricted in what addresses it can leak. Challenges. Implementing these SpecHammer attacks presents several key challenges: 1) We must find addresses containing useful bit-flips that can force a victim to access secret data under misspeculation. 2) We need to massage memory to force victims to allocate their array offset variables at addresses that contain these useful flips. For targets residing in the kernel, this means massaging kernel stack memory. 3) We must demonstrate that flipping an array offset value in a Spectre v1 gadget can leak data under misspeculation. 4) Finally, we need to find gadgets in sensitive real-world code to understand the impact of relaxing gadget requirements. Challenge 1: Producing Sufficient Rowhammer Flips. SpecHammer requires bit-flips at specific page offsets in order to leak secret data. To that aim, we used the code repositories attached to prior work [16], [44], [48], [50] in order to test the susceptibility of DRAM DIMMs to Rowhammer attacks. Unfortunately, the amount of flips produced by these repositories suggests it is hard to find a DIMM with enough bit-flips to practically execute SpecHammer. However, as we show in Section IV, we observe that all of these repositories make a key oversight regarding cached data: they first initialize victim rows, and then induce bit-flips in DRAM (not caches), but neglect to flush the victim cache line before checking for flips. This leads them to observe cached data when checking for flips, leaving many flips in the DRAM arrays unobserved. By correcting these oversights, we are able to increase the number of bit flips by 248x in the worst case and 525x in the best case on DDR3, and 16x in the best case on DDR4, demonstrating bit-flips are much more common than previous work would suggest. Not only does this allow us to run SpecHammer, but it also makes Rowhammer attacks more practical than previously thought. Challenge 2: Stack Massaging. For the SpecHammer attack, the target for Rowhammer bit-flips is a variable used as an index into an array. Such offsets are most often allocated as local variables, meaning they are located on the stack. Rowhammer attacks rely on massaging targets onto physical addresses that are vulnerable to bit-flips. However, to the best of our knowledge, only one prior work [40] has demonstrated hammering stack variables, relying on memory deduplication to massage stack data as needed. With deduplication now disabled by default, SpecHammer thus requires a new way of massaging a victim stack into place. Furthermore, the most attractive targets for this attack are gadgets residing in the kernel, as they can be used to leak kernel data, and hence a kernel stack massaging primitive is highly desirable. Yet, the prior examples of kernel massaging focused on PTEs, rather than the stack [43], or were performed on mobile devices, taking advantage of features exclusive to Android [47]. Thus, we develop new primitives for massaging both user and kernel stacks, in order to allow for stack hammering without the use of deduplication (Section V). Challenge 3: Proof-of-Concept (PoC) Demonstration. As a proof of concept, we demonstrate (in Section VI) the variations of the attack on example artificial victims in both user and kernel spaces. We demonstrate the double gadget attack in user space and the triple gadget attack in kernel space due to each attack's applicability in its respective space. These PoC attacks act as the basis for eventual attacks on the gadgets already found in widely-used code. We demonstrate a leakage rate of up to 24 bits/s on DDR3 and 19 bits/min on DDR4. Challenge 4: Kernel Gadgets. In order to better understand the effects of relaxing gadget requirements, we found the number of gadgets present in the Linux kernel, with the original Spectre v1 restrictions compared to the amount of SpecHammer gadgets. As shown in Section VII, we find that with the original requirements, there are about 100 ordinary, double gadgets, and only 2 triple gadgets. Modifying the function to search for gadgets vulnerable to our SpecHammer attack leads it to report about 20,000 double gadgets, and about 2682",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "Meeting Starting Date": "22 May 2022",
+          "ModDate": "D:20220721172926-04'00'",
+          "IEEE Article ID": "9833802",
+          "CreationDate": "D:20220719161518-04'00'",
+          "IEEE Issue ID": "9833558",
+          "Producer": "OpenPDF 1.0.0-SNAPSHOT; modified using iText® 7.1.1 ©2000-2018 iText Group NV (AGPL-version)",
+          "Subject": "2022 IEEE Symposium on Security and Privacy (SP);2022; ; ;10.1109/SP46214.2022.9833802",
+          "IEEE Publication ID": "9833550",
+          "Title": "SpecHammer: Combining Spectre and Rowhammer for New Speculative Attacks",
+          "Meeting Ending Date": "26 May 2022"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Youssef Tobah",
+        "affiliations": [
+          "The University of Michigan"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Andrew Kwong",
+        "affiliations": [
+          "University of Michigan"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Ingab Kang",
+        "affiliations": [
+          "University of Michigan"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:3",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Daniel Genkin",
+        "affiliations": [
+          "Georgia Institute of Technology"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:4",
+        "source": "conference_official_web",
+        "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+        "field": "author_affiliation_relation",
+        "author": "Kang G. Shin",
+        "affiliations": [
+          "The University of Michigan"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "SpecHammer: Combining Spectre and Rowhammer for New Speculative Attacks"
+        },
+        {
+          "source": "selected",
+          "value": "SpecHammer: Combining Spectre and Rowhammer for New Speculative Attacks"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2022"
+        },
+        {
+          "source": "selected",
+          "value": "2022"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "The recent Spectre attacks have revealed how the performance gains from branch prediction come at the cost of weakened security. Spectre Variant 1 (v1) shows how an attacker-controlled variable passed to speculatively executed lines of code can leak secret information to an attacker. Numerous defenses have since been proposed to prevent Spectre attacks, each attempting to block all or some of the Spectre variants. In particular, defenses using taint-tracking are claimed to be the only way to protect against all forms of Spectre v1. However, we show that the defenses proposed thus far can be bypassed by combining Spectre with the well-known Rowhammer vulner- ability. By using Rowhammer to modify victim values, we relax the requirement that the attacker needs to share a variable with the victim. Thus, defenses that rely on this requirement, such as taint-tracking, are no longer effective. Furthermore, without this crucial requirement, the number of gadgets that can potentially be used to launch a Spectre attack increases dramatically; those present in Linux kernel version 5.6 increases from about 100 to about 20,000 via Rowhammer bit-flips. Attackers can use these gadgets to steal sensitive information such as stack cookies or canaries, or use new triple gadgets to read any address in memory. We demonstrate two versions of the combined attack on example victims in both user and kernel spaces, showing the attack's ability to leak sensitive data. I. I NTRODUCTION Computer architecture development has long put emphasis on optimizing for performance in the common case, often at the cost of security. Speculative execution is one feature following this trend, as it provides significant performance gains at a detrimental security cost. This feature attempts to predict a program's execution flow before determining the correct path to take, saving time on a correct prediction, and simply rolls back any code executed in the case of a misprediction. However, such predictions may mistakenly speculate that malicious code or values are safe, allowing for attackers to temporarily bypass safeguards and run malicious code within misspeculation windows. The potential of such speculative and out-of-order exploits was first demonstrated by Spectre [25] and Meltdown [31], which revealed a new class of vulnerabilities rooted in tran- sient execution. These attacks have shaken the world of computer architecture and security, leading to a large body of work in transient execution attacks [4], [5], [24], [33], [42] and defenses [5], [38], [39], [46], [51]. Moving away from information leakage, Rowhammer [23] is a complimentary vulnerability that breaks the integrity of data and code stored in a machine's main memory. More specifically, the tight packing of transistors in DRAM DIMMs allows attackers to induce bit-flips in inaccessible memory addresses, by rapidly accessing physically-adjacent memory rows. Similarly to Spectre, Rowhammer has spawned numer- ous exploits [3], [11], [13], [17], [18], [27], [32], [34], [37], [40], [43], [45], [47], including the recent bypass of dedicated defenses, such as Targeted Row Refresh (TRR) [50] and Error Correcting Codes (ECC-RAM) [9]. While both Spectre and Rowhammer have been extensively studied individually, much less is known, however, about the combination of both vulnerabilities. Indeed, only one prior work, GhostKnight [55], has considered the new exploit potential resulting from combining both techniques. At a high level, GhostKnight demonstrates that despite their transient nature, speculative memory accesses can cause bit-flips in addresses that Rowhammer could not reach alone, resulting in bit-flips at those memory locations. However, GhostKnight only shows how Spectre can be used to enhance Rowhammer, and neglects to consider the complimentary question of how Rowhammer may be used to enhance Spectre. Noting that most modern machines are vulnerable to both Spectre and Rowhammer, in this paper we ask the following questions: Can the Rowhammer vulnerability be used to strengthen Spectre attacks? In particular, can an attacker somehow leverage Rowhammer to alleviate Spectre's main limitation of having a gadget inside the victim's code with attacker controlled inputs? Finally, what implications do combined attacks have on existing Spectre mitigations? A. Our Contributions We demonstrate that Rowhammer and Spectre can, in fact, be combined to evade the proposed defenses and increase the number of exploitable gadgets in widely-used code. In what follows, we provide a high-level overview of this combined attack, called SpecHammer, and discuss our discovery of newly exploitable gadgets in the kernel. Attack Methods. The core idea of SpecHammer is to trigger a Spectre v1 attack by using Rowhammer bit-flips to insert malicious values into victim gadgets. We present two forms of SpecHammer: the first relaxes the restrictions on ordinary Spectre gadgets (which will henceforth be called double gadgets ), and the second uses new triple gadgets to provide arbitrary reads with just a single bit-flip. 681 DOI 10.1109/SP46214.2022.00079 Double Gadget Exploit. Ordinarily, Spectre v1 allows an attacker to send any malicious value to a Spectre gadget and read memory arbitrarily within the victim's address space. The main weakness of Spectre v1 is that it requires a gadget within the victim's code that uses an attacker controlled offset variable, limiting Spectre v1's attack surface. The target for the first version of SpecHammer, however, is a portion of code that meets all the requirements of a Spectre gadget, but does not provide the attacker any direct way to control the victim offset. By using Rowhammer, it is possible to modify the offset and trigger a Spectre attack on such victims to leak sensitive data. This attack eliminates Spectre v1's main weakness, allowing for exploits on a wider range of code. Unfortunately, Rowhammer can be used to flip, at best, only a few bits for a given word of memory, limiting control the attacker has over the victim offset. Nonetheless, we demon- strate how the attacker, even with limited control, is still able to leak sensitive data. For example, it is feasible to flip bits in the offset such that it points to just past the bounds of an array. This allows for leaking secret stack data, such as stack canaries designed to protect against buffer-overflow attacks [10]. That is, we show how the double gadget exploit can be used to leak such secrets, bypassing stack protection mechanisms. Triple Gadget Exploit. While the first exploit poses a threat to a common defense against buffer-overflow attacks, its scope is more limited than the original Spectre attack which leaked arbitrary memory in the victim's address space. The second type of SpecHammer attack, however, can be used to dump the data of any address in memory. This method relies on a triple gadget , which has similar behavior to the Spectre v1 gadget, except that it features a triple nested access. Using this, the attacker can modify an offset to point to attacker- controlled data. This data can be set to point to secret data, which leads to the use of secret data in a nested array access, just as is done in Spectre v1. The attacker-controlled data can be modified to point to any secret within the attacker's address space, including kernel memory when exploiting a triple gadget residing in the kernel. Thus, a single bit-flip allows for arbitrary memory reads, as opposed to the double gadget which is more restricted in what addresses it can leak. Challenges. Implementing these SpecHammer attacks presents several key challenges: 1) We must find addresses containing useful bit-flips that can force a victim to access secret data under misspeculation. 2) We need to massage memory to force victims to allocate their array offset variables at addresses that contain these useful flips. For targets residing in the kernel, this means massaging kernel stack memory. 3) We must demonstrate that flipping an array offset value in a Spectre v1 gadget can leak data under misspeculation. 4) Finally, we need to find gadgets in sensitive real-world code to understand the impact of relaxing gadget requirements. Challenge 1: Producing Sufficient Rowhammer Flips. SpecHammer requires bit-flips at specific page offsets in order to leak secret data. To that aim, we used the code repositories attached to prior work [16], [44], [48], [50] in order to test the susceptibility of DRAM DIMMs to Rowhammer attacks. Unfortunately, the amount of flips produced by these repositories suggests it is hard to find a DIMM with enough bit-flips to practically execute SpecHammer. However, as we show in Section IV, we observe that all of these repositories make a key oversight regarding cached data: they first initialize victim rows, and then induce bit-flips in DRAM (not caches), but neglect to flush the victim cache line before checking for flips. This leads them to observe cached data when checking for flips, leaving many flips in the DRAM arrays unobserved. By correcting these oversights, we are able to increase the number of bit flips by 248x in the worst case and 525x in the best case on DDR3, and 16x in the best case on DDR4, demonstrating bit-flips are much more common than previous work would suggest. Not only does this allow us to run SpecHammer, but it also makes Rowhammer attacks more practical than previously thought. Challenge 2: Stack Massaging. For the SpecHammer attack, the target for Rowhammer bit-flips is a variable used as an index into an array. Such offsets are most often allocated as local variables, meaning they are located on the stack. Rowhammer attacks rely on massaging targets onto physical addresses that are vulnerable to bit-flips. However, to the best of our knowledge, only one prior work [40] has demonstrated hammering stack variables, relying on memory deduplication to massage stack data as needed. With deduplication now disabled by default, SpecHammer thus requires a new way of massaging a victim stack into place. Furthermore, the most attractive targets for this attack are gadgets residing in the kernel, as they can be used to leak kernel data, and hence a kernel stack massaging primitive is highly desirable. Yet, the prior examples of kernel massaging focused on PTEs, rather than the stack [43], or were performed on mobile devices, taking advantage of features exclusive to Android [47]. Thus, we develop new primitives for massaging both user and kernel stacks, in order to allow for stack hammering without the use of deduplication (Section V). Challenge 3: Proof-of-Concept (PoC) Demonstration. As a proof of concept, we demonstrate (in Section VI) the variations of the attack on example artificial victims in both user and kernel spaces. We demonstrate the double gadget attack in user space and the triple gadget attack in kernel space due to each attack's applicability in its respective space. These PoC attacks act as the basis for eventual attacks on the gadgets already found in widely-used code. We demonstrate a leakage rate of up to 24 bits/s on DDR3 and 19 bits/min on DDR4. Challenge 4: Kernel Gadgets. In order to better understand the effects of relaxing gadget requirements, we found the number of gadgets present in the Linux kernel, with the original Spectre v1 restrictions compared to the amount of SpecHammer gadgets. As shown in Section VII, we find that with the original requirements, there are about 100 ordinary, double gadgets, and only 2 triple gadgets. Modifying the function to search for gadgets vulnerable to our SpecHammer attack leads it to report about 20,000 double gadgets, and about 2682"
+        },
+        {
+          "source": "selected",
+          "value": "The recent Spectre attacks have revealed how the performance gains from branch prediction come at the cost of weakened security. Spectre Variant 1 (v1) shows how an attacker-controlled variable passed to speculatively executed lines of code can leak secret information to an attacker. Numerous defenses have since been proposed to prevent Spectre attacks, each attempting to block all or some of the Spectre variants. In particular, defenses using taint-tracking are claimed to be the only way to protect against all forms of Spectre v1. However, we show that the defenses proposed thus far can be bypassed by combining Spectre with the well-known Rowhammer vulner- ability. By using Rowhammer to modify victim values, we relax the requirement that the attacker needs to share a variable with the victim. Thus, defenses that rely on this requirement, such as taint-tracking, are no longer effective. Furthermore, without this crucial requirement, the number of gadgets that can potentially be used to launch a Spectre attack increases dramatically; those present in Linux kernel version 5.6 increases from about 100 to about 20,000 via Rowhammer bit-flips. Attackers can use these gadgets to steal sensitive information such as stack cookies or canaries, or use new triple gadgets to read any address in memory. We demonstrate two versions of the combined attack on example victims in both user and kernel spaces, showing the attack's ability to leak sensitive data. I. I NTRODUCTION Computer architecture development has long put emphasis on optimizing for performance in the common case, often at the cost of security. Speculative execution is one feature following this trend, as it provides significant performance gains at a detrimental security cost. This feature attempts to predict a program's execution flow before determining the correct path to take, saving time on a correct prediction, and simply rolls back any code executed in the case of a misprediction. However, such predictions may mistakenly speculate that malicious code or values are safe, allowing for attackers to temporarily bypass safeguards and run malicious code within misspeculation windows. The potential of such speculative and out-of-order exploits was first demonstrated by Spectre [25] and Meltdown [31], which revealed a new class of vulnerabilities rooted in tran- sient execution. These attacks have shaken the world of computer architecture and security, leading to a large body of work in transient execution attacks [4], [5], [24], [33], [42] and defenses [5], [38], [39], [46], [51]. Moving away from information leakage, Rowhammer [23] is a complimentary vulnerability that breaks the integrity of data and code stored in a machine's main memory. More specifically, the tight packing of transistors in DRAM DIMMs allows attackers to induce bit-flips in inaccessible memory addresses, by rapidly accessing physically-adjacent memory rows. Similarly to Spectre, Rowhammer has spawned numer- ous exploits [3], [11], [13], [17], [18], [27], [32], [34], [37], [40], [43], [45], [47], including the recent bypass of dedicated defenses, such as Targeted Row Refresh (TRR) [50] and Error Correcting Codes (ECC-RAM) [9]. While both Spectre and Rowhammer have been extensively studied individually, much less is known, however, about the combination of both vulnerabilities. Indeed, only one prior work, GhostKnight [55], has considered the new exploit potential resulting from combining both techniques. At a high level, GhostKnight demonstrates that despite their transient nature, speculative memory accesses can cause bit-flips in addresses that Rowhammer could not reach alone, resulting in bit-flips at those memory locations. However, GhostKnight only shows how Spectre can be used to enhance Rowhammer, and neglects to consider the complimentary question of how Rowhammer may be used to enhance Spectre. Noting that most modern machines are vulnerable to both Spectre and Rowhammer, in this paper we ask the following questions: Can the Rowhammer vulnerability be used to strengthen Spectre attacks? In particular, can an attacker somehow leverage Rowhammer to alleviate Spectre's main limitation of having a gadget inside the victim's code with attacker controlled inputs? Finally, what implications do combined attacks have on existing Spectre mitigations? A. Our Contributions We demonstrate that Rowhammer and Spectre can, in fact, be combined to evade the proposed defenses and increase the number of exploitable gadgets in widely-used code. In what follows, we provide a high-level overview of this combined attack, called SpecHammer, and discuss our discovery of newly exploitable gadgets in the kernel. Attack Methods. The core idea of SpecHammer is to trigger a Spectre v1 attack by using Rowhammer bit-flips to insert malicious values into victim gadgets. We present two forms of SpecHammer: the first relaxes the restrictions on ordinary Spectre gadgets (which will henceforth be called double gadgets ), and the second uses new triple gadgets to provide arbitrary reads with just a single bit-flip. 681 DOI 10.1109/SP46214.2022.00079 Double Gadget Exploit. Ordinarily, Spectre v1 allows an attacker to send any malicious value to a Spectre gadget and read memory arbitrarily within the victim's address space. The main weakness of Spectre v1 is that it requires a gadget within the victim's code that uses an attacker controlled offset variable, limiting Spectre v1's attack surface. The target for the first version of SpecHammer, however, is a portion of code that meets all the requirements of a Spectre gadget, but does not provide the attacker any direct way to control the victim offset. By using Rowhammer, it is possible to modify the offset and trigger a Spectre attack on such victims to leak sensitive data. This attack eliminates Spectre v1's main weakness, allowing for exploits on a wider range of code. Unfortunately, Rowhammer can be used to flip, at best, only a few bits for a given word of memory, limiting control the attacker has over the victim offset. Nonetheless, we demon- strate how the attacker, even with limited control, is still able to leak sensitive data. For example, it is feasible to flip bits in the offset such that it points to just past the bounds of an array. This allows for leaking secret stack data, such as stack canaries designed to protect against buffer-overflow attacks [10]. That is, we show how the double gadget exploit can be used to leak such secrets, bypassing stack protection mechanisms. Triple Gadget Exploit. While the first exploit poses a threat to a common defense against buffer-overflow attacks, its scope is more limited than the original Spectre attack which leaked arbitrary memory in the victim's address space. The second type of SpecHammer attack, however, can be used to dump the data of any address in memory. This method relies on a triple gadget , which has similar behavior to the Spectre v1 gadget, except that it features a triple nested access. Using this, the attacker can modify an offset to point to attacker- controlled data. This data can be set to point to secret data, which leads to the use of secret data in a nested array access, just as is done in Spectre v1. The attacker-controlled data can be modified to point to any secret within the attacker's address space, including kernel memory when exploiting a triple gadget residing in the kernel. Thus, a single bit-flip allows for arbitrary memory reads, as opposed to the double gadget which is more restricted in what addresses it can leak. Challenges. Implementing these SpecHammer attacks presents several key challenges: 1) We must find addresses containing useful bit-flips that can force a victim to access secret data under misspeculation. 2) We need to massage memory to force victims to allocate their array offset variables at addresses that contain these useful flips. For targets residing in the kernel, this means massaging kernel stack memory. 3) We must demonstrate that flipping an array offset value in a Spectre v1 gadget can leak data under misspeculation. 4) Finally, we need to find gadgets in sensitive real-world code to understand the impact of relaxing gadget requirements. Challenge 1: Producing Sufficient Rowhammer Flips. SpecHammer requires bit-flips at specific page offsets in order to leak secret data. To that aim, we used the code repositories attached to prior work [16], [44], [48], [50] in order to test the susceptibility of DRAM DIMMs to Rowhammer attacks. Unfortunately, the amount of flips produced by these repositories suggests it is hard to find a DIMM with enough bit-flips to practically execute SpecHammer. However, as we show in Section IV, we observe that all of these repositories make a key oversight regarding cached data: they first initialize victim rows, and then induce bit-flips in DRAM (not caches), but neglect to flush the victim cache line before checking for flips. This leads them to observe cached data when checking for flips, leaving many flips in the DRAM arrays unobserved. By correcting these oversights, we are able to increase the number of bit flips by 248x in the worst case and 525x in the best case on DDR3, and 16x in the best case on DDR4, demonstrating bit-flips are much more common than previous work would suggest. Not only does this allow us to run SpecHammer, but it also makes Rowhammer attacks more practical than previously thought. Challenge 2: Stack Massaging. For the SpecHammer attack, the target for Rowhammer bit-flips is a variable used as an index into an array. Such offsets are most often allocated as local variables, meaning they are located on the stack. Rowhammer attacks rely on massaging targets onto physical addresses that are vulnerable to bit-flips. However, to the best of our knowledge, only one prior work [40] has demonstrated hammering stack variables, relying on memory deduplication to massage stack data as needed. With deduplication now disabled by default, SpecHammer thus requires a new way of massaging a victim stack into place. Furthermore, the most attractive targets for this attack are gadgets residing in the kernel, as they can be used to leak kernel data, and hence a kernel stack massaging primitive is highly desirable. Yet, the prior examples of kernel massaging focused on PTEs, rather than the stack [43], or were performed on mobile devices, taking advantage of features exclusive to Android [47]. Thus, we develop new primitives for massaging both user and kernel stacks, in order to allow for stack hammering without the use of deduplication (Section V). Challenge 3: Proof-of-Concept (PoC) Demonstration. As a proof of concept, we demonstrate (in Section VI) the variations of the attack on example artificial victims in both user and kernel spaces. We demonstrate the double gadget attack in user space and the triple gadget attack in kernel space due to each attack's applicability in its respective space. These PoC attacks act as the basis for eventual attacks on the gadgets already found in widely-used code. We demonstrate a leakage rate of up to 24 bits/s on DDR3 and 19 bits/min on DDR4. Challenge 4: Kernel Gadgets. In order to better understand the effects of relaxing gadget requirements, we found the number of gadgets present in the Linux kernel, with the original Spectre v1 restrictions compared to the amount of SpecHammer gadgets. As shown in Section VII, we find that with the original requirements, there are about 100 ordinary, double gadgets, and only 2 triple gadgets. Modifying the function to search for gadgets vulnerable to our SpecHammer attack leads it to report about 20,000 double gadgets, and about 2682"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Youssef Tobah",
+            "email": "ytobah@umich.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Andrew Kwong",
+            "email": "ankwong@umich.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Ingab Kang",
+            "email": "igkang@umich.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 2
+          },
+          {
+            "order": 3,
+            "name": "Daniel Genkin",
+            "email": "genkin@gatech.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 3
+          },
+          {
+            "order": 4,
+            "name": "Kang GShin",
+            "email": "kgshin@umich.edu",
+            "orcid": "",
+            "affiliations": [],
+            "affiliation_source": "empty",
+            "_source_index": 4
+          },
+          {
+            "order": 5,
+            "name": "",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Michigan, Georgia Tech"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 5
+          },
+          {
+            "order": 6,
+            "name": "",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 6
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Youssef Tobah",
+            "email": "ytobah@umich.edu",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Andrew Kwong",
+            "email": "ankwong@umich.edu",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Ingab Kang",
+            "email": "igkang@umich.edu",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 3,
+            "name": "Kang G. Shin",
+            "email": "kgshin@umich.edu",
+            "affiliations": [
+              "University of Michigan"
+            ],
+            "affiliation_source": "ieee_sp_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "author_card_grid",
+        "header_block_count": 113,
+        "author_count": 4,
+        "matched_author_count": 4,
+        "exact_author_match_count": 4,
+        "dominant_author_font_size": 11.0,
+        "auto_eligible": true,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [
+          {
+            "author_index": 0,
+            "author": "Youssef Tobah",
+            "block_id": "pdf:p1:b3",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 1,
+            "author": "Andrew Kwong",
+            "block_id": "pdf:p1:b4",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 2,
+            "author": "Ingab Kang",
+            "block_id": "pdf:p1:b5",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 3,
+            "author": "Kang G. Shin",
+            "block_id": "pdf:p1:b7",
+            "match_score": 1.0
+          }
+        ],
+        "relations": [
+          {
+            "author_index": 0,
+            "author": "Youssef Tobah",
+            "affiliation_raw": "University of Michigan University of Michigan",
+            "confidence": 0.97,
+            "author_block_id": "pdf:p1:b3",
+            "affiliation_block_ids": [
+              "pdf:p1:b8"
+            ],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 12.476,
+            "center_distance": 53.486,
+            "local_auto_eligible": true
+          },
+          {
+            "author_index": 1,
+            "author": "Andrew Kwong",
+            "affiliation_raw": "University of Michigan University of Michigan",
+            "confidence": 0.97,
+            "author_block_id": "pdf:p1:b4",
+            "affiliation_block_ids": [
+              "pdf:p1:b8"
+            ],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 12.476,
+            "center_distance": 46.719,
+            "local_auto_eligible": true
+          },
+          {
+            "author_index": 2,
+            "author": "Ingab Kang",
+            "affiliation_raw": "University of Michigan Georgia Tech",
+            "confidence": 0.97,
+            "author_block_id": "pdf:p1:b5",
+            "affiliation_block_ids": [
+              "pdf:p1:b9"
+            ],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 12.476,
+            "center_distance": 37.125,
+            "local_auto_eligible": true
+          },
+          {
+            "author_index": 3,
+            "author": "Kang G. Shin",
+            "affiliation_raw": "University of Michigan",
+            "confidence": 0.97,
+            "author_block_id": "pdf:p1:b7",
+            "affiliation_block_ids": [
+              "pdf:p1:b10"
+            ],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 12.476,
+            "center_distance": 1.525,
+            "local_auto_eligible": true
+          }
+        ]
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 5,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "SpecHammer: Combining Spectre and Rowhammer for New Speculative Attacks",
+        "source_url": "https://www.ieee-security.org/TC/SP2022/program-papers.html",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Youssef Tobah",
+            "affiliations": [
+              "The University of Michigan"
+            ]
+          },
+          {
+            "name": "Andrew Kwong",
+            "affiliations": [
+              "University of Michigan"
+            ]
+          },
+          {
+            "name": "Ingab Kang",
+            "affiliations": [
+              "University of Michigan"
+            ]
+          },
+          {
+            "name": "Daniel Genkin",
+            "affiliations": [
+              "Georgia Institute of Technology"
+            ]
+          },
+          {
+            "name": "Kang G. Shin",
+            "affiliations": [
+              "The University of Michigan"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Youssef Tobah",
+        "field": "email",
+        "restored_value": "ytobah@umich.edu",
+        "reason": "later_stage_produced_blank"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Andrew Kwong",
+        "field": "email",
+        "restored_value": "ankwong@umich.edu",
+        "reason": "later_stage_produced_blank"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Ingab Kang",
+        "field": "email",
+        "restored_value": "igkang@umich.edu",
+        "reason": "later_stage_produced_blank"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Kang G. Shin",
+        "field": "email",
+        "restored_value": "kgshin@umich.edu",
+        "reason": "later_stage_produced_blank"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      },
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Youssef Tobah",
+        "stage": "conference_strategy"
+      },
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Andrew Kwong",
+        "stage": "conference_strategy"
+      },
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Ingab Kang",
+        "stage": "conference_strategy"
+      },
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Kang G. Shin",
+        "stage": "conference_strategy"
+      }
+    ]
+  }
+}

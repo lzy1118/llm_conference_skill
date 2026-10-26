@@ -1,0 +1,417 @@
+{
+  "paper_id": "088_seimi_efficient_and_secure_smap_enabled_intra_process_memory_isolation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SEIMI: Efficient and Secure SMAP-Enabled Intra-process Memory Isolation"
+      },
+      {
+        "source": "selected",
+        "value": "SEIMI: Efficient and Secure SMAP-Enabled Intra-process Memory Isolation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Memory-corruption attacks such as code-reuse attacks and data-only attacks have been a key threat to systems security. To counter these threats, researchers have proposed a variety of defenses, including control-flow integrity (CFI), codepointer integrity (CPI), and code (re-)randomization. All of them, to be effective, require a security primitive-intra-process protection of confidentiality and/or integrity for sensitive data (such as CFI's shadow stack and CPI's safe region). In this paper, we propose SEIMI, a highly efficient intraprocess memory isolation technique for memory-corruption defenses to protect their sensitive data. The core of SEIMI is to use the efficient Supervisor-mode Access Prevention (SMAP), a hardware feature that is originally used for preventing the kernel from accessing the user space, to achieve intra-process memory isolation. To leverage SMAP, SEIMI creatively executes the user code in the privileged mode. In addition to enabling the new design of the SMAP-based memory isolation, we further develop multiple new techniques to ensure secure escalation of user code, e.g., using the descriptor caches to capture the potential segment operations and configuring the Virtual Machine Control Structure (VMCS) to invalidate the execution result of the control registers related operations. Extensive experimental results show that SEIMI outperforms existing isolation mechanisms, including both the Memory Protection Keys (MPK) based scheme and the Memory Protection Extensions (MPX) based scheme, while providing secure memory isolation."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Memory-corruption attacks such as code-reuse at- tacks and data-only attacks have been a key threat to systems security. To counter these threats, researchers have proposed a variety of defenses, including control-flow integrity (CFI), code- pointer integrity (CPI), and code (re-)randomization. All of them, to be effective, require a security primitive-intra-process protection of confidentiality and/or integrity for sensitive data (such as CFI's shadow stack and CPI's safe region). In this paper, we propose SEIMI, a highly efficient intra- process memory isolation technique for memory-corruption de- fenses to protect their sensitive data. The core of SEIMI is to use the efficient Supervisor-mode Access Prevention (SMAP) , a hardware feature that is originally used for preventing the kernel from accessing the user space, to achieve intra-process memory isolation. To leverage SMAP, SEIMI creatively executes the user code in the privileged mode. In addition to enabling the new design of the SMAP-based memory isolation, we further develop multiple new techniques to ensure secure escalation of user code, e.g., using the descriptor caches to capture the potential segment operations and configuring the Virtual Machine Control Structure (VMCS) to invalidate the execution result of the control registers related operations. Extensive experimental results show that SEIMI outperforms existing isolation mechanisms, including both the Memory Protection Keys (MPK) based scheme and the Memory Protection Extensions (MPX) based scheme, while providing secure memory isolation. I. I NTRODUCTION Memory-corruption attacks such as control-flow hijacking and data-only attacks have been a major threat to systems security in the past decades. To defend against such attacks, researchers have proposed a variety of advanced mechanisms, including enhanced control-flow integrity (CFI), code-pointer integrity (CPI), fine-grained code (re-)randomization, and data- layout randomization. All these techniques require a security primitive-effective intra-process memory protection of the integrity and/or confidentiality of sensitive data from potentially compromised code. The sensitive data includes critical data structures that are frequently checked against or used for protection. For example, O-CFI [ 39] uses a bounds lookup table (BLT), and CCFIR [ 58] uses a safe SpringBoard to restrict the control flow; CPI [ 31] uses a safe region , and Shuffler [55] uses a code-pointer table to protect the sensitive pointers; Oxymoron [ 6] maintains a sensitive translation table , and Isomeron [19] uses a table to protect randomization secrets. The effectiveness of all such techniques heavily depends on the integrity and/or confidentiality of the sensitive data. To efficiently protect sensitive data, researchers proposed information hiding (IH) which stores sensitive data in a memory region allocated in a random address and wishes that attackers could not know the random address thus could not write or read the sensitive data. Unfortunately, recent works show that memory disclosures and side channels can be exploited to readily reduce the randomization entropy and thus to bypass the information hiding [ 22-24, 36, 41]. As such, even a robust IH-based defense can be defeated. To address this problem, recent research instead opts for practical memory isolation which provides efficient protection with a stronger security guarantee. Memory isolation, in general, can be classified into address-based isolation and domain-based isolation. Address-based isolation checks (e.g., bound-check) each memory access from untrusted code to ensure that it cannot access the sensitive data. The main overhead of this method is brought by the code that performs the checks. The most efficient address-based isolation is based on Intel Memory Protection Extensions (MPX), which performs bound-checking with hardware support [30]. Domain-based isolation instead stores sensitive data in a protected memory region. The permission to accessing this region is granted when requested by the trusted code, and is revoked when the trusted access finished. However, memory accesses from untrusted code (i.e., the potentially vulnerable code that can be compromised by attackers) cannot enable the permission. The main source of the performance overhead of domain-based memory isolation is the operations for enabling and disabling the memory-access permissions. The most efficient domain-based isolation is to use Intel Memory Protection Keys (MPK) [25, 30, 40, 47]. In general, existing address-based isolation and domain- based isolation both incur non-trivial performance overhead compared to the IH-based scheme. Worse, the overhead will be significantly elevated when the workloads (i.e., the frequency of memory accesses that require bound-checking or permission switching) increase. For example, when protecting the shadow stack, the MPK-based scheme (i.e., domain-based) incurs a runtime overhead of 61.18% [ 40]. When protecting the safe region of CPI using the MPX-based scheme (i.e., address- 592 DOI 10.1109/SP40000.2020.00087 based), the runtime overhead is 36.86% [ 21]. Both cases are discouraging and would prevent practical uses of the defense mechanisms. As such, we need a more efficient isolation mechanism that can adapt to various workloads. In this paper, we propose SMAP-Enabled Intra-process Memory Isolation ( SEIMI ), a system for highly efficient and secure domain-based memory isolation. SEIMI leverages Supervisor-mode Access Prevention (SMAP) , a widely used and extremely efficient hardware feature for preventing kernel code from accessing user space. SEIMI uses SMAP in a completely different way. The key idea of SEIMI is to run user code in the privileged mode (i.e., ring 0) and to store sensitive data in the user space. SEIMI employs SMAP to prevent memory accesses from the “privileged untrusted user code” to the “user mode” sensitive data. SMAP is temporarily disabled when the trusted code (also in the privileged mode) accesses the sensitive data, and re-enabled when the trusted code finishes the data access. Any memory access to the user space will raise a processor exception when SMAP is enabled. Since SMAP is controlled by the RFLAGS register which is thread-private, disabling SMAP is only effective in current thread. Thus, temporarily enabling SMAP does not allow any concurrent access to sensitive data from other threads. The new and “reverse” use of SMAP in SEIMI however brings new design challenges: How to prevent the user code in ring 0 from corrupting the kernel and abusing the privileged hardware resources. To prevent the kernel corruption, we choose to use the hardware-assisted virtualization technique (i.e., Intel VT-x) to run the kernel in a more-privileged mode (i.e., the VMX root mode). The user code instead runs in ring 0 of the VMX non-root mode. Therefore, the user code is isolated from the kernel by virtualization. It is worth noting that Dune [ 7] also uses Intel VT-x to provide user-level code with privileged hardware features. But it requires that the code running in ring 0 is secure and trusted. To support untrusted code running in ring 0, we propose multiple novel techniques to prevent the user code from abusing the following two types of hardware resources: (1) privileged data structures (e.g., the page tables) and (2) privileged instructions. First, to prevent the user code from manipulating privileged data structures (e.g., page table), we store the privileged data structures in the VMX root mode, and SEIMI leverages Intel VT-x to force all the privileged operations to trigger VM exits (i.e., trapping into the VMX root mode). SEIMI then finishes the privileged operations in the VMX root mode. This way, the privileged data structures will never be exposed to the user code. Second, to prevent the execution of privileged instructions, we use both automatic and manual approaches to comprehensively identify such instructions and instruct SEIMI to sanitize their execution in the VMX non-root mode through three techniques: (i) triggering VM exits and stopping the execution, (ii) invalidating the execution results, and (iii) raising processor exceptions and disabling the execution. With these techniques, the user code can never effectively execute the privileged instructions. We note that our techniques for enabling secure execution of untrusted user code with ring-0 privilege will offer valuable insights and opportunities for future research. For example, LBR is a privileged hardware feature used by transparent code- reuse mitigation [ 42] and context-sensitive CFI [ 48]. Reading LBR has to trap into the kernel, which incurs expensive context switching. With the techniques used in SEIMI , since the user code is running in a privileged mode, it can read LBR efficiently without context switching. We have implementedSEIMI on the Linux/X86_64 platform. To evaluate and compare the performance overhead, we deployed the MPX-based scheme, the MPK-based scheme, and SEIMI to protect four defense mechanisms: O-CFI [ 39], Shadow Stack [ 40], CPI [ 31], and ASLR-Guard [ 35]. We not only conduct the experiments on SPEC CPU2006 benchmarks, but also on 12 real-world applications, including web servers, databases, and JavaScript engines. Compared to the MPK-based scheme, SEIMI is more efficient in almost all test cases; while compared with the MPX-based scheme, SEIMI achieves a lower performance overhead on average. In sum, we make the following contributions in this paper. • A novel domain-based isolation mechanism . We pro- pose a novel domain-based memory isolation mechanism that creatively uses SMAP in a reverse way; it can efficiently protect a variety of software defenses against memory-corruption attacks. • New techniques for isolating user code . We identify new security threats when running untrusted user code in ring 0 and propose new solutions to these threats in SEIMI . These techniques are of independent interest and show that safely running user code in a privileged mode can be practical. • New insights from implementation and evaluation . We implement and evaluate SEIMI , and show that it outperforms existing approaches. Our study suggests that using SMAP for domain-based isolation is not only practical but efficient. The enabling of running the user code in a privileged mode will also allow future defenses to efficiently access privileged hardware. II. B ACKGROUND A. Information Hiding Information hiding (IH) protects a memory region by putting it in a randomized location. Since the memory region is located in a small portion of the huge address space, guessing the randomized address in a brute-force way will likely cause crashes. The effectiveness of such an information-hiding technique heavily relies on the entropy of the randomness. Since such an IH technique tends to be efficient and is easy to deploy, it has been widely used in a variety of defense mechanisms, including control-flow integrity (CFI) [39, 40, 58], code (re-)randomization [ 6, 11, 19, 35, 53, 55], code-pointer integrity [31], and data-layout randomization [9, 17]. B. Intra-process Memory Isolation Compared to information hiding, intra-process memory isola- tion can provide a stronger security guarantee in protecting the 2593"
+      },
+      {
+        "source": "selected",
+        "value": "Memory-corruption attacks such as code-reuse attacks and data-only attacks have been a key threat to systems security. To counter these threats, researchers have proposed a variety of defenses, including control-flow integrity (CFI), codepointer integrity (CPI), and code (re-)randomization. All of them, to be effective, require a security primitive-intra-process protection of confidentiality and/or integrity for sensitive data (such as CFI's shadow stack and CPI's safe region). In this paper, we propose SEIMI, a highly efficient intraprocess memory isolation technique for memory-corruption defenses to protect their sensitive data. The core of SEIMI is to use the efficient Supervisor-mode Access Prevention (SMAP), a hardware feature that is originally used for preventing the kernel from accessing the user space, to achieve intra-process memory isolation. To leverage SMAP, SEIMI creatively executes the user code in the privileged mode. In addition to enabling the new design of the SMAP-based memory isolation, we further develop multiple new techniques to ensure secure escalation of user code, e.g., using the descriptor caches to capture the potential segment operations and configuring the Virtual Machine Control Structure (VMCS) to invalidate the execution result of the control registers related operations. Extensive experimental results show that SEIMI outperforms existing isolation mechanisms, including both the Memory Protection Keys (MPK) based scheme and the Memory Protection Extensions (MPX) based scheme, while providing secure memory isolation."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zhe Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Computing Technology, State Key Laboratory of Computer Architecture, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Chenggang Wu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Computing Technology, State Key Laboratory of Computer Architecture, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Mengyao Xie",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Computing Technology, State Key Laboratory of Computer Architecture, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Yinqian Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The Ohio State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Kangjie Lu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Minnesota"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Xiaofeng Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Computing Technology, State Key Laboratory of Computer Architecture, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Yuanming Lai",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Computing Technology, State Key Laboratory of Computer Architecture, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Yan Kang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Institute of Computing Technology, State Key Laboratory of Computer Architecture, Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Min Yang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Fudan University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Intra-process Memory Isolation",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Zhe Wang",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Chenggang Wu",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Mengyao Xie",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Yinqian Zhang Kangjie Lu",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Xiaofeng Zhang",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Yuanming Lai",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Yan Kang Min Yang",
+          "email": "",
+          "affiliations": [
+            "1 State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences , 2 University of Chinese Academy of Sciences , 3 The Ohio State University , 4University of Minnesota , 5Fudan University"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 129,
+      "author_count": 8,
+      "matched_author_count": 7,
+      "exact_author_match_count": 7,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 1,
+          "author": "Zhe Wang",
+          "block_id": "pdf:p1:b10",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Chenggang Wu",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Mengyao Xie",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Yinqian Zhang Kangjie Lu",
+          "block_id": "pdf:p1:b8",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 5,
+          "author": "Xiaofeng Zhang",
+          "block_id": "pdf:p1:b19",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 6,
+          "author": "Yuanming Lai",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 7,
+          "author": "Yan Kang Min Yang",
+          "block_id": "pdf:p1:b16",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 6,
+          "author": "Yuanming Lai",
+          "affiliation_raw": "State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences The Ohio State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b22",
+            "pdf:p1:b26"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 26.974,
+          "center_distance": 37.448,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 7,
+          "author": "Yan Kang Min Yang",
+          "affiliation_raw": "State Key Laboratory of Computer Architecture, Institute of Computing Technology, Chinese Academy of Sciences The Ohio State University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b16",
+          "affiliation_block_ids": [
+            "pdf:p1:b22",
+            "pdf:p1:b26"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 26.974,
+          "center_distance": 62.554,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 9,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SEIMI: Efficient and Secure SMAP-Enabled Intra-process Memory Isolation",
+      "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zhe Wang",
+          "affiliations": [
+            "Institute of Computing Technology, CAS, University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Chenggang Wu",
+          "affiliations": [
+            "Institute of Computing Technology, CAS, University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Mengyao Xie",
+          "affiliations": [
+            "Institute of Computing Technology, CAS, University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yinqian Zhang",
+          "affiliations": [
+            "The Ohio State University"
+          ]
+        },
+        {
+          "name": "Kangjie Lu",
+          "affiliations": [
+            "University of Minnesota"
+          ]
+        },
+        {
+          "name": "Xiaofeng Zhang",
+          "affiliations": [
+            "Institute of Computing Technology, CAS, University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yuanming Lai",
+          "affiliations": [
+            "Institute of Computing Technology, CAS, University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yang Kang",
+          "affiliations": [
+            "Institute of Computing Technology, CAS"
+          ]
+        },
+        {
+          "name": "Min Yang",
+          "affiliations": [
+            "Fudan University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

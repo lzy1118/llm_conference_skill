@@ -1,0 +1,410 @@
+{
+  "paper_id": "196_tz_datashield_automated_data_protection_for_embedded_systems_via_data_flow_based_compartmentalization",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "TZ-DATASHIELD: Automated Data Protection for Embedded Systems via Data-Flow-Based Compartmentalization"
+      },
+      {
+        "source": "selected",
+        "value": "TZ-DATASHIELD: Automated Data Protection for Embedded Systems via Data-Flow-Based Compartmentalization"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "As reliance on embedded systems grows in critical domains such as healthcare, industrial automation, and unmanned vehicles, securing the data on micro-controller units (MCUs) becomes increasingly crucial. These systems face significant challenges related to computational power and energy constraints, complicating efforts to maintain the confidentiality and integrity of sensitive data. Previous methods have utilized compartmentalization techniques to protect this sensitive data, yet they remain vulnerable to breaches by strong adversaries exploiting privileged software. In this paper, we introduce TZ-DATASHIELD, a novel LLVM compiler tool that enhances ARM TrustZone with sensitive data flow (SDF) compartmentalization, offering robust protection against strong adversaries in MCU-based systems. We address three primary challenges: the limitations of existing compartment units, inadequate isolation within the Trusted Execution Environment (TEE), and the exposure of shared data to potential attacks. TZ-DATASHIELD addresses these challenges by implementing a fine-grained compartmentalization approach that focuses on sensitive data flow, ensuring data confidentiality and integrity, and developing a novel intra-TEE isolation mechanism that validates compartment access to TEE resources at runtime. Our prototype enables firmware developers to annotate source code to generate TrustZone-ready firmware images automatically. Our evaluation using real-world MCU applications demonstrates that TZ-DATASHIELD achieves up to 80.8% compartment memory and 88.6% ROP gadget reductions within the TEE address space. It incurs an average runtime overhead of 14.7% with CFI and DFI enforcement, and 7.6% without these measures."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "As reliance on embedded systems grows in crit- ical domains such as healthcare, industrial automation, and unmanned vehicles, securing the data on micro-controller units (MCUs) becomes increasingly crucial. These systems face sig- nificant challenges related to computational power and energy constraints, complicating efforts to maintain the confidentiality and integrity of sensitive data. Previous methods have utilized compartmentalization techniques to protect this sensitive data, yet they remain vulnerable to breaches by strong adversaries exploiting privileged software. In this paper, we introduce TZ-D ATASHIELD , a novel LLVM compiler tool that enhances ARM TrustZone with sensitive data flow (SDF) compartmentalization, offering robust protection against strong adversaries in MCU-based systems. We address three primary challenges: the limitations of existing compartment units, inadequate isolation within the Trusted Execution Environ- ment (TEE), and the exposure of shared data to potential attacks. TZ-D ATASHIELD addresses these challenges by implementing a fine-grained compartmentalization approach that focuses on sensitive data flow, ensuring data confidentiality and integrity, and developing a novel intra-TEE isolation mechanism that validates compartment access to TEE resources at runtime. Our prototype enables firmware developers to annotate source code to generate TrustZone-ready firmware images automatically. Our evaluation using real-world MCU applications demonstrates that TZ-D ATASHIELD achieves up to 80.8% compartment memory and 88.6% ROP gadget reductions within the TEE address space. It incurs an average runtime overhead of 14.7% with CFI and DFI enforcement, and 7.6% without these measures. I. I NTRODUCTION The emergence of the Internet of Things and cyber-physical systems has significantly increased our reliance on embedded systems across critical domains such as healthcare, industrial automation, and unmanned vehicles. Many of these devices utilize microcontroller units (MCUs) for their low cost, com- pact size, and energy efficiency. However, these constraints of- ten lead firmware developers to sacrifice security. For instance, to reduce costs and avoid the runtime overhead associated with memory isolation, many MCU-based systems operate with a shared address space. This allows any component within the system to directly access all computing resources, including code, data, and peripherals, as they are mapped into the shared address space without any security mechanisms in place. This practice poses significant risks, particularly when there is a need to protect the confidentiality and integrity of data, as many MCU-based systems store sensitive information in the shared address space. For instance, a PIN stored in a door lock system or GPS coordinates in an unmanned vehicle system requires protection from malicious eavesdropping and manip- ulation attacks [1], [2], [3], [4], [5], [6], [7], [8]. Adversaries may reveal or tamper with other memory regions containing full or partial information on sensitive data (e.g., a variable that holds a GPS coordinate) and exploit any code that accesses those memory regions. Existing works have proposed various compartmentalization techniques to minimize the attack surface within the shared address space of MCU-based systems [9], [10], [11], [12]. These techniques divide firmware into multiple compartments with varying levels of granularity, such as threads [9], [10], [11], software components [10], [11] ( e.g., kernel, device drivers), and functions [12]. A security monitor then isolates memory accesses at runtime using the Memory Protection Unit (MPU) [9], [10], [12] or language-based code instru- mentation [11], ensuring each compartment can only access resources within its protection domain. Unfortunately, the limited number of protection domains (typically eight) presents a challenge, as many MCU applica- tions require more than eight regions to isolate each compart- ment. Previous works [12], [9], [10], [11] have attempted to mitigate this limitation by merging multiple compartments into one. However, this approach increases the size and complexity of the isolated memory region, thereby creating new attack surfaces. To improve the security of each compartment, it is crucial to isolate them individually with adequate granularity. Additionally, although these compartmentalization tech- niques reduce the likelihood of malicious access to sensitive data, they operate under the assumption that privileged soft- ware ( e.g., the RTOS kernel) within the Trusted Computing Base (TCB) remains secure. However, with the increasing complexity and number of vulnerabilities in embedded OSes (e.g., CVE-2021-43997 in FreeRTOS), the barrier to compro- mising the kernel has been significantly lowered [13], [14], [15], [16]. Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240563 www.ndss-symposium.org In this paper, we leverage both ARM TrustZone and compartmentalization to protect sensitive data in MCU-based systems against strong adversaries operating in privileged mode. Specifically, our data flow analysis traces all data flows related to the sensitive data to be protected. Using TrustZone, a system can allocate sensitive resources to a trusted execution environment (TEE), known as the secure world , and isolate them from any component running in the untrusted execution environment, known as the normal world , regardless of the privilege mode of the component in the normal world. This isolation ensures that the security monitor is protected from such attacks. However, simply adopting TrustZone introduces new challenges that must be addressed to build an effective data protection mechanism for MCU-based systems: Challenge 1: Compartment Granularity. Existing compart- mentalization techniques are either too coarse-grained ( e.g., thread), resulting in a wider attack surface, or unnecessarily fine-grained ( e.g., function), leading to high compartment switch overhead. We propose a compartmentalization tech- nique based on sensitive data flow (SDF), specifically designed to protect data confidentiality and integrity in MCU-based systems. This compartment unit reduces the attack surface by including only the minimal computing base necessary. Challenge 2: Lack of Intra-TEE Isolation. Using Trust- Zone, the memory regions that contain sensitive data and the code that accesses them can be allocated to the secure world, isolating them from potential adversaries in the normal world. Still, it does not provide any isolation within the secure world itself. Without intra-TEE isolation, adversaries could com- promise vulnerable code running in the secure world, access sensitive data, and potentially cause a full system compromise. To address this, we leverage software fault isolation (SFI) to isolate unverified computations within each compartment, thereby mitigating this problem. We opt for a software solution to avoid the MPU's hardware limitations on the number, size, and alignment of protected regions. Challenge 3: Shared and External Resources. Similar to existing compartmentalization techniques, our SDF compart- ments may share data with other compartments ( e.g., a global variable) or legitimately access peripherals in the secure-world address space. Adversaries may exploit this to illegally access another compartment's sensitive data from a compromised compartment or maliciously control a peripheral allocated to the compartment. To address this, we develop a lightweight mechanism to enforce Control Flow Integrity (CFI) and Data Flow Integrity (DFI), ensuring that these shared resources are accessed only through verified control and data flows. In light of these challenges, we developed a new LLVM compiler tool, TZ-D ATASHIELD , which firmware developers can easily use to compartmentalize an MCU-based system and protect sensitive data by leveraging TrustZone. With the C/C++ preprocessors provided by TZ-D ATASHIELD , develop- ers can annotate the source code to mark each sensitive data item (e.g., global, stack, heap variable, and peripheral-mapped region) with a macro indicating read, write, or read+write per- missions. During compilation, the firmware is automatically compartmentalized to produce (1) the secure-world firmware, (2) one or more SDF compartments , which contain a piece of code and necessary metadata, and (3) the normal-world firmware. The secure world firmware contains a trusted secu- rity monitor that securely loads each compartment from the normal world into the secure world. The SDF compartments are identified using forward and backward program slicing, with the sensitive data serving as the source and sink, re- spectively. Consequently, each compartment contains only the code and data necessary for accessing a specific piece of sensitive data. The normal-world firmware contains the rest of the system that does not need to access any sensitive data. To enforce intra-TEE isolation, TZ-D ATASHIELD instru- ments every branch and memory access instruction within each compartment, confining potential vulnerabilities and attacks to that compartment. This prevents illegal access from one compartment to other resources in the secure world, including those of other compartments and the security monitor. Fur- thermore, since a compartment may legitimately share data with another compartment or access external secure-world resources outside, which SFI should not restrict, we developed a lightweight CFI/DFI mechanism. This mechanism ensures that access to these resources is only permitted after successful verification of the control and data flow. We implemented a prototype of TZ-D ATASHIELD and evaluated it on the LPCXpresso55S69 [17] development board with an ARMv8-M-based MCU. In our security eval- uation with various bare-metal and RTOS firmware, TZ- DATASHIELD achieved up to 80.8% compartment memory and 88.6% ROP gadget reductions in the secure-world address space while protecting various sensitive data. Our evaluation also demonstrated that TZ-D ATASHIELD can eliminate differ- ent types of attacks in the RTOS and effectively block attacks from a strong adversary targeting sensitive data in the secure world. The average runtime overhead of TZ-D ATASHIELD is 14.7% with both CFI and DFI enabled and 7.6% without them, demonstrating a 36.7% speedup compared to function- based compartmentalization. TZ-D ATASHIELD requires less than 45 KB of flash memory and 7 KB of RAM to provide this protection, which is comparable to the overhead of coarse- grained compartmentalization (component and thread) and 30 In summary, the contributions of this paper are as follows: • We propose TZ-D ATASHIELD , a novel LLVM compiler tool that automatically compartmentalizes MCU firmware based on sensitive data flow. The compartments are executed in the secure world and protected by TrustZone, ensuring the confidentiality and integrity of sensitive data against strong adversaries in the normal world. • We design a data-flow-based compartmentalization tech- nique called SDF compartmentalization, which achieves sensitive data flow protection and intra-TEE isolation. It also enables the protection of shared and peripheral data. Additionally, TZ-D ATASHIELD reduces the attack surface and TCB size of the secure world firmware. • We implement and open-source a prototype of TZ- DATASHIELD [18] with an easy-to-use annotation sys- 2"
+      },
+      {
+        "source": "selected",
+        "value": "As reliance on embedded systems grows in critical domains such as healthcare, industrial automation, and unmanned vehicles, securing the data on micro-controller units (MCUs) becomes increasingly crucial. These systems face significant challenges related to computational power and energy constraints, complicating efforts to maintain the confidentiality and integrity of sensitive data. Previous methods have utilized compartmentalization techniques to protect this sensitive data, yet they remain vulnerable to breaches by strong adversaries exploiting privileged software. In this paper, we introduce TZ-DATASHIELD, a novel LLVM compiler tool that enhances ARM TrustZone with sensitive data flow (SDF) compartmentalization, offering robust protection against strong adversaries in MCU-based systems. We address three primary challenges: the limitations of existing compartment units, inadequate isolation within the Trusted Execution Environment (TEE), and the exposure of shared data to potential attacks. TZ-DATASHIELD addresses these challenges by implementing a fine-grained compartmentalization approach that focuses on sensitive data flow, ensuring data confidentiality and integrity, and developing a novel intra-TEE isolation mechanism that validates compartment access to TEE resources at runtime. Our prototype enables firmware developers to annotate source code to generate TrustZone-ready firmware images automatically. Our evaluation using real-world MCU applications demonstrates that TZ-DATASHIELD achieves up to 80.8% compartment memory and 88.6% ROP gadget reductions within the TEE address space. It incurs an average runtime overhead of 14.7% with CFI and DFI enforcement, and 7.6% without these measures."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Zelun Kong",
+          "email": "zelun.kong@utdallas.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Texas at Dallas University of Georgia Washington University, St. Louis"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Minkyung Park",
+          "email": "minkyung.park@utdallas.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Texas at Dallas University of Georgia Washington University, St. Louis"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Le Guan",
+          "email": "leguan@uga.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Texas at Dallas University of Georgia Washington University, St. Louis"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Ning Zhang",
+          "email": "zhang.ning@wustl.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Texas at Dallas University of Georgia Washington University, St. Louis"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Chung Hwan Kim",
+          "email": "chungkim@utdallas.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of Texas at Dallas University of Georgia Washington University, St. Louis"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Zelun Kong",
+          "email": "zelun.kong@utdallas.edu",
+          "affiliations": [
+            "University of Texas at Dallas"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Minkyung Park",
+          "email": "minkyung.park@utdallas.edu",
+          "affiliations": [
+            "University of Texas at Dallas"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Le Guan",
+          "email": "leguan@uga.edu",
+          "affiliations": [
+            "University of Georgia"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Ning Zhang",
+          "email": "zhang.ning@wustl.edu",
+          "affiliations": [
+            "Washington University in St. Louis"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Chung Hwan Kim",
+          "email": "chungkim@utdallas.edu",
+          "affiliations": [
+            "University of Texas at Dallas"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 112,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 11.0,
+        "candidates": [
+          {
+            "name": "Zelun Kong",
+            "block_id": "pdfplumber:p1:b10",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b18"
+            ]
+          },
+          {
+            "name": "Minkyung Park",
+            "block_id": "pdfplumber:p1:b11",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b18",
+              "pdfplumber:p1:b19"
+            ]
+          },
+          {
+            "name": "Le Guan",
+            "block_id": "pdfplumber:p1:b12",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b19",
+              "pdfplumber:p1:b25"
+            ]
+          },
+          {
+            "name": "Ning Zhang",
+            "block_id": "pdfplumber:p1:b13",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b19",
+              "pdfplumber:p1:b20",
+              "pdfplumber:p1:b25",
+              "pdfplumber:p1:b26"
+            ]
+          },
+          {
+            "name": "Chung Hwan Kim",
+            "block_id": "pdfplumber:p1:b14",
+            "font_size": 10.959,
+            "support_ids": [
+              "pdfplumber:p1:b20",
+              "pdfplumber:p1:b25",
+              "pdfplumber:p1:b26"
+            ]
+          }
+        ],
+        "fully_supported": true,
+        "anchored_existing_count": 5
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Zelun Kong",
+          "block_id": "pdfplumber:p1:b10",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Minkyung Park",
+          "block_id": "pdfplumber:p1:b11",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Le Guan",
+          "block_id": "pdfplumber:p1:b12",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Ning Zhang",
+          "block_id": "pdfplumber:p1:b13",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Chung Hwan Kim",
+          "block_id": "pdfplumber:p1:b14",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Zelun Kong",
+          "affiliation_raw": "University of Texas at Dallas",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b10",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b18"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.316,
+          "center_distance": 44.947,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 1,
+          "author": "Minkyung Park",
+          "affiliation_raw": "University of Texas at Dallas",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b11",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b18"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.316,
+          "center_distance": 50.988,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 2,
+          "author": "Le Guan",
+          "affiliation_raw": "University of Georgia",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b12",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b19"
+          ],
+          "email_raw": "leguan@uga.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b25"
+          ],
+          "validation_block_ids": [
+            "pdfplumber:p1:b24",
+            "pdfplumber:p1:b25"
+          ],
+          "relation_type": "author_card",
+          "vertical_distance": 13.316,
+          "center_distance": 1.483,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 3,
+          "author": "Ning Zhang",
+          "affiliation_raw": "Washington University in St. Louis",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b13",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b20"
+          ],
+          "email_raw": "leguan@uga.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b25"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.316,
+          "center_distance": 68.602,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        },
+        {
+          "author_index": 4,
+          "author": "Chung Hwan Kim",
+          "affiliation_raw": "Washington University in St. Louis",
+          "confidence": 0.97,
+          "author_block_id": "pdfplumber:p1:b14",
+          "affiliation_block_ids": [
+            "pdfplumber:p1:b20"
+          ],
+          "email_raw": "zhang.ning@wustl.edu",
+          "email_block_ids": [
+            "pdfplumber:p1:b26"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.316,
+          "center_distance": 33.648,
+          "local_auto_eligible": true,
+          "numeric_marker": ""
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "TZ-DATASHIELD: Automated Data Protection for Embedded Systems via Data-Flow-Based Compartmentalization",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/tz-datashield-automated-data-protection-for-embedded-systems-via-data-flow-based-compartmentalization/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Zelun Kong",
+          "affiliations": [
+            "University of Texas at Dallas"
+          ]
+        },
+        {
+          "name": "Minkyung Park",
+          "affiliations": [
+            "University of Texas at Dallas"
+          ]
+        },
+        {
+          "name": "Le Guan",
+          "affiliations": [
+            "University of Georgia"
+          ]
+        },
+        {
+          "name": "Ning Zhang",
+          "affiliations": [
+            "Washington University in St. Louis"
+          ]
+        },
+        {
+          "name": "Chung Hwan Kim",
+          "affiliations": [
+            "University of Texas at Dallas"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

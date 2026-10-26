@@ -1,0 +1,241 @@
+{
+  "paper_id": "073_cooper_testing_the_binding_code_of_scripting_languages_with_cooperative_mutation",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "COOPER: Testing the Binding Code of Scripting Languages with Cooperative Mutation"
+      },
+      {
+        "source": "selected",
+        "value": "COOPER: Testing the Binding Code of Scripting Languages with Cooperative Mutation"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Scripting languages like JavaScript are being integrated into commercial software to support easy file modification. For example, Adobe Acrobat accepts JavaScript to dynamically manipulate PDF files. To bridge the gap between the high-level scripts and the low-level languages (like C/C++) used to implement the software, a binding layer is necessary to transfer data and transform representations. However, due to the complexity of two sides, the binding code is prone to inconsistent semantics and security holes, which lead to severe vulnerabilities. Existing efforts for testing binding code merely focus on the script side, and thus miss bugs that require special program native inputs. In this paper, we propose cooperative mutation, which modifies both the script code and the program native input to trigger bugs in binding code. Our insight is that many bugs are due to the interplay between the program initial state and the dynamic operations, which can only be triggered through two-dimensional mutations. We develop three novel techniques to enable practical cooperative mutation on popular scripting languages: we first cluster objects into semantics similar classes to reduce the mutation space of native inputs; then, we statistically infer the relationship between script code and object classes based on a large number of executions; at last, we use the inferred relationship to select proper objects and related script code for targeted mutation. We applied our tool, COOPER, on three popular systems that integrate scripting languages, including Adobe Acrobat, Foxit Reader and Microsoft Word. COOPER successfully found 134 previously unknown bugs. We have reported all of them to the developers. At the time of paper publishing, 59 bugs have been fixed and 33 of them are assigned CVE numbers. We are awarded totally 22K dollars bounty for 17 out of all reported bugs."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Scripting languages like JavaScript are being inte- grated into commercial software to support easy file modification. For example, Adobe Acrobat accepts JavaScript to dynamically manipulate PDF files. To bridge the gap between the high-level scripts and the low-level languages (like C/C++) used to imple- ment the software, a binding layer is necessary to transfer data and transform representations. However, due to the complexity of two sides, the binding code is prone to inconsistent semantics and security holes, which lead to severe vulnerabilities. Existing efforts for testing binding code merely focus on the script side, and thus miss bugs that require special program native inputs. In this paper, we propose cooperative mutation, which modifies both the script code and the program native input to trigger bugs in binding code. Our insight is that many bugs are due to the interplay between the program initial state and the dynamic operations, which can only be triggered through two-dimensional mutations. We develop three novel techniques to enable practical cooperative mutation on popular scripting languages: we first cluster objects into semantics similar classes to reduce the mutation space of native inputs; then, we statistically infer the re- lationship between script code and object classes based on a large number of executions; at last, we use the inferred relationship to select proper objects and related script code for targeted mutation. We applied our tool, C OOPER , on three popular systems that integrate scripting languages, including Adobe Acrobat, Foxit Reader and Microsoft Word. C OOPER successfully found 134 previously unknown bugs. We have reported all of them to the developers. At the time of paper publishing, 59 bugs have been fixed and 33 of them are assigned CVE numbers. We are awarded totally 22K dollars bounty for 17 out of all reported bugs. I. I NTRODUCTION Scripting languages, like JavaScript and Python, have been adopted in commercial software to provide convenient interfaces to the underly complicated systems. For example, Adobe Acrobat accepts JavaScript code to manipulate internal PDF objects [ 1], while IDA Pro provides a Python binding for third-party developers to inspect binary attributes [ 23]. As commercial software is usually written in low-level languages like C/C++, a binding layer is necessary for transferring the arguments and transforming the representation for the high- level scripting languages. However, since the software and the script are developed independently, the binding layer is prone to produce inconsistent representations or miss security checks, which lead to tons of severe security vulnerabilities [6, 11]. To mitigate the threat from the binding code, researchers have proposed multiple program analysis techniques to detect various vulnerabilities, like unhandled crashes [27, 30, 53], type- safety violations [ 15, 16, 53] and memory-safety violations [ 6, 31]. Most techniques statically analyze the binding code to detect specific violations. For example, Brown et al. develop a set of static checkers, each of which aims to locate a particular type of bugs, such as implicitly casted variables [ 6]. These methods are limited by the nature of static methods: unscalable to handle large code base; the inaccuracy leading to many false alarms; lack of concrete inputs to trigger the bug. Instead, Lee et al. build a dynamic analysis tool to detect specification violations at runtime [ 28]. However, it merely reports bugs triggered by the given inputs and thus has limited bug coverage. Recently, fuzzing is widely used to test many programs and systems [ 20, 32, 61] and successfully found thousands of bugs [49]. The basic idea of fuzzing is to randomly generate a large number of inputs and run the program with these inputs to expose visible anomaly behaviors, like crashes or security violations [ 12, 33, 47, 48]. Because of the efficacy on finding bugs and the scalability to handle complicated systems, fuzzing is recently used to test the runtime and the binding code [11, 14, 21, 40, 45, 60] of JavaScript - the most popular scripting language [ 62]. Among them, Dinh et al. develop a tool, favocado, to generate semantically valid JavaScript code to solely test the JavaScript binding code and found lots of exploitable bugs in PDF readers and web browsers [11]. Although previous works demonstrate the feasibility of fuzzing binding code, we notice their limitation on exploring the program states due to one-dimensional mutation [ 59]. Specifically, favocado merely modifies JavaScript statements in order to trigger bugs in the binding layer. However, binding code is designed to connect the high-level scripting languages and the underlying systems written in low-level languages. Therefore, it accepts inputs from two dimensions: the code written in the scripting language ( i.e., the script) and the native input for the underlying system ( e.g., PDF files for Adobe Acrobat). Both Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24353 www.ndss-symposium.org dimensions can affect the execution of the binding code, and one cannot completely replace another. Mutating one dimension of the inputs cannot discover all bugs in the binding code. For example, although Adobe Acrobat accepts both PDF files and JavaScript code as its inputs, particular program features such as font are only mutable from the native input, i.e., the PDF file - merely mutating JavaScript code cannot trigger such bugs [ 1]. The solution to address this limitation seems straightforward: we mutate the inputs from two dimensions: modifying native inputs to prepare the program's initial states, and synthesizing valid scripts to trigger more diverse states. However, the simple method that randomly mutates two dimensions cannot explore the binding code effectively due to the large mutation space: the native input contains many objects but not all of them are related to the binding code, while the script code only accepts particular program states for further operations. To reduce the mutation space from two dimensions, we propose cooperative mutation , which uses the relationship between native inputs and script code to guide the fuzzing process. Specifically, it first modifies native objects that are related to the binding code; then, it synthesizes script code that will manipulate the program state triggered by the current native input. In this way, all mutation energy is used towards affecting the execution of the binding code. However, we need to address two challenges before adopting cooperative mutation. First, it is nontrivial to infer the relationship between the native input and the binding code. Considering the complicated underlying system and diverse scripting languages, manual effort is unscalable for handling real-world binding code. Second, it is hard to tell whether each script code accepts the program state triggered by a given native input. This problem is even worse in commercial software, where the source code is usually unavailable and the document is not given in detail. We design three novel techniques, object clustering, statis- tical relationship inference and relationship-guided mutation, to address the aforementioned challenges to enable practical cooperative mutation. First, we cluster objects in native inputs based on their semantics similarity. The clustering helps reduce the input mutation space significantly. Then, we rely on the large number of concrete executions to statistically infer the relationship between the native input and the script code. Specifically, we record the objects and script code in each file, and open it using the application to collect the execution result of the script code ( i.e., success or failure). If the success of the execution highly correlates with the inclusion of particular objects, we believe such objects are internally related to the script statement. Although such relationship is not formally confirmed, the large number of executions provide a statistical guarantee. Our evaluation in §V shows that the inferred relationship can help find a large number of severe bugs in the binding code. At last, we define a set of mutation policies that use the inferred relationship to guide the object modification and script generation. Specifically, we only modify objects related to script code, and update the corresponding script code to generate various runtime operations. We implement COOPER , a prototype that uses cooperative mutation to test the binding code of scripting languages. COOPER contains 1,581 lines of Python code for object clustering and relationship inference, and 2,756 lines of Python code for relationship-guided mutation. Currently, it supports testing two binding types, JavaScript with PDF files and Visual Basic with Microsoft Word documents. Since the idea of cooperative mutation is general, it is straightforward to extend COOPER to other scripting languages, like Python and Perl. To understand the effectiveness of COOPER , we applied it on three popular binding systems, Adobe Acrobat, Foxit Reader and Microsoft Word. COOPER successfully detected 134 unknown bugs, including 60 for Adobe Acrobat, 56 for Foxit Reader, and 18 for Microsoft Word. We have reported all these bugs to their developers. At the time of paper publishing, 103 bugs have been confirmed and 59 bugs of them have been fixed. Due to the severity of the reported bugs, we have received 33 CVE numbers and $22K bug bounties from various sources. Besides the bug detection, we also conducted unit tests to understand the contribution of each component of COOPER . The evaluation result shows that our relationship inference can deduce strong relationships between objects and script code, while the relationship-guided mutation improves the fuzzing efficacy by finding significantly more unique bugs in one week. In summary, we make the following contributions. • We propose cooperative mutation, which simultaneously modifies the native input and the related script code to test the binding code of scripting languages. • We design COOPER , a prototype that infers relationships between the native input and the script code, and utilizes the relationship to guide the two-dimensional mutation. • We applied COOPER on real-world popular commercial software and detected 134 bugs, which results in 33 CVEs and $22K bug bounties. We plan to release the source code of COOPER at https: //github.com/TCA-ISCAS/Cooper to help improve the security of binding layers of scripting languages. II. B ACKGROUND AND MOTIVATION To explain the research problem, we first briefly introduce scripting languages and the binding code. Then, we use one example to demonstrate common vulnerabilities in the binding code. Next, we demonstrate why existing work fails to trigger or detect such bugs and how the cooperative mutation addresses the limitation. At last, we analyze the challenges of adopting cooperative mutation and provide an overview of our solution. A. Scripting Languages and Binding Code Scripting languages are designed to automate the execution of tasks. Each underlying complicated task is encapsulated as a high-level API call, while developers usually combine necessary API calls to achieve diverse functionalities. Scripting languages are intended to be easy to learn and use, and most of them get interpreted at runtime instead of statically compiled. While several scripting languages are designed for specific domains, like Bash for Unix operating system, many are general- purpose programming languages, like Python and Perl. With the high demand of quick development, scripting languages are getting more and more popular. For example, JavaScript, the scripting language designed for web browsers, have been the most popular programming language for many years [62]. 2"
+      },
+      {
+        "source": "selected",
+        "value": "Scripting languages like JavaScript are being integrated into commercial software to support easy file modification. For example, Adobe Acrobat accepts JavaScript to dynamically manipulate PDF files. To bridge the gap between the high-level scripts and the low-level languages (like C/C++) used to implement the software, a binding layer is necessary to transfer data and transform representations. However, due to the complexity of two sides, the binding code is prone to inconsistent semantics and security holes, which lead to severe vulnerabilities. Existing efforts for testing binding code merely focus on the script side, and thus miss bugs that require special program native inputs. In this paper, we propose cooperative mutation, which modifies both the script code and the program native input to trigger bugs in binding code. Our insight is that many bugs are due to the interplay between the program initial state and the dynamic operations, which can only be triggered through two-dimensional mutations. We develop three novel techniques to enable practical cooperative mutation on popular scripting languages: we first cluster objects into semantics similar classes to reduce the mutation space of native inputs; then, we statistically infer the relationship between script code and object classes based on a large number of executions; at last, we use the inferred relationship to select proper objects and related script code for targeted mutation. We applied our tool, COOPER, on three popular systems that integrate scripting languages, including Adobe Acrobat, Foxit Reader and Microsoft Word. COOPER successfully found 134 previously unknown bugs. We have reported all of them to the developers. At the time of paper publishing, 59 bugs have been fixed and 33 of them are assigned CVE numbers. We are awarded totally 22K dollars bounty for 17 out of all reported bugs."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Peng Xu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences, University of Chinese Academy of Sciences QI-ANXIN Technology Research Institute Pennsylvania State University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Yanhao Wang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Hong Hu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Purui",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Su †∥",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences, University of Chinese Academy of Sciences QI-ANXIN Technology Research Institute Pennsylvania State University",
+            "School of Cyber Security, University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Peng Xu",
+          "email": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences",
+            "University of Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Yanhao Wang",
+          "email": "",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Hong Hu",
+          "email": "",
+          "affiliations": [
+            "Pennsylvania State University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Purui Su",
+          "email": "",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 121,
+      "author_count": 4,
+      "matched_author_count": 2,
+      "exact_author_match_count": 2,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Peng Xu",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Yanhao Wang",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 1,
+          "author": "Yanhao Wang",
+          "affiliation_raw": "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences University of Chinese Academy of Sciences QI-ANXIN Technology Research Institute Pennsylvania State University School of Cyber Security, University of Chinese Academy of Sciences",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b11",
+            "pdf:p1:b13",
+            "pdf:p1:b15",
+            "pdf:p1:b17",
+            "pdf:p1:b19"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 30.762,
+          "center_distance": 62.975,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "COOPER: Testing the Binding Code of Scripting Languages with Cooperative Mutation",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/auto-draft-260/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Peng Xu",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences; University of Chinese Academy of Sciences"
+          ]
+        },
+        {
+          "name": "Yanhao Wang",
+          "affiliations": [
+            "QI-ANXIN Technology Research Institute"
+          ]
+        },
+        {
+          "name": "Hong Hu",
+          "affiliations": [
+            "Pennsylvania State University"
+          ]
+        },
+        {
+          "name": "Purui Su",
+          "affiliations": [
+            "TCA/SKLCS, Institute of Software, Chinese Academy of Sciences; School of Cyber Security, University of Chinese Academy of Sciences"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

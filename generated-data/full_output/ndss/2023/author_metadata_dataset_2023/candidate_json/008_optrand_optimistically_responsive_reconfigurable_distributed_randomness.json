@@ -1,0 +1,376 @@
+{
+  "paper_id": "008_optrand_optimistically_responsive_reconfigurable_distributed_randomness",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "OptRand: Optimistically Responsive Reconfigurable Distributed Randomness"
+      },
+      {
+        "source": "selected",
+        "value": "OptRand: Optimistically Responsive Reconfigurable Distributed Randomness"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Public random beacons publish random numbers at regular intervals, which anyone can obtain and verify. The design of public distributed random beacons has been an exciting research direction with significant implications for blockchains, voting, and beyond. Distributed random beacons, in addition to being bias-resistant and unpredictable, also need to have low communication overhead and latency, high resilience to faults, and ease of reconfigurability. Existing synchronous random beacon protocols sacrifice one or more of these properties. In this work, we design an efficient unpredictable synchronous random beacon protocol, OptRand, with quadratic (in the number n of system nodes) communication complexity per beacon output. First, we innovate by employing a novel combination of bilinear pairing based publicly verifiable secret-sharing and non-interactive zero-knowledge proofs to build a linear (in n) sized publicly verifiable random sharing. Second, we develop a state machine replication protocol with linear-sized inputs that is also optimistically responsive, i.e., it can progress responsively at actual network speed during optimistic conditions, despite the synchrony assumption, and thus incur low latency. In addition, we present an efficient reconfiguration mechanism for OptRand that allows nodes to leave and join the system. Our experiments show our protocols perform significantly better compared to state-ofthe-art protocols under optimistic conditions and on par with state-of-the-art protocols in the normal case. We are also the first to implement a reconfiguration mechanism for distributed beacons and demonstrate that our protocol continues to be live during reconfigurations."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Public random beacons publish random numbers at regular intervals, which anyone can obtain and verify. The design of public distributed random beacons has been an exciting research direction with significant implications for blockchains, voting, and beyond. Distributed random beacons, in addition to being bias-resistant and unpredictable, also need to have low communication overhead and latency, high resilience to faults, and ease of reconfigurability. Existing synchronous random beacon protocols sacrifice one or more of these properties. In this work, we design an efficient unpredictable synchronous random beacon protocol, OptRand, with quadratic (in the num- ber n of system nodes) communication complexity per beacon output. First, we innovate by employing a novel combination of bilinear pairing based publicly verifiable secret-sharing and non-interactive zero-knowledge proofs to build a linear (in n) sized publicly verifiable random sharing. Second, we develop a state machine replication protocol with linear-sized inputs that is also optimistically responsive, i.e., it can progress responsively at actual network speed during optimistic conditions, despite the synchrony assumption, and thus incur low latency. In addition, we present an efficient reconfiguration mechanism for OptRand that allows nodes to leave and join the system. Our experiments show our protocols perform significantly better compared to state-of- the-art protocols under optimistic conditions and on par with state-of-the-art protocols in the normal case. We are also the first to implement a reconfiguration mechanism for distributed beacons and demonstrate that our protocol continues to be live during reconfigurations. I. I NTRODUCTION The use of public random numbers is fundamental to many secure privacy-preserving systems where protocol par- ties have tamper-proof access to these random values (or common coins). V oting, lotteries, blockchains, and financial services depend on public randomness, and generating public randomness [47] has been an active area of research for the last four decades [55], [26], [49], [50], [14], [35], [34], [21], [33], [46], [18], [10]. Among these efforts, NIST's randomness beacons project [22] and Drand organization's beacon [28] have emerged in the last few years as real-world systems towards catering to this need for randomness beacons. *Contributed equally and listed alphabetically Informally, these systems offer random beacons, which are regular outputs of bias-resistant and unpredictable public random numbers. Bias-resistance ensures that the adversary cannot affect any future beacon value, say, for instance, affect the beacon to win a lottery, and unpredictability ensures that the adversary cannot predict any future beacon value, say, for example, bet on a favorable number in a lottery. Distributing trust across multiple nodes such that only a minority of those can be compromised allows us to mitigate single-point-of-failures. Here, a distributed coin-tossing proto- col combines randomness from multiple nodes to generate ran- dom beacons, which has been explored both theoretically [29], [15], [14], [32] and on the systems front [55], [50], [28], [10], [49], [35]. A common approach to designing random beacons involves a set of n nodes each sharing a random value such that a random value is computed by combining a subset of these in- dividual values. To share the value, protocols typically require every node (called a dealer or leader) to use a verifiable secret sharing (VSS) scheme where the node commits to a value with the guarantee that if it is successful, it can be reconstructed by honest nodes even if the dealer is malicious (Byzantine). By utilizing at least t + 1 such dealers, where t is the maximum number of compromised nodes, we are guaranteed that the reconstructed value is uniformly random since the contribution from an honest node is uniformly random. There are several ideal properties that protocols in the literature have aimed to optimize. In an n-node system tol- erating t Byzantine faults, a secure coin-tossing protocol should aim for (i) bias-resistance, (ii) unpredictability, (iii) optimal resilience, (iv) low latency, (iv) high scalability, and (v) friendliness towards reconfiguration (allowing efficient addition and removal of nodes). In this work, we focus on the synchronous network setting where messages sent by the sender will arrive at the receiver within a known bounded delay ∆. Synchronous protocols have the advantage of tolerating up to a minority corruption. While a myriad of random beacon protocols [14], [55], [50], [10], [49] have been proposed in this setting, existing solutions fall short in one or more of these directions. For example, Cachin et al. [14] is efficient in terms of communication complexity with O(κn2), but their distributed (cryptographic) setup makes its expensive in term of reconfiguration especially as n increases. Randrunner and similar approaches instead employ the use of verifiable delay functions (VDFs) frequently to generate beacons and possibly tolerate dishonest majority of faults. However, VDFs are com- putationally expensive and these protocols cannot offer low Network and Distributed System Security (NDSS) Symposium 2023 https://dx.doi.org/10.14722/ndss.2023.24832 www.ndss-symposium.org TABLE I: Comparison of related works on Random Beacon protocols. Protocol Net. Res. Comm. Compl. Unpred. Reusable Resp. Crypto Setup Best Worst Setup Assumption * Assumption† Cachin et al./Drand [14], [28] sync 50% O(κn2) O(κn2) 1 ✗ ✗ Uniq. Sig, CDH SRS Dfinity [35], [2] sync. 50% O(κn2) O(κn3)‡ O(κ) ✗ ✗ Uniq. Sig, CDH SRS HERB [21] sync. 33% O(κn3) O(κn3) 1 ✗ ✗ DDH SRS RandHerd [55] sync. 33% O(κc2 log n)§ O(κn4) O(κ) ✗ ✗ DL SRS RandChain [34] sync. 50% O(κn2) O(κn2) O(κ) ✗ ✗ VDF, PoW SRS RandHound [55] sync. 33% O(κc2n)¶ O(κc2n2)¶ 1 ✓ ✗ DL SRS RandShare [55] async. 33% O(κn3) O(κn4) 1 ✓ ✓ DL SRS RandRunner [49] sync. 50% O(κn2) O(κn2) O(κ) ✓ ✗ tVDF, DL SRS HydRand [50] sync. 33% O(κn2) O(κn3) min( κ, t+1) ✓ ✗ DDH CRS SPURT [23] psync. 33% O(κn2) O(κn2) 1 ✓ ✓ DBS CRS GULL [17] sync. 50%|| O(κn3) O(κn3) 1 ✗ ✗ DDH CRS STROBE [7] sync. 50% O(κn2) O(κn2) 1 ✗ ✓ RSA, DL SRS GRandPiper [10] sync. 50% O(κn2) O(κn2) min( κ, t+1) ✓ ✗ q-SDH, SXDH SRS BRandPiper [10] sync. 50% O(κn2)|| O(κn3) 1 ✓ ✗ q-SDH, SXDH SRS OptRand sync. 50% O(κn2) O(κn2) 1 ✓ ✓ ** q-SDH, SXDH SRS Net. refers to the network assumption. Res. refers to the number of Byzantine faults tolerated in the system. Unpred. refers to the unpredictability of the random beacon, in terms of the number of future rounds a rushing adversary can predict. Reusable Setup refers to a setup that can be reused when a node is replaced in the system. Resp. refers to responsiveness, i.e., if commit latency is a function of the network speed δ. *All of these protocols assume Random oracles. †All of these protocols assume Public Key Infrastructure (PKI). ‡probabilistically O(κn3) when Θ(n) consecutive leaders are bad. §c is the average (constant) size of the groups of server nodes. ¶c is is a client specified parameter to obtain client-specific randomness. ||in conditions where the actual number of faults f = O(1) ≤ t. **optimistically responsive during optimistic conditions. latency [26], [49]. HydRand [50], with its use of publicly ver- ifiable secret sharing (PVSS) [16] can be made reconfiguration- friendly while simultaneously achieving quadratic communi- cation complexity in the best case; however, it works in a synchronous network and its resilience to faults, t < n/ 3, is sub-optimal. Finally, Randpiper set of protocols [10], while offering quadratic communication complexity in the best case and reconfiguration-friendliness, is communication-inefficient in the presence of faults and outputs a beacon value every 11∆ time. A natural question is whether we can achieve all of the above mentioned desirable properties simultaneously. Our work, OptRand, answers this question affirmatively. In par- ticular, OptRand is a bias-resistant and unpredictable random beacon, with an O(κn2) communication complexity and toler- ating one-half Byzantine faults in a synchronous network. In fact, under optimistic conditions when the number of faults are < n/4 and a “leader” is honest, the protocol is responsive, i.e., it advances at the speed of the network, thus achieving low latency. Compared to the state-of-the-art in the synchronous setting, RandPiper [10], this protocol has better communication complexity (always O(κn2)) and optimistically-responsive la- tency. A. Our Approach, Key Ideas and Results Our protocol is a novel combination of aggregatable PVSS and a state machine replication (SMR) to achieve an optimisti- cally responsive random beacon protocol. We elaborate on the key features of OptRand and our approach to achieving them. Towards an always quadratic communication random beacon protocol. An approach to obtaining random values is to combine random secrets from more than t nodes, at least one of whom is honest. Thus, every node commits to its secrets using a publicly verifiable secret sharing (PVSS) scheme [16], which, na¨ıvely, requires sharing O(κn)-sized information per node with every other node, making the communication com- plexity at least cubic. Thus, the crux of the challenge is to route this information through a “leader” such that the (i) communication complexity is quadratic while (ii) still allowing nodes to verify the correctness of the shares (iii) even when the number of faults is t < n/ 2. We achieve this using the aggregation property of PVSS [16] employing bilinear pairings: in particular, unlike non-interactive zero-knowledge (Σ protocol) proofs, pairing-based aggregate verification can be an efficient local process. While the approach of routing the PVSS instance through the leader has been considered recently [23] to tolerate t < n/ 3 faults, the higher resilience of t < n/ 2 forces us to solve the problem differently. For instance, SPURT [23] can tolerate t honest nodes from never receiving a share. However, when n = 2 t + 1, this is not-acceptable. In particular, to deal with Byzantine leaders efficiently, similar to [10], we take a two-pronged approach: (i) we employ pipelined state machine replication (SMR) that piggybacks consecutive consensus in- stances, and (ii) we buffer secrets shared using PVSS for each node, and reconstruct the last shared secret/beacon for the Byzantine leader before removing it from subsequent proposals. Towards optimistically responsive random beacons. While using the above discussed cryptographic approach and substi- tuting it in RandPiper can offer us always quadratic commu- nication complexity, RandPiper [10] still requires 11∆ latency in each epoch (a duration coordinated by a distinct leader) for beacons - even under optimistic conditions, their beacon protocol cannot progress at the network speed. The key challenges to obtain responsiveness are (i) efficient propagation of large messages, and (ii) efficient synchroniza- tion of all the nodes when some nodes move to the next 2"
+      },
+      {
+        "source": "selected",
+        "value": "Public random beacons publish random numbers at regular intervals, which anyone can obtain and verify. The design of public distributed random beacons has been an exciting research direction with significant implications for blockchains, voting, and beyond. Distributed random beacons, in addition to being bias-resistant and unpredictable, also need to have low communication overhead and latency, high resilience to faults, and ease of reconfigurability. Existing synchronous random beacon protocols sacrifice one or more of these properties. In this work, we design an efficient unpredictable synchronous random beacon protocol, OptRand, with quadratic (in the number n of system nodes) communication complexity per beacon output. First, we innovate by employing a novel combination of bilinear pairing based publicly verifiable secret-sharing and non-interactive zero-knowledge proofs to build a linear (in n) sized publicly verifiable random sharing. Second, we develop a state machine replication protocol with linear-sized inputs that is also optimistically responsive, i.e., it can progress responsively at actual network speed during optimistic conditions, despite the synchrony assumption, and thus incur low latency. In addition, we present an efficient reconfiguration mechanism for OptRand that allows nodes to leave and join the system. Our experiments show our protocols perform significantly better compared to state-ofthe-art protocols under optimistic conditions and on par with state-of-the-art protocols in the normal case. We are also the first to implement a reconfiguration mechanism for distributed beacons and demonstrate that our protocol continues to be live during reconfigurations."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Adithya Bhat",
+          "email": "abhatk@purdue.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Nibesh Shrestha",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Aniket Kate",
+          "email": "aniket@purdue.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Kartik Nayak",
+          "email": "kartik@cs.duke.edu",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University, Rochester Institute of Technology, Supra"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Duke University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Adithya Bhat",
+          "email": "abhatk@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Nibesh Shrestha",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Aniket Kate",
+          "email": "aniket@purdue.edu",
+          "orcid": "",
+          "affiliations": [
+            "Purdue University / Supra"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Kartik Nayak",
+          "email": "kartik@cs.duke.edu",
+          "orcid": "",
+          "affiliations": [
+            "Duke University"
+          ],
+          "affiliation_source": "pdf_layout",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 121,
+      "author_count": 4,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Adithya Bhat",
+          "block_id": "pdf:p1:b2",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Nibesh Shrestha",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Aniket Kate",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Kartik Nayak",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Adithya Bhat",
+          "affiliation_raw": "Purdue University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b2",
+          "affiliation_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "email_raw": "abhatk@purdue.edu",
+          "email_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.806,
+          "center_distance": 3.894,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Nibesh Shrestha",
+          "affiliation_raw": "Rochester Institute of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b13"
+          ],
+          "email_raw": "nxs4564@rit.edu",
+          "email_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.806,
+          "center_distance": 6.389,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Aniket Kate",
+          "affiliation_raw": "Purdue University / Supra",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b14"
+          ],
+          "email_raw": "aniket@purdue.edu",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.806,
+          "center_distance": 2.859,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Kartik Nayak",
+          "affiliation_raw": "Duke University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "email_raw": "kartik@cs.duke.edu",
+          "email_block_ids": [
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 24.806,
+          "center_distance": 0.939,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "OptRand: Optimistically Responsive Reconfigurable Distributed Randomness",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/optrand-optimistically-responsive-reconfigurable-distributed-randomness/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Adithya Bhat",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Nibesh Shrestha",
+          "affiliations": [
+            "Rochester Institute of Technology"
+          ]
+        },
+        {
+          "name": "Aniket Kate",
+          "affiliations": [
+            "Purdue University"
+          ]
+        },
+        {
+          "name": "Kartik Nayak",
+          "affiliations": [
+            "Duke University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Adithya Bhat",
+      "field": "affiliations",
+      "selected_value": [
+        "Purdue University"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdf:p1:b12"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Nibesh Shrestha",
+      "field": "affiliations",
+      "selected_value": [
+        "Rochester Institute of Technology"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdf:p1:b13"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Aniket Kate",
+      "field": "affiliations",
+      "selected_value": [
+        "Purdue University / Supra"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdf:p1:b14"
+      ],
+      "validation_evidence_ids": []
+    },
+    {
+      "action": "fill_from_pdf_layout",
+      "stage": "layout_relation",
+      "author": "Kartik Nayak",
+      "field": "affiliations",
+      "selected_value": [
+        "Duke University"
+      ],
+      "confidence": 0.97,
+      "evidence_ids": [
+        "pdf:p1:b15"
+      ],
+      "validation_evidence_ids": []
+    }
+  ]
+}

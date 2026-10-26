@@ -1,0 +1,494 @@
+{
+  "paper_id": "064_rigorous_engineering_for_hardware_security_formal_modelling_and_proof_in_the_cheri_design_and_implementation_process",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Rigorous engineering for hardware security: Formal modelling and proof in the CHERI design and implementation process"
+      },
+      {
+        "source": "selected",
+        "value": "Rigorous engineering for hardware security: Formal modelling and proof in the CHERI design and implementation process"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2020"
+      },
+      {
+        "source": "selected",
+        "value": "2020"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "The root causes of many security vulnerabilities include a pernicious combination of two problems, often regarded as inescapable aspects of computing. First, the protection mechanisms provided by the mainstream processor architecture and C/C++ language abstractions, dating back to the 1970s and before, provide only coarse-grain virtual-memory-based protection. Second, mainstream system engineering relies almost exclusively on test-and-debug methods, with (at best) prose specifications. These methods have historically sufficed commercially for much of the computer industry, but they fail to prevent large numbers of exploitable bugs, and the security problems that this causes are becoming ever more acute. In this paper we show how more rigorous engineering methods can be applied to the development of a new security-enhanced processor architecture, with its accompanying hardware implementation and software stack. We use formal models of the complete instruction-set architecture (ISA) at the heart of the design and engineering process, both in lightweight ways that support and improve normal engineering practice-as documentation, in emulators used as a test oracle for hardware and for running software, and for test generation-and for formal verification. We formalise key intended security properties of the design, and establish that these hold with mechanised proof. This is for the same complete ISA models (complete enough to boot operating systems), without idealisation. We do this for CHERI, an architecture with hardware capabilities that supports fine-grained memory protection and scalable secure compartmentalisation, while offering a smooth adoption path for existing software. CHERI is a maturing research architecture, developed since 2010, with work now underway on an Arm industrial prototype to explore its possible adoption in mass-market commercial processors. The rigorous engineering work described here has been an integral part of its development to date, enabling more rapid and confident experimentation, and boosting confidence in the design."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "The root causes of many security vulnerabilities include a pernicious combination of two problems, often regarded as inescapable aspects of computing. First, the protection mech- anisms provided by the mainstream processor architecture and C/C++ language abstractions, dating back to the 1970s and be- fore, provide only coarse-grain virtual-memory-based protection. Second, mainstream system engineering relies almost exclusively on test-and-debug methods, with (at best) prose specifications. These methods have historically sufficed commercially for much of the computer industry, but they fail to prevent large numbers of exploitable bugs, and the security problems that this causes are becoming ever more acute. In this paper we show how more rigorous engineering methods can be applied to the development of a new security-enhanced processor architecture, with its accompanying hardware im- plementation and software stack. We use formal models of the complete instruction-set architecture (ISA) at the heart of the design and engineering process, both in lightweight ways that support and improve normal engineering practice - as documentation, in emulators used as a test oracle for hardware and for running software, and for test generation - and for formal verification. We formalise key intended security properties of the design, and establish that these hold with mechanised proof. This is for the same complete ISA models (complete enough to boot operating systems), without idealisation. We do this for CHERI, an architecture with hardware capabil- ities that supports fine-grained memory protection and scalable secure compartmentalisation, while offering a smooth adoption path for existing software. CHERI is a maturing research architecture, developed since 2010, with work now underway on an Arm industrial prototype to explore its possible adoption in mass-market commercial processors. The rigorous engineering work described here has been an integral part of its development to date, enabling more rapid and confident experimentation, and boosting confidence in the design. I. I NTRODUCTION Despite decades of research, memory safety bugs are still responsible for many security vulnerabilities [1]. Microsoft estimates that 70% of the vulnerabilities they have patched be- tween 2006 and 2018 are caused by memory safety issues [2], MITRE considers classic buffer overflows as the third most dangerous software error [3], and high-profile memory-safety bugs such as Heartbleed [4] have become common. There are two fundamental problems here. First, mainstream hardware architectures and C/C++ language abstractions pro- vide only coarse-grained memory protection, via the memory management unit (MMU). This is hard to change: the mass of legacy C/C++ code makes it infeasible to migrate everything to a type-safe language, or to radically change hardware architectures, but introducing fine-grained memory protection in software, e.g. with bounds-checking, is often too inefficient. Second, mainstream systems are typically developed using test-and-debug engineering methods. While this often suffices to build systems that are sufficiently functionally correct under normal use, it fails to build secure systems: it is easy to miss a small mistake that manifests itself only in a corner case, but attackers will actively try to find these, and one small bug can compromise the entire system. CHERI is an ongoing research project that addresses the first problem with hardware support for fine-grained memory protection and scalable software compartmentalisation, aiming to provide practically deployable performance and compati- bility [5]-[7]. CHERI achieves this by extending commodity architectures with new security mechanisms, and adapting a conventional software stack to make use of these. This paper addresses the second problem: we show how more rigorous engineering methods can be used to improve as- surance and complement traditional methods, using the CHERI project as a whole as a testbench for this. These include both lightweight methods - formal specification and testing methods that provide engineering and assurance benefits for hardware and software engineering without the challenges of full formal verification - and more heavyweight machine- checked proof, establishing very high confidence that the architecture design provides specific security properties. A. The CHERI Context The CHERI design is based on two principles. The principle of least privilege [8] says that each part of a program should run only with the permissions it needs to function. For exam- ple, a conventional C/C++ program implicitly uses permission to its entire memory region for accesses via a pointer, making it vulnerable to buffer overflows, but in CHERI it can be limited to the permission to access the pointed-to object. On a larger scale, the JavaScript execution engine of a browser 1003 DOI 10.1109/SP40000.2020.00055 does not need access to the encryption keys used in SSL connections, so by restricting its permissions one can ensure that even a compromised JavaScript engine cannot access these keys. The principle of intentional use states that when a program performs an action, it should explicitly state which permissions it uses to authorise that action. This helps avoid the confused deputy problem [9]. For example, an operating system (OS) may need to hold permission to access the entirety of a user process (e.g. for paging), but when that process makes a read() system call, passing a pointer to a user-space buffer, CHERI lets the relevant OS code to use the more restricted permission to just that buffer. The CHERI design involves no lookup or search for permissions, which is important both to embody this principle and for performance. These principles are realised in CHERI with hardware capabilities: to access memory, one needs to possess a ca- pability that authorises that access. A capability augments the usual virtual address of a language-level pointer with bounds that specify the memory region it relates to, and with permission bits that specify what kind of actions it can authorise. To distinguish capabilities from other data, CHERI uses tagged memory , one bit for each capability-sized and aligned unit of memory. Valid capabilities have their tag set, and if they are overwritten with a non-capability, their tag is cleared, rendering them safely unusable. CHERI introduces new instructions that can manipulate a capability without clearing its tag: to change its virtual address, shrink its bounds, decrease its permissions, or copy it. It is crucial to the design that no instruction can grow the bounds of a capability, or add permissions. To enable software compartmentalisation, CHERI provides additional mechanisms for mutually untrusting com- partments to communicate. The CHERI design has been elaborated initially as CHERI- MIPS, extending 64-bit MIPS [10] with capabilities. Our CHERI-MIPS instruction-set architecture (ISA) definition is the central design artefact [6]. As usual, the ISA defines the hardware/software interface: the programmer-visible machine state and instruction behaviour that software must be pro- grammed above; it abstracts from hardware-implementation (microarchitectural) specifics, e.g. of pipelines, cache hierar- chies, etc. Then there is a Bluespec [11] FPGA hardware implementation of the architecture, and a software stack above it, adapting LLVM [12] and FreeBSD [13] to CHERI-MIPS. All this has involved extensive work on the interaction be- tween the capability system and systems aspects of memory management (static and dynamic linking, process creation, context switching, page swapping and signal delivery) [14]; on the overhead of compiling pointers to capabilities [5], [15]; on compartmentalisation of legacy software [16]; and on the performance overhead of tagged memory [17] and protection- domain switches [18]. The underlying ideas are portable, not MIPS-specific, and work is underway on experimental academic RISC-V and industrial Arm versions - the latter in a major project involving Arm and the UK Government [19], [20] to produce prototype silicon and a development board. B. The Problems with Traditional Engineering Methods CHERI-MIPS was initially developed using traditional en- gineering methods: the security properties that the architecture is intended to enforce were described in prose; the architecture was described in prose and pseudocode; and the hardware implementation of the architecture was validated with hand- written tests. This led to the following problems, often ac- cepted as inescapable aspects of normal practice. First, the prose and pseudocode architecture description was not executable as a test oracle, to check the hardware implementation behaviour against, or as an emulator, to run software above. Hardware validation tests therefore required manual curation of their intended outcomes, so tests could not be automatically generated, and it was not possible to rerun software tests after changes in the architecture until the hardware implementation was updated. Second, while the designers had strong intuitions about the security properties the architecture should provide, their prose statements were inevitably less precise than they could be, and omitted crucial details. This led to unnecessary confusion in internal discussions of (for example) the concepts of capability provenance and monotonicity, central to the design, and made it harder to explain these to others. Third, it was very difficult to assess whether the archi- tecture actually provided these intended security properties. The properties involve quantification over all executions of arbitrary code, e.g. to show that (without a domain transi- tion) the reachable capabilities can never be increased, and that an isolated compartment cannot affect other memory. Testing cannot provide assurance that these hold. Moreover, architecture descriptions are large and complex: the CHERI ISA description is around 7k lines, and involves intricate manipulation of capabilities and of the architected register state (see Fig. 4 for just one instruction). For a conventional architecture, to check, for example, that user code cannot bypass the MMU, it would be easy to check that all user- mode memory accesses go via address translation, but the CHERI security enforcement is intertwined with the compu- tation and use of memory addresses, user/system permissions, and other aspects of the ISA; its security properties depend on subtle invariants of the ISA specification as a whole. A mis-specification of the interaction between capabilities and user/system modes, exceptions, address translation, or any of the 180-odd instructions could potentially break its security protection. This means that informal review of the ISA specification also cannot provide assurance that the properties hold - as confirmed by the subtle bugs found by our proof work (§VI). At the same time, CHERI's correctness is cru- cially important: its security protection will come under direct attack, and one mistake could be enough to cancel out all the protection that CHERI offers. Moreover, if the architecture specification is flawed, containing some security vulnerability, then any conforming hardware implementation will inherit that vulnerability. All this makes machine-checked statements and proofs of the intended security properties essential. 1004"
+      },
+      {
+        "source": "selected",
+        "value": "The root causes of many security vulnerabilities include a pernicious combination of two problems, often regarded as inescapable aspects of computing. First, the protection mechanisms provided by the mainstream processor architecture and C/C++ language abstractions, dating back to the 1970s and before, provide only coarse-grain virtual-memory-based protection. Second, mainstream system engineering relies almost exclusively on test-and-debug methods, with (at best) prose specifications. These methods have historically sufficed commercially for much of the computer industry, but they fail to prevent large numbers of exploitable bugs, and the security problems that this causes are becoming ever more acute. In this paper we show how more rigorous engineering methods can be applied to the development of a new security-enhanced processor architecture, with its accompanying hardware implementation and software stack. We use formal models of the complete instruction-set architecture (ISA) at the heart of the design and engineering process, both in lightweight ways that support and improve normal engineering practice-as documentation, in emulators used as a test oracle for hardware and for running software, and for test generation-and for formal verification. We formalise key intended security properties of the design, and establish that these hold with mechanised proof. This is for the same complete ISA models (complete enough to boot operating systems), without idealisation. We do this for CHERI, an architecture with hardware capabilities that supports fine-grained memory protection and scalable secure compartmentalisation, while offering a smooth adoption path for existing software. CHERI is a maturing research architecture, developed since 2010, with work now underway on an Arm industrial prototype to explore its possible adoption in mass-market commercial processors. The rigorous engineering work described here has been an integral part of its development to date, enabling more rapid and confident experimentation, and boosting confidence in the design."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kyndylan Nienhuis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Alexandre Joannou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Thomas Bauereiss",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Anthony Fox",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Michael Roe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Brian Campbell",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Edinburgh SRI International"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Matthew Naylor",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "Robert MNorton",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Simon WMoore",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        },
+        {
+          "order": 9,
+          "name": "Peter GNeumann",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 9
+        },
+        {
+          "order": 10,
+          "name": "Ian Stark",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Edinburgh SRI International"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 10
+        },
+        {
+          "order": 11,
+          "name": "Robert N MWatson",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 11
+        },
+        {
+          "order": 12,
+          "name": "Peter Sewell",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Cambridge"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 12
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kyndylan Nienhuis",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Alexandre Joannou",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Thomas Bauereiss",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Anthony Fox",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Michael Roe",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Brian Campbell",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Matthew Naylor",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 7,
+          "name": "Robert M. Norton",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 8,
+          "name": "Simon W. Moore",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 9,
+          "name": "Peter G. Neumann",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 10,
+          "name": "Ian Stark",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 11,
+          "name": "Robert N. M. Watson",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 12,
+          "name": "Peter Sewell",
+          "email": "",
+          "affiliations": [
+            "University of Cambridge †ARM Limited ‡University of Edinburgh §SRI International"
+          ],
+          "affiliation_source": "ieee_sp_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 121,
+      "author_count": 13,
+      "matched_author_count": 2,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 5,
+          "author": "Brian Campbell",
+          "block_id": "pdf:p1:b12",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 12,
+          "author": "Peter Sewell",
+          "block_id": "pdf:p1:b23",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 12,
+          "author": "Peter Sewell",
+          "affiliation_raw": "University of Edinburgh",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b23",
+          "affiliation_block_ids": [
+            "pdf:p1:b29"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 61.929,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 13,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Rigorous Engineering for Hardware Security: Formal Modelling and Proof in the CHERI Design and Implementation Process",
+      "source_url": "https://www.ieee-security.org/TC/SP2020/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kyndylan Nienhuis",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Alexandre Joannou",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Thomas Bauereiss",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Anthony Fox",
+          "affiliations": [
+            "ARM Limited"
+          ]
+        },
+        {
+          "name": "Michael Roe",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Brian Campbell",
+          "affiliations": [
+            "University of Edinburgh"
+          ]
+        },
+        {
+          "name": "Matthew Naylor",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Robert Norton",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Simon Moore",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Peter Neumann",
+          "affiliations": [
+            "SRI International"
+          ]
+        },
+        {
+          "name": "Ian Stark",
+          "affiliations": [
+            "University of Edinburgh"
+          ]
+        },
+        {
+          "name": "Robert Watson",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        },
+        {
+          "name": "Peter Sewell",
+          "affiliations": [
+            "University of Cambridge"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

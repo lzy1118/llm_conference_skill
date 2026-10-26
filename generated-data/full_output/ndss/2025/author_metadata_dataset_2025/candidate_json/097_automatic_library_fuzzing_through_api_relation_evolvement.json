@@ -1,0 +1,315 @@
+{
+  "paper_id": "097_automatic_library_fuzzing_through_api_relation_evolvement",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Automatic Library Fuzzing through API Relation Evolvement"
+      },
+      {
+        "source": "selected",
+        "value": "Automatic Library Fuzzing through API Relation Evolvement"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2025"
+      },
+      {
+        "source": "selected",
+        "value": "2025"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Software libraries are foundational components in modern software ecosystems. Vulnerabilities within these libraries pose significant security threats. Fuzzing is a widely used technique for uncovering software vulnerabilities. However, its application to software libraries poses considerable challenges, necessitating carefully crafted drivers that reflect diverse yet correct API usages. Existing works on automatic library fuzzing either suffer from high false positives due to API misuse caused by arbitrarily generated API sequences, or fail to produce diverse API sequences by overly relying on existing code snippets that express restricted API usages, thus missing deeper API vulnerabilities. This work proposes NEXZZER, a new fuzzer that automatically detects vulnerabilities in libraries. NEXZZER employs a hybrid relation learning strategy to continuously infer and evolve API relations, incorporating a novel driver architecture to augment the testing coverage of libraries and facilitate deep vulnerability discovery. We evaluated NEXZZER across 18 libraries and the Google Fuzzer Test Suite. The results demonstrate its considerable advantages in code coverage and vulnerabilityfinding capabilities compared to prior works. NEXZZER can also automatically identify and filter out most API misuse crashes. Moreover, NEXZZER discovered 27 previously unknown vulnerabilities in well-tested libraries, including OpenSSL and libpcre2. At the time of writing, developers have confirmed 24 of them, and 9 were fixed because of our reports."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Software libraries are foundational components in modern software ecosystems. Vulnerabilities within these li- braries pose significant security threats. Fuzzing is a widely used technique for uncovering software vulnerabilities. However, its application to software libraries poses considerable challenges, necessitating carefully crafted drivers that reflect diverse yet correct API usages. Existing works on automatic library fuzzing either suffer from high false positives due to API misuse caused by arbitrarily generated API sequences, or fail to produce diverse API sequences by overly relying on existing code snippets that express restricted API usages, thus missing deeper API vulnerabilities. This work proposes NEXZZER , a new fuzzer that automatically detects vulnerabilities in libraries. NEXZZER employs a hybrid relation learning strategy to continuously infer and evolve API relations, incorporating a novel driver architecture to augment the testing coverage of libraries and facilitate deep vulner- ability discovery. We evaluated NEXZZER across 18 libraries and the Google Fuzzer Test Suite. The results demonstrate its considerable advantages in code coverage and vulnerability- finding capabilities compared to prior works. NEXZZER can also automatically identify and filter out most API misuse crashes. Moreover, NEXZZER discovered 27 previously unknown vulnerabilities in well-tested libraries, including OpenSSL and libpcre2. At the time of writing, developers have confirmed 24 of them, and 9 were fixed because of our reports. I. I NTRODUCTION Software libraries are essential components of the modern software ecosystem. They provide reusable code modules to facilitate software development, enabling developers to imple- ment complex functionalities without reinventing the wheel. Complex libraries like OpenSSL expose thousands of Appli- cation Programming Interfaces (APIs), offering fundamental capabilities for software applications. However, vulnerabilities in these libraries introduce severe security risks [15], [29]. For example, a recent vulnerability in OpenSSL allowed remote code execution and could affect millions of infrastructure software systems [2]. To uncover vulnerabilities inside libraries, fuzzing is a widely used method. In the domain of library fuzzing, a crucial component that determines the overall fuzzing effectiveness is the fuzzing driver. A fuzzing driver bridges the fuzzing engine and the target library, providing input data to API arguments and establishing calling dependencies across library APIs. Human experts can study the target API usage and manually craft a fuzzing driver that properly constrains the input for testing a library [1], [5], [25]. However, this requires extensive effort to create and maintain the driver code, and it becomes ineffective due to the extensive and continuously developing APIs. In contrast to the manual approach, automated library fuzzing has become a de facto approach [16], [15], [19], [22], [26], [17], [21], [20], [29] to discovering vulnerabilities because it saves manual labor and can scale to extensive APIs. However, automated library fuzzing has been a difficult research problem. In addition to the traditional fuzzing chal- lenge of generating diverse inputs ( i.e., API call sequences) to uncover more crashes, there is a significant concern regarding how to simulate real-world API usage to discover library vulnerabilities, rather than merely triggering crashes caused by API misuse . While both API vulnerabilities and misuse can cause crashes, they have distinct causes and implications. Vulnerabilities arise from design or implementation flaws that developers need to address, whereas API misuse occurs when library users (or driver code) do not follow the correct programming patterns or intended usage. Library developers typically do not address issues caused by API misuse because they lack valid security implications. The goal of library fuzzing is to generate diverse API sequences that accurately reflect libraries' real-world usage. This creates a dilemma: we aim to assemble API call se- quences in diverse ways to find vulnerabilities, yet we must constrain the input spaces of these sequences to adhere to the correct API usage acknowledged by developers. To address this problem, a set of library fuzzing systems are proposed, and they can generally be categorized into two types. The first line of research trades diversity in fuzzing for accuracy. They replicate the sequence orders from existing code snip- pets (which we call API consumers) that invoke the target APIs [16], [22], [17], [29], [21], [26]. Consequently, they only mutate the API arguments. The other line of research Network and Distributed System Security (NDSS) Symposium 2025 https://dx.doi.org/10.14722/ndss.2025.240750 www.ndss-symposium.org adopts more aggressive mutations [15], [19], [20] for diversity. These works can mutate API arguments and API invocation orders together to detect more crashes. While they potentially generate diverse and unseen API usage that uncovers more API vulnerabilities, they also suffer from many API misuse crashes. The overwhelming number of API misuse crashes, which require manual efforts to validate, cause developer fatigue. This work presents NEXZZER , a system that achieves both high diversity and accuracy when generating API sequences for testing libraries. Regarding diversity,NEXZZER implements a novel driver architecture that is facilitated by an intermediate API description, Liblang, cooperating with a general inter- preter. This modular architecture allows the fuzzing engine to freely arrange and constrain diverse API call sequences. Moreover, it opens a window for the fuzzer to dynamically adjust mutation strategies during fuzzing and gradually learns implicit API relations . Implicit API relations are common in software libraries. For example, an object deallocation API (e.g., BN free in OpenSSL) should not precede other object consumption APIs, and an initialization API (e.g., gmpz init in libgmp) should always precede others. Such relations are not explicit in the API prototype or apparent in static analysis of consumer code but could significantly impact fuzzing automation. While fuzzers can occasionally generate inputs encoding these implicit dependencies, without understanding these dependencies, the fuzzers cannot consistently generate high-quality API sequences. Indeed, our evaluation demon- strates that existing automatic library fuzzers cannot discover and adhere to these relations well, resulting in inevitable API misuse and heavy manual post-processing burdens, especially when testing large-scale APIs. To extract implicit API relations, NEXZZER incorporates a novel relation learning stage. This stage works by tentatively mutating APIs to observe the execution state changes and reason the API relations from them. NEXZZER records APIs and their relations into a dynamic graph structure named APIGraph. During the learning stage, NEXZZER checks the execution state changes against the mutated API sequences. A transition between crashing and non-crashing execution, or vice versa, indicates the existence of implicit dependencies in the API call sequences. Thus, NEXZZER updates such relations into the APIGraph accordingly. In future iterations, the fuzzing strategies are constrained by the evolving relations encoded in the APIGraph. This allows NEXZZER to produce more accurate API calling sequences gradually. Another contribution of NEXZZER is that it automatically filters out false positive crashes caused by API misuse, ensur- ing much more accurate results and practicability in automatic library testing. We empirically summarize rules to determine if a crash is caused by API misuse. Combined with the diverse API sequences, it allows for efficient vulnerability detection. Specifically, we identify two main types of API misuse: 1) unintended API argument values (e.g., invalid argument values specifying memory length), and 2) unintended API invocation orders (e.g., consuming resources after improper deallocation). For each type, we identify multiple rules associated with API misuse based on expert experience. For each triggered crash, NEXZZER automatically determines if it falls into these categories (and thus is API misuse) based on learned relations and applicable rules. We conducted a comprehensive evaluation on NEXZZER to evaluate its effectiveness in detecting API vulnerabilities. We selected 18 representative libraries and the Google Fuzzer Test Suite [10] as our evaluation benchmark, and com- pared NEXZZER with three state-of-the-art automatic library fuzzers including UTopia [29], FuzzGen [15], and Hopper [20], and also manually-crafted drivers. In general, NEXZZER achieved significantly higher code coverage (by up to 48.78%) compared to other tools. Our ablation studies showed that the components in NEXZZER contributed to both coverage and vulnerability detection. We further compared the number of API vulnerabilities detected by different fuzzers and the efficiency of these fuzzers to automatically filter out API misuse. To this end, for each reported crash, we manually confirmed if it is misuse based on human expertise and feedback from library developers. The results of NEXZZER are promising: regarding new vulnerabilities, NEXZZER detected 27 new vulnerabilities in widely-used libraries like OpenSSL, with 24 confirmed by developers and 9 fixed at the time of writing; yet the sum of vulnerabilities detected by other tools was 8. Regarding the efficiency of filtering out API misuse, NEXZZER also performed better by automatically filtering out 93.96% API misuse crashes, compared to 28.65% in Hopper and 47.11% in UTopia. In summary, we make the following contributions: • We design a modular driver architecture, facilitated by an intermediate API description, to effectively scale library fuzzing automation to large targets with thousands of APIs. • We design a hybrid API relation learning strategy on top of a dynamic structure APIGraph to model API usage and behavior patterns. We also propose an effective rule-based approach to automatically filter out API misuse. • We implement the design in a prototype named NEXZZER . It was evaluated on 18 libraries and found 27 previously unknown vulnerabilities. The source code of NEXZZER is available at https://figshare.com/s/9539927ac84ee6a7ac14. II. B ACKGROUND AND MOTIVATION To automate library fuzzing, researchers proposed various methods [16], [15], [22], [21], [29], [20]. In this section, we illustrate the diverse API relations (§II-A), the differences between API misuse and vulnerabilities (§II-B), and existing works and limitations that motivate our work (§II-C). A. API Relations According to prior works [20], [29], the essential API usage for effective API fuzzing can be categorized into two types of relations: argument constraints within APIs (i.e., intra-API) and dependencies between APIs (i.e., inter-API). Intra-API Constraints . The first aspect of correctly in- voking APIs is using expected arguments. Fuzzing drivers 2"
+      },
+      {
+        "source": "selected",
+        "value": "Software libraries are foundational components in modern software ecosystems. Vulnerabilities within these libraries pose significant security threats. Fuzzing is a widely used technique for uncovering software vulnerabilities. However, its application to software libraries poses considerable challenges, necessitating carefully crafted drivers that reflect diverse yet correct API usages. Existing works on automatic library fuzzing either suffer from high false positives due to API misuse caused by arbitrarily generated API sequences, or fail to produce diverse API sequences by overly relying on existing code snippets that express restricted API usages, thus missing deeper API vulnerabilities. This work proposes NEXZZER, a new fuzzer that automatically detects vulnerabilities in libraries. NEXZZER employs a hybrid relation learning strategy to continuously infer and evolve API relations, incorporating a novel driver architecture to augment the testing coverage of libraries and facilitate deep vulnerability discovery. We evaluated NEXZZER across 18 libraries and the Google Fuzzer Test Suite. The results demonstrate its considerable advantages in code coverage and vulnerabilityfinding capabilities compared to prior works. NEXZZER can also automatically identify and filter out most API misuse crashes. Moreover, NEXZZER discovered 27 previously unknown vulnerabilities in well-tested libraries, including OpenSSL and libpcre2. At the time of writing, developers have confirmed 24 of them, and 9 were fixed because of our reports."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jiayi Lin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Qingyu Zhang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Junzhe Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Chenxin Sun",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Hao Zhou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "The University of Hong Kong",
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Changhua Luo",
+          "email": "chluo@hku.hk",
+          "orcid": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Chenxiong Qian",
+          "email": "cqian@cs.hku.hk",
+          "orcid": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jiayi Lin",
+          "email": "linjy01@connect.hku.hk",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Qingyu Zhang",
+          "email": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Junzhe Li",
+          "email": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Chenxin Sun",
+          "email": "",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Hao Zhou",
+          "email": "",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Changhua Luo",
+          "email": "chluo@hku.hk",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        },
+        {
+          "order": 6,
+          "name": "Chenxiong Qian",
+          "email": "cqian@cs.hku.hk",
+          "affiliations": [
+            "The University of Hong Kong"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": true
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 107,
+      "author_count": 7,
+      "matched_author_count": 0,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false,
+        "anchored_existing_count": 0
+      },
+      "numbered_affiliation_notes": {},
+      "author_nodes": [],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Automatic Library Fuzzing through API Relation Evolvement",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/automatic-library-fuzzing-through-api-relation-evolvement/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jiayi Lin",
+          "affiliations": [
+            "The University of Hong Kong"
+          ]
+        },
+        {
+          "name": "Qingyu Zhang",
+          "affiliations": [
+            "The University of Hong Kong"
+          ]
+        },
+        {
+          "name": "Junzhe Li",
+          "affiliations": [
+            "The University of Hong Kong"
+          ]
+        },
+        {
+          "name": "Chenxin Sun",
+          "affiliations": [
+            "The University of Hong Kong"
+          ]
+        },
+        {
+          "name": "Hao Zhou",
+          "affiliations": [
+            "The Hong Kong Polytechnic University"
+          ]
+        },
+        {
+          "name": "Changhua Luo",
+          "affiliations": [
+            "The University of Hong Kong"
+          ]
+        },
+        {
+          "name": "Chenxiong Qian",
+          "affiliations": [
+            "The University of Hong Kong"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Jiayi Lin",
+      "field": "email",
+      "restored_value": "linjy01@connect.hku.hk",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "restore_nonempty_field",
+      "stage": "conference_strategy",
+      "author": "Changhua Luo",
+      "field": "email",
+      "restored_value": "chluo@hku.hk",
+      "reason": "later_stage_produced_blank"
+    },
+    {
+      "action": "preserve_pdf_countries_before_official_web",
+      "stage": "pdf_country_preservation",
+      "field": "country",
+      "authors_restored": 6,
+      "country_values_restored": 6,
+      "source": "pdf_extraction_csv"
+    }
+  ]
+}

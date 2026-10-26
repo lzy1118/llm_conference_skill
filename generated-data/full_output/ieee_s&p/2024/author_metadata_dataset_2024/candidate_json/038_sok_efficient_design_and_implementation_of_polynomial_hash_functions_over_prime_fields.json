@@ -1,0 +1,210 @@
+{
+  "paper_id": "038_sok_efficient_design_and_implementation_of_polynomial_hash_functions_over_prime_fields",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SoK: Efficient Design and Implementation of Polynomial Hash Functions over Prime Fields"
+      },
+      {
+        "source": "selected",
+        "value": "SoK: Efficient Design and Implementation of Polynomial Hash Functions over Prime Fields"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Poly1305 is a widely-deployed polynomial hash function. The rationale behind its design was laid out in a series of papers by Bernstein, the last of which dates back to 2005. As computer architectures evolved, some of its design features became less relevant, but implementers found new ways of exploiting these features to boost its performance. However, would we still converge to this same design if we started afresh with today's computer architectures and applications? To answer this question, we gather and systematize a body of knowledge concerning polynomial hash design and implementation that is spread across research papers, cryptographic libraries, and developers' blogs. We develop a framework to automate the validation and benchmarking of the ideas that we collect. This approach leads us to five new candidate designs for polynomial hash functions. Using our framework, we generate and evaluate different implementations and optimization strategies for each candidate. We obtain substantial improvements over Poly1305 in terms of security and performance. Besides laying out the rationale behind our new designs, our paper serves as a reference for efficiently implementing polynomial hash functions, including Poly1305."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Poly1305 is a widely-deployed polynomial hash func- tion. The rationale behind its design was laid out in a series of papers by Bernstein, the last of which dates back to 2005. As computer architectures evolved, some of its design features became less relevant, but implementers found new ways of exploiting these features to boost its performance. However, would we still converge to this same design if we started afresh with today's computer architectures and applications? To an- swer this question, we gather and systematize a body of knowl- edge concerning polynomial hash design and implementation that is spread across research papers, cryptographic libraries, and developers' blogs. We develop a framework to automate the validation and benchmarking of the ideas that we collect. This approach leads us to five new candidate designs for poly- nomial hash functions. Using our framework, we generate and evaluate different implementations and optimization strategies for each candidate. We obtain substantial improvements over Poly1305 in terms of security and performance. Besides laying out the rationale behind our new designs, our paper serves as a reference for efficiently implementing polynomial hash functions, including Poly1305. 1. Introduction Universal hash functions are among the most fundamen- tal and versatile tools in cryptography and computer science more generally. In the former domain, their most impor- tant application is in constructing Message Authentication Codes (MACs). In the latter area, they are widely used in probabilistic data structures. But not all hash functions are created equal. Choosing the right hash function for a given application is a challenge for practitioners, who seek the most efficient design without compromising on security. Universal hash functions are relatively easy to im- plement and significantly faster than cryptographic hash functions. Their security is information-theoretic rather than computational. Consequently, they retain their secu- rity against quantum and computationally unbounded ad- versaries. Classes of universal hash functions are readily obtained from basic algebraic approaches, such as matrix multiplication, inner product, and polynomial evaluation. The class based on polynomial evaluation is prevalent in practice due to its shorter key sizes and perhaps because it is easy to understand and implement. We restrict ourselves to this class here. To construct a MAC from a universal hash function generally entails evaluating the hash over the data, and either feeding the output to a blockcipher, or blinding the output with a pseudorandom value obtained by enciphering a nonce with a blockcipher. The former is called the hash- then-PRF construction. The latter is the Wegman-Carter MAC construction [1]. It is used in the two most popular Authenticated Encryption with Associated Data (AEAD) schemes in use on the Internet today: Galois-Counter-Mode (AES-GCM) and ChaCha20-Poly1305. These are the default choices in protocols like TLS, SSH, and Wireguard. Both constructions (hash-then-PRF and Wegman-Carter) have the properties that MAC security and performance depends closely, and in a provable manner, on corresponding prop- erties of the underlying universal hash function. On the surface, AES-GCM and ChaCha20-Poly1305 look very similar, but when viewed from the perspective of an implementer, a number of contrasting features emerge between the two schemes. At an abstract level, they both share the same high-level structure combining a nonce-based streamcipher (AES in Counter mode and ChaCha20) with a Wegman-Carter MAC instantiated with a polynomial evalu- ation hash (GHASH and Poly1305). However, the polynomi- als are instantiated over different finite fields, a binary field GF(2n) in the case of GHASH and a prime field GF(q) in the case of Poly1305. As a result, the optimization techniques applicable to GHASH are very different from those for Poly1305. In terms of performance, AES-GCM is typically faster on hardware that natively supports AES instructions and carry-less multiplication, which are commonly sup- ported by most 64-bit CPUs today. However, in the absence of such hardware support, ChaCha20-Poly1305 emerges as the faster option. In general, it enjoys relatively good performance across all architectures. Moreover, because it does not rely on hardware-specific instructions, it is more portable than AES-GCM, and it has been postulated that as the level of parallelization on modern CPUs increases, it might eventually outperform AES-GCM even on CPUs with native support [2]. Accordingly, ChaCha20-Poly1305 is generally perceived as the one-size-fits-all solution. It is noteworthy that when ChaCha20-Poly1305 was pro- posed, AES-GCM was already the dominant AEAD scheme 3128 DOI 10.1109/SP54263.2024.00132 in use, and yet it managed to gain wide popularity relatively quickly. This serves to show that there is scope for deploying new and better cryptography when it becomes available. Our thesis that if one were to design a replacement for Poly1305 today, one would end up with a different design. The two principal reasons, concerning both security and performance, are that Poly1305 was designed as a stand- alone primitive, and the characteristics of computer proces- sors were quite different at the time of its design. While ChaCha20 and Poly1305 were both designed by Bernstein, but as independent primitives. In fact, Poly1305 was orig- inally proposed in combination with AES as a Wegman- Carter MAC [3]. The two were only combined into an AEAD scheme later on by Langley [4]. While the two match rather well in terms of their implementation characteristics, they have drastically mismatching security levels. ChaCha20 uses 256-bit keys and a block size of 512 bits, whereas the security of Poly1305 is roughly (103 − log2(n)) bits, where n is the message length measured in 128-bit blocks. This disparity shows up in the security analysis in [5], where it was shown that the security of ChaCha20-Poly1305 is heavily dominated by the security of Poly1305 and that Poly1305's security may not suffice in a multi-user setting with large amounts of data to be protected. The design of Poly1305 was tailored for 32-bit archi- compliant Floating-Point Units (FPUs). A decade later, this design choice looks unfortunate. Today almost all imple- mentations of Poly1305 use integer arithmetic because, on modern processors, this yields better speeds. Enabling bit positions in its key be clamped (fixed to zero). This had the side-effect of reducing its security by 22 bits. Interest- ingly, key clamping can still be exploited (albeit in a differ- ent way) to gain speed when using integer arithmetic, but this is incompatible with fully exploiting instruction-level parallelism-which is likely to be more beneficial in general. As a result, today, key clamping significantly weakens the security of Poly1305 without providing an adequate payback in performance. Furthermore, while its choice of prime (2130 − 5) works fairly well on 32-bit processors, requiring five 32-bit words to represent an element in GF(2130 − 5), one is forced to use three 64-bit words on a 64-bit processor. This is wasteful of the 192 bits that would otherwise be available, either to achieve higher speed or higher security. Given the above, there is a need and an opportunity to design a new generation of improved polynomial hash functions. We can aim to achieve better performance for the same security level, or better security for the same performance level (measured in cycles per byte), or possibly even strike a better tradeoff altogether. There is more than meets the eye to this endeavour. The design space is fairly broad with multiple interactions that need to be taken into account. We need to identify and decide on the type of polynomial, the type of prime, the size of the prime, the key size, how to encode the key into a field element, whether to use just one polynomial or a combination of polynomials, and how to encode messages onto polynomials. In turn, each design choice affects the security and performance of the resulting hash function. The implications on security are rather straightforward to determine but the same cannot be said about performance. Each design choice can either make a certain optimiza- tion technique available to implementers or take it away from them. Moreover, certain optimization strategies are incompatible, and their efficacy generally depends on the targeted processor. Thus identifying the set of design choices and parameters which meet a certain security level while enabling the right combination of optimization tricks that result in the best performance, is a rather complex task. Furthermore, it is unlikely that there is a single design that is optimal in every aspect and every use case. To complicate matters even further, the body of knowledge relating to these design aspects and optimizations is scattered across the literature applied to different hash constructions and, in a number of cases, it exists only as folklore amongst implementers. This situation calls for an SoK. 1.1. Contributions Our effort to identify a better alternative to Poly1305 starts by gathering and systematizing the relevant design choices and optimization techniques to get a clearer picture of the full design space. We then build a framework to explore and evaluate this design space and narrow down suitable candidates. Arguably, the characteristic features of Poly1305 and its appeal derive, for the most part, from its simplicity, in employing a plain univariate polynomial, and the ease of implementing prime-field arithmetic on generic hardware. Because our focus is to find a suitable candidates in the same category as Poly1305, we restricted the scope of our search to univariate polynomials over prime fields. That said, we do cover optimization techniques that were proposed in relation to hash functions outside of this category and adapt them to this setting. Our contributions, then, are three-fold: Systematization of Knowledge. We gather and organize the design aspects relating to the fast implementation of polynomial hash functions based on the research literature, open-source software, and some of our own observations. We classify these into design choices and implementation choices. The design choices are fixed once and for all when the hash function is specified in a public document or standardized. On the other hand implementation choices can be revised at any point and can be tailored for the application at hand, taking into account the target hardware, complexity, and portability. A good design must be informed by both categories since the design choices shape the choices available to the implementer, which ultimately determine the performance of the scheme. Our exposition aims to develop an understanding of the inter-relationships and tradeoffs between these aspects. It then serves both to guide the design of new hash functions in this category as well as to inform developers on how to best implement them, including Poly1305 itself. In fact, we do identify novel and performant 3129"
+      },
+      {
+        "source": "selected",
+        "value": "Poly1305 is a widely-deployed polynomial hash function. The rationale behind its design was laid out in a series of papers by Bernstein, the last of which dates back to 2005. As computer architectures evolved, some of its design features became less relevant, but implementers found new ways of exploiting these features to boost its performance. However, would we still converge to this same design if we started afresh with today's computer architectures and applications? To answer this question, we gather and systematize a body of knowledge concerning polynomial hash design and implementation that is spread across research papers, cryptographic libraries, and developers' blogs. We develop a framework to automate the validation and benchmarking of the ideas that we collect. This approach leads us to five new candidate designs for polynomial hash functions. Using our framework, we generate and evaluate different implementations and optimization strategies for each candidate. We obtain substantial improvements over Poly1305 in terms of security and performance. Besides laying out the rationale behind our new designs, our paper serves as a reference for efficiently implementing polynomial hash functions, including Poly1305."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Jean Paul Degabriele",
+          "email": "jeanpaul.degabriele@tii.ae",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jan Gilcher",
+          "email": "jan.gilcher@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Jérôme Govinden",
+          "email": "jerome.govinden@tu-darmstadt.de",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Kenneth GPaterson",
+          "email": "kenny.paterson@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Jean Paul Degabriele",
+          "email": "jeanpaul.degabriele@tii.ae",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jan Gilcher",
+          "email": "jan.gilcher@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Jérôme Govinden",
+          "email": "jerome.govinden@tu-darmstadt.de",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Kenneth GPaterson",
+          "email": "kenny.paterson@inf.ethz.ch",
+          "orcid": "",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 119,
+      "author_count": 4,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 3,
+          "author": "Kenneth GPaterson",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SoK: Efficient Design and Implementation of Polynomial Hash Functions over Prime Fields",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Jean Paul Degabriele",
+          "affiliations": [
+            "Technology Innovation Institute"
+          ]
+        },
+        {
+          "name": "Jan Gilcher",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        },
+        {
+          "name": "Jérôme Govinden",
+          "affiliations": [
+            "Technical University of Darmstadt"
+          ]
+        },
+        {
+          "name": "Kenneth G. Paterson",
+          "affiliations": [
+            "ETH Zurich"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

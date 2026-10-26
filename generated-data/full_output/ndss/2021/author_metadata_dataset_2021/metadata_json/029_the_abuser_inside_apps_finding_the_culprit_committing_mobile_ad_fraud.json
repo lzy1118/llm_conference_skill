@@ -1,0 +1,2025 @@
+{
+  "title": "The Abuser Inside Apps: Finding the Culprit Committing Mobile Ad Fraud",
+  "year": "2021",
+  "abstract": "Mobile ad fraud is a significant threat that victim- izes app publishers and their users, thereby undermining the ecosystem of app markets. Prior works on detecting mobile ad fraud have focused on constructing predefined test scenarios that preclude user involvement in identifying ad fraud. However, due to their dependence on contextual testing environments, these works have neglected to track which app modules and which user interactions are responsible for observed ad fraud. To address these shortcomings, this paper presents the design and implementation of FraudDetective, a dynamic testing frame- work that identifies ad fraud activities. FraudDetective focuses on identifying fraudulent activities that originate without any user interactions. FraudDetective computes a full stack trace from an observed ad fraud activity to a user event by connecting fragmented multiple stack traces, thus generating the causal relationships between user inputs and the observed fraudulent activity. We revised an Android Open Source Project (AOSP) to emit detected ad fraud activities along with their full stack traces, which help pinpoint the app modules responsible for the observed fraud activities. We evaluate FraudDetective on 48,172 apps from Google Play Store. FraudDetective reports that 74 apps are responsible for 34,453 ad fraud activities and find that 98.6% of the fraudulent behaviors originate from embedded third-party ad libraries. Our evaluation demonstrates that FraudDetective is capable of accurately identifying ad fraud via reasoning based on observed suspicious behaviors without user interactions. The experimental results also yield the new insight that abusive ad service providers harness their ad libraries to actively engage in committing ad fraud. I. I NTRODUCTION The mobile ad has been a compelling motivator that drives app publishers to develop innovative apps. Nowadays, mobile ads have become pervasive. Recent research shows that the mobile ad market has expanded to reach 187 billion USD in 2020, which comprises 30.5% of the global ad market budget [49]. Whereas the mobile ad ecosystem facilitates the virtuous cycle of bringing innovation to mobile computing, ad fraud *Both authors contributed equally to the paper Fraudulent App Samsung Browser Explicit Android Intent •Package : com.sec.android.app.sbrowser •URL : https://www.bithumb.com/... Invoking a browser without user interaction Fig. 1: Ad fraud example: The invocation of a different app via Android explicit Intent, which is triggered without user interaction. has become a major security threat. Previous studies [47], [52], [73] have demonstrated that the total losses due to ad fraud amount to approximately 9%-20% of the annual market budget for global mobile advertising. For instance, ZeroAccess operates the world's largest botnet, making $100,000 daily via ad fraud [64]. To maintain the sanity of Google Play Store, protecting users from mobile ad fraud, Google has published a developer policy regarding mobile ads [30] that denounces abusive ad libraries for their excessive monetization. Also, Google Android security has actively identified apps with abusive behaviors that result in ad fraud [54]. Previous studies proposed novel dynamic testing frame- works, MAdFraud [25] and MAdLife [21], designed to identify ad fraud in Android apps. Whereas they demonstrate their efficacy in finding apps that commit ad fraud, these frameworks lose sight of which user interactions and app modules cause the commission of ad fraud. MAdFraud conducts dynamic testing of apps without any interaction, emulating an environment involving no user interaction. MAdLife focuses on identifying full-screen ads that pop up in the foreground immediately after an app starts. However, depending on these types of contextual testing environments inevitably limits the testing of target app functionalities. Our contributions. We design and implement FraudDetective, a dynamic testing framework for identifying mobile ad fraud initiated via Android apps. We define an ad fraud activity as (1) a click URL request submission for which the targeted ad service counts user clicks or (2) an invocation of a different app Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23161 www.ndss-symposium.org in the foreground without any explicit user interaction. Figure 1 is an example of the latter type of ad fraud activity, which instantiates the Samsung Android browser with a Bithumb sign- up page without having any user input. By definition, identifying an ad fraud activity requires computing the causality between that fraudulent activity and explicit user interaction, such as a touch or a drag event. For instance, it is benign for a mobile app to invoke the Chrome browser with a promotional page when a user touches a banner ad for Nike sneakers. On the other hand, when this mobile app invokes the browser with the same page but without user touch, it becomes an ad fraud activity. Prior approaches [21], [25] to the runtime detection of ad fraud activities have suffered from two types of problems: 1) they have neglected to model the causality between observed fraud activities and user interactions precisely, resorting to leverage restricted testing environments having no user input; and 2) their methods have been unable to track which app modules conduct an observed ad fraud activity. To address these issues, we propose to compute a full stack trace to capture such causal relationships. A full stack trace is a sequence of callees that lie within the calling context from an execution entry to a statement committing an ad fraud activity. This stack trace contributes to identifying the existence of explicit user input and determines which source classes invoked the ad fraud activity, revealing the culprit module within an app committing ad fraud. However, a stack trace for a fraud activity is often frag- mented due to the usage of multiple threads, message queues connecting event generators and their handlers, and external Chromium WebView instances separated from apps. To compute the non-fragmented full stack trace for an observed fraud activity, we revise an Android Open Source Project (AOSP) that corresponds to Android Oreo [5] and leverage this AOSP to emit execution logs of ad fraud activities and their stack traces. FraudDetective harnesses this AOSP for its dynamic testing of apps, connects fragmented stack traces via collecting execution logs, and identifies ad fraud activities. We evaluate FraudDetective on 48,172 apps that Fraud- Detective crawled from Google Play Store. Of 48,172 apps, FraudDetective identifies 74 apps that commit 34,453 ad fraud activities. We further analyze whether these observed ad fraud cases originate in the apps themselves or in ad libraries embedded in these apps. We find that 98.6% of the observed activities originate from ad libraries, which account for 73 of the 74 apps identified. This observation yields the new insight that abusive ad library providers play a key role in the commission of ad fraud by exploiting actual user devices. That is, an ad service provider invites various app developers to embed their ad libraries and commits ad fraud by victimizing mobile users with mobile apps from these developers. Consequently, the victims contribute to increasing ad traffic by visiting certain promotional websites, as orchestrated by these ad library providers. In addition, we observed that one Google Play Store app has been used to forcibly invoke YouTube and Naver [42] mobile apps in the foreground and redirect their users to web pages or videos promoting specific products and services. Although YouTube and Naver do not conduct excessive promotions, ad fraud activities from this app may lead to users blaming YouTube and Naver because their apps with promotional content are brought into the foreground without explicit user interaction. Thus, users have left related negative feedback about YouTube and Naver apps at Google Play Store. However, FraudDetective finds, through the analysis of full stack traces of observed ad fraud activities, that the culprits are abusive ad libraries that have redirected users by invoking these apps via cross-app Android Intents. By computing full stack traces of ad fraud activities, we improve the precision of ad fraud detection compared to prior work. We believe that this capability is an important requisite for dynamically identifying ad fraud behaviors, which is applicable to vetting mobile apps in many app stores, thereby protecting users from ad fraud campaigns. II. B ACKGROUND A. Mobile ad ecosystem Serving mobile ads is a prevalent method of monetizing mobile apps. App developers integrate their mobile apps with a mobile ad library, and the embedded library conducts the rendering of ads at the screen estates of its hosting app. The usage of such mobile ad libraries is quite prevalent; approximately 56% of Android apps in Google Play Store include AdMob, an ad library managed by Google [16]. There are three key participants in the mobile advertising ecosystem: publisher, advertiser, and ad service provider. (1) A publisher is an app developer who monetizes their app by integrating an ad library managed by an ad service provider. (2) An advertiser or their agency designs an ad campaign for their target audiences and requests the launch of such ad campaigns to an ad service provider. (3) An ad service provider connects the advertisers' need for greater exposure to their ads with the publishers' offer to serve ads. This ad service provider also offers an ad library for publishers to include. When a publisher embeds this ad library, it fetches ads from the ad service provider and then renders the ads at user devices. Each rendered ad is called an ad impression, which typically refers to an image or a video rendered one time. Ad service providers offer various ways of charging adver- tisers for their services. In general, there are three representative methods of billing advertisers: cost-per-mile (CPM), cost-per- click (CPC), and cost-per-install (CPI). CPM, CPC, and CPI involve charging an advertiser for rendered ad impressions, user clicks, and app installs, respectively. For instance, when an ad service provider asks $5 CPM for a given campaign, an advertiser is required to pay 5 USD when this campaign delivers 1,000 ad impressions to audiences. B. Mobile ad fraud Mobile ad fraud refers to an operation that generates unwanted ad traffic involving ad impressions, clicks, or conver- sions, thus generating fraudulent revenues. This paper focuses on two types of ad fraud: click fraud and impression fraud. Click fraud. Click fraud refers to a fraudulent operation generating illegitimate clicks that consume the marketing budget of a victim advertiser [46], [79]. A click fraud adversary could be an abusive publisher, an ad service provider, or a competitor of a targeted advertiser. The motivation for publishers and ad 2",
+  "authors": [
+    {
+      "order": 0,
+      "name": "Joongyum Kim",
+      "email": "",
+      "affiliations": [
+        "KAIST"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": true,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 1,
+      "name": "Jung-hwan Park",
+      "email": "",
+      "affiliations": [
+        "KAIST"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    },
+    {
+      "order": 2,
+      "name": "Sooel Son",
+      "email": "sl.son@kaist.ac.kr",
+      "affiliations": [
+        "KAIST"
+      ],
+      "affiliation_source": "conference_official_web",
+      "first_author": false,
+      "co_first_author": false,
+      "equal_contribution": false,
+      "corresponding": false
+    }
+  ],
+  "first_authors": [
+    "Joongyum Kim"
+  ],
+  "co_first_authors": [],
+  "corresponding_authors": [],
+  "first_affiliations": [
+    "KAIST"
+  ],
+  "first_affiliation": "KAIST",
+  "participating_affiliations": [
+    "KAIST"
+  ],
+  "author_affiliation_relations": [
+    {
+      "author": "Joongyum Kim",
+      "affiliation": "KAIST",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Jung-hwan Park",
+      "affiliation": "KAIST",
+      "source": "conference_official_web"
+    },
+    {
+      "author": "Sooel Son",
+      "affiliation": "KAIST",
+      "source": "conference_official_web"
+    }
+  ],
+  "_extraction": {
+    "schema_version": "1.0",
+    "evidence": [
+      {
+        "evidence_id": "tei:title",
+        "source": "grobid_tei",
+        "field": "title",
+        "raw_text": "The Abuser Inside Apps: Finding the Culprit Committing Mobile Ad Fraud"
+      },
+      {
+        "evidence_id": "tei:year",
+        "source": "grobid_tei",
+        "field": "year",
+        "raw_text": "2021"
+      },
+      {
+        "evidence_id": "tei:author:0",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Joongyum Kim",
+        "order": 0,
+        "email": "",
+        "affiliations": [
+          "School of Computing, KAIST"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:1",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Jung-Hwan Park",
+        "order": 1,
+        "email": "",
+        "affiliations": [
+          "School of Computing, KAIST"
+        ]
+      },
+      {
+        "evidence_id": "tei:author:2",
+        "source": "grobid_tei",
+        "field": "author",
+        "raw_text": "Sooel Son",
+        "order": 2,
+        "email": "sl.son@kaist.ac.kr",
+        "affiliations": [
+          "School of Computing, KAIST"
+        ]
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:0",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "The Abuser Inside Apps: Finding the Culprit"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:1",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Committing Mobile Ad Fraud"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:2",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Joongyum Kim ∗"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:3",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "School of Computing, KAIST"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:4",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "kjkpoi@kaist.ac.kr"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:5",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Jung-hwan Park ∗"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:6",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "School of Computing, KAIST"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:7",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "ahnmo@kaist.ac.kr"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:8",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "Sooel Son"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:9",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "School of Computing, KAIST"
+      },
+      {
+        "evidence_id": "pdf:page1:preabstract:10",
+        "source": "pdf_text",
+        "field": "header_line",
+        "page": 1,
+        "raw_text": "sl.son@kaist.ac.kr"
+      },
+      {
+        "evidence_id": "pdf:p1:b0",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          88.204,
+          719.701,
+          550.868,
+          743.611
+        ],
+        "font_size": 23.91,
+        "raw_text": "The Abuser Inside Apps: Finding the Culprit",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b1",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          162.636,
+          691.806,
+          442.387,
+          715.716
+        ],
+        "font_size": 23.91,
+        "raw_text": "Committing Mobile Ad Fraud",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b2",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          111.861,
+          640.0,
+          171.039,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Joongyum Kim",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b3",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          111.861,
+          640.0,
+          119.831,
+          647.97
+        ],
+        "font_size": 7.97,
+        "raw_text": "∗",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b4",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          271.796,
+          640.0,
+          340.837,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Jung-hwan Park",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b5",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          271.796,
+          640.0,
+          279.766,
+          647.97
+        ],
+        "font_size": 7.97,
+        "raw_text": "∗",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b6",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          448.414,
+          640.0,
+          492.798,
+          650.959
+        ],
+        "font_size": 10.959,
+        "raw_text": "Sooel Son",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b7",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          87.172,
+          627.523,
+          203.734,
+          637.486
+        ],
+        "font_size": 9.963,
+        "raw_text": "School of Computing, KAIST",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b8",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          248.481,
+          627.523,
+          365.043,
+          637.486
+        ],
+        "font_size": 9.963,
+        "raw_text": "School of Computing, KAIST",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b9",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          409.791,
+          627.523,
+          526.353,
+          637.486
+        ],
+        "font_size": 9.963,
+        "raw_text": "School of Computing, KAIST",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b10",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          110.928,
+          615.194,
+          191.625,
+          625.157
+        ],
+        "font_size": 9.963,
+        "raw_text": "kjkpoi@kaist.ac.kr",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b11",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          271.411,
+          615.194,
+          347.625,
+          625.157
+        ],
+        "font_size": 9.963,
+        "raw_text": "ahnmo@kaist.ac.kr",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b12",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          434.793,
+          615.194,
+          515.49,
+          625.157
+        ],
+        "font_size": 9.963,
+        "raw_text": "sl.son@kaist.ac.kr",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b13",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          62.359,
+          581.633,
+          307.124,
+          590.599
+        ],
+        "font_size": 8.966,
+        "raw_text": "Abstract -Mobile ad fraud is a significant threat that victim-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b14",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          571.67,
+          291.052,
+          580.636
+        ],
+        "font_size": 8.966,
+        "raw_text": "izes app publishers and their users, thereby undermining the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b15",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          561.707,
+          291.052,
+          570.673
+        ],
+        "font_size": 8.966,
+        "raw_text": "ecosystem of app markets. Prior works on detecting mobile ad",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b16",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          551.745,
+          311.226,
+          560.711
+        ],
+        "font_size": 8.966,
+        "raw_text": "fraud have focused on constructing predefined test scenarios that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b17",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          541.782,
+          303.156,
+          550.748
+        ],
+        "font_size": 8.966,
+        "raw_text": "preclude user involvement in identifying ad fraud. However, due",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b18",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          531.82,
+          295.087,
+          540.786
+        ],
+        "font_size": 8.966,
+        "raw_text": "to their dependence on contextual testing environments, these",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b19",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.637,
+          521.857,
+          278.625,
+          530.823
+        ],
+        "font_size": 8.966,
+        "raw_text": "works have neglected to track which app modules and which",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b20",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          511.894,
+          274.912,
+          520.86
+        ],
+        "font_size": 8.966,
+        "raw_text": "user interactions are responsible for observed ad fraud.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b21",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.355,
+          495.954,
+          309.483,
+          504.92
+        ],
+        "font_size": 8.966,
+        "raw_text": "To address these shortcomings, this paper presents the design",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b22",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          485.991,
+          299.122,
+          494.957
+        ],
+        "font_size": 8.966,
+        "raw_text": "and implementation of FraudDetective, a dynamic testing frame-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b23",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.637,
+          476.029,
+          318.974,
+          484.995
+        ],
+        "font_size": 8.966,
+        "raw_text": "work that identifies ad fraud activities. FraudDetective focuses on",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b24",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          466.066,
+          311.226,
+          475.032
+        ],
+        "font_size": 8.966,
+        "raw_text": "identifying fraudulent activities that originate without any user",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b25",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          456.103,
+          295.087,
+          465.069
+        ],
+        "font_size": 8.966,
+        "raw_text": "interactions. FraudDetective computes a full stack trace from",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b26",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          446.141,
+          287.017,
+          455.107
+        ],
+        "font_size": 8.966,
+        "raw_text": "an observed ad fraud activity to a user event by connecting",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b27",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          436.178,
+          291.052,
+          445.144
+        ],
+        "font_size": 8.966,
+        "raw_text": "fragmented multiple stack traces, thus generating the causal",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b28",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          431.219,
+          583.504,
+          441.182
+        ],
+        "font_size": 9.963,
+        "raw_text": "Fig. 1: Ad fraud example: The invocation of a different app",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b29",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          426.215,
+          295.087,
+          435.181
+        ],
+        "font_size": 8.966,
+        "raw_text": "relationships between user inputs and the observed fraudulent",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b30",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.748,
+          420.26,
+          587.738,
+          430.223
+        ],
+        "font_size": 9.963,
+        "raw_text": "via Android explicit Intent, which is triggered without user",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b31",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          416.253,
+          282.982,
+          425.219
+        ],
+        "font_size": 8.966,
+        "raw_text": "activity. We revised an Android Open Source Project (AOSP)",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b32",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          409.301,
+          372.795,
+          419.264
+        ],
+        "font_size": 9.963,
+        "raw_text": "interaction.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b33",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          406.29,
+          307.191,
+          415.256
+        ],
+        "font_size": 8.966,
+        "raw_text": "to emit detected ad fraud activities along with their full stack",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b34",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          396.328,
+          303.156,
+          405.294
+        ],
+        "font_size": 8.966,
+        "raw_text": "traces, which help pinpoint the app modules responsible for the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b35",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          386.365,
+          303.156,
+          395.331
+        ],
+        "font_size": 8.966,
+        "raw_text": "observed fraud activities. We evaluate FraudDetective on 48,172",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b36",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          383.927,
+          579.021,
+          393.89
+        ],
+        "font_size": 9.963,
+        "raw_text": "has become a major security threat. Previous studies [47],",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b37",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          376.402,
+          307.191,
+          385.368
+        ],
+        "font_size": 8.966,
+        "raw_text": "apps from Google Play Store. FraudDetective reports that 74 apps",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b38",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          253.54,
+          373.18,
+          265.69,
+          374.18
+        ],
+        "font_size": 1.0,
+        "raw_text": "• URL : https://www.bithumb.com/...",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b39",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          372.968,
+          587.987,
+          382.931
+        ],
+        "font_size": 9.963,
+        "raw_text": "[52], [73] have demonstrated that the total losses due to ad",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b40",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          366.44,
+          315.261,
+          375.406
+        ],
+        "font_size": 8.966,
+        "raw_text": "are responsible for 34,453 ad fraud activities and find that 98.6%",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b41",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          362.009,
+          574.538,
+          371.972
+        ],
+        "font_size": 9.963,
+        "raw_text": "fraud amount to approximately 9%-20% of the annual market",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b42",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          356.477,
+          303.156,
+          365.443
+        ],
+        "font_size": 8.966,
+        "raw_text": "of the fraudulent behaviors originate from embedded third-party",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b43",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          253.06,
+          351.58,
+          265.66,
+          352.58
+        ],
+        "font_size": 1.0,
+        "raw_text": "• Package : com.sec.android.app.sbrowser",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b44",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          351.05,
+          596.954,
+          361.013
+        ],
+        "font_size": 9.963,
+        "raw_text": "budget for global mobile advertising. For instance, ZeroAccess",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b45",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          346.514,
+          307.191,
+          355.48
+        ],
+        "font_size": 8.966,
+        "raw_text": "ad libraries. Our evaluation demonstrates that FraudDetective is",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b46",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          340.091,
+          596.954,
+          350.054
+        ],
+        "font_size": 9.963,
+        "raw_text": "operates the world's largest botnet, making $100,000 daily via",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b47",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          336.552,
+          299.122,
+          345.518
+        ],
+        "font_size": 8.966,
+        "raw_text": "capable of accurately identifying ad fraud via reasoning based",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b48",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          329.132,
+          381.761,
+          339.095
+        ],
+        "font_size": 9.963,
+        "raw_text": "ad fraud [64].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b49",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          326.589,
+          303.156,
+          335.555
+        ],
+        "font_size": 8.966,
+        "raw_text": "on observed suspicious behaviors without user interactions. The",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b50",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          316.626,
+          303.156,
+          325.592
+        ],
+        "font_size": 8.966,
+        "raw_text": "experimental results also yield the new insight that abusive ad",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b51",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          333.393,
+          311.997,
+          579.967,
+          321.96
+        ],
+        "font_size": 9.963,
+        "raw_text": "To maintain the sanity of Google Play Store, protecting",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b52",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          339.36,
+          307.58,
+          342.96,
+          308.58
+        ],
+        "font_size": 1.0,
+        "raw_text": "Explicit Android Intent",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b53",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          306.664,
+          315.261,
+          315.63
+        ],
+        "font_size": 8.966,
+        "raw_text": "service providers harness their ad libraries to actively engage in",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b54",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          301.038,
+          587.987,
+          311.001
+        ],
+        "font_size": 9.963,
+        "raw_text": "users from mobile ad fraud, Google has published a developer",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b55",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          296.701,
+          129.657,
+          305.667
+        ],
+        "font_size": 8.966,
+        "raw_text": "committing ad fraud.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b56",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          290.079,
+          579.021,
+          300.042
+        ],
+        "font_size": 9.963,
+        "raw_text": "policy regarding mobile ads [30] that denounces abusive ad",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b57",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          279.12,
+          605.92,
+          289.083
+        ],
+        "font_size": 9.963,
+        "raw_text": "libraries for their excessive monetization. Also, Google Android",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b58",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          268.161,
+          610.403,
+          278.124
+        ],
+        "font_size": 9.963,
+        "raw_text": "security has actively identified apps with abusive behaviors that",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b59",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          346.68,
+          261.19,
+          353.88,
+          262.19
+        ],
+        "font_size": 1.0,
+        "raw_text": "user interaction",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b60",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          257.202,
+          426.593,
+          267.165
+        ],
+        "font_size": 9.963,
+        "raw_text": "result in ad fraud [54].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b61",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          133.647,
+          256.103,
+          151.58,
+          266.066
+        ],
+        "font_size": 9.963,
+        "raw_text": "I. I",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b62",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          133.647,
+          256.103,
+          173.099,
+          264.073
+        ],
+        "font_size": 7.97,
+        "raw_text": "NTRODUCTION",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b63",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          333.393,
+          240.067,
+          575.484,
+          250.03
+        ],
+        "font_size": 9.963,
+        "raw_text": "Previous studies proposed novel dynamic testing frame-",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b64",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.355,
+          239.167,
+          318.896,
+          249.13
+        ],
+        "font_size": 9.963,
+        "raw_text": "The mobile ad has been a compelling motivator that drives",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b65",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          289.32,
+          237.19,
+          301.02,
+          238.19
+        ],
+        "font_size": 1.0,
+        "raw_text": "Invoking a browser without",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b66",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.638,
+          229.108,
+          583.145,
+          239.071
+        ],
+        "font_size": 9.963,
+        "raw_text": "works, MAdFraud [25] and MAdLife [21], designed to identify",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b67",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          228.208,
+          313.466,
+          238.171
+        ],
+        "font_size": 9.963,
+        "raw_text": "app publishers to develop innovative apps. Nowadays, mobile",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b68",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          218.149,
+          570.055,
+          228.112
+        ],
+        "font_size": 9.963,
+        "raw_text": "ad fraud in Android apps. Whereas they demonstrate their",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b69",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          217.249,
+          304.5,
+          227.212
+        ],
+        "font_size": 9.963,
+        "raw_text": "ads have become pervasive. Recent research shows that the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b70",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          207.19,
+          601.437,
+          217.153
+        ],
+        "font_size": 9.963,
+        "raw_text": "efficacy in finding apps that commit ad fraud, these frameworks",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b71",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          206.29,
+          291.05,
+          216.253
+        ],
+        "font_size": 9.963,
+        "raw_text": "mobile ad market has expanded to reach 187 billion USD",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b72",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          196.231,
+          601.437,
+          206.194
+        ],
+        "font_size": 9.963,
+        "raw_text": "lose sight of which user interactions and app modules cause the",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b73",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          195.331,
+          291.05,
+          205.294
+        ],
+        "font_size": 9.963,
+        "raw_text": "in 2020, which comprises 30.5% of the global ad market",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b74",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          185.272,
+          574.538,
+          195.235
+        ],
+        "font_size": 9.963,
+        "raw_text": "commission of ad fraud. MAdFraud conducts dynamic testing",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b75",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          184.372,
+          102.757,
+          194.335
+        ],
+        "font_size": 9.963,
+        "raw_text": "budget [49].",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b76",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          174.313,
+          574.538,
+          184.276
+        ],
+        "font_size": 9.963,
+        "raw_text": "of apps without any interaction, emulating an environment",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b77",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          63.355,
+          167.436,
+          314.413,
+          177.399
+        ],
+        "font_size": 9.963,
+        "raw_text": "Whereas the mobile ad ecosystem facilitates the virtuous",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b78",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          163.355,
+          592.47,
+          173.318
+        ],
+        "font_size": 9.963,
+        "raw_text": "involving no user interaction. MAdLife focuses on identifying",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b79",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          156.477,
+          308.983,
+          166.44
+        ],
+        "font_size": 9.963,
+        "raw_text": "cycle of bringing innovation to mobile computing, ad fraud",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b80",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          152.396,
+          601.437,
+          162.359
+        ],
+        "font_size": 9.963,
+        "raw_text": "full-screen ads that pop up in the foreground immediately after",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b81",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          141.437,
+          596.954,
+          151.4
+        ],
+        "font_size": 9.963,
+        "raw_text": "an app starts. However, depending on these types of contextual",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b82",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          130.478,
+          605.92,
+          140.441
+        ],
+        "font_size": 9.963,
+        "raw_text": "testing environments inevitably limits the testing of target app",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b83",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          66.892,
+          129.781,
+          231.873,
+          137.751
+        ],
+        "font_size": 7.97,
+        "raw_text": "*Both authors contributed equally to the paper",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b84",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          66.892,
+          129.781,
+          687.364,
+          137.751
+        ],
+        "font_size": 7.97,
+        "raw_text": "Fraudulent App Samsung Browser Explicit Android Intent •Package : com.sec.android.app.sbrowser •URL : https://www.bithumb.com/... Invoking a browser without user interaction",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b85",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          119.519,
+          390.728,
+          129.482
+        ],
+        "font_size": 9.963,
+        "raw_text": "functionalities.",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b86",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          102.384,
+          493.841,
+          112.347
+        ],
+        "font_size": 9.963,
+        "raw_text": "Our contributions. We design and implement FraudDetective,",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b87",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          94.551,
+          271.325,
+          102.521
+        ],
+        "font_size": 7.97,
+        "raw_text": "Network and Distributed Systems Security (NDSS) Symposium 2021",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b88",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          91.425,
+          583.504,
+          101.388
+        ],
+        "font_size": 9.963,
+        "raw_text": "a dynamic testing framework for identifying mobile ad fraud",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b89",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          85.585,
+          149.382,
+          93.555
+        ],
+        "font_size": 7.97,
+        "raw_text": "21-25 February 2021, Virtual",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b90",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          80.466,
+          498.324,
+          90.429
+        ],
+        "font_size": 9.963,
+        "raw_text": "initiated via Android apps. We define an ad fraud activity",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b91",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          490.766,
+          80.466,
+          500.729,
+          90.429
+        ],
+        "font_size": 9.963,
+        "raw_text": "as",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b92",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          76.618,
+          113.517,
+          84.588
+        ],
+        "font_size": 7.97,
+        "raw_text": "ISBN 1-891562-66-5",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b93",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.668,
+          69.507,
+          587.658,
+          79.47
+        ],
+        "font_size": 9.963,
+        "raw_text": "(1) a click URL request submission for which the targeted ad",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b94",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.959,
+          67.652,
+          203.18,
+          75.622
+        ],
+        "font_size": 7.97,
+        "raw_text": "https://dx.doi.org/10.14722/ndss.2021.23161",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b95",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          187.56,
+          60.43,
+          193.86,
+          61.43
+        ],
+        "font_size": 1.0,
+        "raw_text": "Fraudulent App",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b96",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          505.37,
+          60.43,
+          512.12,
+          61.43
+        ],
+        "font_size": 1.0,
+        "raw_text": "Samsung Browser",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b97",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          48.673,
+          58.685,
+          127.577,
+          66.655
+        ],
+        "font_size": 7.97,
+        "raw_text": "www.ndss-symposium.org",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdf:p1:b98",
+        "source": "pdf_layout",
+        "field": "page_block",
+        "page": 1,
+        "bbox": [
+          318.997,
+          58.548,
+          614.886,
+          68.511
+        ],
+        "font_size": 9.963,
+        "raw_text": "service counts user clicks or (2) an invocation of a different app",
+        "extractor": "pypdf_fallback"
+      },
+      {
+        "evidence_id": "pdfplumber:abstract",
+        "source": "pdf_layout",
+        "field": "abstract",
+        "raw_text": "Mobile ad fraud is a significant threat that victim- izes app publishers and their users, thereby undermining the ecosystem of app markets. Prior works on detecting mobile ad fraud have focused on constructing predefined test scenarios that preclude user involvement in identifying ad fraud. However, due to their dependence on contextual testing environments, these works have neglected to track which app modules and which user interactions are responsible for observed ad fraud. To address these shortcomings, this paper presents the design and implementation of FraudDetective, a dynamic testing frame- work that identifies ad fraud activities. FraudDetective focuses on identifying fraudulent activities that originate without any user interactions. FraudDetective computes a full stack trace from an observed ad fraud activity to a user event by connecting fragmented multiple stack traces, thus generating the causal relationships between user inputs and the observed fraudulent activity. We revised an Android Open Source Project (AOSP) to emit detected ad fraud activities along with their full stack traces, which help pinpoint the app modules responsible for the observed fraud activities. We evaluate FraudDetective on 48,172 apps from Google Play Store. FraudDetective reports that 74 apps are responsible for 34,453 ad fraud activities and find that 98.6% of the fraudulent behaviors originate from embedded third-party ad libraries. Our evaluation demonstrates that FraudDetective is capable of accurately identifying ad fraud via reasoning based on observed suspicious behaviors without user interactions. The experimental results also yield the new insight that abusive ad service providers harness their ad libraries to actively engage in committing ad fraud. I. I NTRODUCTION The mobile ad has been a compelling motivator that drives app publishers to develop innovative apps. Nowadays, mobile ads have become pervasive. Recent research shows that the mobile ad market has expanded to reach 187 billion USD in 2020, which comprises 30.5% of the global ad market budget [49]. Whereas the mobile ad ecosystem facilitates the virtuous cycle of bringing innovation to mobile computing, ad fraud *Both authors contributed equally to the paper Fraudulent App Samsung Browser Explicit Android Intent •Package : com.sec.android.app.sbrowser •URL : https://www.bithumb.com/... Invoking a browser without user interaction Fig. 1: Ad fraud example: The invocation of a different app via Android explicit Intent, which is triggered without user interaction. has become a major security threat. Previous studies [47], [52], [73] have demonstrated that the total losses due to ad fraud amount to approximately 9%-20% of the annual market budget for global mobile advertising. For instance, ZeroAccess operates the world's largest botnet, making $100,000 daily via ad fraud [64]. To maintain the sanity of Google Play Store, protecting users from mobile ad fraud, Google has published a developer policy regarding mobile ads [30] that denounces abusive ad libraries for their excessive monetization. Also, Google Android security has actively identified apps with abusive behaviors that result in ad fraud [54]. Previous studies proposed novel dynamic testing frame- works, MAdFraud [25] and MAdLife [21], designed to identify ad fraud in Android apps. Whereas they demonstrate their efficacy in finding apps that commit ad fraud, these frameworks lose sight of which user interactions and app modules cause the commission of ad fraud. MAdFraud conducts dynamic testing of apps without any interaction, emulating an environment involving no user interaction. MAdLife focuses on identifying full-screen ads that pop up in the foreground immediately after an app starts. However, depending on these types of contextual testing environments inevitably limits the testing of target app functionalities. Our contributions. We design and implement FraudDetective, a dynamic testing framework for identifying mobile ad fraud initiated via Android apps. We define an ad fraud activity as (1) a click URL request submission for which the targeted ad service counts user clicks or (2) an invocation of a different app Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23161 www.ndss-symposium.org in the foreground without any explicit user interaction. Figure 1 is an example of the latter type of ad fraud activity, which instantiates the Samsung Android browser with a Bithumb sign- up page without having any user input. By definition, identifying an ad fraud activity requires computing the causality between that fraudulent activity and explicit user interaction, such as a touch or a drag event. For instance, it is benign for a mobile app to invoke the Chrome browser with a promotional page when a user touches a banner ad for Nike sneakers. On the other hand, when this mobile app invokes the browser with the same page but without user touch, it becomes an ad fraud activity. Prior approaches [21], [25] to the runtime detection of ad fraud activities have suffered from two types of problems: 1) they have neglected to model the causality between observed fraud activities and user interactions precisely, resorting to leverage restricted testing environments having no user input; and 2) their methods have been unable to track which app modules conduct an observed ad fraud activity. To address these issues, we propose to compute a full stack trace to capture such causal relationships. A full stack trace is a sequence of callees that lie within the calling context from an execution entry to a statement committing an ad fraud activity. This stack trace contributes to identifying the existence of explicit user input and determines which source classes invoked the ad fraud activity, revealing the culprit module within an app committing ad fraud. However, a stack trace for a fraud activity is often frag- mented due to the usage of multiple threads, message queues connecting event generators and their handlers, and external Chromium WebView instances separated from apps. To compute the non-fragmented full stack trace for an observed fraud activity, we revise an Android Open Source Project (AOSP) that corresponds to Android Oreo [5] and leverage this AOSP to emit execution logs of ad fraud activities and their stack traces. FraudDetective harnesses this AOSP for its dynamic testing of apps, connects fragmented stack traces via collecting execution logs, and identifies ad fraud activities. We evaluate FraudDetective on 48,172 apps that Fraud- Detective crawled from Google Play Store. Of 48,172 apps, FraudDetective identifies 74 apps that commit 34,453 ad fraud activities. We further analyze whether these observed ad fraud cases originate in the apps themselves or in ad libraries embedded in these apps. We find that 98.6% of the observed activities originate from ad libraries, which account for 73 of the 74 apps identified. This observation yields the new insight that abusive ad library providers play a key role in the commission of ad fraud by exploiting actual user devices. That is, an ad service provider invites various app developers to embed their ad libraries and commits ad fraud by victimizing mobile users with mobile apps from these developers. Consequently, the victims contribute to increasing ad traffic by visiting certain promotional websites, as orchestrated by these ad library providers. In addition, we observed that one Google Play Store app has been used to forcibly invoke YouTube and Naver [42] mobile apps in the foreground and redirect their users to web pages or videos promoting specific products and services. Although YouTube and Naver do not conduct excessive promotions, ad fraud activities from this app may lead to users blaming YouTube and Naver because their apps with promotional content are brought into the foreground without explicit user interaction. Thus, users have left related negative feedback about YouTube and Naver apps at Google Play Store. However, FraudDetective finds, through the analysis of full stack traces of observed ad fraud activities, that the culprits are abusive ad libraries that have redirected users by invoking these apps via cross-app Android Intents. By computing full stack traces of ad fraud activities, we improve the precision of ad fraud detection compared to prior work. We believe that this capability is an important requisite for dynamically identifying ad fraud behaviors, which is applicable to vetting mobile apps in many app stores, thereby protecting users from ad fraud campaigns. II. B ACKGROUND A. Mobile ad ecosystem Serving mobile ads is a prevalent method of monetizing mobile apps. App developers integrate their mobile apps with a mobile ad library, and the embedded library conducts the rendering of ads at the screen estates of its hosting app. The usage of such mobile ad libraries is quite prevalent; approximately 56% of Android apps in Google Play Store include AdMob, an ad library managed by Google [16]. There are three key participants in the mobile advertising ecosystem: publisher, advertiser, and ad service provider. (1) A publisher is an app developer who monetizes their app by integrating an ad library managed by an ad service provider. (2) An advertiser or their agency designs an ad campaign for their target audiences and requests the launch of such ad campaigns to an ad service provider. (3) An ad service provider connects the advertisers' need for greater exposure to their ads with the publishers' offer to serve ads. This ad service provider also offers an ad library for publishers to include. When a publisher embeds this ad library, it fetches ads from the ad service provider and then renders the ads at user devices. Each rendered ad is called an ad impression, which typically refers to an image or a video rendered one time. Ad service providers offer various ways of charging adver- tisers for their services. In general, there are three representative methods of billing advertisers: cost-per-mile (CPM), cost-per- click (CPC), and cost-per-install (CPI). CPM, CPC, and CPI involve charging an advertiser for rendered ad impressions, user clicks, and app installs, respectively. For instance, when an ad service provider asks $5 CPM for a given campaign, an advertiser is required to pay 5 USD when this campaign delivers 1,000 ad impressions to audiences. B. Mobile ad fraud Mobile ad fraud refers to an operation that generates unwanted ad traffic involving ad impressions, clicks, or conver- sions, thus generating fraudulent revenues. This paper focuses on two types of ad fraud: click fraud and impression fraud. Click fraud. Click fraud refers to a fraudulent operation generating illegitimate clicks that consume the marketing budget of a victim advertiser [46], [79]. A click fraud adversary could be an abusive publisher, an ad service provider, or a competitor of a targeted advertiser. The motivation for publishers and ad 2",
+        "extractor": "pdfplumber_section_boundary"
+      },
+      {
+        "evidence_id": "pypdf:document_info",
+        "source": "pdf_document_info",
+        "field": "document_info",
+        "value": {
+          "CreationDate": "D:20210221054531+09'00'",
+          "Creator": "LaTeX with hyperref package",
+          "ModDate": "D:20210220162321-05'00'",
+          "PTEX.Fullbanner": "This is pdfTeX, Version 3.14159265-2.6-1.40.18 (TeX Live 2017/Debian) kpathsea version 6.2.3",
+          "Producer": "pdfTeX-1.40.18",
+          "Trapped": "/False"
+        }
+      },
+      {
+        "evidence_id": "pdf:extractor_status",
+        "source": "runtime",
+        "field": "extractor_status",
+        "value": {
+          "pdfplumber": "unavailable",
+          "pypdf": "ok",
+          "pypdf_text_fallback": "ok"
+        }
+      },
+      {
+        "evidence_id": "official_web:author:0",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/the-abuser-inside-apps-finding-the-culprit-committing-mobile-ad-fraud/",
+        "field": "author_affiliation_relation",
+        "author": "Joongyum Kim",
+        "affiliations": [
+          "KAIST"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:1",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/the-abuser-inside-apps-finding-the-culprit-committing-mobile-ad-fraud/",
+        "field": "author_affiliation_relation",
+        "author": "Jung-hwan Park",
+        "affiliations": [
+          "KAIST"
+        ]
+      },
+      {
+        "evidence_id": "official_web:author:2",
+        "source": "conference_official_web",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/the-abuser-inside-apps-finding-the-culprit-committing-mobile-ad-fraud/",
+        "field": "author_affiliation_relation",
+        "author": "Sooel Son",
+        "affiliations": [
+          "KAIST"
+        ]
+      }
+    ],
+    "candidates": {
+      "title": [
+        {
+          "source": "grobid_tei",
+          "value": "The Abuser Inside Apps: Finding the Culprit Committing Mobile Ad Fraud"
+        },
+        {
+          "source": "selected",
+          "value": "The Abuser Inside Apps: Finding the Culprit Committing Mobile Ad Fraud"
+        }
+      ],
+      "year": [
+        {
+          "source": "grobid_tei",
+          "value": "2021"
+        },
+        {
+          "source": "selected",
+          "value": "2021"
+        }
+      ],
+      "abstract": [
+        {
+          "source": "grobid_tei",
+          "value": ""
+        },
+        {
+          "source": "pdfplumber",
+          "value": "Mobile ad fraud is a significant threat that victim- izes app publishers and their users, thereby undermining the ecosystem of app markets. Prior works on detecting mobile ad fraud have focused on constructing predefined test scenarios that preclude user involvement in identifying ad fraud. However, due to their dependence on contextual testing environments, these works have neglected to track which app modules and which user interactions are responsible for observed ad fraud. To address these shortcomings, this paper presents the design and implementation of FraudDetective, a dynamic testing frame- work that identifies ad fraud activities. FraudDetective focuses on identifying fraudulent activities that originate without any user interactions. FraudDetective computes a full stack trace from an observed ad fraud activity to a user event by connecting fragmented multiple stack traces, thus generating the causal relationships between user inputs and the observed fraudulent activity. We revised an Android Open Source Project (AOSP) to emit detected ad fraud activities along with their full stack traces, which help pinpoint the app modules responsible for the observed fraud activities. We evaluate FraudDetective on 48,172 apps from Google Play Store. FraudDetective reports that 74 apps are responsible for 34,453 ad fraud activities and find that 98.6% of the fraudulent behaviors originate from embedded third-party ad libraries. Our evaluation demonstrates that FraudDetective is capable of accurately identifying ad fraud via reasoning based on observed suspicious behaviors without user interactions. The experimental results also yield the new insight that abusive ad service providers harness their ad libraries to actively engage in committing ad fraud. I. I NTRODUCTION The mobile ad has been a compelling motivator that drives app publishers to develop innovative apps. Nowadays, mobile ads have become pervasive. Recent research shows that the mobile ad market has expanded to reach 187 billion USD in 2020, which comprises 30.5% of the global ad market budget [49]. Whereas the mobile ad ecosystem facilitates the virtuous cycle of bringing innovation to mobile computing, ad fraud *Both authors contributed equally to the paper Fraudulent App Samsung Browser Explicit Android Intent •Package : com.sec.android.app.sbrowser •URL : https://www.bithumb.com/... Invoking a browser without user interaction Fig. 1: Ad fraud example: The invocation of a different app via Android explicit Intent, which is triggered without user interaction. has become a major security threat. Previous studies [47], [52], [73] have demonstrated that the total losses due to ad fraud amount to approximately 9%-20% of the annual market budget for global mobile advertising. For instance, ZeroAccess operates the world's largest botnet, making $100,000 daily via ad fraud [64]. To maintain the sanity of Google Play Store, protecting users from mobile ad fraud, Google has published a developer policy regarding mobile ads [30] that denounces abusive ad libraries for their excessive monetization. Also, Google Android security has actively identified apps with abusive behaviors that result in ad fraud [54]. Previous studies proposed novel dynamic testing frame- works, MAdFraud [25] and MAdLife [21], designed to identify ad fraud in Android apps. Whereas they demonstrate their efficacy in finding apps that commit ad fraud, these frameworks lose sight of which user interactions and app modules cause the commission of ad fraud. MAdFraud conducts dynamic testing of apps without any interaction, emulating an environment involving no user interaction. MAdLife focuses on identifying full-screen ads that pop up in the foreground immediately after an app starts. However, depending on these types of contextual testing environments inevitably limits the testing of target app functionalities. Our contributions. We design and implement FraudDetective, a dynamic testing framework for identifying mobile ad fraud initiated via Android apps. We define an ad fraud activity as (1) a click URL request submission for which the targeted ad service counts user clicks or (2) an invocation of a different app Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23161 www.ndss-symposium.org in the foreground without any explicit user interaction. Figure 1 is an example of the latter type of ad fraud activity, which instantiates the Samsung Android browser with a Bithumb sign- up page without having any user input. By definition, identifying an ad fraud activity requires computing the causality between that fraudulent activity and explicit user interaction, such as a touch or a drag event. For instance, it is benign for a mobile app to invoke the Chrome browser with a promotional page when a user touches a banner ad for Nike sneakers. On the other hand, when this mobile app invokes the browser with the same page but without user touch, it becomes an ad fraud activity. Prior approaches [21], [25] to the runtime detection of ad fraud activities have suffered from two types of problems: 1) they have neglected to model the causality between observed fraud activities and user interactions precisely, resorting to leverage restricted testing environments having no user input; and 2) their methods have been unable to track which app modules conduct an observed ad fraud activity. To address these issues, we propose to compute a full stack trace to capture such causal relationships. A full stack trace is a sequence of callees that lie within the calling context from an execution entry to a statement committing an ad fraud activity. This stack trace contributes to identifying the existence of explicit user input and determines which source classes invoked the ad fraud activity, revealing the culprit module within an app committing ad fraud. However, a stack trace for a fraud activity is often frag- mented due to the usage of multiple threads, message queues connecting event generators and their handlers, and external Chromium WebView instances separated from apps. To compute the non-fragmented full stack trace for an observed fraud activity, we revise an Android Open Source Project (AOSP) that corresponds to Android Oreo [5] and leverage this AOSP to emit execution logs of ad fraud activities and their stack traces. FraudDetective harnesses this AOSP for its dynamic testing of apps, connects fragmented stack traces via collecting execution logs, and identifies ad fraud activities. We evaluate FraudDetective on 48,172 apps that Fraud- Detective crawled from Google Play Store. Of 48,172 apps, FraudDetective identifies 74 apps that commit 34,453 ad fraud activities. We further analyze whether these observed ad fraud cases originate in the apps themselves or in ad libraries embedded in these apps. We find that 98.6% of the observed activities originate from ad libraries, which account for 73 of the 74 apps identified. This observation yields the new insight that abusive ad library providers play a key role in the commission of ad fraud by exploiting actual user devices. That is, an ad service provider invites various app developers to embed their ad libraries and commits ad fraud by victimizing mobile users with mobile apps from these developers. Consequently, the victims contribute to increasing ad traffic by visiting certain promotional websites, as orchestrated by these ad library providers. In addition, we observed that one Google Play Store app has been used to forcibly invoke YouTube and Naver [42] mobile apps in the foreground and redirect their users to web pages or videos promoting specific products and services. Although YouTube and Naver do not conduct excessive promotions, ad fraud activities from this app may lead to users blaming YouTube and Naver because their apps with promotional content are brought into the foreground without explicit user interaction. Thus, users have left related negative feedback about YouTube and Naver apps at Google Play Store. However, FraudDetective finds, through the analysis of full stack traces of observed ad fraud activities, that the culprits are abusive ad libraries that have redirected users by invoking these apps via cross-app Android Intents. By computing full stack traces of ad fraud activities, we improve the precision of ad fraud detection compared to prior work. We believe that this capability is an important requisite for dynamically identifying ad fraud behaviors, which is applicable to vetting mobile apps in many app stores, thereby protecting users from ad fraud campaigns. II. B ACKGROUND A. Mobile ad ecosystem Serving mobile ads is a prevalent method of monetizing mobile apps. App developers integrate their mobile apps with a mobile ad library, and the embedded library conducts the rendering of ads at the screen estates of its hosting app. The usage of such mobile ad libraries is quite prevalent; approximately 56% of Android apps in Google Play Store include AdMob, an ad library managed by Google [16]. There are three key participants in the mobile advertising ecosystem: publisher, advertiser, and ad service provider. (1) A publisher is an app developer who monetizes their app by integrating an ad library managed by an ad service provider. (2) An advertiser or their agency designs an ad campaign for their target audiences and requests the launch of such ad campaigns to an ad service provider. (3) An ad service provider connects the advertisers' need for greater exposure to their ads with the publishers' offer to serve ads. This ad service provider also offers an ad library for publishers to include. When a publisher embeds this ad library, it fetches ads from the ad service provider and then renders the ads at user devices. Each rendered ad is called an ad impression, which typically refers to an image or a video rendered one time. Ad service providers offer various ways of charging adver- tisers for their services. In general, there are three representative methods of billing advertisers: cost-per-mile (CPM), cost-per- click (CPC), and cost-per-install (CPI). CPM, CPC, and CPI involve charging an advertiser for rendered ad impressions, user clicks, and app installs, respectively. For instance, when an ad service provider asks $5 CPM for a given campaign, an advertiser is required to pay 5 USD when this campaign delivers 1,000 ad impressions to audiences. B. Mobile ad fraud Mobile ad fraud refers to an operation that generates unwanted ad traffic involving ad impressions, clicks, or conver- sions, thus generating fraudulent revenues. This paper focuses on two types of ad fraud: click fraud and impression fraud. Click fraud. Click fraud refers to a fraudulent operation generating illegitimate clicks that consume the marketing budget of a victim advertiser [46], [79]. A click fraud adversary could be an abusive publisher, an ad service provider, or a competitor of a targeted advertiser. The motivation for publishers and ad 2"
+        },
+        {
+          "source": "selected",
+          "value": "Mobile ad fraud is a significant threat that victim- izes app publishers and their users, thereby undermining the ecosystem of app markets. Prior works on detecting mobile ad fraud have focused on constructing predefined test scenarios that preclude user involvement in identifying ad fraud. However, due to their dependence on contextual testing environments, these works have neglected to track which app modules and which user interactions are responsible for observed ad fraud. To address these shortcomings, this paper presents the design and implementation of FraudDetective, a dynamic testing frame- work that identifies ad fraud activities. FraudDetective focuses on identifying fraudulent activities that originate without any user interactions. FraudDetective computes a full stack trace from an observed ad fraud activity to a user event by connecting fragmented multiple stack traces, thus generating the causal relationships between user inputs and the observed fraudulent activity. We revised an Android Open Source Project (AOSP) to emit detected ad fraud activities along with their full stack traces, which help pinpoint the app modules responsible for the observed fraud activities. We evaluate FraudDetective on 48,172 apps from Google Play Store. FraudDetective reports that 74 apps are responsible for 34,453 ad fraud activities and find that 98.6% of the fraudulent behaviors originate from embedded third-party ad libraries. Our evaluation demonstrates that FraudDetective is capable of accurately identifying ad fraud via reasoning based on observed suspicious behaviors without user interactions. The experimental results also yield the new insight that abusive ad service providers harness their ad libraries to actively engage in committing ad fraud. I. I NTRODUCTION The mobile ad has been a compelling motivator that drives app publishers to develop innovative apps. Nowadays, mobile ads have become pervasive. Recent research shows that the mobile ad market has expanded to reach 187 billion USD in 2020, which comprises 30.5% of the global ad market budget [49]. Whereas the mobile ad ecosystem facilitates the virtuous cycle of bringing innovation to mobile computing, ad fraud *Both authors contributed equally to the paper Fraudulent App Samsung Browser Explicit Android Intent •Package : com.sec.android.app.sbrowser •URL : https://www.bithumb.com/... Invoking a browser without user interaction Fig. 1: Ad fraud example: The invocation of a different app via Android explicit Intent, which is triggered without user interaction. has become a major security threat. Previous studies [47], [52], [73] have demonstrated that the total losses due to ad fraud amount to approximately 9%-20% of the annual market budget for global mobile advertising. For instance, ZeroAccess operates the world's largest botnet, making $100,000 daily via ad fraud [64]. To maintain the sanity of Google Play Store, protecting users from mobile ad fraud, Google has published a developer policy regarding mobile ads [30] that denounces abusive ad libraries for their excessive monetization. Also, Google Android security has actively identified apps with abusive behaviors that result in ad fraud [54]. Previous studies proposed novel dynamic testing frame- works, MAdFraud [25] and MAdLife [21], designed to identify ad fraud in Android apps. Whereas they demonstrate their efficacy in finding apps that commit ad fraud, these frameworks lose sight of which user interactions and app modules cause the commission of ad fraud. MAdFraud conducts dynamic testing of apps without any interaction, emulating an environment involving no user interaction. MAdLife focuses on identifying full-screen ads that pop up in the foreground immediately after an app starts. However, depending on these types of contextual testing environments inevitably limits the testing of target app functionalities. Our contributions. We design and implement FraudDetective, a dynamic testing framework for identifying mobile ad fraud initiated via Android apps. We define an ad fraud activity as (1) a click URL request submission for which the targeted ad service counts user clicks or (2) an invocation of a different app Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23161 www.ndss-symposium.org in the foreground without any explicit user interaction. Figure 1 is an example of the latter type of ad fraud activity, which instantiates the Samsung Android browser with a Bithumb sign- up page without having any user input. By definition, identifying an ad fraud activity requires computing the causality between that fraudulent activity and explicit user interaction, such as a touch or a drag event. For instance, it is benign for a mobile app to invoke the Chrome browser with a promotional page when a user touches a banner ad for Nike sneakers. On the other hand, when this mobile app invokes the browser with the same page but without user touch, it becomes an ad fraud activity. Prior approaches [21], [25] to the runtime detection of ad fraud activities have suffered from two types of problems: 1) they have neglected to model the causality between observed fraud activities and user interactions precisely, resorting to leverage restricted testing environments having no user input; and 2) their methods have been unable to track which app modules conduct an observed ad fraud activity. To address these issues, we propose to compute a full stack trace to capture such causal relationships. A full stack trace is a sequence of callees that lie within the calling context from an execution entry to a statement committing an ad fraud activity. This stack trace contributes to identifying the existence of explicit user input and determines which source classes invoked the ad fraud activity, revealing the culprit module within an app committing ad fraud. However, a stack trace for a fraud activity is often frag- mented due to the usage of multiple threads, message queues connecting event generators and their handlers, and external Chromium WebView instances separated from apps. To compute the non-fragmented full stack trace for an observed fraud activity, we revise an Android Open Source Project (AOSP) that corresponds to Android Oreo [5] and leverage this AOSP to emit execution logs of ad fraud activities and their stack traces. FraudDetective harnesses this AOSP for its dynamic testing of apps, connects fragmented stack traces via collecting execution logs, and identifies ad fraud activities. We evaluate FraudDetective on 48,172 apps that Fraud- Detective crawled from Google Play Store. Of 48,172 apps, FraudDetective identifies 74 apps that commit 34,453 ad fraud activities. We further analyze whether these observed ad fraud cases originate in the apps themselves or in ad libraries embedded in these apps. We find that 98.6% of the observed activities originate from ad libraries, which account for 73 of the 74 apps identified. This observation yields the new insight that abusive ad library providers play a key role in the commission of ad fraud by exploiting actual user devices. That is, an ad service provider invites various app developers to embed their ad libraries and commits ad fraud by victimizing mobile users with mobile apps from these developers. Consequently, the victims contribute to increasing ad traffic by visiting certain promotional websites, as orchestrated by these ad library providers. In addition, we observed that one Google Play Store app has been used to forcibly invoke YouTube and Naver [42] mobile apps in the foreground and redirect their users to web pages or videos promoting specific products and services. Although YouTube and Naver do not conduct excessive promotions, ad fraud activities from this app may lead to users blaming YouTube and Naver because their apps with promotional content are brought into the foreground without explicit user interaction. Thus, users have left related negative feedback about YouTube and Naver apps at Google Play Store. However, FraudDetective finds, through the analysis of full stack traces of observed ad fraud activities, that the culprits are abusive ad libraries that have redirected users by invoking these apps via cross-app Android Intents. By computing full stack traces of ad fraud activities, we improve the precision of ad fraud detection compared to prior work. We believe that this capability is an important requisite for dynamically identifying ad fraud behaviors, which is applicable to vetting mobile apps in many app stores, thereby protecting users from ad fraud campaigns. II. B ACKGROUND A. Mobile ad ecosystem Serving mobile ads is a prevalent method of monetizing mobile apps. App developers integrate their mobile apps with a mobile ad library, and the embedded library conducts the rendering of ads at the screen estates of its hosting app. The usage of such mobile ad libraries is quite prevalent; approximately 56% of Android apps in Google Play Store include AdMob, an ad library managed by Google [16]. There are three key participants in the mobile advertising ecosystem: publisher, advertiser, and ad service provider. (1) A publisher is an app developer who monetizes their app by integrating an ad library managed by an ad service provider. (2) An advertiser or their agency designs an ad campaign for their target audiences and requests the launch of such ad campaigns to an ad service provider. (3) An ad service provider connects the advertisers' need for greater exposure to their ads with the publishers' offer to serve ads. This ad service provider also offers an ad library for publishers to include. When a publisher embeds this ad library, it fetches ads from the ad service provider and then renders the ads at user devices. Each rendered ad is called an ad impression, which typically refers to an image or a video rendered one time. Ad service providers offer various ways of charging adver- tisers for their services. In general, there are three representative methods of billing advertisers: cost-per-mile (CPM), cost-per- click (CPC), and cost-per-install (CPI). CPM, CPC, and CPI involve charging an advertiser for rendered ad impressions, user clicks, and app installs, respectively. For instance, when an ad service provider asks $5 CPM for a given campaign, an advertiser is required to pay 5 USD when this campaign delivers 1,000 ad impressions to audiences. B. Mobile ad fraud Mobile ad fraud refers to an operation that generates unwanted ad traffic involving ad impressions, clicks, or conver- sions, thus generating fraudulent revenues. This paper focuses on two types of ad fraud: click fraud and impression fraud. Click fraud. Click fraud refers to a fraudulent operation generating illegitimate clicks that consume the marketing budget of a victim advertiser [46], [79]. A click fraud adversary could be an abusive publisher, an ad service provider, or a competitor of a targeted advertiser. The motivation for publishers and ad 2"
+        }
+      ],
+      "authors": {
+        "grobid_tei": [
+          {
+            "order": 0,
+            "name": "Joongyum Kim",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "School of Computing, KAIST"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 0
+          },
+          {
+            "order": 1,
+            "name": "Jung-Hwan Park",
+            "email": "",
+            "orcid": "",
+            "affiliations": [
+              "School of Computing, KAIST"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 1
+          },
+          {
+            "order": 2,
+            "name": "Sooel Son",
+            "email": "sl.son@kaist.ac.kr",
+            "orcid": "",
+            "affiliations": [
+              "School of Computing, KAIST"
+            ],
+            "affiliation_source": "author_node",
+            "_source_index": 2
+          }
+        ],
+        "selected": [
+          {
+            "order": 0,
+            "name": "Joongyum Kim",
+            "email": "",
+            "affiliations": [
+              "School of Computing, KAIST"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": true,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 1,
+            "name": "Jung-hwan Park",
+            "email": "",
+            "affiliations": [
+              "School of Computing, KAIST"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          },
+          {
+            "order": 2,
+            "name": "Sooel Son",
+            "email": "sl.son@kaist.ac.kr",
+            "affiliations": [
+              "School of Computing, KAIST"
+            ],
+            "affiliation_source": "ndss_pdf",
+            "first_author": false,
+            "co_first_author": false,
+            "equal_contribution": false,
+            "corresponding": false
+          }
+        ]
+      },
+      "layout_relations": {
+        "schema_version": "1.0",
+        "layout_type": "author_card_grid",
+        "header_block_count": 99,
+        "author_count": 3,
+        "matched_author_count": 3,
+        "exact_author_match_count": 3,
+        "dominant_author_font_size": 11.0,
+        "auto_eligible": true,
+        "aligned_relation_count": 0,
+        "page_author_discovery": {
+          "dominant_font_size": 0.0,
+          "candidates": [],
+          "fully_supported": false
+        },
+        "author_nodes": [
+          {
+            "author_index": 0,
+            "author": "Joongyum Kim",
+            "block_id": "pdf:p1:b2",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 1,
+            "author": "Jung-hwan Park",
+            "block_id": "pdf:p1:b4",
+            "match_score": 1.0
+          },
+          {
+            "author_index": 2,
+            "author": "Sooel Son",
+            "block_id": "pdf:p1:b6",
+            "match_score": 1.0
+          }
+        ],
+        "relations": [
+          {
+            "author_index": 0,
+            "author": "Joongyum Kim",
+            "affiliation_raw": "School of Computing, KAIST",
+            "confidence": 0.97,
+            "author_block_id": "pdf:p1:b2",
+            "affiliation_block_ids": [
+              "pdf:p1:b7"
+            ],
+            "email_raw": "kjkpoi@kaist.ac.kr",
+            "email_block_ids": [
+              "pdf:p1:b10"
+            ],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 12.477,
+            "center_distance": 4.003,
+            "local_auto_eligible": true
+          },
+          {
+            "author_index": 1,
+            "author": "Jung-hwan Park",
+            "affiliation_raw": "School of Computing, KAIST",
+            "confidence": 0.97,
+            "author_block_id": "pdf:p1:b4",
+            "affiliation_block_ids": [
+              "pdf:p1:b8"
+            ],
+            "email_raw": "ahnmo@kaist.ac.kr",
+            "email_block_ids": [
+              "pdf:p1:b11"
+            ],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 12.477,
+            "center_distance": 0.445,
+            "local_auto_eligible": true
+          },
+          {
+            "author_index": 2,
+            "author": "Sooel Son",
+            "affiliation_raw": "School of Computing, KAIST",
+            "confidence": 0.97,
+            "author_block_id": "pdf:p1:b6",
+            "affiliation_block_ids": [
+              "pdf:p1:b9"
+            ],
+            "email_raw": "sl.son@kaist.ac.kr",
+            "email_block_ids": [
+              "pdf:p1:b12"
+            ],
+            "validation_block_ids": [],
+            "relation_type": "author_card",
+            "vertical_distance": 12.477,
+            "center_distance": 2.534,
+            "local_auto_eligible": true
+          }
+        ]
+      },
+      "official_web": {
+        "match_status": "normalized_title_exact",
+        "affiliations_filled": 0,
+        "author_conflict": false,
+        "affiliation_conflicts": 0,
+        "official_author_count": 3,
+        "authors_recovered": 0,
+        "authors_rebuilt": false,
+        "author_count_delta": 0,
+        "official_title": "The Abuser Inside Apps: Finding the Culprit Committing Mobile Ad Fraud",
+        "source_url": "https://www.ndss-symposium.org/ndss-paper/the-abuser-inside-apps-finding-the-culprit-committing-mobile-ad-fraud/",
+        "blank_affiliations_after": 0,
+        "authors": [
+          {
+            "name": "Joongyum Kim",
+            "affiliations": [
+              "KAIST"
+            ]
+          },
+          {
+            "name": "Jung-hwan Park",
+            "affiliations": [
+              "KAIST"
+            ]
+          },
+          {
+            "name": "Sooel Son",
+            "affiliations": [
+              "KAIST"
+            ]
+          }
+        ]
+      }
+    },
+    "decisions": [
+      {
+        "action": "fill_abstract_from_pdf",
+        "stage": "abstract_arbitration",
+        "field": "abstract",
+        "source": "pdfplumber_section_boundary"
+      },
+      {
+        "action": "restore_nonempty_field",
+        "stage": "conference_strategy",
+        "author": "Sooel Son",
+        "field": "email",
+        "restored_value": "sl.son@kaist.ac.kr",
+        "reason": "later_stage_produced_blank"
+      }
+    ],
+    "review_reasons": [
+      {
+        "code": "ambiguous_equal_contribution_scope",
+        "stage": "role_linking",
+        "field": "co_first_author",
+        "reason": "role_text_found_without_explicit_names_or_first_N_scope"
+      },
+      {
+        "code": "pdfplumber_validation_unavailable",
+        "stage": "evidence_extraction",
+        "field": "pdf_layout",
+        "status": "unavailable"
+      },
+      {
+        "code": "field_restored_after_loss",
+        "field": "email",
+        "author": "Sooel Son",
+        "stage": "conference_strategy"
+      }
+    ]
+  }
+}

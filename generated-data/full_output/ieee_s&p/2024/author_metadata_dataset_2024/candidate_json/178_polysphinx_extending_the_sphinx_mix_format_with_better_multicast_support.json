@@ -1,0 +1,289 @@
+{
+  "paper_id": "178_polysphinx_extending_the_sphinx_mix_format_with_better_multicast_support",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "PolySphinx: Extending the Sphinx Mix Format With Better Multicast Support"
+      },
+      {
+        "source": "selected",
+        "value": "PolySphinx: Extending the Sphinx Mix Format With Better Multicast Support"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2024"
+      },
+      {
+        "source": "selected",
+        "value": "2024"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Mix networks are a well-known technique to hide communication metadata, but incur a high overhead especially in group communication settings. This hinders their adoption in real-world usage, as group communication makes up a big part of modern communication patterns. In this paper, we introduce \"PolySphinx\", a mix format that is a step towards efficient anonymous multicasting and allows a mix node to replicate the message payload to multiple recipients. We prove that PolySphinx does not compromise on the anonymity offered to users, while considerably reducing the latency of group messages: In a group with 25 members, the average latency drops from 6.1 s using the state-of-the-art Rollercoaster approach to 4.1 s using PolySphinx. • We provide an open source implementation of PolySphinx and a prototype of a PolySphinx-based mix network. 4386 2024 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Mix networks are a well-known technique to hide communication metadata, but incur a high overhead especially in group communication settings. This hinders their adoption in real-world usage, as group communication makes up a big part of modern communication patterns. In this paper, we introduce “PolySphinx”, a mix format that is a step towards efficient anonymous multicasting and allows a mix node to replicate the message payload to multiple recipients. We prove that PolySphinx does not compromise on the anonymity offered to users, while considerably reducing the latency of group messages: In a group with 25 members, the average latency drops from 6.1 s using the state-of-the-art Rollercoaster approach to 4.1 s using PolySphinx. 1. Introduction Group communication plays an important role in modern life [ 1]. However, as with most digital communications, metadata leaked to malicious parties can pose serious threats. For example, metadata may reveal that a user is associated with a group such as Alcoholics Anonymous or the extra- parliamentary opposition. Such a revelation can have serious implications for the user's social status and even safety. Mix networks, a concept introduced by David Chaum [ 2], can be used to hide such metadata. In a mix network, a message is sent through a series of mix nodes, each of which collects incoming messages and relays them to the next node along the path in such a way that an observer cannot link incoming and outgoing messages and thus cannot identify sender and recipient. For their operation, mix networks define a mix format, which describes how the message and path are prepared for the mix nodes to operate. Sphinx [ 3] provides a modern mix format that is used in several mix networks [ 4]- [6]. It lacks dedicated support for group communication. Group communication technically translates to multicast, i.e. the ability to send a single message to multiple recipients. Any one-to-one communication channel can na ¨ıvely support multicast communication by having the sender replicate the message and send multiple copies individually. However, this approach does not scale well: First, the sender must send the messages one at a time, possibly with limited frequency, which increases latency. Second, the sender's outgoing bandwidth consumption is multiplied by the number †. firstname.lastname@kit.edu ‡. firstname.lastname@neclab.eu of recipients of the message, since the payload has to be sent multiple times. ‘True' multicast, where the sender sends a single message that is replicated as close to the recipients as possible, would eliminate both drawbacks. Many modern group communication applications such as video calling, live streaming, and collaborative productivity tools require both low latency [ 7] and high bandwidth [ 8]. Future applications such as the metaverse will only increase these requirements [ 9]. Due to longer paths and limited sending rates, mix networks inherently increase latency over direct communication. If mix networks are to be used to anonymize these group communication applications, multi- cast support in mix networks must be improved. The goal of this paper is to significantly reduce both the bandwidth and latency overhead of multicast communication in mix networks while maintaining strong privacy guarantees. In this paper, we introduce PolySphinx, a new mix format based on Sphinx. The PolySphinx format allows the sender to instruct a mix node to act as a “replication node”, copying a single message to multiple recipients. This alleviates bandwidth usage for the client and significantly reduces message latency: We show that in a group of 25 members, the average group size required by users [ 10], we can reduce latency from 6.1 s using the state-of-the-art approach [ 11] to 4.1 s using PolySphinx. Furthermore, PolySphinx improves the goodput in a network even for small replication factors of 2 as long as messages are larger than 435 Bytes. Revealing replication information to a potentially mali- cious third party is a serious privacy risk. PolySphinx avoids this risk by providing the replication node with precomputed information about the remaining paths to the recipients, of which it can only decipher the immediate next hops. In doing so, PolySphinx does not compromise privacy: We prove that PolySphinx provides the same anonymity as previous work, even against a global active adversary and adversarial mix nodes. In particular, we make the following contributions • We introduce the PolySphinx mix format, which allows efficient multicasting of messages in mix networks. • We prove the security of PolySphinx against a global active adversary. • We provide an open source implementation of PolySphinx and a prototype of a PolySphinx-based mix network. 4386 DOI 10.1109/SP54263.2024.00044 • We use and extend the existing mix network simulator of Hugenroth et al. [11] to evaluate PolySphinx and demonstrate its superior performance over existing approaches. In Section 2 we introduce the required background and in Section 3 the related work. In Section 4 we define our threat model, before giving the general idea of PolySphinx in Section 5. In Section 6 we detail the construction of PolySphinx, after which we prove its security in Section 7 and evaluate its performance in Section 8. We give our conclusion in Section 9. In this paper, we discuss a vanilla version of PolySphinx. We sketch possible extensions that may further improve performance and flexibility in Appendix D. 2. Background In this section, we will first introduce some general notation and primitives that we will use throughout this paper, before introducing the Sphinx format that forms the basis of our extension, and the Loopix system that provides the context for our evaluation. 2.1. Notation The following notation is common throughout the paper (cf. Appendix A for a notation table). We use κ as our security parameter. The bigger κ is, the more work has to be done by an attacker to break our security guarantees. In a mix network, a message is relayed through multiple mix nodes before arriving at its destination. To prevent messages from being linked based on their size, we assume that each payload has a size of l ∈ N bits. We also assume that headers have a fixed size, which leads to an upper bound on the length of a message path, denoted as r ∈ N. For PolySphinx, we assume that a mix node acts as a “replication node”, creating multiple copies of a single incoming message. To hide the exact size of the recipient set, we always replicate by a factor of p ∈ N, which we call the “replication factor”. For working with bit strings, that is elements of {0, 1}∗, we define 0k to be the string consisting of k null-bits, 00 to be the empty string, we define a + +b to be the concatenation of a followed by b, and we define a[x..y] to be the substring of a ranging from indices x to y, inclusive. We define the Decisional Diffie-Hellman Problem (DDH) as the problem of distinguishing between tuples (ga, gb, gab) and (ga, gb, gc), where g is the generator of a group [12]. We say that the DDH-Assumption “holds” in a group if the DDH Problem cannot be solved efficiently in this group. For the remainder of this paper, we use G to be a prime-order cyclic group in which the DDH-Assumption holds, G∗ to be G without identity element, g to be the generator of G and q to be the order of G. 2.2. Cryptographic Primitives We require several hash functions, which we model as random oracles: • We use a hash function hµ : G∗ → {0, 1}κ to derive keys for a message authentication code. • We use a hash function hρ : G∗ → {0, 1}κ to derive keys for a pseudorandom number generator. • We use a hash function hb : G∗ × G ∗ → Z∗ q to generate “blinding factors”. • We use a hash function hK : {0, 1}κ → {0, 1}κ to re-randomize key material. To verify the authenticity and integrity of a packet's metadata, we require a message authentication code (MAC), denoted as µ : {0, 1}κ × {0, 1}∗ → {0, 1}κ. The MAC takes a key and input string and outputs a message “tag”. We model µ with a fixed key as a random oracle. To encrypt the metadata, we require a pseudorandom number generator, denoted as ρ : {0, 1}κ → { 0, 1}∞. We view ρ as internally re-seeding itself and being able to output arbitrarily many bits. We use the substring notation ρ(·)[x..y] to denote a specific range of output bits from ρ. To encrypt the message payload, we require a pseudoran- dom permutation family, keyed by a key from {0, 1}κ. We de- note the permutation mapping as ENC : {0, 1}κ × {0, 1}l → {0, 1}l, and the inverse as DEC : {0, 1}κ ×{0, 1}l → {0, 1}l. 2.3. Sphinx Sphinx is a mix packet format introduced by Danezis and Goldberg [3]. Due to its compactness, it has been used as a base for multiple anonymous communication networks (ACNs) [4]-[6] and is a good foundation for our format extension. To identify network participants, Sphinx assigns each user u ∈ U an address in {0, 1}2κ and each mix node n ∈ N an identifier in {0, 1}κ. Sphinx also requires each mix node n to have a private key xn ←R Z∗ q and a public key yn = gxn ∈ G ∗ used for Diffie-Hellman key exchanges. It is assumed that each network participant can obtain the public key of each mix node, but the public key infrastructure is beyond the scope of this paper. When a user wants to send a message to another user, she first chooses a random path of mix nodes through the network to generate the Sphinx packet. A Sphinx packet is created in two parts: First, the header is created independently of the message payload. This header contains the information needed to route the packet through the mix network. Second, the message payload is prepared by encrypting it with all the keys of the mix nodes the packet will pass through, in reverse order. This method of payload encryption is commonly referred to as onion encryption, as each layer of encryption is “peeled off” one by one at each hop. The header is consumed by the mix nodes as the packet is forwarded hop by hop. The final mix node acts as the exit node, delivering the message to the intended recipient. The Sphinx format ensures that each mix node only has access to the information necessary to forward the packet to the next hop in the path, and that outgoing and incoming packets cannot be linked without the private key of the node that processed them. This is achieved by having a 4387"
+      },
+      {
+        "source": "selected",
+        "value": "Mix networks are a well-known technique to hide communication metadata, but incur a high overhead especially in group communication settings. This hinders their adoption in real-world usage, as group communication makes up a big part of modern communication patterns. In this paper, we introduce \"PolySphinx\", a mix format that is a step towards efficient anonymous multicasting and allows a mix node to replicate the message payload to multiple recipients. We prove that PolySphinx does not compromise on the anonymity offered to users, while considerably reducing the latency of group messages: In a group with 25 members, the average latency drops from 6.1 s using the state-of-the-art Rollercoaster approach to 4.1 s using PolySphinx. • We provide an open source implementation of PolySphinx and a prototype of a PolySphinx-based mix network. 4386 2024 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Daniel Schadt",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "NEC Laboratories, Karlsruhe Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Christoph Coijanovic",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "NEC Laboratories, Karlsruhe Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Christiane Weis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "NEC Laboratories, Karlsruhe Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Thorsten Strufe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "NEC Laboratories, Karlsruhe Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Daniel Schadt",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Karlsruhe Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Christoph Coijanovic",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Karlsruhe Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Christiane Weis",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "NEC Laboratories"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Thorsten Strufe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Karlsruhe Institute of Technology"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 113,
+      "author_count": 4,
+      "matched_author_count": 4,
+      "exact_author_match_count": 4,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Daniel Schadt",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Christoph Coijanovic",
+          "block_id": "pdf:p1:b5",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "Christiane Weis",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Thorsten Strufe",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Daniel Schadt",
+          "affiliation_raw": "Karlsruhe Institute of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 6.234,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Christoph Coijanovic",
+          "affiliation_raw": "Karlsruhe Institute of Technology NEC Laboratories",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b5",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 40.477,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "Christiane Weis",
+          "affiliation_raw": "Karlsruhe Institute of Technology NEC Laboratories",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 70.343,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Thorsten Strufe",
+          "affiliation_raw": "Karlsruhe Institute of Technology",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 4.645,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 4,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "PolySphinx: Extending the Sphinx Mix Format With Better Multicast Support",
+      "source_url": "https://sp2024.ieee-security.org/accepted-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Daniel Schadt",
+          "affiliations": [
+            "Karlsruhe Institute of Technology"
+          ]
+        },
+        {
+          "name": "Christoph Coijanovic",
+          "affiliations": [
+            "Karlsruhe Institute of Technology"
+          ]
+        },
+        {
+          "name": "Christiane Weis",
+          "affiliations": [
+            "NEC Labs Europe"
+          ]
+        },
+        {
+          "name": "Thorsten Strufe",
+          "affiliations": [
+            "Karlsruhe Institute of Technology"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

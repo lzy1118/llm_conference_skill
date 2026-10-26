@@ -1,0 +1,329 @@
+{
+  "paper_id": "105_flamingo_multi_round_single_server_secure_aggregation_with_applications_to_private_federated_learning",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "Flamingo: Multi-Round Single-Server Secure Aggregation with Applications to Private Federated Learning"
+      },
+      {
+        "source": "selected",
+        "value": "Flamingo: Multi-Round Single-Server Secure Aggregation with Applications to Private Federated Learning"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "This paper introduces Flamingo, a system for secure aggregation of data across a large set of clients. In secure aggregation, a server sums up the private inputs of clients and obtains the result without learning anything about the individual inputs beyond what is implied by the final sum. Flamingo focuses on the multi-round setting found in federated learning in which many consecutive summations (averages) of model weights are performed to derive a good model. Previous protocols, such as Bell et al. (CCS '20), have been designed for a single round and are adapted to the federated learning setting by repeating the protocol multiple times. Flamingo eliminates the need for the per-round setup of previous protocols, and has a new lightweight dropout resilience protocol to ensure that if clients leave in the middle of a sum the server can still obtain a meaningful result. Furthermore, Flamingo introduces a new way to locally choose the so-called client neighborhood introduced by Bell et al. These techniques help Flamingo reduce the number of interactions between clients and the server, resulting in a significant reduction in the end-to-end runtime for a full training session over prior work. We implement and evaluate Flamingo and show that it can securely train a neural network on the (Extended) MNIST and CIFAR-100 datasets, and the model converges without a loss in accuracy, compared to a non-private federated learning system. 477 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "This paper introduces Flamingo, a system for secure aggregation of data across a large set of clients. In secure aggregation, a server sums up the private inputs of clients and obtains the result without learning anything about the individual inputs beyond what is implied by the final sum. Flamingo focuses on the multi-round setting found in federated learning in which many consecutive summations (averages) of model weights are performed to derive a good model. Previous protocols, such as Bell et al. (CCS '20), have been designed for a single round and are adapted to the federated learning setting by repeating the protocol multiple times. Flamingo eliminates the need for the per-round setup of previous protocols, and has a new lightweight dropout resilience protocol to ensure that if clients leave in the middle of a sum the server can still obtain a meaningful result. Furthermore, Flamingo introduces a new way to locally choose the so-called client neighborhood introduced by Bell et al. These techniques help Flamingo reduce the number of interactions between clients and the server, resulting in a significant reduction in the end-to-end runtime for a full training session over prior work. We implement and evaluate Flamingo and show that it can securely train a neural network on the (Extended) MNIST and CIFAR-100 datasets, and the model converges without a loss in accuracy, compared to a non-private federated learning system. 1. Introduction In federated learning , a server wants to train a model using data owned by many clients (e.g., millions of mo- bile devices). In each round of the training, the server randomly selects a subset of clients, and sends them the current model's weights. Each selected client updates the model's weights by running a prescribed training algorithm on its data locally, and then sends the updated weights to the server. The server updates the model by averaging the collected weights. The training takes multiple such rounds until the model converges. This distributed training pattern is introduced with the goal of providing a critical privacy guarantee in training- the raw data never leaves the clients' devices. However, prior works [ 71] show that the individual weights still leak information about the raw data, which highlights the need for a mechanism that can securely aggregate the weights computed by client devices [ 48,68]. This is precisely an instance of secure aggregation. Many protocols and systems for secure aggregation have been proposed, e.g., in the scenarios of private error report- ing and statistics collection [ 4,11,18,22,57,69]. However, secure aggregation in federated learning, due to its spe- cific model, faces unprecedented challenges: a large num- ber of clients, high-dimensional input vectors (e.g., model weights), multiple rounds of aggregation prior to model convergence, and unstable devices (i.e., some devices might go offline prior to completing the protocol). It is therefore difficult to directly apply these protocols in a black-box way and still get good guarantees and performance. Recent works [ 8,10,60] propose secure aggregation tai- lored to federated learning scenarios. In particular, a state-of- the-art protocol [8] (which we call BBGLR) can handle one aggregation with thousands of clients and high-dimensional input vectors, while tolerating devices dropping out at any point during their execution. The drawback of these proto- cols is that they only examine one round of aggregation in the full training process, i.e., a selection of a subset of the clients and a sum over their inputs. Utilizing the BBGLR protocol (or its variants) multiple times to do summations in the full training of a model incurs high costs. Specifically, these protocols follow the pattern of having each client establish input-independent secrets with several other clients in a setup phase, and then computing a single sum in a collection phase using the secrets. These secrets cannot be reused for privacy reasons. Consequently, for each round of aggregation in the training process, one needs to perform an expensive fresh setup. Furthermore, in each step (client-server round trip) of the setup and the collection phases, the server has to interact with all of the clients. In the setting of federated learning, such interactions are especially costly as clients may be geographically distributed and may have limited compute and battery power or varying network conditions. In this paper we propose Flamingo, the first single-server secure aggregation system that works well for multiple rounds of aggregation and that can support full sessions of training in the stringent setting of federated learning. At a high level, Flamingo introduces a one time setup and a collection procedure for computing multiple sums, such that the secrets established in the setup can be reused throughout the collection procedure. For each summation in the collec- tion procedure, clients mask their input values (e.g., updated weight vectors in federated learning) with a random mask derived from those secrets, and then send the masked inputs 477 DOI 10.1109/SP46215.2023.00181 to the server. The server sums up all the masked inputs and obtains the final aggregate value (what the server wants) masked with the sum of all masks. Flamingo then uses a lightweight protocol whereby a small number of randomly chosen clients (which we call decryptors) interact with the server to remove the masks. The design of Flamingo significantly reduces the overall training time of a federated learning model compared to run- ning BBGLR multiple times. First, Flamingo eliminates the need for a setup phase for each summation, which reduces the number of steps in the full training session. Second, for each summation, Flamingo only has one step that requires the server to contact all of the clients (asking for their inputs); the rest of the interactions are performed between the server and a few clients who serve as decryptors. Besides training efficiency, the fact that a client needs to only speak once in a round reduces the model's bias towards results that contain only data from powerful, stably connected devices. In Flamingo, the server contacts the clients once to collect inputs; in contrast, prior works have multiple client-server interaction steps in the setup phase (before input collection) and thus filter out weak devices for summation, as staying available longer is challenging. Seen from a different angle, if we fix the number of clients, the failure probability of a client in a given step, and the network conditions, Flamingo's results are of higher quality, as they are computed over more inputs than prior works. In summary, Flamingo's technical innovations are: • Lightweight dropout resilience. A new mechanism to achieve dropout resilience in which the server only con- tacts a small number of clients to remove the masks. All other clients are free to leave after the one step in which they submit their inputs without harming the results. • Reusable secrets. A new way to generate masks that allows the reuse of secrets across rounds of aggregation. • Per-round graphs. A new graph generation procedure that allows clients in Flamingo to unilaterally determine (without the help of the server as in prior work) which pairwise masks they should use in any given round. These advancements translate into significant perfor- mance improvements (§8.3). For a 10-round pure summation task, Flamingo is 3 × faster than BBGLR (this includes Flamingo's one-time setup cost), and includes the contri- bution of more clients in its result. When training a neural network on the Extended MNIST dataset, Flamingo takes about 40 minutes to converge while BBGLR needs roughly 3.5 hours to reach the same training accuracy. 2. Problem Statement Secure aggregation is useful in a variety of domains: collecting, in a privacy-preserving way, error reports [11,22], usage statistics [18,57], and ad conversions [4,69]; it has even been shown to be a key building block for computing private auctions [70]. But one key application is secure fed- erated learning, whereby a server wishes to train a model on data that belongs to many clients, but the clients do not wish to share their data (or other intermediate information such as weights that might leak their data [71]). To accomplish this, each client receives the original model from the server and computes new private weights based on their own data. The server and the clients then engage in a secure aggregation protocol that helps the server obtain the sum of the clients' private weights, without learning anything about individual weights beyond what is implied by their sum. The server then normalizes the sum to obtain the average weights which represent the new state of the model. The server repeats this process until the training converges. This process is formalized as follows. Let [z] denote the set of integers {1, 2,. . ., z}, and let ⃗x denote a vector; all operations on vectors are component-wise. A total number of N clients are fixed before the training starts. Each client is indexed by a number in [N]. The training process consists of T rounds. In each round t ∈ [T], a set of clients is randomly sampled from the N clients, denoted as St. Each client i ∈ St has an input vector, ⃗xi,t, for round t. (A client may be selected in multiple rounds and may have different inputs in each round.) In each round, the server wants to securely compute the sum of the |St| input vectors, P i∈St ⃗xi,t. In practical deployments of federated learning, a com- plete sum is hard to guarantee, as some clients may drop out in the middle of the aggregation process and the server must continue the protocol without waiting for them to come back (otherwise the server might be blocked for an unacceptable amount of time). So the real goal is to compute the sum of the input vectors from the largest possible subset of St; we elaborate on this in the next few sections. 2.1. Target deployment scenario Based on a recent survey of federated learning deploy- ments [39], common parameters are as follows. N is in the range of 100K-10M clients, where |St| = 50-5,000 clients are chosen to participate in a given roundt. The total number of rounds T for a full training session is 500-10,000. Input weights (⃗xi,t) have typically on the order of 1K-500K entries for the datasets we surveyed [15,16,42,43]. Clients in these systems are heterogeneous devices with varying degrees of reliability (e.g., cellphones, servers) and can stop responding due to device or network failure. 2.2. Communication model Each client communicates with the server through a pri- vate and authenticated channel. Messages sent from clients to other clients are forwarded via the server, and are end- to-end encrypted and authenticated. 2.3. Failure and threat model We model failures of two kinds: (1) honest clients that disconnect or are too slow to respond as a result of unstable network conditions, power loss, etc; and (2) arbitrary actions by an adversary that controls the server and a bounded fraction of the clients. We describe each of these below. 478"
+      },
+      {
+        "source": "selected",
+        "value": "This paper introduces Flamingo, a system for secure aggregation of data across a large set of clients. In secure aggregation, a server sums up the private inputs of clients and obtains the result without learning anything about the individual inputs beyond what is implied by the final sum. Flamingo focuses on the multi-round setting found in federated learning in which many consecutive summations (averages) of model weights are performed to derive a good model. Previous protocols, such as Bell et al. (CCS '20), have been designed for a single round and are adapted to the federated learning setting by repeating the protocol multiple times. Flamingo eliminates the need for the per-round setup of previous protocols, and has a new lightweight dropout resilience protocol to ensure that if clients leave in the middle of a sum the server can still obtain a meaningful result. Furthermore, Flamingo introduces a new way to locally choose the so-called client neighborhood introduced by Bell et al. These techniques help Flamingo reduce the number of interactions between clients and the server, resulting in a significant reduction in the end-to-end runtime for a full training session over prior work. We implement and evaluate Flamingo and show that it can securely train a neural network on the (Extended) MNIST and CIFAR-100 datasets, and the model converges without a loss in accuracy, compared to a non-private federated learning system. 477 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yiping Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jess Woods",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Sebastian Angel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Antigoni Polychroniadou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Tal Rabin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Microsoft Research",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "J PMorgan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        },
+        {
+          "order": 7,
+          "name": "A IResearch",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 7
+        },
+        {
+          "order": 8,
+          "name": "Algocrypt Coe",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 8
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yiping Ma",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jess Woods",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Sebastian Angel",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Antigoni Polychroniadou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Tal Rabin",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "J PMorgan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "A IResearch",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of Pennsylvania"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 115,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 1,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Yiping Ma",
+          "block_id": "pdf:p1:b7",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Yiping Ma",
+          "affiliation_raw": "University of Pennsylvania Microsoft Research",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b7",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 13.365,
+          "center_distance": 88.766,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "Flamingo: Multi-Round Single-Server Secure Aggregation with Applications to Private Federated Learning",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yiping Ma",
+          "affiliations": [
+            "University of Pennsylvania"
+          ]
+        },
+        {
+          "name": "Jess Woods",
+          "affiliations": [
+            "University of Pennsylvania"
+          ]
+        },
+        {
+          "name": "Sebastian Angel",
+          "affiliations": [
+            "University of Pennsylvania, Microsoft Research"
+          ]
+        },
+        {
+          "name": "Antigoni Polychroniadou",
+          "affiliations": [
+            "JP Morgan AI Research"
+          ]
+        },
+        {
+          "name": "Tal Rabin",
+          "affiliations": [
+            "University of Pennsylvania"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

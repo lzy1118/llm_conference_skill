@@ -1,0 +1,356 @@
+{
+  "paper_id": "057_xda_accurate_robust_disassembly_with_transfer_learning",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "XDA: Accurate, Robust Disassembly with Transfer Learning"
+      },
+      {
+        "source": "selected",
+        "value": "XDA: Accurate, Robust Disassembly with Transfer Learning"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2021"
+      },
+      {
+        "source": "selected",
+        "value": "2021"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Accurate and robust disassembly of stripped binaries is challenging. The root of the difficulty is that highlevel structures, such as instruction and function boundaries, are absent in stripped binaries and must be recovered based on incomplete information. Current disassembly approaches rely on heuristics or simple pattern matching to approximate the recovery, but these methods are often inaccurate and brittle, especially across different compiler optimizations. We present XDA, a transfer-learning-based disassembly framework that learns different contextual dependencies present in machine code and transfers this knowledge for accurate and robust disassembly. We design a self-supervised learning task motivated by masked Language Modeling to learn interactions among byte sequences in binaries. The outputs from this task are byte embeddings that encode sophisticated contextual dependencies between input binaries' byte tokens, which can then be finetuned for downstream disassembly tasks. We evaluate XDA's performance on two disassembly tasks, recovering function boundaries and assembly instructions, on a collection of 3,121 binaries taken from SPEC CPU2017, SPEC CPU2006, and the BAP corpus. The binaries are compiled by GCC, ICC, and MSVC on x86/x64 Windows and Linux platforms over 4 optimization levels. XDA achieves 99.0% and 99.7% F1 score at recovering function boundaries and instructions, respectively, surpassing the previous state-of-the-art on both tasks. It also maintains speed on par with the fastest MLbased approach and is up to 38× faster than handwritten disassemblers like IDA Pro. We release the code of XDA at https://github.com/CUMLSec/XDA."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Accurate and robust disassembly of stripped bi- naries is challenging. The root of the difficulty is that high- level structures, such as instruction and function boundaries, are absent in stripped binaries and must be recovered based on incomplete information. Current disassembly approaches rely on heuristics or simple pattern matching to approximate the recovery, but these methods are often inaccurate and brittle, especially across different compiler optimizations. We present XDA, a transfer-learning-based disassembly framework that learns different contextual dependencies present in machine code and transfers this knowledge for accurate and robust disassembly. We design a self-supervised learning task motivated by masked Language Modeling to learn interactions among byte sequences in binaries. The outputs from this task are byte embeddings that encode sophisticated contextual depen- dencies between input binaries' byte tokens, which can then be finetuned for downstream disassembly tasks. We evaluate XDA's performance on two disassembly tasks, recovering function boundaries and assembly instructions, on a collection of 3,121 binaries taken from SPEC CPU2017, SPEC CPU2006, and the BAP corpus. The binaries are compiled by GCC, ICC, and MSVC on x86/x64 Windows and Linux platforms over 4 optimization levels. XDA achieves 99.0% and 99.7% F1 score at recovering function boundaries and instructions, respectively, surpassing the previous state-of-the-art on both tasks. It also maintains speed on par with the fastest ML- based approach and is up to 38× faster than hand-written disassemblers like IDA Pro. We release the code of XDA at https://github.com/CUMLSec/XDA. I. I NTRODUCTION Disassembly is the backbone of many binary analysis tasks, such as malware analysis, reverse engineering, retrofitting control-flow integrity defenses, binary rewriting, and binary instrumentation [20], [40], [50], [51], [55]. Binary analysis relies on disassembly to recover higher-level constructs such as ∗Equal contribution, order decided by coin flip assembly instructions and function boundaries from machine code. Disassembly is difficult because high-level information from symbol tables and source code are absent in stripped binaries. This information is either discarded during compilation or stripped before distribution to decrease program size or deter reverse engineering. Therefore, disassemblers must approxi- mate the recovery of higher-level constructs from incomplete information. Complex assembly constructs such as inline data and tail calls, further complicate disassembly. Traditional approaches to this problem rely on hand- crafted heuristics to guide the recovery, but these methods are inaccurate and brittle [ 5], [7], [58]. For example, many popular disassemblers, like IDA Pro and Ghidra, recover assembly instructions by recursively following direct control flow transfers (e.g., call 0x2ed4 ). Similarly, they recover function boundaries by looking for known instruction patterns. These heuristics-based methods are insufficient - prior research has shown that IDA Pro misidentifies up to 58% of function boundaries [7] and 4% of assembly instructions [4] in optimized binaries. Furthermore, many heuristics for detecting functions require continual manual maintenance of large databases to adapt to code and compiler changes [7]: IDA Pro's current database for identifying common library functions is over 41MB in size, and Ghidra's is over 179MB. Previous research has explored using Machine Learning (ML) to address these challenges. The resulting models sur- passed the accuracy of traditional disassemblers at both recov- ering assembly instructions [58] and function boundaries [7], [48], and are easier to maintain. However, current ML-based approaches still face two critical challenges: Accuracy. Recent research has shown that previous ML-based methods are likely not as accurate as reported [5]. This is because their accuracies were inadvertently measured on testing data with significant overlap with training data, and therefore their performance may not generalize to real-world binaries. More concretely, Andriesse et al. [5] showed that the F1 score of ByteWeight [7] degrades from the reported 97% to 65% when evaluated on a dataset without overlap. Robustness. The current most accurate ML approach for recovering function boundaries, bidirectional Recurrent Neural Network and Distributed Systems Security (NDSS) Symposium 2021 https://dx.doi.org/10.14722/ndss.2021.23112 www.ndss-symposium.org Machine Code Debugging SymbolsStripped Binaries (Unlabeled) with Random Bytes Masked Unstripped Binaries with Training Labels Machine Code Step 1: Pretraining (Masked LM) Step 2: Finetuning (Disassembly Tasks) Finetuned Model to Recover Functions Binary to Disassemble Step 3: Prediction Finetuned Model to Recover Instructions Function Boundaries Assembly Instructions Transfer ... Stack layers for each task Machine Code Fig. 1. The workflow of XDA. We first pretrain the model with the masked LM task, and then finetune the pretrained model with new stacked NN layers for disassembly tasks. Finetuning updates both the pretrained model and the stacked layers. During inference, the finetuned models takes the binary and output disassembly information, depending on the finetuned tasks. Net (bi-RNN) [48], is not robust to compiler optimization changes (see Section VII-B). Similar concerns have also been raised by Wang et al. [56], who proposed a more robust method by combining ML with symbolic execution. However, this method does not scale well to larger binaries. In this paper, we present XDA (Xfer-learning DisAs- sembler), a new ML-based disassembly framework that uses transfer learning to address these challenges. We train and evaluate XDA on 3,121 binaries, and separate the testing and training data such that they have minimal overlap (less than 3%). We show that XDA outperforms all state-of-the-art tools in accuracy at recovering function boundaries and assembly instructions, and is robust to changes in compiler optimization. Additionally, XDA's speed is on par with the fastest tools. Our key insight is to teach the ML model general depen- dencies between bytes in machine code before training it to perform specific disassembly tasks - we transfer its learned knowledge of these byte dependencies to tackling disassembly. Intuitively, we first teach our model to read and gain a basic understanding of machine code and then teach it to solve a disassembly task. We achieve this by splitting our training into two stages, as shown in Figure 1. In the first stage, we pretrain our model using masked Language Modeling (masked LM) to teach it the byte dependencies of x86/x64 machine code. In the second stage, we finetune our model to leverage its knowledge of byte dependencies to solve a specific disassembly task accurately and robustly. The masked LM task asks the model to predict randomly masked bytes, which requires the model to produce missing bytes given the context. This design compels the model to learn dependencies between the masked byte and surrounding bytes, teaching the model a basic understanding of machine code semantics. As we will show in Section VII, this understanding improves not only the model's accuracy but also its robustness to compiler and optimization changes. In contrast, previous ML approaches rely on superficial patterns, such as function prologues, which limits their accuracy and robustness when such patterns are absent or changed. An additional benefit is that the masked byte prediction task does not require labeled data. Therefore, XDA can be further trained and improved using stripped binaries found in the wild. We give some intuition on why the masked LM task is helpful for disassembly. Consider a function that uses 0x28 bytes of stack space for local variables. To allocate this space, the function uses sub rsp,0x28 to decrement the stack register by 0x28 bytes. Now assume the byte 0x28 is masked, like so: sub rsp,?? . To predict the value of this masked byte, our pretrained model learns to search for the corresponding stack deallocation instruction ( add rsp,0x28 ) and read its value (see Section VIII-B for more details). Since stack allocation/deallocation often occurs near the start/end of a function, the knowledge of this dependency is a helpful feature for identifying function boundaries. Such scenarios that naturally occur in predicting randomly masked bytes, in sum, teaches the model a powerful, general understanding of machine code semantics that helps disassembly. To evaluate XDA's performance, we test it on 3,121 Linux and Windows x86/x64 binaries taken from the SPEC CPU2017 [14], SPEC CPU2006 [15] benchmark suites and the BAP corpus [7]. These binaries are compiled using the GNU Compiler Collection (GCC), Intel C++ Compiler (ICC), and Microsoft Visual C++ (MSVC) over 4 optimization levels ( O0-O3 for GCC and ICC, O1, O2, Od, Ox for MSVC). We choose two popular disassembly tasks, recovering function boundaries and assembly instructions, to test our model's performance, but XDA can be easily finetuned for other disassembly and binary analysis tasks. Across these binaries, XDA achieves 99% F1 score at recovering function boundaries, 17.2% higher than the second-best tool. XDA also achieves a 99.7% F1 score at recovering assembly instructions. Furthermore, XDA's underlying neural architecture is highly parallelizable and efficient, running up to 38× faster than hand- written disassemblers like IDA Pro. We also evaluate the robustness of XDA to the changes of 2"
+      },
+      {
+        "source": "selected",
+        "value": "Accurate and robust disassembly of stripped binaries is challenging. The root of the difficulty is that highlevel structures, such as instruction and function boundaries, are absent in stripped binaries and must be recovered based on incomplete information. Current disassembly approaches rely on heuristics or simple pattern matching to approximate the recovery, but these methods are often inaccurate and brittle, especially across different compiler optimizations. We present XDA, a transfer-learning-based disassembly framework that learns different contextual dependencies present in machine code and transfers this knowledge for accurate and robust disassembly. We design a self-supervised learning task motivated by masked Language Modeling to learn interactions among byte sequences in binaries. The outputs from this task are byte embeddings that encode sophisticated contextual dependencies between input binaries' byte tokens, which can then be finetuned for downstream disassembly tasks. We evaluate XDA's performance on two disassembly tasks, recovering function boundaries and assembly instructions, on a collection of 3,121 binaries taken from SPEC CPU2017, SPEC CPU2006, and the BAP corpus. The binaries are compiled by GCC, ICC, and MSVC on x86/x64 Windows and Linux platforms over 4 optimization levels. XDA achieves 99.0% and 99.7% F1 score at recovering function boundaries and instructions, respectively, surpassing the previous state-of-the-art on both tasks. It also maintains speed on par with the fastest MLbased approach and is up to 38× faster than handwritten disassemblers like IDA Pro. We release the code of XDA at https://github.com/CUMLSec/XDA."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Kexin Pei",
+          "email": "kpei@cs.columbia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, University of Toronto"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Jonas Guan",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, University of Toronto"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "David Williams-King",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, University of Toronto"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Junfeng Yang",
+          "email": "junfeng@cs.columbia.edu",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, University of Toronto"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Suman Jana",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Columbia University, University of Toronto"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Kexin Pei",
+          "email": "kpei@cs.columbia.edu",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Jonas Guan",
+          "email": "jonas@cs.toronto.edu",
+          "affiliations": [
+            "University of Toronto"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": true,
+          "co_first_author": true,
+          "equal_contribution": true,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "David Williams-King",
+          "email": "",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Junfeng Yang",
+          "email": "junfeng@cs.columbia.edu",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Suman Jana",
+          "email": "suman@cs.columbia.edu",
+          "affiliations": [
+            "Columbia University"
+          ],
+          "affiliation_source": "ndss_pdf",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "author_card_grid",
+      "header_block_count": 107,
+      "author_count": 5,
+      "matched_author_count": 5,
+      "exact_author_match_count": 5,
+      "dominant_author_font_size": 11.0,
+      "auto_eligible": true,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 0,
+          "author": "Kexin Pei",
+          "block_id": "pdf:p1:b3",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 1,
+          "author": "Jonas Guan",
+          "block_id": "pdf:p1:b4",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 2,
+          "author": "David Williams-King",
+          "block_id": "pdf:p1:b6",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 3,
+          "author": "Junfeng Yang",
+          "block_id": "pdf:p1:b13",
+          "match_score": 1.0
+        },
+        {
+          "author_index": 4,
+          "author": "Suman Jana",
+          "block_id": "pdf:p1:b14",
+          "match_score": 1.0
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 0,
+          "author": "Kexin Pei",
+          "affiliation_raw": "Columbia University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b3",
+          "affiliation_block_ids": [
+            "pdf:p1:b7"
+          ],
+          "email_raw": "kpei@cs.columbia.edu",
+          "email_block_ids": [
+            "pdf:p1:b10"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 2.633,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 1,
+          "author": "Jonas Guan",
+          "affiliation_raw": "University of Toronto",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b4",
+          "affiliation_block_ids": [
+            "pdf:p1:b8"
+          ],
+          "email_raw": "jonas@cs.toronto.edu",
+          "email_block_ids": [
+            "pdf:p1:b11"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 6.625,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 2,
+          "author": "David Williams-King",
+          "affiliation_raw": "Columbia University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b6",
+          "affiliation_block_ids": [
+            "pdf:p1:b9"
+          ],
+          "email_raw": "dwk@cs.columbia.edu",
+          "email_block_ids": [
+            "pdf:p1:b12"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.373,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 3,
+          "author": "Junfeng Yang",
+          "affiliation_raw": "Columbia University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b13",
+          "affiliation_block_ids": [
+            "pdf:p1:b15"
+          ],
+          "email_raw": "junfeng@cs.columbia.edu",
+          "email_block_ids": [
+            "pdf:p1:b17"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 1.363,
+          "local_auto_eligible": true
+        },
+        {
+          "author_index": 4,
+          "author": "Suman Jana",
+          "affiliation_raw": "Columbia University",
+          "confidence": 0.97,
+          "author_block_id": "pdf:p1:b14",
+          "affiliation_block_ids": [
+            "pdf:p1:b16"
+          ],
+          "email_raw": "suman@cs.columbia.edu",
+          "email_block_ids": [
+            "pdf:p1:b18"
+          ],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 2.584,
+          "local_auto_eligible": true
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 5,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "XDA: Accurate, Robust Disassembly with Transfer Learning",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/xda-accurate-robust-disassembly-with-transfer-learning/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Kexin Pei",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Jonas Guan",
+          "affiliations": [
+            "University of Toronto"
+          ]
+        },
+        {
+          "name": "David Williams-King",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Junfeng Yang",
+          "affiliations": [
+            "Columbia University"
+          ]
+        },
+        {
+          "name": "Suman Jana",
+          "affiliations": [
+            "Columbia University"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

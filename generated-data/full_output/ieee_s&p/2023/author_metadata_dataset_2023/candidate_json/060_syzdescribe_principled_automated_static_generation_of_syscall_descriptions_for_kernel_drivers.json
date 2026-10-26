@@ -1,0 +1,301 @@
+{
+  "paper_id": "060_syzdescribe_principled_automated_static_generation_of_syscall_descriptions_for_kernel_drivers",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "SyzDescribe: Principled, Automated, Static Generation of Syscall Descriptions for Kernel Drivers"
+      },
+      {
+        "source": "selected",
+        "value": "SyzDescribe: Principled, Automated, Static Generation of Syscall Descriptions for Kernel Drivers"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2023"
+      },
+      {
+        "source": "selected",
+        "value": "2023"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Fuzz testing operating system kernels has been effective overall in recent years. For example, syzkaller manages to find thousands of bugs in the Linux kernel since 2017. One necessary component of syzkaller is a collection of syscall descriptions that are often provided by human experts. However, to our knowledge, current syscall descriptions are largely written manually, which is both time-consuming and error-prone. It is especially challenging considering that there are many kernel drivers (for new hardware devices and beyond) that are continuously being developed and evolving over time. In this paper, we present a principled solution for generating syscall descriptions for Linux kernel drivers. At its core, we summarize and model the key invariants or programming conventions, extracted from the \"contract\" between the core kernel and drivers. This allows us to understand programmatically how a kernel driver is initialized and how its associated interfaces are constructed. With this insight, we have developed a solution in a tool called SyzDescribe that has been tested for over hundreds of kernel drivers. We show that the syscall descriptions produced by SyzDescribe are competitive to manually-curated ones, and much better than prior work (i.e., DIFUZE and KSG). Finally, we analyze the gap between our descriptions and the ground truth and point to future improvement opportunities. 3262 2023 IEEE Symposium on Security and Privacy (SP)"
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Fuzz testing operating system kernels has been ef- fective overall in recent years. For example, syzkaller man- ages to find thousands of bugs in the Linux kernel since 2017. One necessary component of syzkaller is a collection of syscall descriptions that are often provided by human ex- perts. However, to our knowledge, current syscall descriptions are largely written manually, which is both time-consuming and error-prone. It is especially challenging considering that there are many kernel drivers (for new hardware devices and beyond) that are continuously being developed and evolving over time. In this paper, we present a principled solution for generating syscall descriptions for Linux kernel drivers. At its core, we summarize and model the key invariants or programming conventions, extracted from the “contract” be- tween the core kernel and drivers. This allows us to understand programmatically how a kernel driver is initialized and how its associated interfaces are constructed. With this insight, we have developed a solution in a tool called SyzDescribe that has been tested for over hundreds of kernel drivers. We show that the syscall descriptions produced by SyzDescribe are competitive to manually-curated ones, and much better than prior work ( i.e., DIFUZE and KSG). Finally, we analyze the gap between our descriptions and the ground truth and point to future improvement opportunities. 1. Introduction Fuzzing has become one of the most popular methods for finding bugs and vulnerabilities due to its practicability and effectiveness. For example, in the context of large-scale and stateful programs such as operating system kernels, the state-of-the-art operating system kernel fuzzer, syzkaller [1], has found more than 4.6k bugs in the Linux kernel over the past few years, more than 3.6k of which have been fixed [2]. One necessary component of syzkaller is a collection of syscall descriptions that are often provided by human experts. As the primary interface between the user space and kernel space is syscall, the fuzzer needs to be aware of the syscalls that are available on an operating system kernel, values of interest for each syscall, and explicit dependencies between syscalls [ 3]. For syzkaller, such syscall descrip- tions can be provided using a declarative language called syzlang [ 4]. However, to our knowledge, current syscall descriptions are largely written manually [ 4], which is both time-consuming and error-prone. Indeed, in our study, we find that existing manually-curated syscall descriptions can miss dependencies and/or syscall interfaces, and even in- correct or out-of-date descriptions. It has also been shown that incomplete syscall descriptions is a major root cause limiting the code coverage achieved by syzkaller [ 3]. More- over, syscall description generation is not a one-time effort. Descriptions need to be continuously updated as the kernel evolves ( e.g., there are on average 200 commits daily to Linux mainline [5]). Last but not least, not all kernel drivers have manually-curated syscall descriptions [ 6]. Compared to the core Linux kernel, kernel drivers account for about 71.9% SLoC of the kernel code and therefore a large fraction of the attack surface that needs to be tested as well [ 3]. There exist limited solutions to generate syscall descrip- tions. DIFUZE [ 6] attempts to generate syscall descriptions automatically through static analysis of the source code of kernel drivers. Unfortunately, without a principled model- ing of the programming convention in kernel drivers, the generated descriptions are significantly inaccurate. KSG [ 7] achieves the same goal partially through a dynamic analysis to recover drivers and associated interfaces. However, it has limited coverage of drivers which have to be loaded already on a live system, and the requirement of setting up such a live system with a recompiled and instrumented kernel can be a high bar for adoption. Unfortunately, there exists no comprehensive evaluation of the quality of these auto- matically generated descriptions due to lack of comparison and ground truth. As such, we believe it remains an impor- tant and unsolved problem to accurately and automatically generate syscall descriptions. In this paper, we present a principled solution to tackle this problem, focusing on Linux kernel drivers. At its core, we summarize and model the key invariants and program- ming conventions regarding kernel driver development. This allows us to understand programmatically how a kernel driver is initialized and how its associated interfaces are con- structed. At a high level, we can then statically reconstruct the initialization of a kernel driver by faithfully following the summarized/modeled initialization process. As will be shown in our design, our modeling is chosen to balance accuracy and generality ( e.g., the convention should not be changing from version to version). We have implemented our solution in a tool called SyzDescribe, which is able to statically, accurately and 3262 DOI 10.1109/SP46215.2023.00133 automatically generate syscall descriptions for Linux ker- nel drivers. We evaluate SyzDescribe against static based tool DIFUZE, dynamic based tool KSG, manually-written syzkaller descriptions and even a ground truth dataset which we curate, demystifying the differences between these solu- tions. We find that SyzDescribe has a much better accuracy and coverage than DIFUZE and KSG, generating many more descriptions compared to manually-written syzkaller descriptions, and is closest to the ground truth. More specif- ically, we find that the syzkaller descriptions cover only less than half of the kernel drivers that SyzDescribe generates. Interestingly, even when a driver is covered by syzkaller already, we still find many “bugs” in them due to human mistakes or lack of ongoing maintenance (kernel code and descriptions become out-of-sync). Furthermore, we evaluate the effectiveness of SyzDescribe with a number of fuzzing experiments, and show that SyzDescribe also performs the best among all existing solutions. Moreover, by applying the solution to the kernel drivers of the Pixel 6 Android smart- phone, where no existing syscall descriptions are available, we are able to find 18 unique crashes. We summarize our main contributions as below: • We present a principled solution that can automatically and statically generate syscall descriptions for Linux ker- nel drivers, based on the modeling of the well-established contract between the core kernel and drivers. • We evaluate SyzDescribe comprehensively and show that SyzDescribe is capable of generating descriptions that are highly accurate, better than manually-curated syzkaller descriptions and closest to the ground truth. • We investigate and summarize the root causes for the gap between the results of SyzDescribe and the ground truth. We then point out future directions for continuing to improve automated syscall description generation. • We open source the implementation of SyzDescribe [ 8] and the generated syscall descriptions [9] to facilitate the reproduction of results and future research. 2. Background and Motivation In this section, we first briefly introduce Linux kernel drivers, then explain how syzkaller currently describes them, and finally summarize existing state-of-the-art solutions for automatically constructing such descriptions. 2.1. Linux Kernel Drivers and Descriptions Kernel Drivers. In Linux, drivers are in kernel mod- ules that can be loaded during either boot time or later on demand [10]. Each kernel module has well-marked entry and exit points usually defined by macros such as module_init(x) and module_exit(x). A sin- gle driver is usually defined within a single kernel mod- ule. However, it is also possible that a driver is de- fined across multiple kernel modules that have depen- dencies between each other, e.g., two kernel modules defined by subsys_initcall(alsa_sound_init) 1. resource fd_kvm[fd] 2. resource fd_kvmvm[fd] 3. open$kvm(fd const[AT_FDCWD], file ptr[in, string[\"/dev/kvm\"]], flags flags[open_flags],...) fd_kvm 4. ioctl$KVM_CREATE_VM(fd fd_kvm, cmd const[KVM_CREATE_VM],...) fd_kvmvm 5. ioctl$KVM_SET_USER_MEMORY_REGION(fd fd_kvmvm, cmd const[ KVM_SET_USER_MEMORY_REGION ], arg ptr[in, kvm_userspace_memory_region]) 6. kvm_userspace_memory_region { 7. slot flags[kvm_mem_slots, int32] 8. flags flags[kvm_mem_region_flags, int32] 9. paddr flags[kvm_guest_addrs, int64] 10. size len[addr, int64] 11. addr vma64[1:2] 12. } Explicit dependency Command value Syscalls interface Device file name Argument type Figure 1: Example syscall descriptions of KVM in syzkaller and module_init(alsa_seq_init) collectively con- stitute a sound sequencer driver. Conversely, a single kernel module can also define multiple kernel drivers, e.g., loop-control driver and loop driver are defined in module_init(loop_init). In summary, the initialization of a kernel driver takes place at one or more entry points, during which the inter- faces exposed to the user space will be defined - first, one or more device file names will be defined and exposed under the /dev directory; second, a number of syscall handlers will be defined and registered, e.g., open() and ioctl(). Together, this initialization allows for a user- space application to interact with the driver (we provide a concrete example in §3.1). Conceptually, every kernel driver is associated with a certain type of device, as its goal is to “drive” the device. There are three first-level types of devices in Linux kernel: character device, block device and network interface [11]. In our work, we consider character devices and block devices because they can be accessed from user space by device files in the /dev directory. There are also a limited number of sub-types within each first-level device type, which we will describe later on. A device is uniquely identified by the device number, which is the combination of a major number and a minor number. The device number not only uniquely identifies a device and its file name(s), but is also associated with a set of syscall handlers, e.g., ioctl(). Even though these details are often hidden from a user-space application that is interested in interacting with a kernel driver, they are in fact critical for generating syscall descriptions to exercise the kernel driver. We will present an example kernel driver with all these low-level details in §3.1. Syscall Descriptions. We now illustrate an example syscall description for the KVM kernel driver shown in Figure 1, which includes the following necessary components: • Syscall interface, which allows user-space applications to interact with the driver. For example, we see open() and ioctl(), which are the most common. There can 3263"
+      },
+      {
+        "source": "selected",
+        "value": "Fuzz testing operating system kernels has been effective overall in recent years. For example, syzkaller manages to find thousands of bugs in the Linux kernel since 2017. One necessary component of syzkaller is a collection of syscall descriptions that are often provided by human experts. However, to our knowledge, current syscall descriptions are largely written manually, which is both time-consuming and error-prone. It is especially challenging considering that there are many kernel drivers (for new hardware devices and beyond) that are continuously being developed and evolving over time. In this paper, we present a principled solution for generating syscall descriptions for Linux kernel drivers. At its core, we summarize and model the key invariants or programming conventions, extracted from the \"contract\" between the core kernel and drivers. This allows us to understand programmatically how a kernel driver is initialized and how its associated interfaces are constructed. With this insight, we have developed a solution in a tool called SyzDescribe that has been tested for over hundreds of kernel drivers. We show that the syscall descriptions produced by SyzDescribe are competitive to manually-curated ones, and much better than prior work (i.e., DIFUZE and KSG). Finally, we analyze the gap between our descriptions and the ground truth and point to future improvement opportunities. 3262 2023 IEEE Symposium on Security and Privacy (SP)"
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Yu Hao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Guoren Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Xiaochen Zou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Weiteng Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Shitong Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Zhiyun Qian",
+          "email": "zhiyunq@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Ardalan Amiri Sani",
+          "email": "ardalan@uci.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside",
+            "University of California, Irvine"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Yu Hao",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Guoren Li",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Xiaochen Zou",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Weiteng Chen",
+          "email": "",
+          "orcid": "",
+          "affiliations": [],
+          "affiliation_source": "empty",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Shitong Zhu",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Zhiyun Qian",
+          "email": "zhiyunq@cs.ucr.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Ardalan Amiri Sani",
+          "email": "ardalan@uci.edu",
+          "orcid": "",
+          "affiliations": [
+            "University of California, Riverside",
+            "University of California, Irvine"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 112,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 6,
+          "author": "Ardalan Amiri Sani",
+          "block_id": "pdf:p1:b109",
+          "match_score": 0.75
+        }
+      ],
+      "relations": []
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "SyzDescribe: Principled, Automated, Static Generation of Syscall Descriptions for Kernel Drivers",
+      "source_url": "https://www.ieee-security.org/TC/SP2023/program-papers.html",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Yu Hao",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Guoren Li",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Xiaochen Zou",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Weiteng Chen",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Shitong Zhu",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Zhiyun Qian",
+          "affiliations": [
+            "University of California, Riverside"
+          ]
+        },
+        {
+          "name": "Ardalan Amiri Sani",
+          "affiliations": [
+            "University of California, Irvine"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}

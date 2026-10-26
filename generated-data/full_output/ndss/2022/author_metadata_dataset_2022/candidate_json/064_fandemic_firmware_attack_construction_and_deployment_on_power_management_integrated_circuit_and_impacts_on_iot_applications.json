@@ -1,0 +1,321 @@
+{
+  "paper_id": "064_fandemic_firmware_attack_construction_and_deployment_on_power_management_integrated_circuit_and_impacts_on_iot_applications",
+  "candidates": {
+    "title": [
+      {
+        "source": "grobid_tei",
+        "value": "FANDEMIC: Firmware Attack Construction and Deployment on Power Management Integrated Circuit and Impacts on IoT Applications"
+      },
+      {
+        "source": "selected",
+        "value": "FANDEMIC: Firmware Attack Construction and Deployment on Power Management Integrated Circuit and Impacts on IoT Applications"
+      }
+    ],
+    "year": [
+      {
+        "source": "grobid_tei",
+        "value": "2022"
+      },
+      {
+        "source": "selected",
+        "value": "2022"
+      }
+    ],
+    "abstract": [
+      {
+        "source": "grobid_tei",
+        "value": "Supply chains have become a pillar of our economic world, and they have brought tremendous advantages to both enterprises and users. These networks consist of companies and suppliers with the goal of reducing costs and production time by offloading various stages of the production process to third party foundries. Although globalized supply chains offer many advantages, they are also vulnerable to attacks at many different points along the pipeline. For Internet-of-Things (IoT) devices, this problem is exacerbated by firmware vulnerabilities, which influence the low-level control of the system hardware. Moreover, according to the National Vulnerability Database (NVD) the number of firmware vulnerabilities within IoT devices is rapidly increasing every year, making such firmware vulnerabilities a cause for growing concern and magnifying the need to address emerging firmware vulnerabilities. In this paper we attempt to define and expand upon a class of firmware vulnerability that is characterized by the malicious configuration of power management integrated circuits (PMIC). We propose a firmware attack construction and deployment on power management IC (FANDEMIC) that involves reverse engineering bare-metal IoT firmware binaries and identifying the functions that interact with its PMIC. We demonstrate the possibility of directly altering the binary to deliberately misconfigure the PMIC such that supply line voltages are altered, which could result in a variety of problems with the device. We propose a workflow to reverse engineer the binary, using Ghidra and Python scripting, and provide two simple, but novel function matching algorithms. Furthermore, we highlight and discuss the potential aforementioned consequences of PMIC attacks, in particular, battery degradation and failure, accelerated aging effects, and sensor data corruption. As a proof of concept we implement the proposed attack on an nRF52 microcontroller and a MAX20303 PMIC to demonstrate sensor data corruption. Finally, we discuss possible mitigation techniques, which include binary auditing and secure firmware updates."
+      },
+      {
+        "source": "pdfplumber",
+        "value": "Supply chains have become a pillar of our economic world, and they have brought tremendous advantages to both enterprises and users. These networks consist of companies and suppliers with the goal of reducing costs and production time by offloading various stages of the production process to third party foundries. Although globalized supply chains offer many advantages, they are also vulnerable to attacks at many different points along the pipeline. For Internet-of-Things (IoT) devices, this problem is exacerbated by firmware vulnerabilities, which influence the low-level control of the system hardware. Moreover, according to the National Vulnerability Database (NVD) the number of firmware vulnerabilities within IoT devices is rapidly increasing every year, making such firmware vulnerabilities a cause for growing concern and magnifying the need to address emerging firmware vulnerabilities. In this paper we attempt to define and expand upon a class of firmware vulnerability that is characterized by the malicious configuration of power management integrated circuits (PMIC). We propose a firmware attack construction and deployment on power management IC (FANDEMIC) that involves reverse engineering bare-metal IoT firmware binaries and identifying the functions that interact with its PMIC. We demonstrate the possibility of directly altering the binary to deliberately misconfigure the PMIC such that supply line voltages are altered, which could result in a variety of problems with the device. We propose a workflow to reverse engineer the binary, using Ghidra and Python scripting, and provide two simple, but novel function matching algorithms. Fur- thermore, we highlight and discuss the potential aforementioned consequences of PMIC attacks, in particular, battery degradation and failure, accelerated aging effects, and sensor data corruption. As a proof of concept we implement the proposed attack on an nRF52 microcontroller and a MAX20303 PMIC to demonstrate sensor data corruption. Finally, we discuss possible mitigation techniques, which include binary auditing and secure firmware updates. I. I NTRODUCTION The increasing globalization of the Internet of Things (IoT) supply chain over the past several decades has resulted in major security concerns. In order to keep production costs low and maintain a fast time-to-market, original equipment manufacturers (OEMs) rely on a vertically disintegrated supply chain for production and assembly, exposing themselves to potential attacks from untrustworthy third party manufacturers [22]. These potential attacks include hardware trojans, design modifications, firmware modifications, and malware, all of which are difficult to detect because of their stealthy design and the inherent difficulty of locating such alterations early in the supply chain. For example, in a recent exploit from December 2020, FireEye revealed a large scale software supply chain attack, now known as the SolarWinds hack, that was leveraged to compromise the U.S. Government and private companies like Microsoft and FireEye [7]. In this attack, adversaries breached SolarWinds' Orion IT management software and sent out malicious software updates to users, which were used to create backdoors in user systems since as early as Spring 2020, going undetected for months [7]. This attack had significant implications because the Orion software was used by over 33,000 of SolarWinds' clients [12], demonstrating the high- impact potential of an indirect attack on the software supply chain. In the context of the IoT supply chain, it goes without say that a cunning hardware attack can have similar potential. Recently, the Department of Homeland Security (DHS) published a study where they highlight the need to advance security in the IoT ecosystem in order to provide a robust defense system against current and emerging threats [5]. The National Vulnerability Database (NVD) [25] reports newly discovered firmware vulnerabilities daily, as illustrated in Fig. 1(a), and given the increasing number of IoT devices on- market [47] and the rapidly increasing severity of IoT firmware vulnerabilities [25], [40], as shown in Fig. 1(b), it is vital to expose firmware vulnerabilities and mitigate them before they become widespread problems and cause irreversible damage. Unfortunately, the current supply chain model, where third party manufacturers and assemblers often have access to the firmware binary or even the source code for testing purposes, poses a significant threat. This is a major concern especially in resource-constrained bare-metal IoT devices that lack operating systems, since there are few, if any, built-in protections against alterations that an untrusted party might make. Moreover, any such alterations can go unnoticed even in the final stages of functional testing. Since these kinds of devices often have applications in safety-critical infrastructure like healthcare, public transportation, and environment moni- toring, any security concerns pose significant threat due to the implications they have on human lives and their privacy. We now consider the role of the power management in IoT devices and its potential effect on device security. As IoT Network and Distributed Systems Security (NDSS) Symposium 2022 https://dx.doi.org/10.14722/ndss.2022.24349 www.ndss-symposium.org Fig. 1: (a) Number of CVEs related to IoT firmware from 2012 to 2020, and (b) Severity scores of these CVEs from 2015 to 2020 according to CVSS V3 reported in the NVD. technology advances, we observe the increasing complexity and capabilities of a single IoT device. In order for a single device to accommodate more and more applications, a myriad of various components need to be incorporated into it, each one requiring different power regulation requirements. To handle the many power needs of a single system, system designers often make use of specially designed integrated circuits (ICs) called power management integrated circuits (PMICs) that manage power supply, power distribution, and battery health. It is critical for subsystem power requirements to be met, as even small deviations outside of the allowed ranges can result in a number of problems ranging from incorrect instruction execution to outright failure [15], [34]. Given the critical role of the PMIC in modern IoT devices, there has already been some consideration for targeting them Security demonstrated the possibility of exploiting PMIC charging controls to cause batteries to combust, creating the ”Bad Power Attack” [30]. Herein, we expand upon the concept of PMIC attacks they introduced by proposing FANDEMIC, a firmware attack scheme that targets the power management IC (PMIC) of IoT devices running bare-metal systems. We focus our attention on bare-metal IoT devices in this paper because non bare-metal systems are often equipped with operating systems that can complicate the reverse engineering process. We leave such systems for future study. An overview of the proposed FANDEMIC scheme is illustrated in Fig. 2. To the best of our knowledge, this is the first time this vulnerability has been formally classified and had its impacts studied. 1 The contributions of our paper are as follows: • Demonstrate a vulnerability in bare-metal IoT devices. • Demonstrate how a firmware attack may change the operating voltage of a PMIC, disrupting the correct functionality of its host device. • Propose a framework to reverse engineer a system's binary using cross-correlation function matching and Ghidra, and to construct and deploy a payload. • Propose mitigation techniques against the attack. 1We are in the process of reporting this vulnerability to the NVD and NIST. II. B ACKGROUND Supply chains are constantly evolving, and they have reached the point where both cost and time-to-market have been drastically reduced (e.g., just-in-time supply chain), but this comes with added risks. The vertical disintegration of supply chains has introduced many more exploitable links in a given device's supply chain. In this section we give an overview of the supply chain system, its security challenges, and discuss possible attacks. A. The Modern Supply Chain Broadly speaking, there are six main stages in the supply chain: Design, Fabrication, Assembly, Distribution, Mainte- nance, and Disposal [20]. In addition, there are typically testing stages associated with each of the manufacturing/pro- duction steps (Design, Fabrication, and Assembly, shown in Fig. 2). The design stage encompasses the design of the device: component selection, schematic design, netlisting, floorplanning, and all of the other steps that need to be taken before physical manufacturing can begin. The fabrication stage involves the processing of raw materials into the components that will be integrated into the final product. These compo- nents might be sensors, actuators, processors, printed circuit boards (PCBs), passive components, or even entire systems- on-chips (SoCs) that can come from a variety of different manufacturers, which might have supply chains of their own. The assembly stage is where all of these components are then integrated into what will become the final product. This is where components are soldered to the PCB, the firmware is loaded, and the device undergoes its final round of tests before being declared ready and shipped to its final destination. We consider assembly to be the final production stage, and the stage FANDEMIC would target, as shown in Fig. 2). Though it could be possible that the proposed malware would be vulnerable to detection if there was a testing stage after assembly, it would depend on the kind of testing performed. For example, logic verification tests likely won't be able to find it since they are only concerned with logic values. On the other hand, analog probing might be effective if test points are included in the design and the margins of error on supply voltages are tight. Following assembly, assuming the device has passed the final inspection, it enters the distribution stage in which finished products are distributed from foundries to retailers then to end users. The maintenance stage encom- passes customer service, technical support, and repairs for the products the end user has received. Finally, the disposal stage refers to how devices that have reached their end-of- life are processed, recycled, or disposed of, though it is often disregarded by manufacturers and end users alike. The electronics supply chain is driven by a ”just-in-time” or ”lean” manufacturing approach to production since this approach, when working smoothly, minimizes operating costs while maximizing production efficiency. Fundamentally, the idea behind the model is to reduce costs by minimizing inventory. Now if a component manufacturer is somehow 2"
+      },
+      {
+        "source": "selected",
+        "value": "Supply chains have become a pillar of our economic world, and they have brought tremendous advantages to both enterprises and users. These networks consist of companies and suppliers with the goal of reducing costs and production time by offloading various stages of the production process to third party foundries. Although globalized supply chains offer many advantages, they are also vulnerable to attacks at many different points along the pipeline. For Internet-of-Things (IoT) devices, this problem is exacerbated by firmware vulnerabilities, which influence the low-level control of the system hardware. Moreover, according to the National Vulnerability Database (NVD) the number of firmware vulnerabilities within IoT devices is rapidly increasing every year, making such firmware vulnerabilities a cause for growing concern and magnifying the need to address emerging firmware vulnerabilities. In this paper we attempt to define and expand upon a class of firmware vulnerability that is characterized by the malicious configuration of power management integrated circuits (PMIC). We propose a firmware attack construction and deployment on power management IC (FANDEMIC) that involves reverse engineering bare-metal IoT firmware binaries and identifying the functions that interact with its PMIC. We demonstrate the possibility of directly altering the binary to deliberately misconfigure the PMIC such that supply line voltages are altered, which could result in a variety of problems with the device. We propose a workflow to reverse engineer the binary, using Ghidra and Python scripting, and provide two simple, but novel function matching algorithms. Furthermore, we highlight and discuss the potential aforementioned consequences of PMIC attacks, in particular, battery degradation and failure, accelerated aging effects, and sensor data corruption. As a proof of concept we implement the proposed attack on an nRF52 microcontroller and a MAX20303 PMIC to demonstrate sensor data corruption. Finally, we discuss possible mitigation techniques, which include binary auditing and secure firmware updates."
+      }
+    ],
+    "authors": {
+      "grobid_tei": [
+        {
+          "order": 0,
+          "name": "Ryan Tsang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 0
+        },
+        {
+          "order": 1,
+          "name": "Doreen Joseph",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 1
+        },
+        {
+          "order": 2,
+          "name": "Soheil Salehi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 2
+        },
+        {
+          "order": 3,
+          "name": "Nadir Carreon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 3
+        },
+        {
+          "order": 4,
+          "name": "Prasant Mohapatra",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 4
+        },
+        {
+          "order": 5,
+          "name": "Houman Homayoun",
+          "email": "hhomayoun@ucdavis.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 5
+        },
+        {
+          "order": 6,
+          "name": "Davis Email",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "_source_index": 6
+        }
+      ],
+      "selected": [
+        {
+          "order": 0,
+          "name": "Ryan Tsang",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": true,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 1,
+          "name": "Doreen Joseph",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 2,
+          "name": "Soheil Salehi",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 3,
+          "name": "Nadir Carreon",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 4,
+          "name": "Prasant Mohapatra",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 5,
+          "name": "Houman Homayoun",
+          "email": "hhomayoun@ucdavis.edu",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        },
+        {
+          "order": 6,
+          "name": "Davis Email",
+          "email": "",
+          "orcid": "",
+          "affiliations": [
+            "Department of Electrical and Computer Engineering, University of California"
+          ],
+          "affiliation_source": "author_node",
+          "first_author": false,
+          "co_first_author": false,
+          "equal_contribution": false,
+          "corresponding": false
+        }
+      ]
+    },
+    "layout_relations": {
+      "schema_version": "1.0",
+      "layout_type": "unclassified",
+      "header_block_count": 118,
+      "author_count": 7,
+      "matched_author_count": 1,
+      "exact_author_match_count": 0,
+      "dominant_author_font_size": 0.0,
+      "auto_eligible": false,
+      "aligned_relation_count": 0,
+      "page_author_discovery": {
+        "dominant_font_size": 0.0,
+        "candidates": [],
+        "fully_supported": false
+      },
+      "author_nodes": [
+        {
+          "author_index": 5,
+          "author": "Houman Homayoun",
+          "block_id": "pdf:p1:b12",
+          "match_score": 0.6667
+        }
+      ],
+      "relations": [
+        {
+          "author_index": 5,
+          "author": "Houman Homayoun",
+          "affiliation_raw": "Department of Electrical and Computer Engineering, University of California Davis",
+          "confidence": 0.88,
+          "author_block_id": "pdf:p1:b12",
+          "affiliation_block_ids": [
+            "pdf:p1:b13"
+          ],
+          "email_raw": "",
+          "email_block_ids": [],
+          "validation_block_ids": [],
+          "relation_type": "author_card",
+          "vertical_distance": 12.477,
+          "center_distance": 22.313,
+          "local_auto_eligible": false
+        }
+      ]
+    },
+    "official_web": {
+      "match_status": "normalized_title_exact",
+      "affiliations_filled": 0,
+      "author_conflict": false,
+      "affiliation_conflicts": 0,
+      "official_author_count": 7,
+      "authors_recovered": 0,
+      "authors_rebuilt": false,
+      "author_count_delta": 0,
+      "official_title": "FANDEMIC: Firmware Attack Construction and Deployment on Power Management Integrated Circuit and Impacts on IoT Applications",
+      "source_url": "https://www.ndss-symposium.org/ndss-paper/8485/",
+      "blank_affiliations_after": 0,
+      "authors": [
+        {
+          "name": "Ryan Tsang",
+          "affiliations": [
+            "University of California, Davis"
+          ]
+        },
+        {
+          "name": "Doreen Joseph",
+          "affiliations": [
+            "University of California, Davis"
+          ]
+        },
+        {
+          "name": "Qiushi Wu",
+          "affiliations": [
+            "University of California, Davis"
+          ]
+        },
+        {
+          "name": "Soheil Salehi",
+          "affiliations": [
+            "University of California, Davis"
+          ]
+        },
+        {
+          "name": "Nadir Carreon",
+          "affiliations": [
+            "University of Arizona"
+          ]
+        },
+        {
+          "name": "Prasant Mohapatra",
+          "affiliations": [
+            "University of California, Davis"
+          ]
+        },
+        {
+          "name": "Houman Homayoun",
+          "affiliations": [
+            "University of California, Davis"
+          ]
+        }
+      ]
+    }
+  },
+  "decisions": []
+}
