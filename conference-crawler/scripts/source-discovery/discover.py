@@ -22,6 +22,7 @@ SOURCE_MANIFEST_FIELDS = [
     "backend",
     "url",
     "paper_count",
+    "previous_paper_count",
     "status",
     "discovered_time",
     "validation_status",
@@ -110,14 +111,21 @@ def save_source_manifest(records: list[dict[str, object]], manifest_path: Path) 
         )
         new_row = {field: record.get(field, "") for field in SOURCE_MANIFEST_FIELDS}
         previous_row = merged_rows.get(key)
-        if previous_row:
-            if not new_row.get("paper_count") and previous_row.get("paper_count"):
+        if new_row.get("validation_status") == "failed":
+            if previous_row and new_row.get("previous_paper_count") in ("", None):
+                new_row["previous_paper_count"] = (
+                    previous_row.get("paper_count")
+                    if previous_row.get("paper_count") not in ("", None)
+                    else previous_row.get("previous_paper_count", "")
+                )
+            new_row["paper_count"] = ""
+        elif previous_row and new_row.get("validation_status") == "discovered":
+            if new_row.get("paper_count") in ("", None):
                 new_row["paper_count"] = previous_row.get("paper_count", "")
-            if (
-                new_row.get("validation_status") == "discovered"
-                and previous_row.get("validation_status") == "validated"
-            ):
-                new_row["validation_status"] = "validated"
+            if new_row.get("previous_paper_count") in ("", None):
+                new_row["previous_paper_count"] = previous_row.get("previous_paper_count", "")
+            if previous_row.get("validation_status") in {"validated", "failed"}:
+                new_row["validation_status"] = previous_row["validation_status"]
         merged_rows[key] = new_row
 
     rows = sorted(
@@ -137,8 +145,8 @@ def save_source_manifest(records: list[dict[str, object]], manifest_path: Path) 
             writer.writerow({field: row.get(field, "") for field in SOURCE_MANIFEST_FIELDS})
 
 
-def update_source_manifest_counts(manifest_path: Path, counts_by_url: dict[str, int]) -> None:
-    """Update manifest paper counts after crawler validation."""
+def update_source_manifest_counts(manifest_path: Path, counts_by_url: dict[str, int | None]) -> None:
+    """Update manifest counts, retaining failed runs' previous counts as stale."""
     if not manifest_path.exists():
         return
     with open(manifest_path, encoding="utf-8", newline="") as file_obj:
@@ -148,10 +156,14 @@ def update_source_manifest_counts(manifest_path: Path, counts_by_url: dict[str, 
         if url not in counts_by_url:
             continue
         count = counts_by_url[url]
-        if count <= 0 and row.get("paper_count"):
-            continue
-        row["paper_count"] = str(count)
-        row["validation_status"] = "validated"
+        if count is None:
+            row["previous_paper_count"] = row.get("paper_count") or row.get("previous_paper_count", "")
+            row["paper_count"] = ""
+            row["validation_status"] = "failed"
+        else:
+            row["paper_count"] = str(count)
+            row["previous_paper_count"] = ""
+            row["validation_status"] = "validated"
     save_source_manifest(rows, manifest_path)
 
 
